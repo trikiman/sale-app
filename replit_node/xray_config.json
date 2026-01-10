@@ -1,0 +1,46 @@
+{
+    "log": {
+        "loglevel": "warning"
+    },
+    "inbounds": [
+        {
+            "port": 1080,
+            "listen": "127.0.0.1",
+            "protocol": "socks",
+            "settings": {
+                "auth": "noauth"
+            }
+        }
+    ],
+    "outbounds": [
+        {
+            "protocol": "vless",
+            "settings": {
+                "vnext": [
+                    {
+                        "address": "nl3.oncloudvpn.com",
+                        "port": 443,
+                        "users": [
+                            {
+                                "id": "e3a81d92-f007-484d-bdee-2a5b107b7277",
+                                "encryption": "none",
+                                "flow": "xtls-rprx-vision"
+                            }
+                        ]
+                    }
+                ]
+            },
+            "streamSettings": {
+                "network": "tcp",
+                "security": "reality",
+                "realitySettings": {
+                    "serverName": "nl3.oncloudvpn.com",
+                    "fingerprint": "chrome",
+                    "publicKey": "1az_XYGwf1SX5RjaXXov8xBFqpbFlzYegZgFWULF1FY",
+                    "shortId": "f106",
+                    "spiderX": "/"
+                }
+            }
+        }
+    ]
+}
