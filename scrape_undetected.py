@@ -169,12 +169,30 @@ def scrape_green_prices(auto_mode=False):
             print("Extracting products from cart page...")
             time.sleep(2)
             
-            # Get products from cart using correct VkusVill selectors
+            # Get products from cart - ONLY from the available section, not "не в наличии"
             products = driver.execute_script("""
                 const products = [];
                 
-                // Find all product titles - they have data-id attribute
+                // Find all product cards, but SKIP ones in "не в наличии" section
                 document.querySelectorAll('a.HProductCard__Title').forEach(titleEl => {
+                    // Check if this item is in the "unavailable" section
+                    let parent = titleEl.parentElement;
+                    let isUnavailable = false;
+                    for (let i = 0; i < 10 && parent; i++) {
+                        if (parent.innerText && parent.innerText.includes('не в наличии')) {
+                            // Check if this specific container is the unavailable section header
+                            const header = parent.querySelector('h2, h3, .Delivery__Title');
+                            if (header && header.innerText.includes('не в наличии')) {
+                                isUnavailable = true;
+                                break;
+                            }
+                        }
+                        parent = parent.parentElement;
+                    }
+                    
+                    // Skip unavailable products
+                    if (isUnavailable) return;
+                    
                     const productId = titleEl.getAttribute('data-id') || '';
                     const name = titleEl.innerText.trim();
                     const url = titleEl.href || '';
@@ -303,6 +321,13 @@ def scrape_green_prices(auto_mode=False):
             else:
                 p['stock'] = None
                 p['unit'] = 'шт'
+        
+        # Filter out products that are out of stock (stock is None or 0)
+        original_count = len(products)
+        products = [p for p in products if p.get('stock') and p['stock'] > 0]
+        filtered_count = original_count - len(products)
+        if filtered_count > 0:
+            print(f"  Filtered out {filtered_count} out-of-stock items")
         
         # Add categories based on product name
         for p in products:
