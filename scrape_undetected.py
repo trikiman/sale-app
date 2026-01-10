@@ -199,21 +199,40 @@ def scrape_green_prices(auto_mode=False):
                     const outOfStock = stockText.toLowerCase().includes('не в наличии') || 
                                        stockText.toLowerCase().includes('нет в наличии');
                     
-                    // Get price from row text - look for "XX ₽/кг" or "XX ₽/шт" pattern
+                    // Get price - try multiple strategies
                     const rowText = row.innerText || '';
-                    const priceMatch = rowText.match(/(\\d+)\\s*₽\\/(кг|шт)/);
-                    const oldPriceMatch = rowText.match(/(\\d+)\\s*₽[^/]/);
+                    let currentPrice = '0';
+                    let oldPrice = '0';
                     
-                    let currentPrice = priceMatch ? priceMatch[1] : '0';
-                    let oldPrice = oldPriceMatch ? oldPriceMatch[1] : '0';
+                    // Strategy 1: Look for price elements directly
+                    const priceEl = row.querySelector('.Price__value, .HProductCard__Price, [class*="price"], [class*="Price"]');
+                    if (priceEl) {
+                        const priceText = priceEl.innerText || '';
+                        const pMatch = priceText.match(/(\\d+[\\s,.]*\\d*)/);
+                        if (pMatch) currentPrice = pMatch[1].replace(/\\s/g, '').replace(',', '.');
+                    }
                     
-                    // If oldPrice same as currentPrice, look for struck-through price
-                    if (oldPrice === currentPrice) {
-                        const strikeEl = row.querySelector('[style*="line-through"], s, strike, del');
-                        if (strikeEl) {
-                            const strikeMatch = strikeEl.innerText.match(/(\\d+)/);
-                            if (strikeMatch) oldPrice = strikeMatch[1];
+                    // Strategy 2: Regex on row text - "XX ₽/кг" or "XX ₽" 
+                    if (currentPrice === '0') {
+                        const priceMatch = rowText.match(/(\\d+)\\s*₽/);
+                        if (priceMatch) currentPrice = priceMatch[1];
+                    }
+                    
+                    // Strategy 3: Look for all numbers followed by ruble sign
+                    if (currentPrice === '0') {
+                        const allPrices = rowText.match(/(\\d+)\\s*₽/g);
+                        if (allPrices && allPrices.length > 0) {
+                            // Take the last one (usually current price)
+                            const lastMatch = allPrices[allPrices.length - 1].match(/(\\d+)/);
+                            if (lastMatch) currentPrice = lastMatch[1];
                         }
+                    }
+                    
+                    // Look for struck-through (old) price
+                    const strikeEl = row.querySelector('[style*="line-through"], s, strike, del, .Price__old, [class*="old"]');
+                    if (strikeEl) {
+                        const strikeMatch = strikeEl.innerText.match(/(\\d+)/);
+                        if (strikeMatch) oldPrice = strikeMatch[1];
                     }
                     
                     if (name && name.length > 2) {
