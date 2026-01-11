@@ -1,4 +1,5 @@
 ---
+trigger: always_on
 description: Always run unit tests after implementing a feature
 ---
 

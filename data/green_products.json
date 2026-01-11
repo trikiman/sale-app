@@ -1,24 +1,27 @@
-[
-  {
-    "currentPrice": "169",
-    "id": "20422",
-    "image": "https://img.vkusvill.ru/pim/images/site_thumb/cf161247-da1d-4c5c-94a5-36c63d7fd927.jpg?1711572981.5719",
-    "name": "Корм влажный для собак, говядина ж/б, 340 гр",
-    "oldPrice": "282",
-    "stock": 3,
-    "unit": "шт",
-    "url": "https://vkusvill.ru/goods/korm-vlazhnyy-dlya-sobak-govyadina-zh-b-340-gr-20422.html",
-    "category": "Мясо"
-  },
-  {
-    "currentPrice": "99",
-    "id": "37147",
-    "image": "https://img.vkusvill.ru/pim/images/site_thumb/637b2ee1-bad1-4c21-8e33-832b0d6d4329.jpg?1743376817.8815",
-    "name": "Масло подсолнечное рафинированное",
-    "oldPrice": "165",
-    "stock": 1,
-    "unit": "шт",
-    "url": "https://vkusvill.ru/goods/maslo-podsolnechnoe-rafinirovannoe-37147.html",
-    "category": "Молочка"
-  }
-]
+{
+  "updatedAt": "2026-01-10 20:40:54",
+  "products": [
+    {
+      "currentPrice": "169",
+      "id": "20422",
+      "image": "https://img.vkusvill.ru/pim/images/site_thumb/cf161247-da1d-4c5c-94a5-36c63d7fd927.jpg?1711572981.5719",
+      "name": "Корм влажный для собак, говядина ж/б, 340 гр",
+      "oldPrice": "282",
+      "stock": 3,
+      "unit": "шт",
+      "url": "https://vkusvill.ru/goods/korm-vlazhnyy-dlya-sobak-govyadina-zh-b-340-gr-20422.html",
+      "category": "Мясо"
+    },
+    {
+      "currentPrice": "99",
+      "id": "37147",
+      "image": "https://img.vkusvill.ru/pim/images/site_thumb/637b2ee1-bad1-4c21-8e33-832b0d6d4329.jpg?1743376817.8815",
+      "name": "Масло подсолнечное рафинированное",
+      "oldPrice": "165",
+      "stock": 1,
+      "unit": "шт",
+      "url": "https://vkusvill.ru/goods/maslo-podsolnechnoe-rafinirovannoe-37147.html",
+      "category": "Молочка"
+    }
+  ]
+}

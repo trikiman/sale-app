@@ -1,0 +1,149 @@
+{
+    "updatedAt": "2026-01-11 02:06:00",
+    "products": [
+        {
+            "id": "20422",
+            "name": "Корм влажный для собак, говядина ж/б, 340 гр",
+            "url": "https://vkusvill.ru/goods/korm-vlazhnyy-dlya-sobak-govyadina-zh-b-340-gr-20422.html",
+            "currentPrice": "169",
+            "oldPrice": "282",
+            "image": "https://img.vkusvill.ru/pim/images/site_thumb/cf161247-da1d-4c5c-94a5-36c63d7fd927.jpg?1711572981.5719",
+            "stock": 3,
+            "unit": "шт",
+            "category": "Мясо",
+            "type": "green"
+        },
+        {
+            "id": "37147",
+            "name": "Масло подсолнечное рафинированное",
+            "url": "https://vkusvill.ru/goods/maslo-podsolnechnoe-rafinirovannoe-37147.html",
+            "currentPrice": "99",
+            "oldPrice": "165",
+            "image": "https://img.vkusvill.ru/pim/images/site_thumb/637b2ee1-bad1-4c21-8e33-832b0d6d4329.jpg?1743376817.8815",
+            "stock": 1,
+            "unit": "шт",
+            "category": "Молочка",
+            "type": "green"
+        },
+        {
+            "id": "1001",
+            "name": "Оливки зеленые с халапеньо, 120 г",
+            "url": "https://vkusvill.ru/goods/olivki-zelenye-s-halapeno-120-g.html",
+            "currentPrice": "124",
+            "oldPrice": "207",
+            "image": "https://img.vkusvill.ru/pim/images/site_MiniWebP/bbfbf14d-9cf4-47ff-bf46-79499475f7bb.webp?1738264678.67",
+            "stock": 10,
+            "unit": "шт",
+            "category": "Другое",
+            "type": "red"
+        },
+        {
+            "id": "1002",
+            "name": "Бомбочка для ванны Планета цветов",
+            "url": "https://vkusvill.ru/goods/bombochka-dlya-vanny.html",
+            "currentPrice": "233",
+            "oldPrice": "388",
+            "image": "https://img.vkusvill.ru/pim/images/site_MiniWebP/3b63e418-4e23-44d9-90b6-681f5edf1835.webp?1711480700.5026",
+            "stock": 5,
+            "unit": "шт",
+            "category": "Другое",
+            "type": "red"
+        },
+        {
+            "id": "1003",
+            "name": "Паштет из печени птицы (Халяль)",
+            "url": "https://vkusvill.ru/goods/pashtet-iz-pecheni-pticy.html",
+            "currentPrice": "118",
+            "oldPrice": "197",
+            "image": "https://img.vkusvill.ru/pim/images/site/site_MiniWebP/f1f74636-ab9e-4f28-9529-a35aa808e30c.webp",
+            "stock": 8,
+            "unit": "шт",
+            "category": "Мясо",
+            "type": "red"
+        },
+        {
+            "id": "1004",
+            "name": "Блинчики с индейкой, зам.",
+            "url": "https://vkusvill.ru/goods/blinchiki-s-indeykoy.html",
+            "currentPrice": "241",
+            "oldPrice": "402",
+            "image": "https://img.vkusvill.ru/pim/images/site_MiniWebP/1c03d376-48a4-44f2-860f-851b1abe411b.webp?1740604286.022",
+            "stock": 12,
+            "unit": "шт",
+            "category": "Другое",
+            "type": "red"
+        },
+        {
+            "id": "1005",
+            "name": "Морс ягодный микс, 700мл",
+            "url": "https://vkusvill.ru/goods/mors-yagodnyy-miks.html",
+            "currentPrice": "94",
+            "oldPrice": "157",
+            "image": "https://img.vkusvill.ru/pim/images/site/site_MiniWebP/04bde8a5-428e-4465-87a1-45714ee7fe35.webp",
+            "stock": 15,
+            "unit": "шт",
+            "category": "Другое",
+            "type": "red"
+        },
+        {
+            "id": "2001",
+            "name": "Томаты сливка красные Фламенко",
+            "url": "https://vkusvill.ru/goods/tomaty-slivka-krasnye.html",
+            "currentPrice": "384",
+            "oldPrice": "422",
+            "image": "https://img.vkusvill.ru/pim/images/site_MiniWebP/70d577b1-8a36-4e7c-a0a1-06573dd2383f.webp?1718054430.5201",
+            "stock": 2,
+            "unit": "кг",
+            "category": "Овощи",
+            "type": "yellow"
+        },
+        {
+            "id": "2002",
+            "name": "Авокадо Хасс ВВ отборное",
+            "url": "https://vkusvill.ru/goods/avokado-hass.html",
+            "currentPrice": "221",
+            "oldPrice": "248",
+            "image": "https://img.vkusvill.ru/pim/images/site_MiniWebP/e58ee171-4db1-4db9-ab83-87c00ea2e325.webp?1717418106.924",
+            "stock": 6,
+            "unit": "шт",
+            "category": "Фрукты",
+            "type": "yellow"
+        },
+        {
+            "id": "2003",
+            "name": "Фарш из телятины, 360 г",
+            "url": "https://vkusvill.ru/goods/farsh-iz-telyatiny.html",
+            "currentPrice": "374",
+            "oldPrice": "416",
+            "image": "https://img.vkusvill.ru/pim/images/site_MiniWebP/8c941723-d9cb-442b-ac82-fba4c9fcd95f.webp?1722727558.6144",
+            "stock": 4,
+            "unit": "шт",
+            "category": "Мясо",
+            "type": "yellow"
+        },
+        {
+            "id": "2004",
+            "name": "Пицца римская Пепперони, 430 г",
+            "url": "https://vkusvill.ru/goods/picca-rimskaya-pepperoni.html",
+            "currentPrice": "536",
+            "oldPrice": "595",
+            "image": "https://img.vkusvill.ru/pim/images/site_MiniWebP/7927f208-1a6e-4a46-a311-5098bf032622.webp?1740104603.7825",
+            "stock": 7,
+            "unit": "шт",
+            "category": "Другое",
+            "type": "yellow"
+        },
+        {
+            "id": "2005",
+            "name": "Напиток Вкус-Кола, 1.5л",
+            "url": "https://vkusvill.ru/goods/napitok-vkus-kola.html",
+            "currentPrice": "151",
+            "oldPrice": "172",
+            "image": "https://img.vkusvill.ru/pim/images/site/site_MiniWebP/20fdf8b7-306d-440a-acfc-6e7eafd3f251.webp",
+            "stock": 20,
+            "unit": "шт",
+            "category": "Другое",
+            "type": "yellow"
+        }
+    ]
+}

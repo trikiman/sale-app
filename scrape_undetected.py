@@ -1,100 +1,150 @@
 """
-VkusVill Green Prices Scraper
-Uses persistent Chrome profile - login once, never again!
+VkusVill Scraper 2.0 (Green/Red/Yellow Prices)
+Uses persistent Chrome profile and unified JSON output.
 """
 import undetected_chromedriver as uc
 from selenium.webdriver.common.by import By
 import time
 import json
 import os
+from datetime import datetime
 
-
-# Persistent profile directory - Chrome will remember your login here
+# Configuration
 PROFILE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "chrome_profile")
+RED_BOOK_URL = "https://vkusvill.ru/offers/?F%5B212%5D%5B%5D=284"
+YELLOW_PRICE_URL = "https://vkusvill.ru/offers/?F%5B212%5D%5B%5D=278"
 
-
-def scrape_green_prices(auto_mode=False):
-    """Scrape VkusVill green prices with persistent Chrome profile
-    
-    Args:
-        auto_mode: If True, skip all user prompts (for scheduled runs)
-    """
+def init_driver(headless=False):
+    """Initialize Chrome with persistent profile"""
     print("=" * 60)
-    print("VkusVill Green Prices Scraper")
+    print("Initializing Chrome Driver...")
+    print(f"Profile: {PROFILE_DIR}")
     print("=" * 60)
     
-    # Create profile directory
     os.makedirs(PROFILE_DIR, exist_ok=True)
-    
     options = uc.ChromeOptions()
     options.add_argument('--lang=ru-RU')
     options.add_argument('--no-sandbox')
     options.add_argument('--start-maximized')
-    # Use persistent profile - your login will be saved!
     options.add_argument(f'--user-data-dir={PROFILE_DIR}')
     
-    print("Starting Chrome with saved profile...")
-    print(f"(Profile: {PROFILE_DIR})")
+    return uc.Chrome(options=options, headless=headless)
+
+def assign_category(name):
+    """Assign category based on product name keywords"""
+    name_lower = name.lower()
+    if any(x in name_lower for x in ['морковь', 'капуста', 'лук', 'картофель', 'свекла', 'огурц', 'помидор', 'перец', 'кабачок']):
+        return 'Овощи'
+    elif any(x in name_lower for x in ['яблок', 'груша', 'банан', 'апельсин', 'мандарин', 'лимон', 'манго', 'виноград', 'киви', 'персик', 'нектарин', 'хурма']):
+        return 'Фрукты'
+    elif any(x in name_lower for x in ['салат', 'микс', 'руккола', 'шпинат', 'латук']):
+        return 'Салаты'
+    elif any(x in name_lower for x in ['икра', 'рыба', 'лосось', 'форель', 'креветк', 'кальмар', 'морепродукт']):
+        return 'Морепродукты'
+    elif any(x in name_lower for x in ['мясо', 'говядин', 'свинин', 'курин', 'индейк', 'фарш', 'котлет', 'сосиск', 'колбас']):
+        return 'Мясо'
+    elif any(x in name_lower for x in ['молок', 'кефир', 'йогурт', 'сметан', 'творог', 'сыр', 'масло']):
+        return 'Молочка'
+    return 'Другое'
+
+def scrape_catalog_page(driver, url, product_type):
+    """Scrape standard catalog pages (Red Book, Yellow Prices)"""
+    print(f"\nScanning {product_type.upper()} page: {url}")
+    products = []
     
-    # Run headless in auto mode (after initial login)
-    driver = uc.Chrome(options=options, headless=auto_mode)
+    try:
+        driver.get(url)
+        time.sleep(5)
+        
+        # Scroll to load more
+        for _ in range(3):
+            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            time.sleep(1)
+        
+        products = driver.execute_script(f"""
+            const products = [];
+            const type = "{product_type}";
+            
+            document.querySelectorAll('.ProductCard').forEach(card => {{
+                // Stock check: must have 'Add to cart' button 
+                // and NOT have 'Notify' class/text
+                const btn = card.querySelector('.js-delivery__basket--add');
+                const notify = card.querySelector('.ProductCard__notify');
+                
+                // If button exists and text is 'В корзину' (or similar positive action), it's good.
+                // If button missing or 'Узнать о поступлении', skip.
+                if (!btn || (btn.innerText && btn.innerText.includes('Узнать'))) {{
+                     return;
+                }}
+                if (notify && notify.offsetParent !== null) {{
+                     return; 
+                }}
+                
+                const titleEl = card.querySelector('.ProductCard__link');
+                const priceEl = card.querySelector('.Price__value');
+                const oldPriceEl = card.querySelector('.ProductCard__priceStrike');
+                const imgEl = card.querySelector('.ProductCard__imageLink img');
+                
+                if (titleEl && priceEl) {{
+                    const url = titleEl.href || '';
+                    const idMatch = url.match(/-(\\d+)\\.html/);
+                    
+                    products.push({{
+                        id: idMatch ? idMatch[1] : '',
+                        name: titleEl.innerText.trim(),
+                        url: url,
+                        currentPrice: priceEl.innerText.replace(/[^0-9]/g, ''),
+                        oldPrice: oldPriceEl ? oldPriceEl.innerText.replace(/[^0-9]/g, '') : '',
+                        image: imgEl ? imgEl.src : '',
+                        stock: 99, // Catalog doesn't show exact stock, assume available
+                        unit: 'шт',
+                        type: type
+                    }});
+                }}
+            }});
+            return products;
+        """)
+        
+        # Post-process categories
+        for p in products:
+            p['category'] = assign_category(p['name'])
+            
+        print(f"✅ Found {len(products)} {product_type} items")
+        return products
+        
+    except Exception as e:
+        print(f"⚠️ Error scraping {product_type}: {e}")
+        return []
+
+def scrape_green_prices(driver, auto_mode=False):
+    """Scrape Green Prices from Cart (preserving original logic)"""
+    print("\n--- Phase 1: Green Prices (Cart) ---")
+    products = []
     
     try:
         # Navigate to cart
-        print("\nOpening cart page...")
         driver.get("https://vkusvill.ru/cart/")
         time.sleep(5)
         
-        # Check if blocked
         if "403" in driver.title or "Forbidden" in driver.page_source:
             print("❌ Blocked by VkusVill!")
-            print("Try using a VPN or different network.")
-            return None
-        
-        page_source = driver.page_source
-        
-        # Check if logged in and green prices visible
-        if "Зелёные ценники" not in page_source:
-            print("\n" + "-" * 40)
-            print("⚠️ Green prices not found!")
-            print("-" * 40)
-            print("Either:")
-            print("1. You're not logged in - please log in now")
-            print("2. No green price products available today")
-            print("-" * 40)
-            if not auto_mode:
-                input("\nPress ENTER after logging in (or to continue)...")
-            else:
-                print("Auto mode: skipping login prompt")
-                return None  # Can't continue without login in auto mode
+            return []
             
-            # Refresh
-            driver.get("https://vkusvill.ru/cart/")
-            time.sleep(5)
-            page_source = driver.page_source
-        
-        # Check for green prices button
-        if "Зелёные ценники" in page_source:
-            print("✅ Green prices section found!")
-        else:
-            print("⚠️ No green prices available right now")
-            print("This could mean:")
-            print("  - No products with green labels today")
-            print("  - You need to select a delivery address")
-            if not auto_mode:
-                input("\nPress ENTER to continue anyway...")
-            else:
-                return None  # Can't continue in auto mode
+        page_source = driver.page_source
+        if "Зелёные ценники" not in page_source:
+            print("⚠️ Green prices not found in cart (Not logged in or none available)")
+            return []
+            
+        print("✅ Green prices section found!")
         
         # Try to find and click the show all button
+        use_modal = False
         try:
-            # Scroll to find the button
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight)")
             time.sleep(1)
             driver.execute_script("window.scrollTo(0, 0)")
             time.sleep(1)
             
-            # Try clicking
             clicked = driver.execute_script("""
                 const btn = document.getElementById('js-Delivery__Order-green-show-all');
                 if (btn) {
@@ -111,39 +161,27 @@ def scrape_green_prices(auto_mode=False):
                 use_modal = True
             else:
                 print("ℹ️ No 'show all' button - scraping from cart page directly")
-                use_modal = False
                 
-        except Exception as e:
-            print(f"⚠️ Exception finding modal: {e}")
-            use_modal = False
+        except Exception:
+            pass
         
-        # Extract products - either from modal or directly from cart
+        # Extract logic
         if use_modal:
-            # From modal
             print("Loading all products from modal...")
             for i in range(20):
                 loaded = driver.execute_script("""
                     const modal = document.getElementById('js-modal-cart-prods-scroll');
                     if (modal) modal.scrollTop = modal.scrollHeight;
-                    
                     const btn = document.querySelector('.js-prods-modal-load-more');
-                    if (btn && btn.offsetParent !== null) {
-                        btn.click();
-                        return true;
-                    }
+                    if (btn && btn.offsetParent !== null) { btn.click(); return true; }
                     return false;
                 """)
-                if loaded:
-                    print(f"  Loading more... ({i+1})")
-                    time.sleep(1)
-                else:
-                    break
-            
-            # Count and extract from modal
+                if loaded: time.sleep(1)
+                else: break
+                
             products = driver.execute_script("""
                 const modal = document.getElementById('js-modal-cart-prods-scroll');
                 if (!modal) return [];
-                
                 return Array.from(modal.querySelectorAll('.ProductCard')).map(card => {
                     const nameEl = card.querySelector('.ProductCard__link');
                     const priceEl = card.querySelector('.Price__value');
@@ -151,7 +189,6 @@ def scrape_green_prices(auto_mode=False):
                     const imgEl = card.querySelector('img');
                     const url = nameEl?.href || '';
                     const idMatch = url.match(/-(\\d+)\\.html/);
-                    
                     return {
                         id: idMatch ? idMatch[1] : '',
                         name: nameEl?.innerText?.trim() || '',
@@ -159,235 +196,119 @@ def scrape_green_prices(auto_mode=False):
                         currentPrice: priceEl?.innerText?.replace(/\\D/g, '') || '0',
                         oldPrice: oldPriceEl?.innerText?.replace(/\\D/g, '') || '0',
                         image: imgEl?.src || null,
-                        stock: null,
-                        unit: 'шт'
+                        stock: null, unit: 'шт', type: 'green'
                     };
                 }).filter(p => p.name);
             """)
         else:
-            # Scrape directly from cart page (green prices section)
-            print("Extracting products from cart page...")
+            print("Extracting products from cart page directly...")
             time.sleep(2)
-            
-            # Get products from cart - ONLY from the available section, not "не в наличии"
             products = driver.execute_script("""
                 const products = [];
-                
-                // Find all product cards, but SKIP ones in "не в наличии" section
                 document.querySelectorAll('a.HProductCard__Title').forEach(titleEl => {
-                    // Check if this item is in the "unavailable" section
                     let parent = titleEl.parentElement;
                     let isUnavailable = false;
-                    for (let i = 0; i < 10 && parent; i++) {
+                    for (let i=0; i<10 && parent; i++) {
                         if (parent.innerText && parent.innerText.includes('не в наличии')) {
-                            // Check if this specific container is the unavailable section header
                             const header = parent.querySelector('h2, h3, .Delivery__Title');
-                            if (header && header.innerText.includes('не в наличии')) {
-                                isUnavailable = true;
-                                break;
-                            }
+                            if (header && header.innerText.includes('не в наличии')) { isUnavailable=true; break; }
                         }
                         parent = parent.parentElement;
                     }
-                    
-                    // Skip unavailable products
                     if (isUnavailable) return;
-                    
-                    const productId = titleEl.getAttribute('data-id') || '';
+
                     const name = titleEl.innerText.trim();
                     const url = titleEl.href || '';
+                    const productId = titleEl.getAttribute('data-id') || '';
                     
-                    // Get parent container - walk up DOM to find row container
                     let row = titleEl.parentElement;
-                    for (let i = 0; i < 5 && row; i++) {
-                        if (row.querySelector('img') && row.querySelector('.HProductCard__Avail')) break;
-                        row = row.parentElement;
+                    for(let i=0; i<5 && row; i++){
+                        if(row.querySelector('img') && row.querySelector('.HProductCard__Avail')) break;
+                        row=row.parentElement;
                     }
-                    if (!row) row = titleEl.parentElement.parentElement.parentElement;
+                    if (!row) row=titleEl.parentElement.parentElement.parentElement;
                     
-                    // Get image - try multiple selectors
-                    const imgEl = row.querySelector('.HProductCard__ImgWrp img') || 
-                                  row.querySelector('img[src*="vkusvill"]') ||
-                                  row.querySelector('img');
-                    
-                    // Get stock from HProductCard__Avail
+                    const imgEl = row.querySelector('img');
                     const stockEl = row.querySelector('.HProductCard__Avail');
                     const stockText = stockEl ? stockEl.innerText : '';
                     const stockMatch = stockText.match(/В наличии:?\\s*([\\d.,]+)\\s*(кг|шт)/i);
-                    const outOfStock = stockText.toLowerCase().includes('не в наличии') || 
-                                       stockText.toLowerCase().includes('нет в наличии');
                     
-                    // Get price - try multiple strategies
-                    const rowText = row.innerText || '';
-                    let currentPrice = '0';
-                    let oldPrice = '0';
-                    
-                    // Strategy 1: Look for price elements directly
-                    const priceEl = row.querySelector('.Price__value, .HProductCard__Price, [class*="price"], [class*="Price"]');
-                    if (priceEl) {
-                        const priceText = priceEl.innerText || '';
-                        const pMatch = priceText.match(/(\\d+[\\s,.]*\\d*)/);
-                        if (pMatch) currentPrice = pMatch[1].replace(/\\s/g, '').replace(',', '.');
-                    }
-                    
-                    // Strategy 2: Regex on row text - "XX ₽/кг" or "XX ₽" 
-                    if (currentPrice === '0') {
-                        const priceMatch = rowText.match(/(\\d+)\\s*₽/);
-                        if (priceMatch) currentPrice = priceMatch[1];
-                    }
-                    
-                    // Strategy 3: Look for all numbers followed by ruble sign
-                    if (currentPrice === '0') {
-                        const allPrices = rowText.match(/(\\d+)\\s*₽/g);
-                        if (allPrices && allPrices.length > 0) {
-                            // Take the last one (usually current price)
-                            const lastMatch = allPrices[allPrices.length - 1].match(/(\\d+)/);
-                            if (lastMatch) currentPrice = lastMatch[1];
-                        }
-                    }
-                    
-                    // Look for struck-through (old) price
-                    const strikeEl = row.querySelector('[style*="line-through"], s, strike, del, .Price__old, [class*="old"]');
-                    if (strikeEl) {
-                        const strikeMatch = strikeEl.innerText.match(/(\\d+)/);
-                        if (strikeMatch) oldPrice = strikeMatch[1];
-                    }
-                    
+                    const priceEl = row.querySelector('.Price__value, .HProductCard__Price');
+                    let currentPrice = priceEl ? priceEl.innerText.replace(/[^0-9]/g, '') : '0';
+                    const oldPriceEl = row.querySelector('[style*="line-through"]');
+                    let oldPrice = oldPriceEl ? oldPriceEl.innerText.replace(/[^0-9]/g, '') : '0';
+
                     if (name && name.length > 2) {
                         products.push({
                             id: productId,
-                            name: name,
-                            url: url,
+                            name: name, url: url,
                             currentPrice: currentPrice,
                             oldPrice: oldPrice,
                             image: imgEl ? imgEl.src : null,
-                            stock: stockMatch ? parseFloat(stockMatch[1].replace(',', '.')) : (outOfStock ? 0 : null),
-                            unit: stockMatch ? stockMatch[2] : 'шт'
+                            stock: stockMatch ? parseFloat(stockMatch[1].replace(',', '.')) : 0,
+                            unit: stockMatch ? stockMatch[2] : 'шт',
+                            type: 'green'
                         });
                     }
                 });
                 return products;
             """)
+
+        # Filter out stock <= 0 logic is handled in JS (returning 0) and post-filter
+        products = [p for p in products if p.get('stock') is not None and p['stock'] > 0]
         
-        print(f"✅ Found {len(products)} products")
-        
-        # Add all to cart
-        print("Adding to cart for stock counts...")
-        driver.execute_script("""
-            const modal = document.getElementById('js-modal-cart-prods-scroll');
-            if (modal) {
-                modal.querySelectorAll('.CartButton__content--add, .js-delivery__basket--add')
-                    .forEach(btn => { try { btn.click(); } catch(e) {} });
-            }
-        """)
-        time.sleep(5)
-        
-        # Get stock from cart
-        print("Getting stock counts...")
-        driver.execute_script("document.querySelector('.VV22_Modal_Forgot__close')?.click()")
-        time.sleep(2)
-        
-        stocks = driver.execute_script("""
-            const stocks = {};
-            // Look for cart items - they contain "В наличии: X" text
-            document.querySelectorAll('.HProductCard, .CartProduct, [class*="cart-product"]').forEach(card => {
-                const name = (card.querySelector('.HProductCard__Title, [class*="title"], [class*="name"]')?.innerText || '').trim();
-                const text = card.innerText || '';
-                
-                // Parse "В наличии: X кг" or "В наличии: X шт"
-                const stockMatch = text.match(/В наличии:?\\s*([\\d.,]+)\\s*(кг|шт)/i);
-                
-                if (name && stockMatch) {
-                    stocks[name] = {
-                        value: parseFloat(stockMatch[1].replace(',', '.')),
-                        unit: stockMatch[2]
-                    };
-                } else if (name && text.includes('не в наличии')) {
-                    // Out of stock
-                    stocks[name] = { value: 0, unit: 'шт' };
-                }
-            });
-            return stocks;
-        """)
-        
-        print(f"  Got stock for {len(stocks)} products")
-        
-        # Update products with stock (new format: {value, unit})
         for p in products:
-            if p['name'] in stocks:
-                stock_info = stocks[p['name']]
-                p['stock'] = stock_info.get('value', 0)
-                p['unit'] = stock_info.get('unit', 'шт')
-            else:
-                p['stock'] = None
-                p['unit'] = 'шт'
-        
-        # Filter out products that are out of stock (stock is None or 0)
-        original_count = len(products)
-        products = [p for p in products if p.get('stock') and p['stock'] > 0]
-        filtered_count = original_count - len(products)
-        if filtered_count > 0:
-            print(f"  Filtered out {filtered_count} out-of-stock items")
-        
-        # Add categories based on product name
-        for p in products:
-            name_lower = p['name'].lower()
-            if any(x in name_lower for x in ['морковь', 'капуста', 'лук', 'картофель', 'свекла', 'огурц', 'помидор', 'перец', 'кабачок']):
-                p['category'] = 'Овощи'
-            elif any(x in name_lower for x in ['яблок', 'груша', 'банан', 'апельсин', 'мандарин', 'лимон', 'манго', 'виноград', 'киви', 'персик', 'нектарин', 'хурма']):
-                p['category'] = 'Фрукты'
-            elif any(x in name_lower for x in ['салат', 'микс', 'руккола', 'шпинат', 'латук']):
-                p['category'] = 'Салаты'
-            elif any(x in name_lower for x in ['икра', 'рыба', 'лосось', 'форель', 'креветк', 'кальмар', 'морепродукт']):
-                p['category'] = 'Морепродукты'
-            elif any(x in name_lower for x in ['мясо', 'говядин', 'свинин', 'курин', 'индейк', 'фарш', 'котлет', 'сосиск', 'колбас']):
-                p['category'] = 'Мясо'
-            elif any(x in name_lower for x in ['молок', 'кефир', 'йогурт', 'сметан', 'творог', 'сыр', 'масло']):
-                p['category'] = 'Молочка'
-            else:
-                p['category'] = 'Другое'
-        
-        # Save to data/
-        os.makedirs("data", exist_ok=True)
-        with open("data/green_products.json", "w", encoding="utf-8") as f:
-            json.dump(products, f, ensure_ascii=False, indent=2)
-        
-        # Also save to miniapp/public/data.json
-        miniapp_data_path = os.path.join(os.path.dirname(__file__), "miniapp", "public", "data.json")
-        if os.path.exists(os.path.dirname(miniapp_data_path)):
-            with open(miniapp_data_path, "w", encoding="utf-8") as f:
-                json.dump(products, f, ensure_ascii=False, indent=2)
-            print(f"  Also saved to miniapp/public/data.json")
-        
-        # Summary
-        print("\n" + "=" * 60)
-        print(f"✅ SAVED {len(products)} products to data/green_products.json")
-        print("=" * 60)
-        
-        with_stock = len([p for p in products if p.get('stock') and p['stock'] > 0])
-        print(f"Products with stock: {with_stock}")
-        
-        print("\nSample:")
-        for p in products[:10]:
-            stock_str = f"{p.get('stock', '?')} {p.get('unit', '')}" if p.get('stock') else "N/A"
-            print(f"  {p['name'][:35]}... | {p['currentPrice']}₽ | В наличии: {stock_str}")
-        
+            p['category'] = assign_category(p['name'])
+            
+        print(f"✅ Found {len(products)} GREEN products")
         return products
         
     except Exception as e:
-        print(f"❌ Error: {e}")
-        import traceback
-        traceback.print_exc()
-        return None
-    
-    finally:
-        if not auto_mode:
-            input("\nPress ENTER to close browser...")
-        try:
-            driver.quit()
-        except:
-            pass
+        print(f"⚠️ Error scraping Green Prices: {e}")
+        return []
 
+def main():
+    driver = init_driver(headless=False) # Keep headless=False for now to handle login/bot checks
+    all_products = []
+    
+    try:
+        # 1. Green Prices
+        green_items = scrape_green_prices(driver)
+        all_products.extend(green_items)
+        
+        # 2. Red Book
+        red_items = scrape_catalog_page(driver, RED_BOOK_URL, 'red')
+        all_products.extend(red_items)
+        
+        # 3. Yellow Prices
+        yellow_items = scrape_catalog_page(driver, YELLOW_PRICE_URL, 'yellow')
+        all_products.extend(yellow_items)
+        
+        # Save unified data
+        output_data = {
+            "updatedAt": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "products": all_products
+        }
+        
+        os.makedirs("data", exist_ok=True)
+        with open("data/proposals.json", "w", encoding="utf-8") as f:
+            json.dump(output_data, f, ensure_ascii=False, indent=2)
+            
+        # Also save to miniapp
+        miniapp_data_path = os.path.join(os.path.dirname(__file__), "miniapp", "public", "data.json")
+        if os.path.exists(os.path.dirname(miniapp_data_path)):
+            with open(miniapp_data_path, "w", encoding="utf-8") as f:
+                json.dump(output_data, f, ensure_ascii=False, indent=2)
+        
+        print("\n" + "="*60)
+        print(f"✅ SAVED TOTAL: {len(all_products)} products")
+        print(f"  💚 Green: {len(green_items)}")
+        print(f"  🔴 Red: {len(red_items)}")
+        print(f"  🟡 Yellow: {len(yellow_items)}")
+        print("="*60)
+        
+    finally:
+        driver.quit()
 
 if __name__ == "__main__":
-    scrape_green_prices()
+    main()
