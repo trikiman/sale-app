@@ -30,22 +30,13 @@ def init_driver(headless=False):
     
     return uc.Chrome(options=options, headless=headless)
 
-def assign_category(name):
-    """Assign category based on product name keywords"""
-    name_lower = name.lower()
-    if any(x in name_lower for x in ['морковь', 'капуста', 'лук', 'картофель', 'свекла', 'огурц', 'помидор', 'перец', 'кабачок']):
-        return 'Овощи'
-    elif any(x in name_lower for x in ['яблок', 'груша', 'банан', 'апельсин', 'мандарин', 'лимон', 'манго', 'виноград', 'киви', 'персик', 'нектарин', 'хурма']):
-        return 'Фрукты'
-    elif any(x in name_lower for x in ['салат', 'микс', 'руккола', 'шпинат', 'латук']):
-        return 'Салаты'
-    elif any(x in name_lower for x in ['икра', 'рыба', 'лосось', 'форель', 'креветк', 'кальмар', 'морепродукт']):
-        return 'Морепродукты'
-    elif any(x in name_lower for x in ['мясо', 'говядин', 'свинин', 'курин', 'индейк', 'фарш', 'котлет', 'сосиск', 'колбас']):
-        return 'Мясо'
-    elif any(x in name_lower for x in ['молок', 'кефир', 'йогурт', 'сметан', 'творог', 'сыр', 'масло']):
-        return 'Молочка'
-    return 'Другое'
+def clean_category(category_raw):
+    """Clean category string - take first part before '//'"""
+    if not category_raw:
+        return 'Другое'
+    # Take first part if contains '//'
+    category = category_raw.split('//')[0].strip()
+    return category if category else 'Другое'
 
 def scrape_catalog_page(driver, url, product_type):
     """Scrape standard catalog pages (Red Book, Yellow Prices)"""
@@ -84,11 +75,15 @@ def scrape_catalog_page(driver, url, product_type):
                 const priceEl = card.querySelector('.Price__value');
                 const oldPriceEl = card.querySelector('.ProductCard__priceStrike');
                 const imgEl = card.querySelector('.ProductCard__imageLink img');
-                
+
+                // Extract real category from data layer element
+                const catEl = card.querySelector('.js-datalayer-catalog-list-category');
+                const category = catEl ? catEl.innerText.trim() : '';
+
                 if (titleEl && priceEl) {{
                     const url = titleEl.href || '';
                     const idMatch = url.match(/-(\\d+)\\.html/);
-                    
+
                     products.push({{
                         id: idMatch ? idMatch[1] : '',
                         name: titleEl.innerText.trim(),
@@ -98,6 +93,7 @@ def scrape_catalog_page(driver, url, product_type):
                         image: imgEl ? imgEl.src : '',
                         stock: 99, // Catalog doesn't show exact stock, assume available
                         unit: 'шт',
+                        category: category,
                         type: type
                     }});
                 }}
@@ -105,9 +101,9 @@ def scrape_catalog_page(driver, url, product_type):
             return products;
         """)
         
-        # Post-process categories
+        # Clean categories (take first part before '//')
         for p in products:
-            p['category'] = assign_category(p['name'])
+            p['category'] = clean_category(p.get('category', ''))
             
         print(f"✅ Found {len(products)} {product_type} items")
         return products
@@ -187,6 +183,7 @@ def scrape_green_prices(driver, auto_mode=False):
                     const priceEl = card.querySelector('.Price__value');
                     const oldPriceEl = card.querySelector('.ProductCard__priceStrike');
                     const imgEl = card.querySelector('img');
+                    const catEl = card.querySelector('.js-datalayer-catalog-list-category');
                     const url = nameEl?.href || '';
                     const idMatch = url.match(/-(\\d+)\\.html/);
                     return {
@@ -196,7 +193,8 @@ def scrape_green_prices(driver, auto_mode=False):
                         currentPrice: priceEl?.innerText?.replace(/\\D/g, '') || '0',
                         oldPrice: oldPriceEl?.innerText?.replace(/\\D/g, '') || '0',
                         image: imgEl?.src || null,
-                        stock: null, unit: 'шт', type: 'green'
+                        stock: null, unit: 'шт', type: 'green',
+                        category: catEl?.innerText?.trim() || ''
                     };
                 }).filter(p => p.name);
             """)
@@ -232,7 +230,11 @@ def scrape_green_prices(driver, auto_mode=False):
                     const stockEl = row.querySelector('.HProductCard__Avail');
                     const stockText = stockEl ? stockEl.innerText : '';
                     const stockMatch = stockText.match(/В наличии:?\\s*([\\d.,]+)\\s*(кг|шт)/i);
-                    
+
+                    // Try to get category from data layer
+                    const catEl = row.querySelector('.js-datalayer-catalog-list-category');
+                    const category = catEl ? catEl.innerText.trim() : '';
+
                     const priceEl = row.querySelector('.Price__value, .HProductCard__Price');
                     let currentPrice = priceEl ? priceEl.innerText.replace(/[^0-9]/g, '') : '0';
                     const oldPriceEl = row.querySelector('[style*="line-through"]');
@@ -247,7 +249,8 @@ def scrape_green_prices(driver, auto_mode=False):
                             image: imgEl ? imgEl.src : null,
                             stock: stockMatch ? parseFloat(stockMatch[1].replace(',', '.')) : 0,
                             unit: stockMatch ? stockMatch[2] : 'шт',
-                            type: 'green'
+                            type: 'green',
+                            category: category
                         });
                     }
                 });
@@ -256,9 +259,10 @@ def scrape_green_prices(driver, auto_mode=False):
 
         # Filter out stock <= 0 logic is handled in JS (returning 0) and post-filter
         products = [p for p in products if p.get('stock') is not None and p['stock'] > 0]
-        
+
+        # Clean categories (take first part before '//')
         for p in products:
-            p['category'] = assign_category(p['name'])
+            p['category'] = clean_category(p.get('category', ''))
             
         print(f"✅ Found {len(products)} GREEN products")
         return products

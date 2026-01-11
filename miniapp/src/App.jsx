@@ -1,17 +1,27 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import './index.css'
 
-const CATEGORIES = [
-  { id: 'all', label: '🏷️ Все', emoji: '🏷️' },
-  { id: 'Фрукты', label: '🍎 Фрукты', emoji: '🍎' },
-  { id: 'Овощи', label: '🥬 Овощи', emoji: '🥬' },
-  { id: 'Салаты', label: '🥗 Салаты', emoji: '🥗' },
-  { id: 'Морепродукты', label: '🐟 Морепродукты', emoji: '🐟' },
-  { id: 'Мясо', label: '🥩 Мясо', emoji: '🥩' },
-  { id: 'Молочка', label: '🥛 Молочка', emoji: '🥛' },
-  { id: 'Другое', label: '📦 Другое', emoji: '📦' },
-]
+// Emoji lookup for known categories
+const CATEGORY_EMOJIS = {
+  'Овощи': '🥬',
+  'Фрукты': '🍎',
+  'Мясо': '🥩',
+  'Заморозка': '❄️',
+  'Напитки': '🥤',
+  'Бакалея': '🛒',
+  'Молочка': '🥛',
+  'Рыба': '🐟',
+  'Косметика': '💄',
+  'Зоотовары': '🐾',
+  'Закуски': '🥨',
+  'Салаты': '🥗',
+  'Другое': '📦',
+}
+
+function getCategoryEmoji(category) {
+  return CATEGORY_EMOJIS[category] || '📦'
+}
 
 function getStockColor(stock, unit) {
   const value = parseFloat(stock)
@@ -31,6 +41,9 @@ function getStockColor(stock, unit) {
 function ProductCard({ product, index }) {
   const [imageLoaded, setImageLoaded] = useState(false)
   const stockColor = getStockColor(product.stock, product.unit)
+
+  // Calculate real discount percentage
+  const discount = Math.round(((parseFloat(product.oldPrice) - parseFloat(product.currentPrice)) / parseFloat(product.oldPrice)) * 100)
 
   // Type badge config
   const typeConfig = {
@@ -79,7 +92,7 @@ function ProductCard({ product, index }) {
             {product.oldPrice}₽
           </span>
           <span className="discount-badge">
-            -40%
+            -{discount}%
           </span>
         </div>
         <p className="text-xs opacity-60 mt-1">
@@ -90,10 +103,10 @@ function ProductCard({ product, index }) {
   )
 }
 
-function CategoryFilter({ selected, onSelect }) {
+function CategoryFilter({ selected, onSelect, categories }) {
   return (
     <div className="flex gap-2 overflow-x-auto pb-2 px-4 -mx-4 scrollbar-hide">
-      {CATEGORIES.map((cat) => (
+      {categories.map((cat) => (
         <motion.button
           key={cat.id}
           onClick={() => onSelect(cat.id)}
@@ -166,6 +179,17 @@ function App() {
     const typeMatch = typeFilters[p.type] !== false
     return categoryMatch && typeMatch
   })
+
+  // Build dynamic categories from products (after type filtering)
+  const productsAfterTypeFilter = products.filter(p => typeFilters[p.type] !== false)
+  const uniqueCategories = [...new Set(productsAfterTypeFilter.map(p => p.category))].sort()
+  const categories = useMemo(() => [
+    { id: 'all', label: '🏷️ Все' },
+    ...uniqueCategories.map(cat => ({
+      id: cat,
+      label: `${getCategoryEmoji(cat)} ${cat}`
+    }))
+  ], [uniqueCategories.join(',')])
 
   // Total count is ALL products, not filtered
   const productCount = products.length
@@ -246,6 +270,7 @@ function App() {
         <CategoryFilter
           selected={selectedCategory}
           onSelect={setSelectedCategory}
+          categories={categories}
         />
       </motion.div>
 
