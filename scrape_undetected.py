@@ -7,7 +7,12 @@ from selenium.webdriver.common.by import By
 import time
 import json
 import os
+import sys
 from datetime import datetime
+
+# Fix Windows console encoding for emoji support
+if sys.platform == 'win32':
+    sys.stdout.reconfigure(encoding='utf-8')
 
 # Configuration
 PROFILE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "chrome_profile")
