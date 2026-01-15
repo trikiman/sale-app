@@ -1,27 +1,110 @@
-{
-  "updatedAt": "2026-01-10 20:40:54",
-  "products": [
-    {
-      "currentPrice": "169",
-      "id": "20422",
-      "image": "https://img.vkusvill.ru/pim/images/site_thumb/cf161247-da1d-4c5c-94a5-36c63d7fd927.jpg?1711572981.5719",
-      "name": "Корм влажный для собак, говядина ж/б, 340 гр",
-      "oldPrice": "282",
-      "stock": 3,
-      "unit": "шт",
-      "url": "https://vkusvill.ru/goods/korm-vlazhnyy-dlya-sobak-govyadina-zh-b-340-gr-20422.html",
-      "category": "Мясо"
-    },
-    {
-      "currentPrice": "99",
-      "id": "37147",
-      "image": "https://img.vkusvill.ru/pim/images/site_thumb/637b2ee1-bad1-4c21-8e33-832b0d6d4329.jpg?1743376817.8815",
-      "name": "Масло подсолнечное рафинированное",
-      "oldPrice": "165",
-      "stock": 1,
-      "unit": "шт",
-      "url": "https://vkusvill.ru/goods/maslo-podsolnechnoe-rafinirovannoe-37147.html",
-      "category": "Молочка"
-    }
-  ]
-}
+[
+  {
+    "category": "Зелёные ценники",
+    "currentPrice": "94",
+    "id": "",
+    "image": "",
+    "name": "Багет свекольный на закваске. Пекарня",
+    "oldPrice": "0",
+    "stock": 1,
+    "type": "green",
+    "unit": "шт",
+    "url": "https://vkusvill.ru/goods/baget-svekolnyy-na-zakvaske-pekarnya-106785.html"
+  },
+  {
+    "category": "Зелёные ценники",
+    "currentPrice": "53",
+    "id": "",
+    "image": "",
+    "name": "Лепешка \"Пшеничный ляпун\"",
+    "oldPrice": "0",
+    "stock": 1,
+    "type": "green",
+    "unit": "шт",
+    "url": "https://vkusvill.ru/goods/lepeshka-pshenichnyy-lyapun-34647.html"
+  },
+  {
+    "category": "Зелёные ценники",
+    "currentPrice": "439",
+    "id": "",
+    "image": "",
+    "name": "Аджапсандали",
+    "oldPrice": "0",
+    "stock": 1,
+    "type": "green",
+    "unit": "шт",
+    "url": "https://vkusvill.ru/goods/adzhapsandali-117341.html"
+  },
+  {
+    "category": "Зелёные ценники",
+    "currentPrice": "100",
+    "id": "",
+    "image": "",
+    "name": "Лимонад Черноголовка Дюшес сильногазированный пэт 2 л",
+    "oldPrice": "0",
+    "stock": 1,
+    "type": "green",
+    "unit": "шт",
+    "url": "https://vkusvill.ru/goods/limonad-chernogolovka-dyushes-silnogazirovannyy-pet-2-l-75208.html"
+  },
+  {
+    "category": "Зелёные ценники",
+    "currentPrice": "111",
+    "id": "",
+    "image": "",
+    "name": "Мандарины",
+    "oldPrice": "0",
+    "stock": 99,
+    "type": "green",
+    "unit": "шт",
+    "url": "https://vkusvill.ru/goods/mandariny-736.html"
+  },
+  {
+    "category": "Зелёные ценники",
+    "currentPrice": "123",
+    "id": "",
+    "image": "",
+    "name": "Напиток растительный \"Овсяный банановый\" обогащ. кальцием",
+    "oldPrice": "0",
+    "stock": 1,
+    "type": "green",
+    "unit": "шт",
+    "url": "https://vkusvill.ru/goods/napitok-rastitelnyy-ovsyanyy-bananovyy-obogashch-kaltsiem-62053.html"
+  },
+  {
+    "category": "Зелёные ценники",
+    "currentPrice": "96",
+    "id": "",
+    "image": "",
+    "name": "Сок Сады Придонья яблоко персик восстановленный 1 л",
+    "oldPrice": "0",
+    "stock": 1,
+    "type": "green",
+    "unit": "шт",
+    "url": "https://vkusvill.ru/goods/sok-sady-pridonya-yabloko-persik-vosstanovlennyy-1-l-66780.html"
+  },
+  {
+    "category": "Зелёные ценники",
+    "currentPrice": "211",
+    "id": "",
+    "image": "",
+    "name": "Кубики кофейные, зам.",
+    "oldPrice": "0",
+    "stock": 8,
+    "type": "green",
+    "unit": "шт",
+    "url": "https://vkusvill.ru/goods/kubiki-kofeynye-zam-110221.html"
+  },
+  {
+    "category": "Зелёные ценники",
+    "currentPrice": "997",
+    "id": "",
+    "image": "",
+    "name": "Стейки из лосося в лимонном соусе",
+    "oldPrice": "0",
+    "stock": 2,
+    "type": "green",
+    "unit": "шт",
+    "url": "https://vkusvill.ru/goods/steyki-iz-lososya-v-limonnom-souse-117343.html"
+  }
+]

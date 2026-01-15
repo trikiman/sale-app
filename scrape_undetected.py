@@ -15,7 +15,7 @@ if sys.platform == 'win32':
     sys.stdout.reconfigure(encoding='utf-8')
 
 # Configuration
-PROFILE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "chrome_profile")
+PROFILE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "chrome_profile_shared")
 RED_BOOK_URL = "https://vkusvill.ru/offers/?F%5B212%5D%5B%5D=284"
 YELLOW_PRICE_URL = "https://vkusvill.ru/offers/?F%5B212%5D%5B%5D=278"
 
@@ -77,9 +77,9 @@ def scrape_catalog_page(driver, url, product_type):
                 }}
                 
                 const titleEl = card.querySelector('.ProductCard__link');
-                const priceEl = card.querySelector('.Price__value');
-                const oldPriceEl = card.querySelector('.ProductCard__priceStrike');
-                const imgEl = card.querySelector('.ProductCard__imageLink img');
+                const priceEl = card.querySelector('.Price.subtitle');
+                const oldPriceEl = card.querySelector('.Price._last');
+                const imgEl = card.querySelector('.ProductCard__imageImg');
 
                 // Extract real category from data layer element
                 const catEl = card.querySelector('.js-datalayer-catalog-list-category');
@@ -93,8 +93,8 @@ def scrape_catalog_page(driver, url, product_type):
                         id: idMatch ? idMatch[1] : '',
                         name: titleEl.innerText.trim(),
                         url: url,
-                        currentPrice: priceEl.innerText.replace(/[^0-9]/g, ''),
-                        oldPrice: oldPriceEl ? oldPriceEl.innerText.replace(/[^0-9]/g, '') : '',
+                        currentPrice: priceEl.innerText.replace(/[^0-9.,]/g, ''),
+                        oldPrice: oldPriceEl ? oldPriceEl.innerText.replace(/[^0-9.,]/g, '') : '',
                         image: imgEl ? imgEl.src : '',
                         stock: 99, // Catalog doesn't show exact stock, assume available
                         unit: 'шт',
@@ -147,11 +147,24 @@ def scrape_green_prices(driver, auto_mode=False):
             time.sleep(1)
             
             clicked = driver.execute_script("""
-                const btn = document.getElementById('js-Delivery__Order-green-show-all');
-                if (btn) {
-                    btn.scrollIntoView();
-                    btn.click();
-                    return btn.innerText;
+                // Try the specific button ID first
+                const showAllBtn = document.getElementById('js-Delivery__Order-green-show-all');
+                if (showAllBtn) {
+                    showAllBtn.scrollIntoView();
+                    showAllBtn.click();
+                    return 'clicked_by_id';
+                }
+
+                // Fallback: find by class in green section
+                const sections = document.querySelectorAll('.VV_TizersSection, .js-vv-tizers-section');
+                for (const section of sections) {
+                    if (section.innerText.includes('Зелёные ценники')) {
+                        const btn = section.querySelector('button.js-prods-modal, .VV_TizersSection__Link, a[href*="green"]');
+                        if (btn) {
+                            btn.click();
+                            return 'clicked_fallback';
+                        }
+                    }
                 }
                 return null;
             """)
@@ -185,20 +198,22 @@ def scrape_green_prices(driver, auto_mode=False):
                 if (!modal) return [];
                 return Array.from(modal.querySelectorAll('.ProductCard')).map(card => {
                     const nameEl = card.querySelector('.ProductCard__link');
-                    const priceEl = card.querySelector('.Price__value');
-                    const oldPriceEl = card.querySelector('.ProductCard__priceStrike');
-                    const imgEl = card.querySelector('img');
+                    // Try new selectors first (same as catalog), then fallback
+                    const priceEl = card.querySelector('.Price.subtitle') || card.querySelector('.Price__value');
+                    const oldPriceEl = card.querySelector('.Price._last') || card.querySelector('.ProductCard__priceStrike');
+                    const imgEl = card.querySelector('.ProductCard__imageImg') || card.querySelector('img');
                     const catEl = card.querySelector('.js-datalayer-catalog-list-category');
                     const url = nameEl?.href || '';
                     const idMatch = url.match(/-(\\d+)\\.html/);
+
                     return {
                         id: idMatch ? idMatch[1] : '',
                         name: nameEl?.innerText?.trim() || '',
                         url: url,
-                        currentPrice: priceEl?.innerText?.replace(/\\D/g, '') || '0',
-                        oldPrice: oldPriceEl?.innerText?.replace(/\\D/g, '') || '0',
+                        currentPrice: priceEl?.innerText?.replace(/[^0-9.,]/g, '') || '0',
+                        oldPrice: oldPriceEl?.innerText?.replace(/[^0-9.,]/g, '') || '0',
                         image: imgEl?.src || null,
-                        stock: null, unit: 'шт', type: 'green',
+                        stock: 99, unit: 'шт', type: 'green',
                         category: catEl?.innerText?.trim() || ''
                     };
                 }).filter(p => p.name);
