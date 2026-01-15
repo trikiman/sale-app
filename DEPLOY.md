@@ -62,10 +62,10 @@ This command:
 
 To automate the scraper execution, we will use the `setup_cron.sh` script. This script handles the scheduling and ensures the scraper runs within the Xvfb environment.
 
-Example manual crontab entry:
+Example manual crontab entry (runs every 15 minutes to match setup_cron.sh):
 ```bash
-# Run every 4 hours
-0 */4 * * * cd /home/ubuntu/saleapp && /usr/bin/xvfb-run -a --server-args="-screen 0 1920x1080x24" /usr/bin/python3 scrape_undetected.py >> /home/ubuntu/saleapp/logs/cron.log 2>&1
+# Run every 15 minutes
+*/15 * * * * cd /home/ubuntu/saleapp && /usr/bin/xvfb-run -a --server-args="-screen 0 1920x1080x24" /usr/bin/python3 scrape_undetected.py >> /home/ubuntu/saleapp/logs/cron.log 2>&1
 ```
 
 Refer to `setup_cron.sh` for automated configuration.
