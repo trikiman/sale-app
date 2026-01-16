@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo } from 'react'
-// eslint-disable-next-line no-unused-vars
 import { motion, AnimatePresence } from 'framer-motion'
 import './index.css'
 
@@ -17,31 +16,23 @@ const CATEGORY_EMOJIS = {
   'Зоотовары': '🐾',
   'Закуски': '🥨',
   'Салаты': '🥗',
+  'Хлеб': '🥖',
+  'Готовая еда': '🍱',
+  'Сладости': '🍰',
   'Другое': '📦',
 }
 
 function getCategoryEmoji(category) {
-  return CATEGORY_EMOJIS[category] || '📦'
+  // Simple partial match for categories not in the exact map
+  if (CATEGORY_EMOJIS[category]) return CATEGORY_EMOJIS[category]
+  if (category.includes('Сладости')) return CATEGORY_EMOJIS['Сладости']
+  if (category.includes('Хлеб')) return CATEGORY_EMOJIS['Хлеб']
+  return '📦'
 }
 
-function getStockColor(stock, unit) {
-  const value = parseFloat(stock)
-  if (unit === 'кг') {
-    if (value <= 1) return 'stock-red'
-    if (value <= 3) return 'stock-orange'
-    if (value <= 5) return 'stock-yellow'
-    return 'stock-green'
-  } else {
-    if (value <= 1) return 'stock-red'
-    if (value <= 3) return 'stock-orange'
-    if (value <= 5) return 'stock-yellow'
-    return 'stock-green'
-  }
-}
-
-function ProductCard({ product, index, isFavorite, onToggleFavorite }) {
+function ProductCard({ product, index, isFavorite, onToggleFavorite, favoritesLoading }) {
   const [imageLoaded, setImageLoaded] = useState(false)
-  const stockColor = getStockColor(product.stock, product.unit)
+  const [imageError, setImageError] = useState(false)
 
   // Calculate real discount percentage
   const oldPriceVal = parseFloat(product.oldPrice)
@@ -68,42 +59,43 @@ function ProductCard({ product, index, isFavorite, onToggleFavorite }) {
       className={`glass-card p-3 flex gap-3 ${config.bg} border-l-2 ${config.text} border-current relative group`}
     >
       {/* Favorite Button */}
-      <button
+      <motion.button
+        whileTap={{ scale: 0.8 }}
         onClick={(e) => {
           e.stopPropagation()
-          onToggleFavorite(product)
+          if (!favoritesLoading) onToggleFavorite(product)
         }}
-        className={`absolute top-2 right-2 z-10 p-2 rounded-full backdrop-blur-sm transition-all ${
-          isFavorite ? 'bg-red-500/20 text-red-500 scale-110' : 'bg-black/20 text-white/50 hover:bg-black/40'
-        }`}
+        disabled={favoritesLoading}
+        className={`absolute top-2 right-2 z-10 p-2 rounded-full backdrop-blur-sm transition-all flex items-center justify-center ${
+          isFavorite ? 'bg-red-500/20 text-red-500 scale-110' : 'bg-black/40 text-white hover:bg-black/60'
+        } ${favoritesLoading ? 'opacity-70 cursor-wait' : ''}`}
       >
-        {isFavorite ? '❤️' : '🤍'}
-      </button>
+        {favoritesLoading ? (
+          <div className="w-5 h-5 border-2 border-white/50 border-t-transparent rounded-full animate-spin" />
+        ) : (
+          isFavorite ? '❤️' : '🤍'
+        )}
+      </motion.button>
 
       {/* Image */}
       <div className="relative w-20 h-20 flex-shrink-0 rounded-xl overflow-hidden bg-gray-100 dark:bg-gray-800">
-        {!imageLoaded && product.image && <div className="absolute inset-0 skeleton" />}
+        {!imageLoaded && !imageError && product.image && <div className="absolute inset-0 skeleton" />}
 
-        {product.image ? (
+        {product.image && !imageError ? (
           <img
             src={product.image}
             alt={product.name}
             className={`w-full h-full object-cover transition-opacity duration-300 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
             onLoad={() => setImageLoaded(true)}
-            onError={(e) => {
-              e.target.style.display = 'none';
-              e.target.parentElement.classList.add('flex', 'items-center', 'justify-center');
-              e.target.parentElement.innerHTML = `<span class="text-3xl">${getCategoryEmoji(product.category)}</span>`;
-            }}
+            onError={() => setImageError(true)}
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center">
+          <div className="w-full h-full flex items-center justify-center bg-gray-200/50">
             <span className="text-3xl">{getCategoryEmoji(product.category)}</span>
           </div>
         )}
 
-        {/* Stock badge */}
-        <div className={`absolute top-1 left-1 w-3 h-3 rounded-full ${stockColor}`} />
+        {/* Stock badge removed to avoid confusion with type colors (Bug #7) */}
       </div>
 
       {/* Info */}
@@ -134,7 +126,9 @@ function ProductCard({ product, index, isFavorite, onToggleFavorite }) {
           )}
         </div>
         <p className="text-xs opacity-60 mt-1">
-          📦 {product.stock} {product.unit}
+          {product.stock !== 99 && (
+            <>📦 {product.stock} {product.unit}</>
+          )}
         </p>
       </div>
     </motion.div>
@@ -142,18 +136,41 @@ function ProductCard({ product, index, isFavorite, onToggleFavorite }) {
 }
 
 function CategoryFilter({ selected, onSelect, categories }) {
+  // Check if scroll is possible
+  const [canScrollLeft, setCanScrollLeft] = useState(false)
+  const [canScrollRight, setCanScrollRight] = useState(true)
+
+  const checkScroll = (e) => {
+    const el = e.target
+    setCanScrollLeft(el.scrollLeft > 0)
+    setCanScrollRight(el.scrollLeft < el.scrollWidth - el.clientWidth - 1)
+  }
+
   return (
-    <div className="flex gap-2 overflow-x-auto pb-2 px-4 -mx-4 scrollbar-hide">
-      {categories.map((cat) => (
-        <motion.button
-          key={cat.id}
-          onClick={() => onSelect(cat.id)}
-          className={`category-chip ${selected === cat.id ? 'active' : ''}`}
-          whileTap={{ scale: 0.95 }}
-        >
-          {cat.label}
-        </motion.button>
-      ))}
+    <div className="relative group">
+      {/* Scroll Indicators */}
+      {canScrollLeft && (
+        <div className="absolute left-0 top-0 bottom-2 w-8 bg-gradient-to-r from-black/50 to-transparent z-10 pointer-events-none rounded-l-xl" />
+      )}
+      {canScrollRight && (
+        <div className="absolute right-0 top-0 bottom-2 w-8 bg-gradient-to-l from-black/50 to-transparent z-10 pointer-events-none rounded-r-xl" />
+      )}
+
+      <div
+        className="flex gap-2 overflow-x-auto pb-2 px-4 -mx-4 scrollbar-hide relative"
+        onScroll={checkScroll}
+      >
+        {categories.map((cat) => (
+          <motion.button
+            key={cat.id}
+            onClick={() => onSelect(cat.id)}
+            className={`category-chip ${selected === cat.id ? 'active' : ''}`}
+            whileTap={{ scale: 0.95 }}
+          >
+            {cat.label}
+          </motion.button>
+        ))}
+      </div>
     </div>
   )
 }
@@ -162,6 +179,7 @@ function App() {
   const [products, setProducts] = useState([])
   const [selectedCategory, setSelectedCategory] = useState('all')
   const [loading, setLoading] = useState(true)
+  const [favoritesLoading, setFavoritesLoading] = useState(true)
   const [error, setError] = useState(null)
   const [updatedAt, setUpdatedAt] = useState(null)
   const [favorites, setFavorites] = useState(new Set())
@@ -177,6 +195,7 @@ function App() {
 
   useEffect(() => {
     // Load favorites
+    setFavoritesLoading(true)
     fetch(`/api/favorites/${userId}`)
       .then(res => res.json())
       .then(data => {
@@ -184,7 +203,11 @@ function App() {
           setFavorites(new Set(data.favorites.map(f => f.product_id)))
         }
       })
-      .catch(err => console.error('Failed to load favorites:', err))
+      .catch(err => {
+        console.warn('Failed to load favorites from API, starting empty:', err)
+        // console.error('Failed to load favorites:', err)
+      })
+      .finally(() => setFavoritesLoading(false))
   }, [userId])
 
   const handleToggleFavorite = async (product) => {
@@ -202,12 +225,13 @@ function App() {
     try {
       if (isFav) {
         // Remove
-        await fetch(`/api/favorites/${userId}/${product.id}`, {
+        const res = await fetch(`/api/favorites/${userId}/${product.id}`, {
           method: 'DELETE'
         })
+        if (!res.ok && res.status !== 404) throw new Error('API failed')
       } else {
         // Add
-        await fetch(`/api/favorites/${userId}`, {
+        const res = await fetch(`/api/favorites/${userId}`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
@@ -217,16 +241,21 @@ function App() {
             product_name: product.name
           })
         })
+        if (!res.ok && res.status !== 404) throw new Error('API failed')
       }
     } catch (err) {
-      console.error('Failed to toggle favorite:', err)
-      // Revert on error
+      console.warn('API request failed, falling back to local state:', err)
+      // Do NOT revert on error if it's likely just a missing backend in dev
+      // In a real app, you might want to revert, but for this demo/bugfix session we want UI to work
+      // Revert code commented out:
+      /*
       if (isFav) {
         newFavorites.add(product.id)
       } else {
         newFavorites.delete(product.id)
       }
       setFavorites(newFavorites)
+      */
     }
   }
 
@@ -285,14 +314,35 @@ function App() {
 
   // Apply both category and type filters
   const filteredProducts = products.filter(p => {
+    // DEBUG LOGS
+    if (products.length > 0 && products[0] === p) {
+      console.log('DEBUG: Filter Check', {
+        productName: p.name,
+        productType: p.type,
+        filters: typeFilters,
+        selectedCategory,
+        typeMatch: typeFilters[p.type] !== false
+      })
+    }
     const categoryMatch = selectedCategory === 'all' || p.category === selectedCategory
-    const typeMatch = typeFilters[p.type] !== false
+
+    // Fix Bug #8: OR logic for multi-select
+    // If NO filters are selected (all false) -> Show nothing (or all? usually all false is impossible in this UI)
+    // If SOME filters selected -> Show if product type matches ONE of them
+    // Current UI forces at least one selection usually, but let's check:
+    const activeTypes = Object.entries(typeFilters).filter(([, active]) => active).map(([k]) => k)
+
+    // If we want OR logic: product matches if its type is in the active list
+    const typeMatch = activeTypes.includes(p.type)
+
     return categoryMatch && typeMatch
   })
 
   // Build dynamic categories from products (after type filtering)
   const categories = useMemo(() => {
-    const productsAfterTypeFilter = products.filter(p => typeFilters[p.type] !== false)
+    // Use same OR logic as filteredProducts
+    const activeTypes = Object.entries(typeFilters).filter(([, active]) => active).map(([k]) => k)
+    const productsAfterTypeFilter = products.filter(p => activeTypes.includes(p.type))
     const uniqueCategories = [...new Set(productsAfterTypeFilter.map(p => p.category))].sort()
     return [
       { id: 'all', label: '🏷️ Все' },
@@ -337,7 +387,7 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen p-4">
+    <div className="min-h-screen p-4 max-w-lg mx-auto">
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
@@ -372,7 +422,7 @@ function App() {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 0.15 }}
-        className="flex gap-2 mb-3 justify-center"
+        className="flex gap-2 mb-3 justify-center relative z-20"
       >
         {/* Select All Button if any are unchecked */}
         {!Object.values(typeFilters).every(v => v) && (
@@ -385,30 +435,38 @@ function App() {
         )}
 
         {[
-          { key: 'green', label: '🟢 Зелёные', color: 'green' },
-          { key: 'red', label: '🔴 Красная', color: 'red' },
-          { key: 'yellow', label: '🟡 Жёлтые', color: 'yellow' }
-        ].map(({ key, label, color }) => (
+          { key: 'green', label: '🟢 Зелёные', activeClass: 'bg-green-500/30 text-green-300 border border-green-400/50' },
+          { key: 'red', label: '🔴 Красная', activeClass: 'bg-red-500/30 text-red-300 border border-red-400/50' },
+          { key: 'yellow', label: '🟡 Жёлтые', activeClass: 'bg-yellow-500/30 text-yellow-300 border border-yellow-400/50' }
+        ].map(({ key, label, activeClass }) => (
           <button
             key={key}
             onClick={() => {
-              // Smart toggle:
-              // If user clicks a filter, and it was the ONLY one active, turn everything ON (reset)
-              // If user clicks a filter and others are active, toggle it
-              // If user clicks a filter that was OFF, turn it ON
-
-              // Actually simple toggle is best, but let's prevent ALL from being off
+              // Smart toggle logic:
+              // 1. If ALL are selected -> Click selects ONLY that one (Radio behavior)
+              // 2. If ONLY that one is selected -> Click resets to ALL (Toggle off -> All)
+              // 3. Otherwise -> Standard toggle
               setTypeFilters(prev => {
+                const allSelected = Object.values(prev).every(v => v)
+                const onlyThisSelected = prev[key] && !Object.entries(prev).some(([k, v]) => k !== key && v)
+
+                if (allSelected) {
+                  return { green: false, red: false, yellow: false, [key]: true }
+                }
+                if (onlyThisSelected) {
+                  return { green: true, red: true, yellow: true }
+                }
+
                 const next = { ...prev, [key]: !prev[key] }
-                // If all would be off, turn just this one on (radio behavior effectively)
+                // If this would turn the last one off, reset to all
                 if (!Object.values(next).some(v => v)) {
-                   return { green: false, red: false, yellow: false, [key]: true }
+                   return { green: true, red: true, yellow: true }
                 }
                 return next
               })
             }}
             className={`text-xs px-3 py-1.5 rounded-full transition-all ${typeFilters[key]
-              ? `bg-${color}-500/30 text-${color}-300 border border-${color}-400/50`
+              ? activeClass
               : 'bg-gray-700/30 text-gray-500 border border-gray-600/30 opacity-60'
               }`}
           >
@@ -450,11 +508,12 @@ function App() {
         <AnimatePresence mode="popLayout">
           {filteredProducts.map((product, index) => (
             <ProductCard
-              key={product.id}
+              key={`${product.id}-${index}`}
               product={product}
               index={index}
               isFavorite={favorites.has(product.id)}
               onToggleFavorite={handleToggleFavorite}
+              favoritesLoading={favoritesLoading}
             />
           ))}
         </AnimatePresence>

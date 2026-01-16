@@ -1,148 +1,100 @@
 # 🐛 Bug Report - VkusVill Promotions App
 
-**Date:** 2026-01-16  
-**URL Tested:** http://localhost:5173/  
-**Total Bugs Found:** 12
+**Last Verified:** 2026-01-16 14:29  
+**URL:** http://localhost:5173/  
+**Remaining Bugs:** 9
 
 ---
 
 ## 🔴 Critical Bugs
 
-### Bug #1: Duplicate React Keys
-- **Severity:** Critical
-- **File:** [App.jsx](file:///e:/Projects/saleapp/miniapp/src/App.jsx#L453)
-- **Description:** ProductCard component uses `product.name` as the React key instead of a unique identifier
-- **Impact:** Console floods with warnings, causes performance issues, and can lead to UI glitches during list updates
-- **Console Error:**
-  ```
-  Encountered two children with the same key, 'Яблоко Богатырь'
-  ```
-- **Fix:** Change `key={product.name}` to `key={product.id}` on line 453
+### Bug #1: Product Count Mismatch (STILL BROKEN)
+- **Severity:** 🔴 Critical
+- **Status:** ❌ NOT FIXED
+- **Description:** Stats show **180** but actually **197 products** rendered
+- **Evidence:** JavaScript count of `<h3>` elements = 197
 
 ---
 
-### Bug #2: Filter Logic Error (Green → Yellow)
-- **Severity:** Critical
-- **File:** [App.jsx](file:///e:/Projects/saleapp/miniapp/src/App.jsx#L387-L417)
-- **Description:** Clicking the "🟢 Зелёные" (Green) filter button incorrectly activates the Yellow filter
-- **Expected:** Show only green-tagged products
-- **Actual:** Shows yellow products, header changes to "Жёлтые ценники"
-- **Root Cause:** Possible button mapping/click target misalignment or CSS overlap
+### Bug #2: Duplicate Products (STILL BROKEN)
+- **Severity:** 🔴 Critical
+- **Status:** ❌ NOT FIXED
+- **Examples:** "Яблоко Богатырь", "Грейпфрут", "Оливки" appear multiple times
+- **Deduplication logic not working**
 
 ---
 
-### Bug #3: Red Filter Button Disabled
-- **Severity:** High
-- **Description:** The "🔴 Красная" (Red) filter button appears unclickable/disabled despite showing 17 items available
-- **Expected:** Button should be interactive and filter to red products
-- **Actual:** Button does not respond to clicks
+### Bug #3: "Зелёные ценники" Still as Category (STILL BROKEN)
+- **Severity:** 🔴 Critical
+- **Status:** ❌ NOT FIXED
+- **Evidence:** Screenshot shows "📦 Зелёные ценники" in category chips row
+
+![Evidence](file:///C:/Users/rust-/.gemini/antigravity/brain/0764792f-d744-47e4-8424-80abb35e5ccb/.system_generated/click_feedback/click_feedback_1768562988661.png)
 
 ---
 
-## 🟡 High Priority Bugs
+## 🟡 High/Medium Bugs
 
-### Bug #4: TailwindCSS Dynamic Class Bug
-- **Severity:** High
-- **File:** [App.jsx](file:///e:/Projects/saleapp/miniapp/src/App.jsx#L410-L413)
-- **Description:** Dynamic Tailwind classes are not compiled correctly
-- **Code Issue:**
-  ```jsx
-  // This DOES NOT work with Tailwind JIT:
-  className={`bg-${color}-500/30 text-${color}-300`}
-  ```
-- **Impact:** Filter buttons may have incorrect styling or no styling at all
-- **Fix:** Use static class mappings or `clsx()` with full class names
+### Bug #4: Favorites Toggle Broken
+- **Severity:** � High
+- **Status:** ❌ NOT FIXED
+- **Description:** Clicking heart 🤍 does not reliably toggle to ❤️
 
 ---
 
-### Bug #5: Invisible Favorite/Heart Icon
-- **Severity:** High
-- **File:** [App.jsx](file:///e:/Projects/saleapp/miniapp/src/App.jsx#L71-L81)
-- **Description:** The 🤍 heart icon button exists in DOM but is virtually invisible in the UI
-- **Cause:** Low contrast styling (`text-white/50` on dark background with `bg-black/20`)
-- **Impact:** Users cannot see or interact with favorites functionality
+### Bug #5: Layout Stretched on Desktop (STILL BROKEN)
+- **Severity:** � Medium
+- **Status:** ❌ NOT FIXED
+- **Description:** No `max-width` container - cards span full viewport
 
 ---
 
-### Bug #6: Favorites Toggle Has No Visual Feedback
-- **Severity:** Medium-High
-- **Description:** Clicking the favorite button provides no visual feedback
-- **Expected:** Heart should change from 🤍 to ❤️, show animation or notification
-- **Actual:** No visible state change occurs
+### Bug #6: Green Tags Missing Discount %
+- **Severity:** 🟡 Medium
+- **Status:** ❌ NOT FIXED
+- **Description:** Red/Yellow show `-40%` discount but Green only shows price
 
 ---
 
-## 🟢 Medium Priority Bugs
+### Bug #7: "Красная книга" Incorrect Title
+- **Severity:** � Medium
+- **Status:** ❌ NOT FIXED (NEW)
+- **Description:** Red filter shows title "Красная книга" (endangered species list)
+- **Should be:** "Красные ценники" to match other labels
 
-### Bug #7: Product Cards Stretched on Desktop
-- **Severity:** Medium
-- **File:** [App.jsx](file:///e:/Projects/saleapp/miniapp/src/App.jsx#L340), [index.css](file:///e:/Projects/saleapp/miniapp/src/index.css)
-- **Description:** Product cards stretch to full viewport width (~1900px) on desktop
-- **Impact:** Content pinned to far left, vast empty space makes app look unpolished
-- **Fix:** Add `max-width` container constraint (e.g., `max-w-md mx-auto`)
-
----
-
-### Bug #8: No Max-Width Container
-- **Severity:** Medium
-- **Description:** The app container (`min-h-screen p-4`) has no maximum width
-- **Impact:** On large screens, layout is unusable
-- **Fix:** Wrap content in `<div className="max-w-lg mx-auto">`
+![Evidence](file:///C:/Users/rust-/.gemini/antigravity/brain/0764792f-d744-47e4-8424-80abb35e5ccb/.system_generated/click_feedback/click_feedback_1768563123732.png)
 
 ---
 
-### Bug #9: Horizontal Category Scroll - No Visual Indicator
-- **Severity:** Low-Medium
-- **File:** [App.jsx](file:///e:/Projects/saleapp/miniapp/src/App.jsx#L144-L159)
-- **Description:** Category list scrolls horizontally but no arrows/indicators show more content exists
-- **Impact:** Users may not discover all categories
-- **Fix:** Add scroll arrows or gradient fade indicators
+## 🔵 Low Priority
+
+### Bug #8: Filter UI Confusion on Initial Load
+- **Severity:** 🔵 Low
+- **Status:** ❌ NOT FIXED
+- **Description:** All filter buttons appear "active" on page load
 
 ---
 
-## 🔵 Low Priority Bugs
-
-### Bug #10: Button Labels May Show JSX Artifacts
-- **Severity:** Low
-- **Description:** Some buttons reported showing `/>` in text labels (e.g., "Все />")
-- **Status:** Could not consistently reproduce, may be related to hot reload or render timing
-
----
-
-### Bug #11: Missing Loading State for Favorites API
-- **Severity:** Low
-- **File:** [App.jsx](file:///e:/Projects/saleapp/miniapp/src/App.jsx#L180-L188)
-- **Description:** Favorites load via API but no loading indicator is shown
-- **Impact:** Users may not know favorites are loading
+### Bug #9: Console Debug Spam
+- **Severity:** 🔵 Low
+- **Status:** ❌ NOT FIXED (NEW)
+- **Description:** Console flooded with `DEBUG: Filter Check` logs
+- **Fix:** Remove debug logs for production
 
 ---
 
-### Bug #12: Image Error Handler Sets innerHTML Directly
-- **Severity:** Low
-- **File:** [App.jsx](file:///e:/Projects/saleapp/miniapp/src/App.jsx#L93-L97)
-- **Description:** Using `innerHTML` in React is an anti-pattern
-- **Code:**
-  ```jsx
-  e.target.parentElement.innerHTML = `<span>...</span>`
-  ```
-- **Fix:** Use React state to handle image error fallback
+## ✅ VERIFIED FIXED
+
+| Bug | Status |
+|-----|--------|
+| Stock placeholder "99 шт" | ✅ Some replaced with real values |
+| React duplicate key warnings | ✅ Suppressed (but data duplicates remain) |
 
 ---
 
-## 📸 Screenshots
+## 🎬 Verification Recording
 
-### Initial View (Stretched Layout)
-![Initial View](file:///C:/Users/rust-/.gemini/antigravity/brain/0764792f-d744-47e4-8424-80abb35e5ccb/initial_view_1768543631218.png)
-
-### Product List with Yellow Border (After Green Filter Click)
-![Yellow Products](file:///C:/Users/rust-/.gemini/antigravity/brain/0764792f-d744-47e4-8424-80abb35e5ccb/product_list_end_1768543727070.png)
-
----
-
-## 🎬 Test Recordings
-
-- [Homepage Exploration](file:///C:/Users/rust-/.gemini/antigravity/brain/0764792f-d744-47e4-8424-80abb35e5ccb/homepage_exploration_1768543553438.webp)
-- [Deep Bug Testing](file:///C:/Users/rust-/.gemini/antigravity/brain/0764792f-d744-47e4-8424-80abb35e5ccb/deep_bug_testing_1768543622188.webp)
+![Fresh Inspection](file:///C:/Users/rust-/.gemini/antigravity/brain/0764792f-d744-47e4-8424-80abb35e5ccb/fresh_inspection_1768562963439.webp)
 
 ---
 
@@ -151,12 +103,6 @@
 | Priority | Count |
 |----------|-------|
 | 🔴 Critical | 3 |
-| 🟡 High | 3 |
-| 🟢 Medium | 3 |
-| 🔵 Low | 3 |
-| **Total** | **12** |
-
-### Quick Wins (Easy Fixes)
-1. Change `key={product.name}` → `key={product.id}` on line 453
-2. Add `max-w-lg mx-auto` wrapper for responsive layout
-3. Fix Tailwind dynamic classes to use static mappings
+| 🟡 High/Medium | 4 |
+| 🔵 Low | 2 |
+| **Total** | **9** |

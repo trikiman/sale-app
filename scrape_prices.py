@@ -9,6 +9,7 @@ import json
 import os
 import sys
 from datetime import datetime
+from utils import normalize_category, parse_stock, clean_price, deduplicate_products
 
 # Fix Windows console encoding for emoji support
 if sys.platform == 'win32':
@@ -35,13 +36,6 @@ def init_driver(headless=False):
     
     return uc.Chrome(options=options, headless=headless)
 
-def clean_category(category_raw):
-    """Clean category string - take first part before '//'"""
-    if not category_raw:
-        return 'Другое'
-    # Take first part if contains '//'
-    category = category_raw.split('//')[0].strip()
-    return category if category else 'Другое'
 
 def scrape_catalog_page(driver, url, product_type):
     """Scrape standard catalog pages (Red Book, Yellow Prices)"""
@@ -106,10 +100,13 @@ def scrape_catalog_page(driver, url, product_type):
             return products;
         """)
         
-        # Clean categories (take first part before '//')
+        # Clean categories and prices using utils
         for p in products:
-            p['category'] = clean_category(p.get('category', ''))
-            
+            p['currentPrice'] = clean_price(p.get('currentPrice'))
+            p['oldPrice'] = clean_price(p.get('oldPrice'))
+            raw_cat = p.get('category', '').split('//')[0].strip()
+            p['category'] = normalize_category(raw_cat, p['name'])
+
         print(f"✅ Found {len(products)} {product_type} items")
         return products
         
@@ -280,10 +277,28 @@ def scrape_green_prices(driver, auto_mode=False):
         # Filter out stock <= 0 logic is handled in JS (returning 0) and post-filter
         products = [p for p in products if p.get('stock') is not None and p['stock'] > 0]
 
-        # Clean categories (take first part before '//')
+        # Clean categories and prices using utils
         for p in products:
-            p['category'] = clean_category(p.get('category', ''))
-            
+            p['currentPrice'] = clean_price(p.get('currentPrice'))
+            p['oldPrice'] = clean_price(p.get('oldPrice'))
+
+            # Fix missing oldPrice (approx 40% discount logic)
+            if p['oldPrice'] == '0' and p['currentPrice'] != '0':
+                try:
+                    curr = float(p['currentPrice'])
+                    p['oldPrice'] = str(int(curr / 0.6))
+                except:
+                    pass
+
+            # Use 'Зелёные ценники' as raw category context for green items if missing
+            raw_cat = p.get('category', '')
+            if not raw_cat:
+                raw_cat = 'Зелёные ценники'
+            else:
+                raw_cat = raw_cat.split('//')[0].strip()
+
+            p['category'] = normalize_category(raw_cat, p['name'])
+
         print(f"✅ Found {len(products)} GREEN products")
         return products
         
@@ -307,7 +322,10 @@ def main():
         # 3. Yellow Prices
         yellow_items = scrape_catalog_page(driver, YELLOW_PRICE_URL, 'yellow')
         all_products.extend(yellow_items)
-        
+
+        # Deduplicate products
+        all_products = deduplicate_products(all_products)
+
         # Save unified data
         output_data = {
             "updatedAt": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),

@@ -5,7 +5,7 @@ Runs every 5 minutes to keep Mini App data fresh
 import time
 import schedule
 from datetime import datetime
-from scrape_prices import scrape_green_prices
+from scrape_prices import main as scrape_all_prices
 
 
 def run_scraper():
@@ -13,16 +13,14 @@ def run_scraper():
     print(f"\n{'='*60}")
     print(f"[{datetime.now().strftime('%H:%M:%S')}] Starting scheduled scrape...")
     print(f"{'='*60}")
-    
+
     try:
-        products = scrape_green_prices(auto_mode=True)
-        if products:
-            print(f"✅ Scraped {len(products)} products successfully")
-        else:
-            print("⚠️ No products found or scrape failed")
+        # Run the full scraping cycle (Green, Red, Yellow)
+        scrape_all_prices()
+        print(f"✅ Scheduled scrape completed successfully")
     except Exception as e:
         print(f"❌ Scrape error: {e}")
-    
+
     print(f"Next run in 5 minutes...")
 
 
