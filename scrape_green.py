@@ -206,16 +206,20 @@ def scrape_green_prices():
                 const stockMatch = text.match(/В наличии[:\\s]*(\\d+)[\\s]*шт/);
                 
                 if (!isOutOfStock && nameEl) {
+                    const url = nameEl.href || '';
+                    const idMatch = url.match(/(\d+)\.html/);
                     const priceEl = card.querySelector('.Price__value, .HProductCard__Price');
-                    const oldPriceEl = card.querySelector('.HProductCard__OldPrice'); 
-                    
+                    const oldPriceEl = card.querySelector('.HProductCard__OldPrice');
+                    // Try multiple selectors for cart image
+                    const imgEl = card.querySelector('.HProductCard__Photo img, .HProductCard__Image, .BasketItem__image, img');
+
                     products.push({
-                        id: '',
+                        id: idMatch ? idMatch[1] : '',
                         name: nameEl.innerText.trim(),
-                        url: nameEl.href || '',
+                        url: url,
                         currentPrice: priceEl ? priceEl.innerText.replace(/\\D/g, '') : '0',
                         oldPrice: oldPriceEl ? oldPriceEl.innerText.replace(/\\D/g, '') : '0',
-                        image: '',
+                        image: imgEl ? imgEl.src : '',
                         stock: stockMatch ? parseInt(stockMatch[1]) : 99, // 99 if valid but no limit shown
                         unit: 'шт',
                         category: 'Зелёные ценники',

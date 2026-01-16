@@ -138,7 +138,7 @@ def scrape_red_prices():
                 
                 if (titleEl) {
                     const url = titleEl.href || '';
-                    const idMatch = url.match(/-(\\d+)\\.html/);
+                    const idMatch = url.match(/(\\d+)\\.html/);
                     const currentPrice = priceEl ? priceEl.innerText.trim() : '0';
                     const oldPrice = oldPriceEl ? oldPriceEl.innerText.trim() : '0';
                     

@@ -32,13 +32,18 @@ def run_scraper():
     """Run the scraper once"""
     log("Starting scrape...")
     
+    # Use parallel scraper
+    SCRAPER_PATH = os.path.join(SCRIPT_DIR, "scrape_parallel.ps1")
+
+    cmd = ["powershell", "-ExecutionPolicy", "Bypass", "-File", SCRAPER_PATH]
+
     try:
         result = subprocess.run(
-            [sys.executable, SCRAPER_PATH],
+            cmd,
             cwd=SCRIPT_DIR,
             capture_output=True,
             text=True,
-            timeout=300  # 5 minute timeout
+            timeout=600  # 10 minute timeout for parallel execution
         )
         
         if result.returncode == 0:
