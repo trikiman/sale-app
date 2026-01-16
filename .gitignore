@@ -1,5 +1,7 @@
 # Chrome profile data
 data/chrome_profile/
+data/chrome_profile_*/
+logs/
 
 # Secrets and keys
 *.pem

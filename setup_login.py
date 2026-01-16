@@ -6,6 +6,11 @@ After logging in, close the browser and the session will be saved.
 import undetected_chromedriver as uc
 import time
 import os
+import sys
+
+# Fix Windows console encoding
+if sys.platform == 'win32':
+    sys.stdout.reconfigure(encoding='utf-8')
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -37,15 +42,22 @@ def setup_login():
     print("   2. Enter your phone number")
     print("   3. Enter the SMS code")
     print("   4. Verify you're logged in (see your name in header)")
-    print("\n⏳ Press ENTER here when you're logged in...")
-    
-    input()
-    
-    # Verify login
-    if "Войти" not in driver.page_source or "Кабинет" in driver.page_source:
-        print("✅ Login successful! Session saved.")
-    else:
-        print("⚠️ Login may not have completed. Try again if needed.")
+    print("\n⏳ Please log in, then CLOSE THE BROWSER WINDOW to save the session...")
+
+    # Wait for browser to be closed by user
+    try:
+        while True:
+            try:
+                # This will raise exception if browser is closed
+                _ = driver.window_handles
+                time.sleep(1)
+            except:
+                break
+    except:
+        pass
+
+    # Verify login (we can't verify page source if browser is closed, so we skip this check or do it differently)
+    print("✅ Browser closed. Session saved.")
     
     print("\nClosing browser...")
     driver.quit()

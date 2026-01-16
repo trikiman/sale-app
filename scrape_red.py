@@ -33,8 +33,17 @@ def init_driver():
     options.add_argument('--start-maximized')
     options.add_argument(f'--user-data-dir={profile}')
     
-    driver = uc.Chrome(options=options, headless=False)
-    return driver
+    # Retry logic for WinError 183 (race condition)
+    for attempt in range(1, 4):
+        try:
+            driver = uc.Chrome(options=options, headless=False)
+            return driver
+        except OSError as e:
+            if "WinError 183" in str(e) and attempt < 3:
+                print(f"⚠️ [RED] Race condition detected (WinError 183), retrying in {attempt*3}s...")
+                time.sleep(attempt * 3)
+            else:
+                raise e
 
 
 def scrape_red_prices():

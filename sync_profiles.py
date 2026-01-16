@@ -3,6 +3,10 @@ import shutil
 import sys
 import time
 
+# Fix Windows console encoding
+if sys.platform == 'win32':
+    sys.stdout.reconfigure(encoding='utf-8')
+
 """
 Syncs the 'shared' Chrome profile (where you log in) to the dedicated profiles
 (green, red, yellow) used by the parallel scrapers.
