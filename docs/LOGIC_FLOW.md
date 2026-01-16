@@ -14,28 +14,32 @@ The application consists of three main components that work in harmony:
 
 ## Part 1: The Scraper (Data Collection)
 
+### Parallel Execution
+The system uses a multi-process architecture to maximize speed. Instead of one long sequential run, it launches three scrapers simultaneously:
+1.  **Green Scraper**: Focuses on personalized 40% discounts by accessing the user's cart and personal sections.
+2.  **Red Scraper**: Scans the catalog for public direct discounts available to all customers.
+3.  **Yellow Scraper**: Identifies "6 or more" multi-buy deals across the store.
+
 ### Goal: Emulate a Real User
 The scraper doesn't just download a list of items; it acts like a real person using a web browser. This is necessary because VkusVill displays different prices based on whether you are logged in and what is in your cart.
 
 ### The "Browser"
-The scraper uses a real Chrome browser controlled by software (Selenium/Playwright). It uses a **persistent profile**, which means it stays logged into the VkusVill account just like your personal browser remembers your passwords.
-
-### Green Prices (Personalized)
-"Green Prices" are 40% discounts on specific items. These are unique to each user.
-*   The scraper logs in, goes to the **Cart** or specialized personal sections.
-*   It identifies which items have been marked with a green price tag for that specific account.
-
-### Red & Yellow Prices (Public)
-*   **Red Prices**: Direct discounts on specific items available to everyone.
-*   **Yellow Prices**: "6 or more" discounts (buy more, pay less).
-*   The scraper browses the public catalog and categories to find these deals.
+Each parallel scraper uses a real Chrome browser controlled by software (Selenium/Playwright). They use **persistent profiles**, which means they stay logged into the VkusVill account just like your personal browser remembers your passwords.
 
 ---
 
 ## Part 2: The Data Flow (Storage)
 
-### Unified Format
-Once the scraper has found all the Green, Red, and Yellow prices, it merges them into a single, standardized format. This ensures that the MiniApp can treat every "deal" the same way, regardless of where it came from.
+### The Merge Process
+After the parallel scrapers complete their tasks, a dedicated **Merge Step** takes over. This step is responsible for:
+1.  **Consolidation**: Reading the individual outputs from the Green, Red, and Yellow scrapers.
+2.  **Deduplication**: Ensuring that if an item appears in multiple categories, it is handled correctly.
+3.  **Standardization**: Converting all data into a single, unified format that the MiniApp understands.
+
+### Performance Reporting
+Upon completion, the system generates a summary in the logs:
+*   **Total Counts**: The final number of unique deals available.
+*   **Colored Summary**: A breakdown of the number of items found for each price type (Green/Red/Yellow).
 
 ### The "File Database" (`proposals.json`)
 Instead of a complex database server, the app uses a simple file called `proposals.json` located in the `data/` folder. This file is the "source of truth" for the entire system.
