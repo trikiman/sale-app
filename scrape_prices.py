@@ -9,7 +9,7 @@ import json
 import os
 import sys
 from datetime import datetime
-from utils import normalize_category, parse_stock, clean_price, deduplicate_products
+from utils import normalize_category, parse_stock, clean_price, deduplicate_products, synthesize_discount
 
 # Fix Windows console encoding for emoji support
 if sys.platform == 'win32':
@@ -106,6 +106,9 @@ def scrape_catalog_page(driver, url, product_type):
             p['oldPrice'] = clean_price(p.get('oldPrice'))
             raw_cat = p.get('category', '').split('//')[0].strip()
             p['category'] = normalize_category(raw_cat, p['name'])
+
+            # Ensure discount is synthesized if missing
+            p = synthesize_discount(p)
 
         print(f"✅ Found {len(products)} {product_type} items")
         return products
@@ -282,13 +285,8 @@ def scrape_green_prices(driver, auto_mode=False):
             p['currentPrice'] = clean_price(p.get('currentPrice'))
             p['oldPrice'] = clean_price(p.get('oldPrice'))
 
-            # Fix missing oldPrice (approx 40% discount logic)
-            if p['oldPrice'] == '0' and p['currentPrice'] != '0':
-                try:
-                    curr = float(p['currentPrice'])
-                    p['oldPrice'] = str(int(curr / 0.6))
-                except:
-                    pass
+            # Use helper to synthesize discount for green items
+            p = synthesize_discount(p)
 
             # Use 'Зелёные ценники' as raw category context for green items if missing
             raw_cat = p.get('category', '')

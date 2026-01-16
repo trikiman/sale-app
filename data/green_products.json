@@ -1,18 +1,6 @@
 [
   {
-    "category": "Фрукты",
-    "currentPrice": "99",
-    "id": "731",
-    "image": "https://img.vkusvill.ru/pim/images/site/site_thumb/a7a28b95-7b42-419c-89bb-c758e246c2a9.jpg",
-    "name": "Бананы",
-    "oldPrice": "165",
-    "type": "green",
-    "unit": "шт",
-    "url": "https://vkusvill.ru/goods/banany-731.html",
-    "stock": 0
-  },
-  {
-    "category": "Другое",
+    "category": "Мясо",
     "currentPrice": "171",
     "id": "90069",
     "image": "https://img.vkusvill.ru/pim/images/site_thumb/de06aea9-f96a-413a-89ba-dd462ea5a5e9.jpg?1713646270.0559",
@@ -81,6 +69,54 @@
     "type": "green",
     "unit": "шт",
     "url": "https://vkusvill.ru/goods/mandariny-khatayskie-sladkie-70407.html",
-    "stock": 5
+    "stock": 1
+  },
+  {
+    "category": "Другое",
+    "currentPrice": "154",
+    "id": "75750",
+    "image": "https://img.vkusvill.ru/pim/images/site_thumb/b1c9a414-86ec-41d3-9656-b581d46514b2.jpg?1709080153.7552",
+    "name": "Ветчина куриная Для тостов, нарезка",
+    "oldPrice": "256",
+    "type": "green",
+    "unit": "шт",
+    "url": "https://vkusvill.ru/goods/vetchina-kurinaya-dlya-tostov-narezka-75750.html",
+    "stock": 1
+  },
+  {
+    "category": "Мясо",
+    "currentPrice": "133",
+    "id": "116862",
+    "image": "https://img.vkusvill.ru/pim/images/site/site_thumb/ae989be0-bbfd-40cc-b567-e12c4df489d1.png",
+    "name": "Колбаса варено-копченая Черкизово Премиум Имперская нарезка 100 г",
+    "oldPrice": "221",
+    "type": "green",
+    "unit": "шт",
+    "url": "https://vkusvill.ru/goods/kolbasa-vareno-kopchenaya-cherkizovo-premium-imperskaya-narezka-100-g-116862.html",
+    "stock": 1
+  },
+  {
+    "category": "Другое",
+    "currentPrice": "181",
+    "id": "49298",
+    "image": "https://img.vkusvill.ru/pim/images/site/site_thumb/ea85be5d-948e-423c-8583-8b148a8ae48d.jpg",
+    "name": "Шейка варёно-копченая Егорьевская ФКГ по-Егорьевски 115 г",
+    "oldPrice": "301",
+    "type": "green",
+    "unit": "шт",
+    "url": "https://vkusvill.ru/goods/sheyka-varyeno-kopchenaya-egorevskaya-fkg-po-egorevski-115-g-49298.html",
+    "stock": 1
+  },
+  {
+    "category": "Другое",
+    "currentPrice": "301",
+    "id": "109474",
+    "image": "https://img.vkusvill.ru/pim/images/site_thumb/c26ea65b-2feb-4ed7-b150-674a31708af1.jpg?1743672317.2683",
+    "name": "Шпикачки Мясной дом Бородина Домашние 480 г",
+    "oldPrice": "501",
+    "type": "green",
+    "unit": "шт",
+    "url": "https://vkusvill.ru/goods/shpikachki-myasnoy-dom-borodina-domashnie-480-g-109474.html",
+    "stock": 1
   }
 ]

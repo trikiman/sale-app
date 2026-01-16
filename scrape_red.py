@@ -7,7 +7,7 @@ import time
 import json
 import os
 import sys
-from utils import normalize_category, parse_stock, clean_price, deduplicate_products
+from utils import normalize_category, parse_stock, clean_price, deduplicate_products, synthesize_discount
 
 # Fix Windows console encoding
 if sys.platform == 'win32':
@@ -162,6 +162,9 @@ def scrape_red_prices():
             # Clean prices
             p['currentPrice'] = clean_price(p['currentPrice'])
             p['oldPrice'] = clean_price(p['oldPrice'])
+
+            # Synthesize discount if missing
+            p = synthesize_discount(p)
 
             # Parse stock from full text
             p['stock'] = parse_stock(p.get('stockText', ''))

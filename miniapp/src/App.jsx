@@ -211,18 +211,19 @@ function App() {
   }, [userId])
 
   const handleToggleFavorite = async (product) => {
-    const isFav = favorites.has(product.id)
-    const newFavorites = new Set(favorites)
-
-    // Optimistic update
-    if (isFav) {
-      newFavorites.delete(product.id)
-    } else {
-      newFavorites.add(product.id)
-    }
-    setFavorites(newFavorites)
+    // Optimistic update using functional state to avoid race conditions
+    setFavorites(prev => {
+      const next = new Set(prev)
+      if (next.has(product.id)) {
+        next.delete(product.id)
+      } else {
+        next.add(product.id)
+      }
+      return next
+    })
 
     try {
+      const isFav = favorites.has(product.id)
       if (isFav) {
         // Remove
         const res = await fetch(`/api/favorites/${userId}/${product.id}`, {
@@ -245,17 +246,6 @@ function App() {
       }
     } catch (err) {
       console.warn('API request failed, falling back to local state:', err)
-      // Do NOT revert on error if it's likely just a missing backend in dev
-      // In a real app, you might want to revert, but for this demo/bugfix session we want UI to work
-      // Revert code commented out:
-      /*
-      if (isFav) {
-        newFavorites.add(product.id)
-      } else {
-        newFavorites.delete(product.id)
-      }
-      setFavorites(newFavorites)
-      */
     }
   }
 
@@ -314,16 +304,6 @@ function App() {
 
   // Apply both category and type filters
   const filteredProducts = products.filter(p => {
-    // DEBUG LOGS
-    if (products.length > 0 && products[0] === p) {
-      console.log('DEBUG: Filter Check', {
-        productName: p.name,
-        productType: p.type,
-        filters: typeFilters,
-        selectedCategory,
-        typeMatch: typeFilters[p.type] !== false
-      })
-    }
     const categoryMatch = selectedCategory === 'all' || p.category === selectedCategory
 
     // Fix Bug #8: OR logic for multi-select
@@ -375,7 +355,7 @@ function App() {
       headerTitle = 'Зелёные ценники'
       headerEmoji = '🟢'
     } else if (activeTypes[0] === 'red') {
-      headerTitle = 'Красная книга'
+      headerTitle = 'Красные ценники'
       headerEmoji = '🔴'
     } else if (activeTypes[0] === 'yellow') {
       headerTitle = 'Жёлтые ценники'
@@ -436,7 +416,7 @@ function App() {
 
         {[
           { key: 'green', label: '🟢 Зелёные', activeClass: 'bg-green-500/30 text-green-300 border border-green-400/50' },
-          { key: 'red', label: '🔴 Красная', activeClass: 'bg-red-500/30 text-red-300 border border-red-400/50' },
+          { key: 'red', label: '🔴 Красные', activeClass: 'bg-red-500/30 text-red-300 border border-red-400/50' },
           { key: 'yellow', label: '🟡 Жёлтые', activeClass: 'bg-yellow-500/30 text-yellow-300 border border-yellow-400/50' }
         ].map(({ key, label, activeClass }) => (
           <button

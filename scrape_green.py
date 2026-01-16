@@ -8,7 +8,7 @@ import time
 import json
 import os
 import sys
-from utils import normalize_category, parse_stock, clean_price, deduplicate_products
+from utils import normalize_category, parse_stock, clean_price, deduplicate_products, synthesize_discount
 
 # Fix Windows console encoding
 if sys.platform == 'win32':
@@ -237,13 +237,8 @@ def scrape_green_prices():
             p['currentPrice'] = clean_price(p['currentPrice'])
             p['oldPrice'] = clean_price(p['oldPrice'])
 
-            # Fix missing oldPrice (approx 40% discount logic)
-            if p['oldPrice'] == '0' and p['currentPrice'] != '0':
-                try:
-                    curr = float(p['currentPrice'])
-                    p['oldPrice'] = str(int(curr / 0.6))
-                except:
-                    pass
+            # Fix missing oldPrice using helper
+            p = synthesize_discount(p)
 
             # Parse stock
             p['stock'] = parse_stock(p.get('stockText', ''))

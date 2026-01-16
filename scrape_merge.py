@@ -6,6 +6,7 @@ import json
 import os
 import sys
 from datetime import datetime
+from utils import deduplicate_products
 
 # Fix Windows console encoding
 if sys.platform == 'win32':
@@ -45,6 +46,7 @@ def merge_products():
             print(f"  ⚠️ No {color} products file found")
     
     # Count by type
+    all_products = deduplicate_products(all_products)
     green_count = len([p for p in all_products if p['type'] == 'green'])
     red_count = len([p for p in all_products if p['type'] == 'red'])
     yellow_count = len([p for p in all_products if p['type'] == 'yellow'])
