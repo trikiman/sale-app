@@ -450,7 +450,7 @@ function App() {
         <AnimatePresence mode="popLayout">
           {filteredProducts.map((product, index) => (
             <ProductCard
-              key={product.name}
+              key={product.id}
               product={product}
               index={index}
               isFavorite={favorites.has(product.id)}
