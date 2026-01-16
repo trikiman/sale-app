@@ -23,8 +23,8 @@ def clean_category(cat):
 
 
 def init_driver():
-    # Use shared profile with VkusVill login (same as green)
-    profile = os.path.join(BASE_DIR, "data", "chrome_profile_shared")
+    # Use dedicated profile for Yellow scraper
+    profile = os.path.join(BASE_DIR, "data", "chrome_profile_yellow")
     os.makedirs(profile, exist_ok=True)
     
     options = uc.ChromeOptions()

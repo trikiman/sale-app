@@ -24,7 +24,16 @@ mkdir -p data
 mkdir -p miniapp/public
 echo "✅ Directories ready"
 
-# 5. Dry Run Scraper (if possible, or just import check)
+# 5. Check Scraper Scripts
+for script in "scrape_parallel.sh" "scrape_green.py" "scrape_red.py" "scrape_yellow.py" "scrape_merge.py"; do
+    if [ ! -f "$script" ]; then
+        echo "❌ $script not found"
+        exit 1
+    fi
+done
+echo "✅ Scraper scripts found"
+
+# 6. Dry Run Scraper (if possible, or just import check)
 python3 -c "import undetected_chromedriver; print('✅ undetected_chromedriver importable')"
 
 echo "=== Verification Complete ==="

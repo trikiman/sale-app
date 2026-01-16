@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Path to scraper - reliable discovery regardless of call location
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCRAPER="$REPO_DIR/scrape_prices.py"
+SCRAPER="$REPO_DIR/scrape_parallel.sh"
 LOG_FILE="$REPO_DIR/logs/cron.log"
 
 # Wrapper script for cron
@@ -21,7 +21,7 @@ mkdir -p logs
 
 # Run scraper with auto-allocated Xvfb display
 # Using -a to avoid lock file contention
-xvfb-run -a --server-args="-screen 0 1920x1080x24" /usr/bin/python3 "$SCRAPER" >> "$REPO_DIR/logs/cron.log" 2>&1
+xvfb-run -a --server-args="-screen 0 1920x1080x24" /bin/bash "$SCRAPER" >> "$REPO_DIR/logs/cron.log" 2>&1
 EOF
 
 chmod +x "$WRAPPER"
