@@ -13,7 +13,7 @@ Extract real categories from VkusVill product cards instead of guessing.
 
 ## Changes
 
-### 1. Scraper (`scrape_undetected.py`)
+### 1. Scraper (`scrape_prices.py`)
 
 **In `scrape_catalog_page()` JavaScript:**
 - Extract category from `js-datalayer-catalog-list-category` element

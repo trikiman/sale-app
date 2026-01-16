@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Path to scraper - reliable discovery regardless of call location
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCRAPER="$REPO_DIR/scrape_undetected.py"
+SCRAPER="$REPO_DIR/scrape_prices.py"
 LOG_FILE="$REPO_DIR/logs/cron.log"
 
 # Wrapper script for cron

@@ -5,7 +5,7 @@ Runs every 5 minutes to keep Mini App data fresh
 import time
 import schedule
 from datetime import datetime
-from scrape_undetected import scrape_green_prices
+from scrape_prices import scrape_green_prices
 
 
 def run_scraper():
@@ -32,7 +32,7 @@ def main():
     print("Runs every 5 minutes to keep data fresh")
     print("=" * 60)
     print("\n⚠️  First time setup:")
-    print("1. Run 'python scrape_undetected.py' once manually")
+    print("1. Run 'python scrape_prices.py' once manually")
     print("2. Log in to VkusVill in the browser")
     print("3. Then run this scheduler\n")
     

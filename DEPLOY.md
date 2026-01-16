@@ -1,6 +1,6 @@
 # Deployment Guide: VkusVill Scraper on AWS EC2
 
-This guide details the steps to deploy the Python Selenium scraper (`scrape_undetected.py`) to an AWS EC2 instance running Ubuntu 22.04.
+This guide details the steps to deploy the Python Selenium scraper (`scrape_prices.py`) to an AWS EC2 instance running Ubuntu 22.04.
 
 ## 1. Prerequisites
 
@@ -50,7 +50,7 @@ Since `undetected-chromedriver` works best when it thinks it's running in a real
 To run the scraper manually with a virtual display:
 
 ```bash
-xvfb-run -a --server-args="-screen 0 1920x1080x24" python3 scrape_undetected.py
+xvfb-run -a --server-args="-screen 0 1920x1080x24" python3 scrape_prices.py
 ```
 
 This command:
@@ -65,7 +65,7 @@ To automate the scraper execution, we will use the `setup_cron.sh` script. This 
 Example manual crontab entry (runs every 15 minutes to match setup_cron.sh):
 ```bash
 # Run every 15 minutes
-*/15 * * * * cd /home/ubuntu/saleapp && /usr/bin/xvfb-run -a --server-args="-screen 0 1920x1080x24" /usr/bin/python3 scrape_undetected.py >> /home/ubuntu/saleapp/logs/cron.log 2>&1
+*/15 * * * * cd /home/ubuntu/saleapp && /usr/bin/xvfb-run -a --server-args="-screen 0 1920x1080x24" /usr/bin/python3 scrape_prices.py >> /home/ubuntu/saleapp/logs/cron.log 2>&1
 ```
 
 Refer to `setup_cron.sh` for automated configuration.
