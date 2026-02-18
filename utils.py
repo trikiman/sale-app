@@ -251,9 +251,13 @@ def clean_price(price_str):
 
 def synthesize_discount(product):
     """
-    Synthesizes oldPrice for products that have a currentPrice but no oldPrice.
-    Specifically for Green Tags (approx 40% off).
+    Synthesizes oldPrice ONLY for Green Tags (approx 40% off).
+    Red and yellow products have different discount structures — do NOT fabricate
+    their oldPrice using the green formula, as it produces wrong data shown to users.
     """
+    if product.get('type') != 'green':
+        return product  # Only synthesize for green products
+
     curr_price = product.get('currentPrice')
     old_price = product.get('oldPrice')
 

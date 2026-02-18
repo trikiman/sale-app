@@ -66,7 +66,6 @@ def init_driver():
     profile = os.path.join(BASE_DIR, "data", "chrome_profile_yellow")
     os.makedirs(profile, exist_ok=True)
 
-    print(f"  [YELLOW] DIAG: cleanup_profile_locks...")
     # Clean up stale LOCK files before starting Chrome
     cleanup_profile_locks(profile)
 
@@ -85,12 +84,9 @@ def init_driver():
 
     # Use global lock to prevent race conditions during Chrome startup
     # WinError 183 occurs when multiple processes try to initialize Chrome profiles simultaneously
-    print(f"  [YELLOW] DIAG: acquiring ChromeLock...")
     with ChromeLock():
-        print(f"  [YELLOW] DIAG: ChromeLock acquired, starting uc.Chrome...")
         try:
             driver = uc.Chrome(options=options, headless=False, version_main=144)
-            print(f"  [YELLOW] DIAG: uc.Chrome() returned OK")
             return driver
         except OSError as e:
             # Fallback retry just in case, though lock should prevent most collisions
