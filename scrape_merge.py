@@ -6,7 +6,7 @@ import json
 import os
 import sys
 from datetime import datetime
-from utils import deduplicate_products
+from utils import deduplicate_products, normalize_category
 
 # Fix Windows console encoding
 if sys.platform == 'win32':
@@ -47,6 +47,12 @@ def merge_products():
     
     # Count by type
     all_products = deduplicate_products(all_products)
+
+    # Normalize categories for all products (especially Green which often has "Зелёные ценники")
+    for p in all_products:
+        raw_cat = p.get('category', '')
+        p['category'] = normalize_category(raw_cat, p.get('name', ''), p.get('id'))
+
     green_count = len([p for p in all_products if p['type'] == 'green'])
     red_count = len([p for p in all_products if p['type'] == 'red'])
     yellow_count = len([p for p in all_products if p['type'] == 'yellow'])

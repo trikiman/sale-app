@@ -5,6 +5,7 @@ import os
 
 # Telegram Bot Configuration
 TELEGRAM_TOKEN = "8395628734:AAGWGAWsQN3RomSrp9UhRD0QLTsqIsX8_44"
+TELEGRAM_BOT_TOKEN = TELEGRAM_TOKEN  # alias used by main.py
 
 # VkusVill URLs
 VKUSVILL_BASE_URL = "https://vkusvill.ru"
@@ -12,6 +13,7 @@ VKUSVILL_GREEN_PRICES_URL = "https://vkusvill.ru/offers/zelenye-tsenniki.html"
 
 # Polling interval in minutes
 POLLING_INTERVAL_MINUTES = 5
+POLLING_INTERVAL = POLLING_INTERVAL_MINUTES * 60  # in seconds, used by main.py
 
 # Database path
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
@@ -48,6 +50,64 @@ SELECTORS = {
     
     # Stock selector (appears after adding to cart)
     "stock_count": ".js-delivery__basket--row__maxq",
+}
+
+# User-facing categories for the bot (used by handlers.py and notifier.py)
+# slug: used for category matching against product.category (in Russian, hyphen-separated)
+# name: Russian display name shown to users
+CATEGORIES = {
+    'vegetables': {
+        'name': 'Овощи и фрукты',
+        'slug': 'овощи-фрукты-ягоды-зелень',
+    },
+    'ready_meals': {
+        'name': 'Готовая еда',
+        'slug': 'готовая-еда',
+    },
+    'sweets': {
+        'name': 'Сладости и десерты',
+        'slug': 'сладости-десерты',
+    },
+    'dairy': {
+        'name': 'Молочные продукты',
+        'slug': 'молочные-продукты',
+    },
+    'meat': {
+        'name': 'Мясо',
+        'slug': 'мясо-деликатесы',
+    },
+    'bakery': {
+        'name': 'Хлеб и выпечка',
+        'slug': 'хлеб-выпечка',
+    },
+    'drinks': {
+        'name': 'Напитки',
+        'slug': 'напитки',
+    },
+    'frozen': {
+        'name': 'Замороженные продукты',
+        'slug': 'замороженные-продукты',
+    },
+    'fish': {
+        'name': 'Рыба и морепродукты',
+        'slug': 'рыба-морепродукты',
+    },
+    'grocery': {
+        'name': 'Бакалея',
+        'slug': 'бакалея',
+    },
+    'your_discounts': {
+        'name': 'Ваши скидки',
+        'slug': 'ваши-скидки',
+    },
+    'new': {
+        'name': 'Новинки',
+        'slug': 'новинки',
+    },
+    'hits': {
+        'name': 'Хиты',
+        'slug': 'хиты',
+    },
 }
 
 # Category mappings for grouping

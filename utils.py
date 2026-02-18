@@ -1,89 +1,253 @@
 import re
+import os
+import json
+import time
+import sys
 
-def normalize_category(raw_cat, product_name):
+# Path to category database
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CATEGORY_DB_PATH = os.path.join(BASE_DIR, "data", "category_db.json")
+
+class ChromeLock:
     """
-    Normalizes category based on the raw category string and product name.
-    Maps VkusVill categories to the simplified list used in the App.
+    Cross-platform file lock to prevent race conditions during Chrome initialization.
+    Uses msvcrt on Windows and fcntl on Linux/macOS.
     """
-    raw_cat = raw_cat.lower() if raw_cat else ""
+    def __init__(self, filename="chrome_init.lock", timeout=120):
+        self.filename = os.path.join(BASE_DIR, filename)
+        self.timeout = timeout
+        self.file_handle = None
+
+    def acquire(self):
+        start_time = time.time()
+        while True:
+            try:
+                if sys.platform == 'win32':
+                    import msvcrt
+                    self.file_handle = open(self.filename, 'w')
+                    # Lock the first byte
+                    msvcrt.locking(self.file_handle.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl
+                    self.file_handle = open(self.filename, 'w')
+                    fcntl.flock(self.file_handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                return
+            except (IOError, OSError):
+                if self.file_handle:
+                    try:
+                        self.file_handle.close()
+                    except:
+                        pass
+                    self.file_handle = None
+
+                if time.time() - start_time > self.timeout:
+                    raise TimeoutError(f"Timeout waiting for Chrome lock: {self.filename}")
+                time.sleep(1)
+
+    def release(self):
+        if self.file_handle:
+            try:
+                if sys.platform == 'win32':
+                    import msvcrt
+                    msvcrt.locking(self.file_handle.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+                    fcntl.flock(self.file_handle, fcntl.LOCK_UN)
+            except:
+                pass
+            finally:
+                self.file_handle.close()
+                self.file_handle = None
+
+        # Try to remove the lock file, but don't fail if we can't
+        try:
+            if os.path.exists(self.filename):
+                os.remove(self.filename)
+        except:
+            pass
+
+    def __enter__(self):
+        self.acquire()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.release()
+
+# Cache for category database
+_category_db_cache = None
+
+def load_category_db():
+    """Load the category database from disk (cached)"""
+    global _category_db_cache
+    if _category_db_cache is None:
+        if os.path.exists(CATEGORY_DB_PATH):
+            try:
+                with open(CATEGORY_DB_PATH, 'r', encoding='utf-8') as f:
+                    _category_db_cache = json.load(f)
+            except:
+                _category_db_cache = {"products": {}}
+        else:
+            _category_db_cache = {"products": {}}
+    return _category_db_cache
+
+def lookup_category_db(product_id):
+    """Look up product category in database by ID"""
+    if not product_id:
+        return None
+    db = load_category_db()
+    product_id = str(product_id)
+    if product_id in db.get("products", {}):
+        return db["products"][product_id].get("category")
+    return None
+
+def keyword_fallback(product_name):
+    """Fallback keyword matching for truly unknown products"""
     name = product_name.lower()
-
-    # Priority 1: Keyword matching in Name (fixes "Green Tag" vague categories)
-    if 'запеканка' in name or 'блины' in name or 'сырники' in name or 'каша' in name or 'суп' in name or 'сэндвич' in name or 'плов' in name or 'паста' in name or 'салат' in name:
+    
+    # Meat keywords (expanded)
+    if any(kw in name for kw in ['колбаса', 'сосиски', 'сардельки', 'карбонад', 'филе', 'куриц', 'курин', 
+                                   'фарш', 'говядин', 'свинин', 'индейк', 'утка', 'утёнок', 'утенок',
+                                   'гусь', 'баранин', 'кролик', 'печен', 'сердце', 'язык', 'ветчин']):
+        return 'Мясо, Мясные деликатесы'
+    
+    # Ready food
+    if any(kw in name for kw in ['запеканка', 'блины', 'сырники', 'каша', 'суп', 'сэндвич', 'плов', 
+                                   'паста', 'салат', 'котлет', 'пельмен', 'вареник', 'голубц']):
         return 'Готовая еда'
-    if 'мандарин' in name or 'яблок' in name or 'банан' in name or 'апельсин' in name or 'груша' in name or 'киви' in name or 'ягод' in name or 'клубник' in name or 'малин' in name:
-        return 'Фрукты'
-    if 'огурец' in name or 'томат' in name or 'помидор' in name or 'картоф' in name or 'зелень' in name or 'капуст' in name or 'морков' in name:
-        return 'Овощи'
-    if 'йогурт' in name or 'творог' in name or 'кефир' in name or 'сметана' in name or 'молоко' in name or 'сыр' in name or 'масло' in name:
-        return 'Молочка'
-    if 'колбаса' in name or 'сосиски' in name or 'сардельки' in name or 'карбонад' in name or 'филе' in name or 'куриц' in name or 'фарш' in name or 'говядин' in name or 'свинин' in name or 'индейк' in name:
-        return 'Мясо'
-    if 'торт' in name or 'пирожн' in name or 'эклеры' in name or 'печенье' in name or 'шоколад' in name or 'конфет' in name or 'вафли' in name or 'зефир' in name:
-        return 'Сладости'
-    if 'хлеб' in name or 'батон' in name or 'лаваш' in name or 'булочка' in name or 'чиабатта' in name:
-        return 'Хлеб'
-    if 'рыба' in name or 'форель' in name or 'семга' in name or 'сельдь' in name or 'креветк' in name or 'краб' in name or 'мидии' in name:
-        return 'Рыба'
-    if 'вода' in name or 'сок' in name or 'лимонад' in name or 'чай' in name or 'кофе' in name or 'напиток' in name or 'морс' in name:
+    
+    # Fruits
+    if any(kw in name for kw in ['мандарин', 'яблок', 'банан', 'апельсин', 'груша', 'киви', 'ягод', 
+                                   'клубник', 'малин', 'черник', 'виноград', 'персик', 'абрикос', 'слив']):
+        return 'Овощи, фрукты, ягоды, зелень'
+    
+    # Vegetables
+    if any(kw in name for kw in ['огурец', 'томат', 'помидор', 'картоф', 'зелень', 'капуст', 'морков',
+                                   'лук', 'чеснок', 'перец', 'баклажан', 'кабачок', 'свекл', 'редис']):
+        return 'Овощи, фрукты, ягоды, зелень'
+    
+    # Dairy
+    if any(kw in name for kw in ['йогурт', 'творог', 'кефир', 'сметана', 'молоко', 'сливки', 'ряженка']):
+        return 'Молочные продукты'
+
+    # Eggs
+    if 'яйц' in name or 'яиц' in name:
+        return 'Яйца'
+
+    # Cheese (separate category in VkusVill)
+    if 'сыр' in name:
+        return 'Сыры'
+    
+    # Sweets
+    if any(kw in name for kw in ['торт', 'пирожн', 'эклер', 'печенье', 'шоколад', 'конфет', 'вафли', 
+                                   'зефир', 'мармелад', 'пряник', 'халва']):
+        return 'Сладости и десерты'
+    
+    # Bread
+    if any(kw in name for kw in ['хлеб', 'батон', 'лаваш', 'булочк', 'чиабатта', 'багет', 'круассан']):
+        return 'Выпечка и хлеб'
+    
+    # Fish
+    if any(kw in name for kw in ['рыба', 'форель', 'семга', 'сельдь', 'креветк', 'краб', 'мидии',
+                                   'лосось', 'треска', 'скумбри', 'икра', 'кальмар']):
+        return 'Рыба, икра и морепродукты'
+    
+    # Drinks
+    if any(kw in name for kw in ['вода', 'сок', 'лимонад', 'чай', 'кофе', 'напиток', 'морс', 'компот']):
         return 'Напитки'
+    
+    # Frozen
+    if any(kw in name for kw in ['замороженн', 'заморож']):
+        return 'Замороженные продукты'
+    
+    # Ice cream
+    if 'мороженое' in name or 'пломбир' in name:
+        return 'Мороженое'
 
-    # Priority 2: Raw Category Mapping (if available and meaningful)
-    if not raw_cat or 'зеленые ценники' in raw_cat or 'зелёные ценники' in raw_cat:
-        # If it's just "Green Tags", we rely on the keyword matching above.
-        # If no keywords matched (fell through to here), we can return "Другое"
-        # but let's see if we can catch more keywords first or just let it fall through.
-        pass
-    elif 'овощи' in raw_cat: return 'Овощи'
-    if 'фрукты' in raw_cat or 'ягоды' in raw_cat: return 'Фрукты'
-    if 'мясо' in raw_cat or 'птица' in raw_cat or 'колбас' in raw_cat: return 'Мясо'
-    if 'рыба' in raw_cat or 'икра' in raw_cat: return 'Рыба'
-    if 'молочн' in raw_cat or 'сыр' in raw_cat: return 'Молочка'
-    if 'хлеб' in raw_cat or 'выпечка' in raw_cat: return 'Хлеб'
-    if 'сладости' in raw_cat or 'десерт' in raw_cat or 'торты' in raw_cat: return 'Сладости'
-    if 'кулинария' in raw_cat or 'готовая' in raw_cat: return 'Готовая еда'
-    if 'замороз' in raw_cat or 'мороженое' in raw_cat: return 'Заморозка'
-    if 'напитки' in raw_cat or 'воды' in raw_cat: return 'Напитки'
-    if 'косметика' in raw_cat or 'гигиена' in raw_cat: return 'Косметика'
-    if 'животн' in raw_cat or 'зоо' in raw_cat: return 'Зоотовары'
+    # Groceries / Pantry
+    if any(kw in name for kw in ['крупа', 'рис', 'гречка', 'макарон', 'спагетти', 'мука', 'сахар',
+                                   'соль', 'масло растит', 'консерв', 'горох', 'фасоль', 'чечевиц']):
+        return 'Бакалея'
 
-    # Fallback
+    # Bakery items (pastries, cakes)
+    if any(kw in name for kw in ['кольцо', 'сдоба', 'сдобн', 'пирог', 'ватрушк', 'слойка', 'кекс']):
+        return 'Выпечка и хлеб'
+
     return 'Другое'
+
+
+def normalize_category(raw_cat, product_name, product_id=None):
+    """
+    Normalizes category using a three-tier approach:
+    1. Database lookup by product ID (most accurate)
+    2. Use raw VkusVill category if meaningful
+    3. Keyword fallback for unknown items
+    """
+    # Tier 1: Database lookup (most accurate)
+    if product_id:
+        db_category = lookup_category_db(product_id)
+        if db_category:
+            return db_category
+    
+    # Tier 2: Use raw category if it's meaningful (not just "Green/Red tags")
+    if raw_cat:
+        raw_lower = raw_cat.lower().replace('ё', 'е')  # Normalize ё to е for matching
+        # Skip generic tag categories
+        if 'зелен' not in raw_lower and 'красн' not in raw_lower and 'желт' not in raw_lower:
+            # Return the raw category as-is (VkusVill's actual category)
+            return raw_cat
+    
+    # Tier 3: Keyword fallback for truly unknown items
+    return keyword_fallback(product_name)
 
 def parse_stock(text):
     """
-    Extracts stock count from text like "В наличии 5 шт" or "В наличии: 5".
-    Returns 99 if valid but no specific number, or 0 if out of stock.
+    Extracts stock count from text like "В наличии 5 шт" or "В наличии: 0.41 кг".
+    Returns float for kg items, int for шт items, 99 if valid but no number, or 0 if OOS.
     """
     if not text:
         return 0
 
-    text = text.lower()
+    text_lower = text.lower()
 
-    if 'не осталось' in text or 'нет в наличии' in text:
+    if 'не осталось' in text_lower or 'нет в наличии' in text_lower:
         return 0
 
+    # Match decimal kg (e.g., "0.41 кг", "2.06 кг")
+    kg_match = re.search(r'([\d.,]+)\s*кг', text_lower)
+    if kg_match:
+        return float(kg_match.group(1).replace(',', '.'))
+
     # Match "5 шт", "5шт", ": 5"
-    match = re.search(r'(\d+)\s*шт', text)
+    match = re.search(r'(\d+)\s*шт', text_lower)
     if match:
         return int(match.group(1))
 
-    match = re.search(r'наличии[:\s]*(\d+)', text)
+    match = re.search(r'наличии[:\s]*(\d+)', text_lower)
     if match:
         return int(match.group(1))
+
+    # "Осталось мало" / "мало" means low stock but still available
+    if 'мало' in text_lower or 'осталось' in text_lower:
+        return 5  # Assume low stock = 5 items
 
     # If it says "In stock" but no number, assume plenty
-    if 'в наличии' in text:
+    if 'в наличии' in text_lower:
         return 99
 
     return 0
 
 def clean_price(price_str):
-    """Returns clean integer string from price (e.g., '120 ₽' -> '120')"""
+    """Returns clean integer string from price (e.g., '120 ₽' -> '120', '120.50' -> '120')"""
     if not price_str:
         return '0'
-    clean = re.sub(r'[^\d]', '', str(price_str))
-    return clean if clean else '0'
+    # Handle decimal separators - replace comma with dot, then extract number
+    s = str(price_str).replace(',', '.')
+    # Extract numeric value (including decimal)
+    match = re.search(r'(\d+(?:\.\d+)?)', s)
+    if match:
+        # Return integer part only (floor the value)
+        return str(int(float(match.group(1))))
+    return '0'
 
 def synthesize_discount(product):
     """
@@ -140,3 +304,25 @@ def deduplicate_products(products):
                 pass # Keep existing if price parsing fails
 
     return list(product_map.values())
+
+def save_products_safe(products, output_path):
+    """
+    Safely saves products to a JSON file.
+    - If products list is empty, does NOT overwrite existing file (prevents data loss on scraper error).
+    - Creates directory if needed.
+    - Saves with UTF-8 encoding and indent=2.
+    """
+    if not products:
+        print(f"Warning: No products found. Skipping save to {output_path} to prevent overwriting existing data.")
+        return False
+
+    try:
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+
+        with open(output_path, 'w', encoding='utf-8') as f:
+            json.dump(products, f, ensure_ascii=False, indent=2)
+        print(f"Successfully saved {len(products)} products to {output_path}")
+        return True
+    except Exception as e:
+        print(f"Error saving file {output_path}: {e}")
+        return False

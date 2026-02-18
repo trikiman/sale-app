@@ -9,7 +9,7 @@ import json
 import os
 import sys
 from datetime import datetime
-from utils import normalize_category, parse_stock, clean_price, deduplicate_products, synthesize_discount
+from utils import normalize_category, parse_stock, clean_price, deduplicate_products, synthesize_discount, ChromeLock
 
 # Fix Windows console encoding for emoji support
 if sys.platform == 'win32':
@@ -33,8 +33,16 @@ def init_driver(headless=False):
     options.add_argument('--no-sandbox')
     options.add_argument('--start-maximized')
     options.add_argument(f'--user-data-dir={PROFILE_DIR}')
-    
-    return uc.Chrome(options=options, headless=headless)
+
+    with ChromeLock():
+        try:
+            return uc.Chrome(options=options, headless=headless)
+        except OSError as e:
+            if "WinError 183" in str(e):
+                print(f"⚠️ WinError 183 despite lock, retrying in 2s...")
+                time.sleep(2)
+                return uc.Chrome(options=options, headless=headless)
+            raise e
 
 
 def scrape_catalog_page(driver, url, product_type):
@@ -105,7 +113,7 @@ def scrape_catalog_page(driver, url, product_type):
             p['currentPrice'] = clean_price(p.get('currentPrice'))
             p['oldPrice'] = clean_price(p.get('oldPrice'))
             raw_cat = p.get('category', '').split('//')[0].strip()
-            p['category'] = normalize_category(raw_cat, p['name'])
+            p['category'] = normalize_category(raw_cat, p['name'], p.get('id'))
 
             # Ensure discount is synthesized if missing
             p = synthesize_discount(p)
@@ -295,7 +303,7 @@ def scrape_green_prices(driver, auto_mode=False):
             else:
                 raw_cat = raw_cat.split('//')[0].strip()
 
-            p['category'] = normalize_category(raw_cat, p['name'])
+            p['category'] = normalize_category(raw_cat, p['name'], p.get('id'))
 
         print(f"✅ Found {len(products)} GREEN products")
         return products

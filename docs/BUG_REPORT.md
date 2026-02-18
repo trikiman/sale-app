@@ -27,6 +27,16 @@
 
 ## 🟡 High/Medium Bugs
 
+### Bug #10: Yellow Products Missing Images
+- **Severity:** 🟡 Medium
+- **Status:** ✅ FIXED
+- **Resolution:** Updated `scrape_yellow.py` to handle lazy-loaded images (`data-src`) and explicitly filter out `no-image.svg` placeholders.
+
+### Bug #11: "Updated At" Position
+- **Severity:** 🔵 Low
+- **Status:** ✅ FIXED
+- **Resolution:** Moved the update timestamp from the footer to the header in `App.jsx` for better visibility.
+
 ### Bug #4: Favorites Toggle Broken
 - **Severity:** 🟡 High
 - **Status:** ✅ FIXED
@@ -85,3 +95,7 @@
 | 🟡 High/Medium | 0 |
 | 🔵 Low | 0 |
 | **Total** | **0** |
+
+![alt text](image-1.png) 1 bugs left its need to show weight in the product card 
+
+no favorite button  for category page and products 

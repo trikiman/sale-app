@@ -26,5 +26,14 @@ node_modules/
 debug*.html
 debug*.png
 
+# Windows reserved device names (cannot be handled by git on Windows)
+NUL
+CON
+PRN
+AUX
+
+# Lock files
+chrome_init.lock
+
 # Database
 *.db

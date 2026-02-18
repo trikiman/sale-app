@@ -88,7 +88,7 @@ def get_products():
 
 
 @app.get("/favorites/{user_id}")
-def get_favorites(user_id: int):
+def get_favorites(user_id: str):
     """Get user's favorite products"""
     favorites = db.get_user_favorite_products(user_id)
     return {
@@ -98,10 +98,10 @@ def get_favorites(user_id: int):
 
 
 @app.post("/favorites/{user_id}", response_model=FavoriteResponse)
-def toggle_favorite(user_id: int, request: FavoriteRequest):
+def toggle_favorite(user_id: str, request: FavoriteRequest):
     """Toggle favorite status for a product"""
     # Ensure user exists
-    db.upsert_user(user_id)
+    db.upsert_user(user_id)  # SQLite stores as TEXT for guest IDs
     
     # Check if already favorited
     favorites = db.get_user_favorite_products(user_id)
@@ -126,7 +126,7 @@ def toggle_favorite(user_id: int, request: FavoriteRequest):
 
 
 @app.delete("/favorites/{user_id}/{product_id}")
-def remove_favorite(user_id: int, product_id: str):
+def remove_favorite(user_id: str, product_id: str):
     """Remove a product from favorites"""
     success = db.remove_favorite_product(user_id, product_id)
     return {"success": success, "product_id": product_id}

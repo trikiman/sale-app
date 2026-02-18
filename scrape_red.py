@@ -7,7 +7,7 @@ import time
 import json
 import os
 import sys
-from utils import normalize_category, parse_stock, clean_price, deduplicate_products, synthesize_discount
+from utils import normalize_category, parse_stock, clean_price, deduplicate_products, synthesize_discount, save_products_safe, ChromeLock
 
 # Fix Windows console encoding
 if sys.platform == 'win32':
@@ -18,10 +18,24 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 RED_URL = "https://vkusvill.ru/offers/?F%5B212%5D%5B%5D=284&F%5BDEF_3%5D=1&sf4=Y&statepop"
 
 
+def cleanup_profile_locks(profile_dir):
+    """Remove stale Chrome LOCK files left over from killed/crashed Chrome processes."""
+    import glob
+    for lock_path in glob.glob(os.path.join(profile_dir, '**', 'LOCK'), recursive=True):
+        try:
+            os.remove(lock_path)
+            print(f"  [RED] Removed stale LOCK: {lock_path}")
+        except Exception:
+            pass
+
+
 def init_driver():
     # Use dedicated profile for Red scraper
     profile = os.path.join(BASE_DIR, "data", "chrome_profile_red")
     os.makedirs(profile, exist_ok=True)
+
+    # Clean up stale LOCK files before starting Chrome
+    cleanup_profile_locks(profile)
 
     options = uc.ChromeOptions()
     options.add_argument('--lang=ru-RU')
@@ -29,17 +43,20 @@ def init_driver():
     options.add_argument('--start-maximized')
     options.add_argument(f'--user-data-dir={profile}')
 
-    # Retry logic for WinError 183 (race condition)
-    for attempt in range(1, 4):
+    # Use global lock to prevent race conditions during Chrome startup
+    # WinError 183 occurs when multiple processes try to initialize Chrome profiles simultaneously
+    with ChromeLock():
         try:
-            driver = uc.Chrome(options=options, headless=False)
+            driver = uc.Chrome(options=options, headless=False, version_main=144)
             return driver
         except OSError as e:
-            if "WinError 183" in str(e) and attempt < 3:
-                print(f"⚠️ [RED] Race condition detected (WinError 183), retrying in {attempt*3}s...")
-                time.sleep(attempt * 3)
-            else:
-                raise e
+            # Fallback retry just in case, though lock should prevent most collisions
+            if "WinError 183" in str(e):
+                print(f"⚠️ [RED] WinError 183 despite lock, retrying once...")
+                time.sleep(2)
+                driver = uc.Chrome(options=options, headless=False, version_main=144)
+                return driver
+            raise e
 
 
 def scrape_red_prices():
@@ -70,7 +87,7 @@ def scrape_red_prices():
 
         # Smart pagination: click once, scroll 500px, count in-stock products
         # Stop when in-stock count stops increasing
-        prev_in_stock = 0
+        prev_total = 0
         no_increase_count = 0
 
         for batch in range(20):  # Max 20 iterations (safety limit)
@@ -87,7 +104,12 @@ def scrape_red_prices():
             driver.execute_script("window.scrollBy(0, 500);")
             time.sleep(1)
 
-            # Count IN-STOCK products (with "В наличии X шт", not "Не осталось")
+            # Count TOTAL products loaded (not just in-stock) to detect new content
+            total_count = driver.execute_script("""
+                return document.querySelectorAll('.ProductCard').length;
+            """)
+
+            # Also count in-stock for logging
             in_stock_count = driver.execute_script("""
                 let count = 0;
                 document.querySelectorAll('.ProductCard').forEach(card => {
@@ -100,18 +122,18 @@ def scrape_red_prices():
                 return count;
             """)
 
-            print(f"  [RED] In-stock count: {in_stock_count}")
+            print(f"  [RED] Total: {total_count}, In-stock: {in_stock_count}")
 
-            # Stop if in-stock count didn't increase
-            if in_stock_count <= prev_in_stock:
+            # Stop if total count didn't increase (no new content loaded)
+            if total_count <= prev_total:
                 no_increase_count += 1
                 if no_increase_count >= 2:
-                    print(f"  [RED] In-stock count stopped growing - done")
+                    print(f"  [RED] No new content loaded - done")
                     break
             else:
                 no_increase_count = 0
 
-            prev_in_stock = in_stock_count
+            prev_total = total_count
 
         raw_products = driver.execute_script("""
             const products = [];
@@ -139,13 +161,46 @@ def scrape_red_prices():
                     const oldPrice = oldPriceEl ? oldPriceEl.innerText.trim() : '0';
                     const category = catEl ? catEl.innerText.trim() : '';
 
+                    // Image extraction: Prioritize data-src (lazy load) and check multiple sources
+                    let imgSrc = '';
+                    
+                    // 1. Try standard img tag
+                    if (imgEl) {
+                        imgSrc = imgEl.getAttribute('data-src') || imgEl.src || '';
+                    }
+
+                    // 2. Try picture source
+                    if (!imgSrc || imgSrc.includes('data:image')) {
+                        const source = card.querySelector('picture source[srcset]');
+                        if (source) {
+                            const srcset = source.srcset;
+                            if (srcset) imgSrc = srcset.split(' ')[0];
+                        }
+                    }
+
+                    // 3. Try background image
+                    if (!imgSrc || imgSrc.includes('data:image')) {
+                         const bgEl = card.querySelector('.ProductCard__imageLink, .ProductCard__image');
+                         if (bgEl) {
+                             const bg = window.getComputedStyle(bgEl).backgroundImage;
+                             if (bg && bg !== 'none' && bg.startsWith('url')) {
+                                 imgSrc = bg.replace(/^url\(['"]?/, '').replace(/['"]?\)$/, '');
+                             }
+                         }
+                    }
+
+                    // Filter out known placeholders
+                    if (imgSrc.includes('no-image.svg') || imgSrc.includes('data:image') || imgSrc.includes('spacer.gif')) {
+                         imgSrc = '';
+                    }
+
                     products.push({
                         id: idMatch ? idMatch[1] : '',
                         name: titleEl.innerText.trim(),
                         url: url,
                         currentPrice: currentPrice,
                         oldPrice: oldPrice,
-                        image: imgEl ? imgEl.src : '',
+                        image: imgSrc,
                         stockText: cardText,
                         unit: 'шт',
                         rawCategory: category,
@@ -173,7 +228,7 @@ def scrape_red_prices():
 
             # Normalize Category (using raw breadcrumb + name)
             raw_cat = p.get('rawCategory', '').split('//')[0].strip()
-            p['category'] = normalize_category(raw_cat, p['name'])
+            p['category'] = normalize_category(raw_cat, p['name'], p.get('id'))
             if 'rawCategory' in p:
                 del p['rawCategory']
 
@@ -195,11 +250,7 @@ def scrape_red_prices():
 
     # Save to temp file
     output_path = os.path.join(DATA_DIR, "red_products.json")
-    os.makedirs(DATA_DIR, exist_ok=True)
-    with open(output_path, 'w', encoding='utf-8') as f:
-        json.dump(products, f, ensure_ascii=False, indent=2)
-
-    print(f"💾 Saved {len(products)} red products to {output_path}")
+    save_products_safe(products, output_path)
     return products
 
 

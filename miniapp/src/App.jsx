@@ -55,7 +55,7 @@ function ProductCard({ product, index, isFavorite, onToggleFavorite, favoritesLo
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
-      transition={{ duration: 0.3, delay: index * 0.05 }}
+      transition={{ duration: 0.3, delay: Math.min(index * 0.05, 0.5) }}
       className={`glass-card p-3 flex gap-3 ${config.bg} border-l-2 ${config.text} border-current relative group`}
     >
       {/* Favorite Button */}
@@ -66,9 +66,8 @@ function ProductCard({ product, index, isFavorite, onToggleFavorite, favoritesLo
           if (!favoritesLoading) onToggleFavorite(product)
         }}
         disabled={favoritesLoading}
-        className={`absolute top-2 right-2 z-10 p-2 rounded-full backdrop-blur-sm transition-all flex items-center justify-center ${
-          isFavorite ? 'bg-red-500/20 text-red-500 scale-110' : 'bg-black/40 text-white hover:bg-black/60'
-        } ${favoritesLoading ? 'opacity-70 cursor-wait' : ''}`}
+        className={`absolute top-2 right-2 z-10 p-2 rounded-full backdrop-blur-sm transition-all flex items-center justify-center ${isFavorite ? 'bg-red-500/20 text-red-500 scale-110' : 'bg-black/40 text-white hover:bg-black/60'
+          } ${favoritesLoading ? 'opacity-70 cursor-wait' : ''}`}
       >
         {favoritesLoading ? (
           <div className="w-5 h-5 border-2 border-white/50 border-t-transparent rounded-full animate-spin" />
@@ -185,7 +184,16 @@ function App() {
   const [favorites, setFavorites] = useState(new Set())
   const [userId] = useState(() => {
     // Get user ID from Telegram if available
-    return window.Telegram?.WebApp?.initDataUnsafe?.user?.id || 1
+    const telegramId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id
+    if (telegramId) return telegramId
+
+    // For non-Telegram users, use a persistent guest UUID from localStorage
+    let guestId = localStorage.getItem('guest_user_id')
+    if (!guestId) {
+      guestId = 'guest_' + Math.random().toString(36).substring(2, 15) + Date.now().toString(36)
+      localStorage.setItem('guest_user_id', guestId)
+    }
+    return guestId
   })
   const [typeFilters, setTypeFilters] = useState({
     green: true,
@@ -211,6 +219,9 @@ function App() {
   }, [userId])
 
   const handleToggleFavorite = async (product) => {
+    // Store original state for potential rollback
+    const wasInFavorites = favorites.has(product.id)
+
     // Optimistic update using functional state to avoid race conditions
     setFavorites(prev => {
       const next = new Set(prev)
@@ -223,8 +234,7 @@ function App() {
     })
 
     try {
-      const isFav = favorites.has(product.id)
-      if (isFav) {
+      if (wasInFavorites) {
         // Remove
         const res = await fetch(`/api/favorites/${userId}/${product.id}`, {
           method: 'DELETE'
@@ -245,7 +255,17 @@ function App() {
         if (!res.ok && res.status !== 404) throw new Error('API failed')
       }
     } catch (err) {
-      console.warn('API request failed, falling back to local state:', err)
+      console.warn('API request failed, reverting state:', err)
+      // Rollback on error
+      setFavorites(prev => {
+        const next = new Set(prev)
+        if (wasInFavorites) {
+          next.add(product.id)  // Was in favorites, add back
+        } else {
+          next.delete(product.id)  // Wasn't in favorites, remove
+        }
+        return next
+      })
     }
   }
 
@@ -302,21 +322,18 @@ function App() {
     }
   }, [])
 
-  // Apply both category and type filters
-  const filteredProducts = products.filter(p => {
-    const categoryMatch = selectedCategory === 'all' || p.category === selectedCategory
+  // Apply both category and type filters (memoized for performance)
+  const filteredProducts = useMemo(() => {
+    const activeTypes = Object.entries(typeFilters)
+      .filter(([, active]) => active)
+      .map(([k]) => k)
 
-    // Fix Bug #8: OR logic for multi-select
-    // If NO filters are selected (all false) -> Show nothing (or all? usually all false is impossible in this UI)
-    // If SOME filters selected -> Show if product type matches ONE of them
-    // Current UI forces at least one selection usually, but let's check:
-    const activeTypes = Object.entries(typeFilters).filter(([, active]) => active).map(([k]) => k)
-
-    // If we want OR logic: product matches if its type is in the active list
-    const typeMatch = activeTypes.includes(p.type)
-
-    return categoryMatch && typeMatch
-  })
+    return products.filter(p => {
+      const categoryMatch = selectedCategory === 'all' || p.category === selectedCategory
+      const typeMatch = activeTypes.includes(p.type)
+      return categoryMatch && typeMatch
+    })
+  }, [products, typeFilters, selectedCategory])
 
   // Build dynamic categories from products (after type filtering)
   const categories = useMemo(() => {
@@ -376,23 +393,28 @@ function App() {
       >
         <h1 className="text-2xl font-bold mb-1">{headerEmoji} {headerTitle}</h1>
 
+        {/* Updated At */}
+        <div className="text-center text-xs opacity-60 mb-2">
+          Обновлено: {updatedAt ? new Date(updatedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : '---'}
+        </div>
+
         {/* Detailed Stats */}
         <div className="flex justify-center gap-4 text-xs mt-2 opacity-80 font-medium flex-wrap">
           <div className="flex items-center gap-1">
-             <span className="text-lg">📦</span>
-             <span>{totalCount}</span>
+            <span className="text-lg">📦</span>
+            <span>{totalCount}</span>
           </div>
           <div className="flex items-center gap-1 text-green-500">
-             <span className="text-lg">🟢</span>
-             <span>{countGreen}</span>
+            <span className="text-lg">🟢</span>
+            <span>{countGreen}</span>
           </div>
           <div className="flex items-center gap-1 text-red-500">
-             <span className="text-lg">🔴</span>
-             <span>{countRed}</span>
+            <span className="text-lg">🔴</span>
+            <span>{countRed}</span>
           </div>
           <div className="flex items-center gap-1 text-yellow-500">
-             <span className="text-lg">🟡</span>
-             <span>{countYellow}</span>
+            <span className="text-lg">🟡</span>
+            <span>{countYellow}</span>
           </div>
         </div>
       </motion.div>
@@ -440,7 +462,7 @@ function App() {
                 const next = { ...prev, [key]: !prev[key] }
                 // If this would turn the last one off, reset to all
                 if (!Object.values(next).some(v => v)) {
-                   return { green: true, red: true, yellow: true }
+                  return { green: true, red: true, yellow: true }
                 }
                 return next
               })
@@ -488,7 +510,7 @@ function App() {
         <AnimatePresence mode="popLayout">
           {filteredProducts.map((product, index) => (
             <ProductCard
-              key={`${product.id}-${index}`}
+              key={product.id}
               product={product}
               index={index}
               isFavorite={favorites.has(product.id)}
@@ -509,15 +531,7 @@ function App() {
         )}
       </div>
 
-      {/* Footer */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.5 }}
-        className="text-center mt-8 pb-4 text-xs opacity-40"
-      >
-        Обновлено: {updatedAt ? new Date(updatedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : '---'}
-      </motion.div>
+      {/* Footer removed as moved to header */}
     </div>
   )
 }
