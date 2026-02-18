@@ -35,6 +35,10 @@ AUX
 # Lock files
 chrome_init.lock
 
+# Temp files
+tmp_out.txt
+tmp_*.txt
+
 # Database
 *.db
 
