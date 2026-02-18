@@ -137,12 +137,14 @@ A "🔄 Обновить зелёные" button in the banner triggers the green
 - "Fix it" button in banner triggers green scraper via admin API
 - Admin panel at `/admin` with token auth, stats, scraper controls, logs
 
-### Debug session fixes (5 bugs)
+### Debug session fixes (7 bugs)
 1. `SyntaxWarning: invalid escape \(` — scrape_red.py + scrape_yellow.py: `\(` → `\\(` in JS regex
 2. `live_count = 0` — scrape_green.py: TreeWalker text match failed; fixed with `[data-action="GreenLabels"]`
 3. Wrong modal (92 items instead of 35) — fallback clicked "Добавьте в заказ" button; fixed with `[data-action="GreenLabels"]` + exclude "Добавьте в заказ"
 4. Race condition in `backend/_run_script` — added per-name `threading.Lock()` for atomic check+set
 5. Dead `ADMIN_HTML` string (~400 lines) in `backend/main.py` — deleted; file shrunk from 630 to 230 lines
+6. `.finally()` race in App.jsx — inner `fetch('./data.json')` not `return`ed from `.catch()`, so `setLoading(false)` fired before fallback resolved → brief empty-state flash. Fixed with `return fetch(...)`.
+7. `prompt()` blocked in Telegram WebApp — `window.prompt()` returns null immediately inside Telegram WebApp. Replaced with inline `<input>` inside the staleness banner (stores token in localStorage, supports Enter/Escape).
 
 ### Other session fixes
 - `run_app.bat` now uses `scheduler_service.py` (parallel scrapers)
@@ -175,6 +177,8 @@ A "🔄 Обновить зелёные" button in the banner triggers the green
 ## Git Status
 
 Latest commits (most recent first):
+- `050db69` — fix: App.jsx — .finally() race + prompt() broken in Telegram WebApp
+- `bd9fb7d` — docs: update CONTEXT.md with full session state
 - `7b5f9d0` — fix: race condition in _run_script + remove dead ADMIN_HTML (400 lines)
 - `3a851e9` — fix: 3 bugs in scrapers — escape sequences, live_count=0, wrong button click
 - `6196c18` — chore: gitignore scraper output data files (change every 5 min)
