@@ -203,6 +203,8 @@ function App() {
   const [greenLiveCount, setGreenLiveCount] = useState(null)
   const [scraperRunning, setScraperRunning] = useState(false)
   const [scraperDone, setScraperDone] = useState(false)
+  const [showTokenInput, setShowTokenInput] = useState(false)
+  const [tokenInputValue, setTokenInputValue] = useState('')
 
   useEffect(() => {
     // Load favorites
@@ -293,8 +295,9 @@ function App() {
       })
       .catch(err => {
         console.error('API Error:', err)
-        // Fallback to static file if API fails
-        fetch('./data.json')
+        // Fallback to static file if API fails — MUST return the promise so
+        // .finally() waits for the fallback to resolve before setLoading(false)
+        return fetch('./data.json')
           .then(res => res.json())
           .then(data => {
             if (data.products) {
@@ -447,36 +450,76 @@ function App() {
               <div className="mt-2 text-xs text-green-400 font-medium">
                 ✅ Скрапер запущен — обновите страницу через ~2 мин
               </div>
+            ) : showTokenInput ? (
+              /* Inline token input — avoids window.prompt() which is blocked in Telegram WebApp */
+              <div className="mt-2 flex gap-2 items-center justify-center">
+                <input
+                  type="password"
+                  value={tokenInputValue}
+                  onChange={e => setTokenInputValue(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && tokenInputValue) {
+                      const t = tokenInputValue
+                      localStorage.setItem('vv_admin_token', t)
+                      setShowTokenInput(false)
+                      setTokenInputValue('')
+                      setScraperRunning(true)
+                      fetch('/api/admin/run/green', { method: 'POST', headers: { 'X-Admin-Token': t } })
+                        .then(r => r.status === 403 ? (localStorage.removeItem('vv_admin_token'), null) : r.json())
+                        .then(data => { if (data) { setScraperRunning(false); setScraperDone(true) } })
+                        .catch(() => setScraperRunning(false))
+                    }
+                    if (e.key === 'Escape') { setShowTokenInput(false); setTokenInputValue('') }
+                  }}
+                  placeholder="Admin token..."
+                  autoFocus
+                  className="flex-1 text-xs px-2 py-1 rounded-lg bg-black/40 border border-red-500/40 text-red-200 outline-none max-w-40"
+                />
+                <button
+                  onClick={() => {
+                    if (!tokenInputValue) return
+                    const t = tokenInputValue
+                    localStorage.setItem('vv_admin_token', t)
+                    setShowTokenInput(false)
+                    setTokenInputValue('')
+                    setScraperRunning(true)
+                    fetch('/api/admin/run/green', { method: 'POST', headers: { 'X-Admin-Token': t } })
+                      .then(r => r.status === 403 ? (localStorage.removeItem('vv_admin_token'), null) : r.json())
+                      .then(data => { if (data) { setScraperRunning(false); setScraperDone(true) } })
+                      .catch(() => setScraperRunning(false))
+                  }}
+                  className="text-xs px-3 py-1 rounded-lg bg-red-500/40 border border-red-500/60 text-red-200 font-bold"
+                >OK</button>
+                <button
+                  onClick={() => { setShowTokenInput(false); setTokenInputValue('') }}
+                  className="text-xs px-2 py-1 rounded-lg bg-black/30 text-red-400"
+                >✕</button>
+              </div>
             ) : (
               <motion.button
                 whileTap={{ scale: 0.95 }}
                 disabled={scraperRunning}
                 onClick={() => {
-                  const adminToken = localStorage.getItem('vv_admin_token') ||
-                    prompt('Введите admin token для запуска скрапера:')
-                  if (!adminToken) return
-                  localStorage.setItem('vv_admin_token', adminToken)
-                  setScraperRunning(true)
-                  fetch('/api/admin/run/green', {
-                    method: 'POST',
-                    headers: { 'X-Admin-Token': adminToken }
-                  })
-                    .then(r => {
-                      if (r.status === 403) {
-                        localStorage.removeItem('vv_admin_token')
-                        alert('Неверный токен')
-                        setScraperRunning(false)
-                        return
-                      }
-                      return r.json()
-                    })
-                    .then(data => {
-                      if (data) {
-                        setScraperRunning(false)
-                        setScraperDone(true)
-                      }
-                    })
-                    .catch(() => setScraperRunning(false))
+                  const storedToken = localStorage.getItem('vv_admin_token')
+                  if (storedToken) {
+                    // Token already stored — fire immediately
+                    setScraperRunning(true)
+                    fetch('/api/admin/run/green', { method: 'POST', headers: { 'X-Admin-Token': storedToken } })
+                      .then(r => {
+                        if (r.status === 403) {
+                          localStorage.removeItem('vv_admin_token')
+                          setScraperRunning(false)
+                          setShowTokenInput(true)
+                          return null
+                        }
+                        return r.json()
+                      })
+                      .then(data => { if (data) { setScraperRunning(false); setScraperDone(true) } })
+                      .catch(() => setScraperRunning(false))
+                  } else {
+                    // No token — show inline input (prompt() is blocked in Telegram WebApp)
+                    setShowTokenInput(true)
+                  }
                 }}
                 className={`mt-2 px-4 py-1.5 rounded-lg text-xs font-bold border transition-all ${
                   scraperRunning
