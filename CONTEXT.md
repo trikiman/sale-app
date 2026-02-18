@@ -137,6 +137,11 @@ A "🔄 Обновить зелёные" button in the banner triggers the green
 - "Fix it" button in banner triggers green scraper via admin API
 - Admin panel at `/admin` with token auth, stats, scraper controls, logs
 
+### Scheduler + scrape_parallel.ps1 fixes
+- `scheduler_service.py`: now captures subprocess stdout/stderr → writes to `logs/red.log`, `logs/yellow.log` (errors now visible after each run)
+- `scrape_parallel.ps1`: changed `Invoke-Expression` → `cmd /c` to suppress PowerShell NativeCommandError (Python stderr no longer kills the process)
+- Deleted stale `chrome_init.lock` that could block Chrome init
+
 ### Debug session fixes (7 bugs)
 1. `SyntaxWarning: invalid escape \(` — scrape_red.py + scrape_yellow.py: `\(` → `\\(` in JS regex
 2. `live_count = 0` — scrape_green.py: TreeWalker text match failed; fixed with `[data-action="GreenLabels"]`
@@ -177,6 +182,8 @@ A "🔄 Обновить зелёные" button in the banner triggers the green
 ## Git Status
 
 Latest commits (most recent first):
+- `5339360` — fix: scheduler_service captures output to logs, scrape_parallel.ps1 suppresses PowerShell NativeCommandError
+- `93ade42` — chore: untrack database __pycache__ + gitignore tmp files
 - `050db69` — fix: App.jsx — .finally() race + prompt() broken in Telegram WebApp
 - `bd9fb7d` — docs: update CONTEXT.md with full session state
 - `7b5f9d0` — fix: race condition in _run_script + remove dead ADMIN_HTML (400 lines)
