@@ -200,6 +200,7 @@ function App() {
     red: true,
     yellow: true
   })
+  const [greenLiveCount, setGreenLiveCount] = useState(null)
 
   useEffect(() => {
     // Load favorites
@@ -281,6 +282,7 @@ function App() {
         if (data.products && Array.isArray(data.products)) {
           setProducts(data.products)
           setUpdatedAt(data.updatedAt)
+          if (data.greenLiveCount !== undefined) setGreenLiveCount(data.greenLiveCount)
         } else if (Array.isArray(data) && data.length > 0) {
           setProducts(data)
         } else {
@@ -296,6 +298,7 @@ function App() {
             if (data.products) {
               setProducts(data.products)
               setUpdatedAt(data.updatedAt)
+              if (data.greenLiveCount !== undefined) setGreenLiveCount(data.greenLiveCount)
             } else {
               setProducts(data)
             }
@@ -417,6 +420,20 @@ function App() {
             <span>{countYellow}</span>
           </div>
         </div>
+
+        {/* Green staleness warning — shown when live page count differs by more than 2 */}
+        {greenLiveCount !== null && greenLiveCount > 0 && Math.abs(countGreen - greenLiveCount) > 2 && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="mt-3 px-4 py-2 rounded-xl bg-red-500/20 border border-red-500/50 text-red-400 text-center"
+          >
+            <div className="font-bold text-sm">⚠️ ЗЕЛЁНЫЕ ЦЕННИКИ УСТАРЕЛИ</div>
+            <div className="text-xs opacity-70 mt-0.5">
+              На сайте {greenLiveCount} товаров, у нас {countGreen} — данные могли устареть
+            </div>
+          </motion.div>
+        )}
       </motion.div>
 
       {/* Type Filter Toggles */}

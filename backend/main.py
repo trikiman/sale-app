@@ -50,6 +50,7 @@ class Product(BaseModel):
 
 class ProductsResponse(BaseModel):
     updatedAt: str
+    greenLiveCount: Optional[int] = 0
     products: List[Product]
 
 

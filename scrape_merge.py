@@ -19,6 +19,7 @@ def merge_products():
     print("🔀 Merging products...")
     
     all_products = []
+    green_live_count = 0  # Live count from VkusVill page (for staleness detection)
     
     # Load each color's products
     for color in ['green', 'red', 'yellow']:
@@ -31,6 +32,10 @@ def merge_products():
                     products = data
                 elif isinstance(data, dict) and 'products' in data:
                     products = data['products']
+                    # Extract live_count metadata from green scraper
+                    if color == 'green' and 'live_count' in data:
+                        green_live_count = data['live_count']
+                        print(f"  📡 Green live count from VkusVill: {green_live_count}")
                 else:
                     products = []
                     print(f"  ⚠️ Unknown format in {color} file")
@@ -60,6 +65,7 @@ def merge_products():
     # Save results
     output = {
         "updatedAt": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "greenLiveCount": green_live_count,
         "products": all_products
     }
     

@@ -132,6 +132,7 @@ def scrape_green_prices():
     print("🔄 [GREEN] Starting...")
     driver = None
     products = []
+    live_count = 0  # Count shown on VkusVill live page (for staleness check)
 
     try:
         driver = init_driver()
@@ -180,6 +181,33 @@ def scrape_green_prices():
         time.sleep(2)
         driver.execute_script("window.scrollTo(0, 1400);")
         time.sleep(2)
+
+        # Extract LIVE count from button text BEFORE clicking (e.g. "61 товар" → 61)
+        # This is used to detect staleness in the mini app
+        live_count = driver.execute_script("""
+            const btn = document.getElementById('js-Delivery__Order-green-show-all');
+            if (btn) {
+                const textEl = btn.querySelector('.js-vv-tizers-section__link-text');
+                if (textEl) {
+                    const match = textEl.innerText.replace(/\\u00a0/g, ' ').match(/(\\d+)/);
+                    return match ? parseInt(match[1]) : 0;
+                }
+            }
+            // Fallback: search any button near "Зелёные ценники" text
+            const allBtns = document.querySelectorAll('.VV_TizersSection__Link');
+            for (const b of allBtns) {
+                const section = b.closest('section, div');
+                if (section && section.innerText.includes('Зелёные ценники')) {
+                    const span = b.querySelector('.js-vv-tizers-section__link-text');
+                    if (span) {
+                        const m = span.innerText.replace(/\\u00a0/g, ' ').match(/(\\d+)/);
+                        return m ? parseInt(m[1]) : 0;
+                    }
+                }
+            }
+            return 0;
+        """)
+        print(f"  [GREEN] Live count on VkusVill page: {live_count}")
 
         # Click the "Show all" button — try multiple selectors
         show_all_clicked = driver.execute_script("""
@@ -602,9 +630,23 @@ def scrape_green_prices():
             except:
                 pass
 
-    # Save to temp file
+    # Save to file — enhanced format with live_count metadata for staleness detection
     output_path = os.path.join(DATA_DIR, "green_products.json")
-    save_products_safe(products, output_path)
+    if products:
+        output_data = {
+            "live_count": live_count,
+            "scraped_count": len(products),
+            "products": products
+        }
+        try:
+            os.makedirs(os.path.dirname(output_path), exist_ok=True)
+            with open(output_path, 'w', encoding='utf-8') as f:
+                json.dump(output_data, f, ensure_ascii=False, indent=2)
+            print(f"✅ Saved {len(products)} products (live_count={live_count}) → {output_path}")
+        except Exception as e:
+            print(f"❌ Error saving {output_path}: {e}")
+    else:
+        print(f"⚠️ No products found — keeping existing {output_path} to prevent data loss.")
     return products
 
 
