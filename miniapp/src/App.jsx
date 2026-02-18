@@ -398,9 +398,18 @@ function App() {
       >
         <h1 className="text-2xl font-bold mb-1">{headerEmoji} {headerTitle}</h1>
 
-        {/* Updated At */}
-        <div className="text-center text-xs opacity-60 mb-2">
-          Обновлено: {updatedAt ? new Date(updatedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : '---'}
+        {/* Updated At + Admin link */}
+        <div className="text-center text-xs opacity-60 mb-2 flex items-center justify-center gap-3">
+          <span>Обновлено: {updatedAt ? new Date(updatedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : '---'}</span>
+          <a
+            href={`${window.location.protocol}//${window.location.hostname}:8000/admin`}
+            target="_blank"
+            rel="noreferrer"
+            className="px-2 py-0.5 rounded-md text-xs font-medium opacity-50 hover:opacity-100 transition-opacity"
+            style={{ background: 'rgba(71,85,105,0.4)', color: '#94a3b8', textDecoration: 'none' }}
+          >
+            🛠️ Admin
+          </a>
         </div>
 
         {/* Detailed Stats */}
