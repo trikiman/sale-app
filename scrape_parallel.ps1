@@ -1,5 +1,8 @@
-# VkusVill Parallel Scraper using Claude subagents
+# VkusVill Parallel Scraper
 # This avoids the WinError 32 chromedriver file lock issue
+# Suppress PowerShell NativeCommandError — Python warnings go to stderr
+# which PowerShell would otherwise treat as an error and kill the process
+$ErrorActionPreference = "Continue"
 
 Write-Host "============================================================" -ForegroundColor Cyan
 Write-Host "VkusVill PARALLEL Scraper with Claude Subagents" -ForegroundColor Cyan
@@ -24,9 +27,10 @@ $jobs = @(
         # Create logs directory if not exists
         New-Item -ItemType Directory -Force -Path "logs" | Out-Null
 
-        # Run python script directly redirecting output to log file
+        # Run python script redirecting all output (stdout+stderr) to log file
+        # Using cmd /c avoids PowerShell NativeCommandError on Python warnings
         $logFile = "logs\$($name.ToLower()).log"
-        Invoke-Expression "$script > $logFile 2>&1"
+        cmd /c "$script > $logFile 2>&1"
 
         Write-Output "[$name] Completed"
     } -ArgumentList $projectPath, $task.Script, $task.Name
