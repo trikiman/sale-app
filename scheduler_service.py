@@ -82,11 +82,22 @@ def run_full_cycle():
         except Exception as e:
             log(f"Failed to start {script}: {e}")
 
-    # Wait for all scrapers to finish, stream tail of logs
+    # Wait for all scrapers to finish, with 10-minute timeout per scraper
+    # (prevents infinite hang when Chrome startup blocks indefinitely)
+    SCRAPER_TIMEOUT = 10 * 60  # 10 minutes
     for script, p, log_path in processes:
-        p.wait()
-        code = p.returncode
-        status = "OK" if code == 0 else f"ERROR (exit {code})"
+        try:
+            p.wait(timeout=SCRAPER_TIMEOUT)
+            code = p.returncode
+            status = "OK" if code == 0 else f"ERROR (exit {code})"
+        except Exception:
+            # Timeout or other error — kill the hung process
+            try:
+                p.kill()
+            except Exception:
+                pass
+            code = -1
+            status = f"TIMEOUT (killed after {SCRAPER_TIMEOUT//60}min)"
         log(f"{status}: {script}")
         # Show last 5 lines of output
         try:

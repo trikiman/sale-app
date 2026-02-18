@@ -19,14 +19,46 @@ YELLOW_URL = "https://vkusvill.ru/offers/?F%5B212%5D%5B%5D=278&F%5BDEF_3%5D=1&sf
 
 
 def cleanup_profile_locks(profile_dir):
-    """Remove stale Chrome LOCK files left over from killed/crashed Chrome processes."""
+    """Remove stale LOCK files AND fix Chrome crash-recovery dialog.
+    When Chrome is force-killed, exit_type='Crashed' causes a restore dialog
+    that blocks the debug port on next startup → 'chrome not reachable'.
+    """
     import glob
+    import json as _json
+
+    # 1. Remove LevelDB LOCK files
     for lock_path in glob.glob(os.path.join(profile_dir, '**', 'LOCK'), recursive=True):
         try:
             os.remove(lock_path)
             print(f"  [YELLOW] Removed stale LOCK: {lock_path}")
         except Exception:
             pass
+
+    # 2. Reset exit_type=Normal so Chrome doesn't show crash recovery dialog
+    prefs_path = os.path.join(profile_dir, 'Default', 'Preferences')
+    if os.path.exists(prefs_path):
+        try:
+            with open(prefs_path, 'r', encoding='utf-8') as f:
+                prefs = _json.load(f)
+            profile_prefs = prefs.setdefault('profile', {})
+            if profile_prefs.get('exit_type') != 'Normal' or not profile_prefs.get('exited_cleanly', True):
+                profile_prefs['exit_type'] = 'Normal'
+                profile_prefs['exited_cleanly'] = True
+                with open(prefs_path, 'w', encoding='utf-8') as f:
+                    _json.dump(prefs, f)
+                print(f"  [YELLOW] Fixed Preferences: exit_type=Normal")
+        except Exception as e:
+            print(f"  [YELLOW] Could not fix Preferences: {e}")
+
+    # 3. Remove session files that trigger restore dialog
+    for session_file in ['Last Session', 'Last Tabs', 'Current Session', 'Current Tabs']:
+        fpath = os.path.join(profile_dir, 'Default', session_file)
+        if os.path.exists(fpath):
+            try:
+                os.remove(fpath)
+                print(f"  [YELLOW] Removed session file: {session_file}")
+            except Exception:
+                pass
 
 
 def init_driver():
