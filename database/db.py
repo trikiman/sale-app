@@ -4,7 +4,7 @@ Uses SQLite for simplicity and portability
 """
 import os
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Set
 from contextlib import contextmanager
 
@@ -120,7 +120,7 @@ class Database:
         """Create or update a user"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            now = datetime.utcnow().isoformat()
+            now = datetime.now(timezone.utc).isoformat()
             
             cursor.execute("""
                 INSERT INTO users (telegram_id, username, first_name, created_at)
@@ -156,7 +156,7 @@ class Database:
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                now = datetime.utcnow().isoformat()
+                now = datetime.now(timezone.utc).isoformat()
                 
                 cursor.execute("""
                     INSERT INTO favorite_categories (user_id, category_key, category_name, added_at)
@@ -193,7 +193,7 @@ class Database:
         try:
             with self.get_connection() as conn:
                 cursor = conn.cursor()
-                now = datetime.utcnow().isoformat()
+                now = datetime.now(timezone.utc).isoformat()
                 
                 cursor.execute("""
                     INSERT INTO favorite_products (user_id, product_id, product_name, added_at)
@@ -229,7 +229,7 @@ class Database:
         """Mark a product as seen. Returns True if this is a new product."""
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            now = datetime.utcnow().isoformat()
+            now = datetime.now(timezone.utc).isoformat()
             
             # Check if product exists
             cursor.execute("SELECT * FROM seen_products WHERE product_id = ?", (product_id,))
@@ -284,7 +284,7 @@ class Database:
         """Check if notification was already sent to user for this product recently"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cutoff = (datetime.utcnow() - timedelta(hours=hours)).isoformat()
+            cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
             
             cursor.execute("""
                 SELECT 1 FROM notification_history 
@@ -297,7 +297,7 @@ class Database:
         """Record that a notification was sent"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            now = datetime.utcnow().isoformat()
+            now = datetime.now(timezone.utc).isoformat()
             
             cursor.execute("""
                 INSERT INTO notification_history (user_id, product_id, sent_at)
@@ -308,7 +308,7 @@ class Database:
         """Clean up old seen products and notification history"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
-            cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
+            cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
             
             # Remove old notification history
             cursor.execute("""
