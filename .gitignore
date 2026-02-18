@@ -37,3 +37,10 @@ chrome_init.lock
 
 # Database
 *.db
+
+# Scraper output (changes every 5 min, don't track)
+data/green_products.json
+data/red_products.json
+data/yellow_products.json
+data/proposals.json
+miniapp/public/data.json
