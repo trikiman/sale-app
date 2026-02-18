@@ -182,32 +182,53 @@ def scrape_green_prices():
         driver.execute_script("window.scrollTo(0, 1400);")
         time.sleep(2)
 
-        # Extract LIVE count from button text BEFORE clicking (e.g. "61 товар" → 61)
-        # This is used to detect staleness in the mini app
+        # Extract LIVE count from the "Зелёные ценники" section BEFORE clicking.
+        # IMPORTANT: The page has TWO sections:
+        #   1. "Добавьте в заказ" — shows ALL personal-discount items (85-92 items)
+        #   2. "Зелёные ценники" — shows only the green-tagged items (e.g. 35 items)
+        # We want the count from section 2, NOT section 1.
+        # Strategy: find the visible "Зелёные ценники" heading text, then read
+        # the "N товар(ов)" counter in the same section container.
         live_count = driver.execute_script("""
-            const btn = document.getElementById('js-Delivery__Order-green-show-all');
-            if (btn) {
-                const textEl = btn.querySelector('.js-vv-tizers-section__link-text');
-                if (textEl) {
-                    const match = textEl.innerText.replace(/\\u00a0/g, ' ').match(/(\\d+)/);
-                    return match ? parseInt(match[1]) : 0;
+            // Walk all text nodes to find the exact "Зелёные ценники" heading
+            const walker = document.createTreeWalker(
+                document.body, NodeFilter.SHOW_TEXT, null, false);
+            let node;
+            while (node = walker.nextNode()) {
+                const t = node.nodeValue.trim();
+                if (t === '\u0417\u0435\u043b\u0451\u043d\u044b\u0435 \u0446\u0435\u043d\u043d\u0438\u043a\u0438') {
+                    // Found the heading — look for "N товар*" in the same section
+                    const container = node.parentElement
+                        ? (node.parentElement.closest('section')
+                           || node.parentElement.closest('[class*="Section"]')
+                           || node.parentElement.closest('[class*="Tizer"]')
+                           || node.parentElement.parentElement)
+                        : null;
+                    if (container) {
+                        const spans = container.querySelectorAll('span, a, button');
+                        for (const s of spans) {
+                            const st = s.innerText.replace(/\\u00a0/g, ' ').trim();
+                            const m = st.match(/^(\\d+)\\s*\u0442\u043e\u0432\u0430\u0440/i);
+                            if (m) return parseInt(m[1]);
+                        }
+                    }
                 }
             }
-            // Fallback: search any button near "Зелёные ценники" text
-            const allBtns = document.querySelectorAll('.VV_TizersSection__Link');
-            for (const b of allBtns) {
-                const section = b.closest('section, div');
-                if (section && section.innerText.includes('Зелёные ценники')) {
+            // Fallback: use button with data-title="Зелёные ценники"
+            const btns = document.querySelectorAll('[data-title]');
+            for (const b of btns) {
+                if (b.getAttribute('data-title') && b.getAttribute('data-title').includes(
+                        '\u0417\u0435\u043b\u0451\u043d\u044b\u0435 \u0446\u0435\u043d\u043d\u0438\u043a\u0438')) {
                     const span = b.querySelector('.js-vv-tizers-section__link-text');
                     if (span) {
                         const m = span.innerText.replace(/\\u00a0/g, ' ').match(/(\\d+)/);
-                        return m ? parseInt(m[1]) : 0;
+                        if (m) return parseInt(m[1]);
                     }
                 }
             }
             return 0;
         """)
-        print(f"  [GREEN] Live count on VkusVill page: {live_count}")
+        print(f"  [GREEN] Live count (Зелёные ценники section): {live_count}")
 
         # Click the "Show all" button — try multiple selectors
         show_all_clicked = driver.execute_script("""

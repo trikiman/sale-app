@@ -1,5 +1,6 @@
 {
-  "updatedAt": "2026-02-18 09:06:23",
+  "updatedAt": "2026-02-18 11:11:04",
+  "greenLiveCount": 35,
   "products": [
     {
       "category": "Овощи, фрукты, ягоды, зелень",
@@ -11,7 +12,7 @@
       "type": "green",
       "unit": "кг",
       "url": "https://vkusvill.ru/goods/banany-731.html",
-      "stock": 151.5
+      "stock": 128.56
     },
     {
       "category": "Овощи, фрукты, ягоды, зелень",
@@ -35,7 +36,7 @@
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/yaytso-kurinoe-s0-22658.html",
-      "stock": 185
+      "stock": 175
     },
     {
       "category": "Молочные продукты",
@@ -47,7 +48,7 @@
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/smetana-15-250-g-14526.html",
-      "stock": 42
+      "stock": 34
     },
     {
       "category": "Овощи, фрукты, ягоды, зелень",
@@ -71,7 +72,7 @@
       "type": "green",
       "unit": "кг",
       "url": "https://vkusvill.ru/goods/ogurtsy-korotkoplodnye-609.html",
-      "stock": 22.54
+      "stock": 21.52
     },
     {
       "category": "Овощи, фрукты, ягоды, зелень",
@@ -83,7 +84,7 @@
       "type": "green",
       "unit": "кг",
       "url": "https://vkusvill.ru/goods/kartofel-1713.html",
-      "stock": 183.06
+      "stock": 166.99
     },
     {
       "category": "Молочные продукты",
@@ -95,7 +96,7 @@
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/moloko-2-5-v-butylke-900-ml-36296.html",
-      "stock": 66
+      "stock": 62
     },
     {
       "category": "Мясо, Мясные деликатесы",
@@ -119,7 +120,7 @@
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/baton-nareznoy-polovinka-34217.html",
-      "stock": 11
+      "stock": 10
     },
     {
       "category": "Молочные продукты",
@@ -131,7 +132,7 @@
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/smetana-20-350-g-143.html",
-      "stock": 40
+      "stock": 38
     },
     {
       "category": "Овощи, фрукты, ягоды, зелень",
@@ -143,7 +144,7 @@
       "type": "green",
       "unit": "кг",
       "url": "https://vkusvill.ru/goods/tomaty-rozovye-15378.html",
-      "stock": 3.84
+      "stock": 2.57
     },
     {
       "category": "Молочные продукты",
@@ -155,7 +156,7 @@
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/moloko-3-2-1-l-173.html",
-      "stock": 70
+      "stock": 59
     },
     {
       "category": "Овощи, фрукты, ягоды, зелень",
@@ -167,7 +168,7 @@
       "type": "green",
       "unit": "кг",
       "url": "https://vkusvill.ru/goods/perets-krasnyy-sladkiy-21005.html",
-      "stock": 20.56
+      "stock": 19.49
     },
     {
       "category": "Молочные продукты",
@@ -179,7 +180,7 @@
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/smetana-20-200-g-63659.html",
-      "stock": 14
+      "stock": 8
     },
     {
       "category": "Молочные продукты",
@@ -191,7 +192,7 @@
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/moloko-3-2-v-butylke-900-ml-17525.html",
-      "stock": 30
+      "stock": 25
     },
     {
       "category": "Овощи, фрукты, ягоды, зелень",
@@ -203,7 +204,7 @@
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/maslo-slivochnoe-82-5-200-g-16306.html",
-      "stock": 26
+      "stock": 60
     },
     {
       "category": "Молочные продукты",
@@ -215,7 +216,7 @@
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/moloko-tselnoe-v-butylke-900-ml-17736.html",
-      "stock": 29
+      "stock": 28
     },
     {
       "category": "Готовая еда",
@@ -227,7 +228,7 @@
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/sendvich-roll-tsezar-20542.html",
-      "stock": 5
+      "stock": 15
     },
     {
       "category": "Другое",
@@ -239,7 +240,7 @@
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/avokado-khass-2-sht-21270.html",
-      "stock": 33
+      "stock": 32
     },
     {
       "category": "Другое",
@@ -251,7 +252,7 @@
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/izdelie-kh-b-borodinskiy-bezdrozhzhevoy-narezka-270-g-63310.html",
-      "stock": 9
+      "stock": 4
     },
     {
       "category": "Молочные продукты",
@@ -263,7 +264,7 @@
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/tvorog-5-400-g-185.html",
-      "stock": 22
+      "stock": 21
     },
     {
       "category": "Овощи, фрукты, ягоды, зелень",
@@ -275,7 +276,7 @@
       "type": "green",
       "unit": "кг",
       "url": "https://vkusvill.ru/goods/tomaty-slivka-krasnye-flamenko-65012.html",
-      "stock": 36.22
+      "stock": 35.26
     },
     {
       "category": "Мясо, Мясные деликатесы",
@@ -287,7 +288,7 @@
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/kotleta-kurinaya-s-kartofelnym-pyure-20969.html",
-      "stock": 3
+      "stock": 18
     },
     {
       "category": "Другое",
@@ -299,7 +300,19 @@
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/ogurtsy-kornishony-300-g-28740.html",
-      "stock": 24
+      "stock": 21
+    },
+    {
+      "category": "Мясо, Мясные деликатесы",
+      "currentPrice": "200",
+      "id": "19434",
+      "image": "https://img.vkusvill.ru/pim/images/site/site_MiniWebP/5faacf17-8021-4a9d-84fe-22d2a24729b5.webp",
+      "name": "Суп \"Куриный\" с домашней лапшой",
+      "oldPrice": "200",
+      "type": "green",
+      "unit": "шт",
+      "url": "https://vkusvill.ru/goods/sup-kurinyy-s-domashney-lapshoy-19434.html",
+      "stock": 22
     },
     {
       "category": "Другое",
@@ -311,7 +324,7 @@
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/tartin-pshenichnyy-polovinka-32936.html",
-      "stock": 8
+      "stock": 7
     },
     {
       "category": "Другое",
@@ -335,7 +348,7 @@
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/salat-seld-pod-shuboy-300-g-39459.html",
-      "stock": 2
+      "stock": 13
     },
     {
       "category": "Выпечка и хлеб",
@@ -347,7 +360,7 @@
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/baton-molodezhnaya-klassika-narezka-113571.html",
-      "stock": 29
+      "stock": 26
     },
     {
       "category": "Сладости и десерты",
@@ -360,6 +373,18 @@
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/tort-marakuyya-18825.html",
       "stock": 7
+    },
+    {
+      "category": "Мясо, Мясные деликатесы",
+      "currentPrice": "220",
+      "id": "42530",
+      "image": "https://img.vkusvill.ru/pim/images/site/site_MiniWebP/845ab3b6-749c-4430-b1cd-675f7276d3d7.webp",
+      "name": "Борщ с говядиной",
+      "oldPrice": "220",
+      "type": "green",
+      "unit": "шт",
+      "url": "https://vkusvill.ru/goods/borshch-s-govyadinoy-42530.html",
+      "stock": 9
     },
     {
       "category": "Овощи, фрукты, ягоды, зелень",
@@ -383,7 +408,7 @@
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/avokado-khass-sht-16591.html",
-      "stock": 32
+      "stock": 30
     },
     {
       "category": "Овощи, фрукты, ягоды, зелень",
@@ -395,7 +420,7 @@
       "type": "green",
       "unit": "кг",
       "url": "https://vkusvill.ru/goods/kapusta-belokochannaya-602.html",
-      "stock": 41.74
+      "stock": 40.12
     },
     {
       "category": "Другое",
@@ -407,7 +432,7 @@
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/tartin-pshenichno-rzhanoy-polovinka-32931.html",
-      "stock": 16
+      "stock": 15
     },
     {
       "category": "Готовая еда",
@@ -419,7 +444,7 @@
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/salat-vinegret-s-marinovannoy-kapustoy-20665.html",
-      "stock": 6
+      "stock": 4
     },
     {
       "category": "Молочные продукты",
@@ -431,7 +456,7 @@
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/tvorog-5-180-g-27695.html",
-      "stock": 20
+      "stock": 17
     },
     {
       "category": "Овощи, фрукты, ягоды, зелень",
@@ -443,7 +468,7 @@
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/maslo-slivochnoe-82-5-100-g-43701.html",
-      "stock": 13
+      "stock": 21
     },
     {
       "category": "Овощи, фрукты, ягоды, зелень",
@@ -455,7 +480,7 @@
       "type": "green",
       "unit": "кг",
       "url": "https://vkusvill.ru/goods/yabloko-medovyy-khrust-29450.html",
-      "stock": 46.31
+      "stock": 45.47
     },
     {
       "category": "Мясо, Мясные деликатесы",
@@ -467,7 +492,7 @@
       "type": "green",
       "unit": "кг",
       "url": "https://vkusvill.ru/goods/bedro-tsyplenka-broylera-beskostnoe-file-bedra-19419.html",
-      "stock": 20.78
+      "stock": 20.04
     },
     {
       "category": "Сладости и десерты",
@@ -487,11 +512,11 @@
       "id": "15197",
       "image": "https://img.vkusvill.ru/pim/images/site_MiniWebP/0908ec84-1ba7-42d1-abad-f4dc776cb706.webp?1721246710.3243",
       "name": "Ассорти из зелени, 100 г",
-      "oldPrice": "190",
+      "oldPrice": "114",
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/assorti-iz-zeleni-100-g-15197.html",
-      "stock": 0
+      "stock": 3
     },
     {
       "category": "Мясо, Мясные деликатесы",
@@ -503,7 +528,7 @@
       "type": "green",
       "unit": "кг",
       "url": "https://vkusvill.ru/goods/file-grudki-tsyplenka-broylera-488.html",
-      "stock": 11.77
+      "stock": 10.77
     },
     {
       "category": "Другое",
@@ -515,7 +540,7 @@
       "type": "green",
       "unit": "кг",
       "url": "https://vkusvill.ru/goods/ogurtsy-gladkie-16645.html",
-      "stock": 15.78
+      "stock": 14.65
     },
     {
       "category": "Готовая еда",
@@ -523,11 +548,11 @@
       "id": "18852",
       "image": "https://img.vkusvill.ru/pim/images/site_MiniWebP/85b1c283-f602-4319-91dd-2e796696b25a.webp?1730869708.5255",
       "name": "Салат Листовой в горшочке",
-      "oldPrice": "200",
+      "oldPrice": "120",
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/salat-listovoy-v-gorshochke-18852.html",
-      "stock": 0
+      "stock": 10
     },
     {
       "category": "Молочные продукты",
@@ -539,7 +564,7 @@
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/tvorog-9-400-g-188.html",
-      "stock": 7
+      "stock": 4
     },
     {
       "category": "Молочные продукты",
@@ -551,7 +576,7 @@
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/kefir-2-5-v-butylke-900-g-42406.html",
-      "stock": 13
+      "stock": 12
     },
     {
       "category": "Другое",
@@ -563,7 +588,7 @@
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/ukrop-50-g-15194.html",
-      "stock": 14
+      "stock": 12
     },
     {
       "category": "Другое",
@@ -575,7 +600,19 @@
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/golubika-125-g-20082.html",
-      "stock": 25
+      "stock": 24
+    },
+    {
+      "category": "Готовая еда",
+      "currentPrice": "210",
+      "id": "34835",
+      "image": "https://img.vkusvill.ru/pim/images/site_MiniWebP/a0c4b9c0-67b0-45c9-a9f7-930a7af1f669.webp?1729820128.7035",
+      "name": "Салат \"Витаминный\" с лимонной заправкой",
+      "oldPrice": "210",
+      "type": "green",
+      "unit": "шт",
+      "url": "https://vkusvill.ru/goods/salat-vitaminnyy-s-limonnoy-zapravkoy-34835.html",
+      "stock": 10
     },
     {
       "category": "Молочные продукты",
@@ -583,11 +620,11 @@
       "id": "18271",
       "image": "https://img.vkusvill.ru/pim/images/site_MiniWebP/8a445bfe-81d7-4699-a0fc-eeebb838209f.webp?1725916708.7798",
       "name": "Кефир 3,2% в бутылке, 900 г",
-      "oldPrice": "191",
+      "oldPrice": "115",
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/kefir-3-2-v-butylke-900-g-18271.html",
-      "stock": 0
+      "stock": 12
     },
     {
       "category": "Мясо, Мясные деликатесы",
@@ -595,11 +632,11 @@
       "id": "61483",
       "image": "https://img.vkusvill.ru/pim/images/site_MiniWebP/a9562e98-c5b5-4158-86b0-d3e120f868be.webp?1726262818.9152",
       "name": "Салат \"Цезарь\" с курицей и пекинской капустой",
-      "oldPrice": "466",
+      "oldPrice": "280",
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/salat-tsezar-s-kuritsey-i-pekinskoy-kapustoy-61483.html",
-      "stock": 0
+      "stock": 13
     },
     {
       "category": "Готовая еда",
@@ -607,11 +644,11 @@
       "id": "25292",
       "image": "https://img.vkusvill.ru/pim/images/site_MiniWebP/c6d43f86-230c-4718-84bb-1cc77eb6e8e5.webp?1743794369.9005",
       "name": "Салат \"Сельдь под шубой\", 180 г",
-      "oldPrice": "378",
+      "oldPrice": "227",
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/salat-seld-pod-shuboy-180-g-25292.html",
-      "stock": 0
+      "stock": 9
     },
     {
       "category": "Выпечка и хлеб",
@@ -619,11 +656,11 @@
       "id": "21482",
       "image": "https://img.vkusvill.ru/pim/images/site/site_MiniWebP/4d3672fd-48a9-41ae-af61-b9de3faac465.webp",
       "name": "Лаваш \"Армянский\" тандырный, 150 г",
-      "oldPrice": "118",
+      "oldPrice": "71",
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/lavash-armyanskiy-tandyrnyy-150-g-21482.html",
-      "stock": 0
+      "stock": 9
     },
     {
       "category": "Молочные продукты",
@@ -631,11 +668,11 @@
       "id": "158",
       "image": "https://img.vkusvill.ru/pim/images/site_MiniWebP/448437e1-a4c0-491a-ad60-0169d26d4ed9.webp?1700432595.5724",
       "name": "Кефир 3,2%, 1000 г",
-      "oldPrice": "163",
+      "oldPrice": "98",
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/kefir-3-2-1000-g-158.html",
-      "stock": 0
+      "stock": 27
     },
     {
       "category": "Овощи, фрукты, ягоды, зелень",
@@ -643,11 +680,23 @@
       "id": "24372",
       "image": "https://img.vkusvill.ru/pim/images/site_MiniWebP/6aa1db2f-ec0a-4644-bcbe-a311cb2dacef.webp?1712260579.7477",
       "name": "Томаты черри красные на ветке, 250 г",
-      "oldPrice": "533",
+      "oldPrice": "320",
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/tomaty-cherri-krasnye-na-vetke-250-g-24372.html",
-      "stock": 0
+      "stock": 15
+    },
+    {
+      "category": "Напитки",
+      "currentPrice": "112",
+      "id": "79663",
+      "image": "https://img.vkusvill.ru/pim/images/site/site_MiniWebP/735bddda-5cb5-4cb4-a138-4097934f2c2a.webp",
+      "name": "Вода питьевая негазированная, 5 л",
+      "oldPrice": "112",
+      "type": "green",
+      "unit": "шт",
+      "url": "https://vkusvill.ru/goods/voda-pitevaya-negazirovannaya-5-l-79663.html",
+      "stock": 64
     },
     {
       "category": "Выпечка и хлеб",
@@ -655,11 +704,11 @@
       "id": "26199",
       "image": "https://img.vkusvill.ru/pim/images/site_MiniWebP/7e504f7b-e5d2-44a5-92fc-8851c9a74974.webp?1724012012.1103",
       "name": "Круассан миндальный",
-      "oldPrice": "315",
+      "oldPrice": "189",
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/kruassan-mindalnyy-26199.html",
-      "stock": 0
+      "stock": 5
     },
     {
       "category": "Овощи, фрукты, ягоды, зелень",
@@ -667,11 +716,11 @@
       "id": "82910",
       "image": "https://img.vkusvill.ru/pim/images/site_MiniWebP/e5ee25f4-7079-4515-ab7f-e118e1800805.webp?1712261018.1949",
       "name": "Томаты черри \"Карамелька\", 250 г",
-      "oldPrice": "661",
+      "oldPrice": "397",
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/tomaty-cherri-karamelka-250-g-82910.html",
-      "stock": 0
+      "stock": 12
     },
     {
       "category": "Молочные продукты",
@@ -679,11 +728,11 @@
       "id": "1696",
       "image": "https://img.vkusvill.ru/pim/images/site/site_MiniWebP/6630c3ca-257c-430c-96de-1258ae11863c.webp",
       "name": "Йогурт греческий 4%",
-      "oldPrice": "123",
+      "oldPrice": "74",
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/yogurt-grecheskiy-4-1696.html",
-      "stock": 0
+      "stock": 12
     },
     {
       "category": "Молочные продукты",
@@ -691,11 +740,11 @@
       "id": "37483",
       "image": "https://img.vkusvill.ru/pim/images/site_MiniWebP/25c6d8d9-c7d0-47a2-90c2-9ef732031025.webp?1727963370.8594",
       "name": "Творог мягкий высокобелковый 6%",
-      "oldPrice": "141",
+      "oldPrice": "85",
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/tvorog-myagkiy-vysokobelkovyy-6-37483.html",
-      "stock": 0
+      "stock": 14
     },
     {
       "category": "Напитки",
@@ -703,11 +752,11 @@
       "id": "371",
       "image": "https://img.vkusvill.ru/pim/images/site/site_MiniWebP/6c5124a1-3f94-4b37-8208-07b297c4c597.webp",
       "name": "Вода родниковая негазированная, 500 мл",
-      "oldPrice": "71",
+      "oldPrice": "43",
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/voda-rodnikovaya-negazirovannaya-500-ml-371.html",
-      "stock": 0
+      "stock": 21
     },
     {
       "category": "Молочные продукты",
@@ -803,6 +852,18 @@
       "type": "green",
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/tvorog-9-180-g-24165.html",
+      "stock": 0
+    },
+    {
+      "category": "Мясо, Мясные деликатесы",
+      "currentPrice": "260",
+      "id": "28799",
+      "image": "https://img.vkusvill.ru/pim/images/site_MiniWebP/48e9a678-f32d-4e43-85f6-bddd02ecd56c.webp?1747807414.1785",
+      "name": "Плов с курицей",
+      "oldPrice": "433",
+      "type": "green",
+      "unit": "шт",
+      "url": "https://vkusvill.ru/goods/plov-s-kuritsey-28799.html",
       "stock": 0
     },
     {
@@ -914,6 +975,18 @@
       "stock": 0
     },
     {
+      "category": "Мясо, Мясные деликатесы",
+      "currentPrice": "190",
+      "id": "61602",
+      "image": "https://img.vkusvill.ru/pim/images/site/site_MiniWebP/9a74736d-7ad7-444f-a673-d5ac1cf5f7ee.webp",
+      "name": "Суп с куриными фрикадельками и пастой \"Звездочки\"",
+      "oldPrice": "316",
+      "type": "green",
+      "unit": "шт",
+      "url": "https://vkusvill.ru/goods/sup-s-kurinymi-frikadelkami-i-pastoy-zvezdochki-61602.html",
+      "stock": 0
+    },
+    {
       "category": "Овощи, фрукты, ягоды, зелень",
       "currentPrice": "54",
       "id": "611",
@@ -984,6 +1057,18 @@
       "unit": "шт",
       "url": "https://vkusvill.ru/goods/kruassan-klassicheskiy-35-g-2-sht-71035.html",
       "stock": 2
+    },
+    {
+      "category": "Мясо, Мясные деликатесы",
+      "currentPrice": "230",
+      "id": "71215",
+      "image": "https://img.vkusvill.ru/pim/images/site_MiniWebP/e49be48a-2895-4843-8828-1c508231f4a2.webp?1723329298.8193",
+      "name": "Биточек куриный с капустой и картофельным пюре",
+      "oldPrice": "383",
+      "type": "green",
+      "unit": "шт",
+      "url": "https://vkusvill.ru/goods/bitochek-kurinyy-s-kapustoy-i-kartofelnym-pyure-71215.html",
+      "stock": 0
     },
     {
       "category": "Овощи, фрукты, ягоды, зелень",
@@ -2905,6 +2990,5 @@
       "stock": 5,
       "category": "Напитки"
     }
-  ],
-  "greenLiveCount": 61
+  ]
 }
