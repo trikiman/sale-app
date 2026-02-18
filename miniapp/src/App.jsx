@@ -201,6 +201,8 @@ function App() {
     yellow: true
   })
   const [greenLiveCount, setGreenLiveCount] = useState(null)
+  const [scraperRunning, setScraperRunning] = useState(false)
+  const [scraperDone, setScraperDone] = useState(false)
 
   useEffect(() => {
     // Load favorites
@@ -432,6 +434,50 @@ function App() {
             <div className="text-xs opacity-70 mt-0.5">
               На сайте {greenLiveCount} товаров, у нас {countGreen} — данные могли устареть
             </div>
+            {scraperDone ? (
+              <div className="mt-2 text-xs text-green-400 font-medium">
+                ✅ Скрапер запущен — обновите страницу через ~2 мин
+              </div>
+            ) : (
+              <motion.button
+                whileTap={{ scale: 0.95 }}
+                disabled={scraperRunning}
+                onClick={() => {
+                  const adminToken = localStorage.getItem('vv_admin_token') ||
+                    prompt('Введите admin token для запуска скрапера:')
+                  if (!adminToken) return
+                  localStorage.setItem('vv_admin_token', adminToken)
+                  setScraperRunning(true)
+                  fetch('/api/admin/run/green', {
+                    method: 'POST',
+                    headers: { 'X-Admin-Token': adminToken }
+                  })
+                    .then(r => {
+                      if (r.status === 403) {
+                        localStorage.removeItem('vv_admin_token')
+                        alert('Неверный токен')
+                        setScraperRunning(false)
+                        return
+                      }
+                      return r.json()
+                    })
+                    .then(data => {
+                      if (data) {
+                        setScraperRunning(false)
+                        setScraperDone(true)
+                      }
+                    })
+                    .catch(() => setScraperRunning(false))
+                }}
+                className={`mt-2 px-4 py-1.5 rounded-lg text-xs font-bold border transition-all ${
+                  scraperRunning
+                    ? 'bg-red-500/10 border-red-500/30 opacity-60 cursor-wait'
+                    : 'bg-red-500/30 border-red-500/50 hover:bg-red-500/40 cursor-pointer'
+                }`}
+              >
+                {scraperRunning ? '⏳ Запускается...' : '🔄 Обновить зелёные'}
+              </motion.button>
+            )}
           </motion.div>
         )}
       </motion.div>

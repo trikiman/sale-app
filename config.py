@@ -20,7 +20,10 @@ DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 DATABASE_PATH = os.path.join(DATA_DIR, "salebot.db")
 
 # Cookie file path
-COOKIE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cookies.json") 
+COOKIE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cookies.json")
+
+# Admin panel token (set ADMIN_TOKEN env variable on AWS to override)
+ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "vv-admin-2026")
 
 # Green pricing section identifier
 GREEN_PRICE_SECTION_TEXT = "Зелёные ценники"
