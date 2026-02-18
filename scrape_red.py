@@ -75,6 +75,13 @@ def init_driver():
     options.add_argument('--no-sandbox')
     options.add_argument('--start-maximized')
     options.add_argument(f'--user-data-dir={profile}')
+    # Suppress startup tasks that block debug port readiness in profile-based Chrome
+    options.add_argument('--no-first-run')
+    options.add_argument('--no-default-browser-check')
+    options.add_argument('--disable-default-apps')
+    options.add_argument('--disable-background-networking')
+    options.add_argument('--disable-sync')
+    options.add_argument('--disable-extensions')
 
     # Use global lock to prevent race conditions during Chrome startup
     # WinError 183 occurs when multiple processes try to initialize Chrome profiles simultaneously
