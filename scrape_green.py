@@ -183,94 +183,74 @@ def scrape_green_prices():
         time.sleep(2)
 
         # Extract LIVE count from the "Зелёные ценники" section BEFORE clicking.
-        # IMPORTANT: The page has TWO sections:
-        #   1. "Добавьте в заказ" — shows ALL personal-discount items (85-92 items)
-        #   2. "Зелёные ценники" — shows only the green-tagged items (e.g. 35 items)
-        # We want the count from section 2, NOT section 1.
-        # Strategy: find the visible "Зелёные ценники" heading text, then read
-        # the "N товар(ов)" counter in the same section container.
+        # Root cause of live_count=0 bug: TreeWalker exact text match fails because
+        # the heading element has child badge elements splitting the text node.
+        # Fix: use data-action="GreenLabels" which is unique to the green section button,
+        # then walk up looking for a section that does NOT include "Добавьте в заказ".
         live_count = driver.execute_script("""
-            // Walk all text nodes to find the exact "Зелёные ценники" heading
-            const walker = document.createTreeWalker(
-                document.body, NodeFilter.SHOW_TEXT, null, false);
-            let node;
-            while (node = walker.nextNode()) {
-                const t = node.nodeValue.trim();
-                if (t === '\u0417\u0435\u043b\u0451\u043d\u044b\u0435 \u0446\u0435\u043d\u043d\u0438\u043a\u0438') {
-                    // Found the heading — look for "N товар*" in the same section
-                    const container = node.parentElement
-                        ? (node.parentElement.closest('section')
-                           || node.parentElement.closest('[class*="Section"]')
-                           || node.parentElement.closest('[class*="Tizer"]')
-                           || node.parentElement.parentElement)
-                        : null;
-                    if (container) {
-                        const spans = container.querySelectorAll('span, a, button');
-                        for (const s of spans) {
-                            const st = s.innerText.replace(/\\u00a0/g, ' ').trim();
-                            const m = st.match(/^(\\d+)\\s*\u0442\u043e\u0432\u0430\u0440/i);
-                            if (m) return parseInt(m[1]);
-                        }
-                    }
+            // Method 1: Use data-action="GreenLabels" — unique to Зелёные ценники button
+            const greenBtn = document.querySelector('[data-action="GreenLabels"]');
+            if (greenBtn) {
+                const span = greenBtn.querySelector('.js-vv-tizers-section__link-text');
+                if (span) {
+                    const m = span.innerText.replace(/\\u00a0/g, ' ').match(/(\\d+)/);
+                    if (m) return parseInt(m[1]);
                 }
             }
-            // Fallback: use button with data-title="Зелёные ценники"
-            const btns = document.querySelectorAll('[data-title]');
-            for (const b of btns) {
-                if (b.getAttribute('data-title') && b.getAttribute('data-title').includes(
-                        '\u0417\u0435\u043b\u0451\u043d\u044b\u0435 \u0446\u0435\u043d\u043d\u0438\u043a\u0438')) {
-                    const span = b.querySelector('.js-vv-tizers-section__link-text');
-                    if (span) {
+            // Method 2: Find count spans and check ancestry for green section
+            const countSpans = document.querySelectorAll('.js-vv-tizers-section__link-text');
+            for (const span of countSpans) {
+                let el = span.parentElement;
+                let depth = 0;
+                while (el && el.tagName !== 'BODY' && depth < 8) {
+                    const txt = el.textContent || '';
+                    // Must contain "Зелёные ценники" but NOT "Добавьте в заказ"
+                    if (txt.includes('\\u0417\\u0435\\u043b\\u0451\\u043d\\u044b\\u0435') &&
+                        !txt.includes('\\u0414\\u043e\\u0431\\u0430\\u0432\\u044c\\u0442\\u0435')) {
                         const m = span.innerText.replace(/\\u00a0/g, ' ').match(/(\\d+)/);
                         if (m) return parseInt(m[1]);
                     }
+                    el = el.parentElement;
+                    depth++;
                 }
             }
             return 0;
         """)
         print(f"  [GREEN] Live count (Зелёные ценники section): {live_count}")
 
-        # Click the "Show all" button — try multiple selectors
+        # Click the "Show all" button for the Зелёные ценники section.
+        # Root cause of "clicked_link" bug: the fallback was iterating ALL
+        # VV_TizersSection__Link elements and clicking the first one (which could be
+        # "Добавьте в заказ" with 92 items instead of "Зелёные ценники" with 35).
+        # Fix: use data-action="GreenLabels" as the primary selector (most reliable),
+        # then fall back to button ID, then specifically within green section.
         show_all_clicked = driver.execute_script("""
-            // 1. Try the delivery cart button ID (when cart has items)
+            // 1. Use data-action="GreenLabels" — unique to Зелёные ценники button
+            const greenActionBtn = document.querySelector('[data-action="GreenLabels"]');
+            if (greenActionBtn) {
+                greenActionBtn.click();
+                return 'clicked_green_action';
+            }
+
+            // 2. Try the button ID
             const showAllBtn = document.getElementById('js-Delivery__Order-green-show-all');
             if (showAllBtn) {
                 showAllBtn.click();
                 return 'clicked_by_id';
             }
 
-            // 2. Try any "Показать ещё" or "Все" link near Зелёные ценники
-            const allLinks = document.querySelectorAll('a, button');
-            for (const link of allLinks) {
-                const text = link.innerText || '';
-                const href = link.getAttribute('href') || '';
-                if (href.includes('zelenye') || href.includes('green') || 
-                    link.classList.contains('js-vv-tizers-section__link') ||
-                    link.classList.contains('VV_TizersSection__Link')) {
-                    link.click();
-                    return 'clicked_link';
-                }
-            }
-
-            // 3. Find by class in any section containing green text
-            const allSections = document.querySelectorAll('section, div[class*="tizer"], div[class*="Tizer"], div[class*="Section"], div[class*="section"]');
+            // 3. Find button specifically in section containing "Зелёные ценники"
+            //    but NOT "Добавьте в заказ" (to avoid clicking the wrong section)
+            const allSections = document.querySelectorAll('section, [class*="Section"], [class*="Tizer"]');
             for (const section of allSections) {
-                if (section.innerText && section.innerText.includes('Зелёные ценники')) {
-                    // Try all clickable elements in this section
-                    const clickables = section.querySelectorAll('a[href], button, [class*="link"], [class*="Link"], [class*="btn"], [class*="Btn"]');
-                    for (const el of clickables) {
-                        const text = (el.innerText || '').toLowerCase();
-                        if (text.includes('все') || text.includes('показать') || text.includes('ещё') || text.includes('больше')) {
-                            el.click();
-                            return 'clicked_section_btn';
-                        }
+                const sectionText = section.textContent || '';
+                if (sectionText.includes('\\u0417\\u0435\\u043b\\u0451\\u043d\\u044b\\u0435 \\u0446\\u0435\\u043d\\u043d\\u0438\\u043a\\u0438') &&
+                    !sectionText.includes('\\u0414\\u043e\\u0431\\u0430\\u0432\\u044c\\u0442\\u0435')) {
+                    const btn = section.querySelector('[class*="TizersSection__Link"], [class*="js-prods-modal"]');
+                    if (btn) {
+                        btn.click();
+                        return 'clicked_section_green';
                     }
-                    // Try the last link in section (usually "show all")
-                    if (clickables.length > 0) {
-                        clickables[clickables.length - 1].click();
-                        return 'clicked_last_link';
-                    }
-                    return 'no_button_in_section';
                 }
             }
             return 'not_found';
@@ -339,12 +319,7 @@ def scrape_green_prices():
                     const modal = document.getElementById('js-modal-cart-prods-scroll');
                     if (!modal) return products;
 
-                    const allCards = modal.querySelectorAll('.ProductCard');
-                    console.log("[GREEN DEBUG] Total cards in modal:", allCards.length);
-                    // We can't see console.log easily from python, so return the count in a special way or just trust the product array length check?
-                    // Better: Push a 'debug' item or just rely on len(products) if we don't filter.
-                    
-                    allCards.forEach(card => {
+                    modal.querySelectorAll('.ProductCard').forEach(card => {
                         const nameEl = card.querySelector('.ProductCard__link');
                         const priceEl = card.querySelector('.ProductCard__price--current, .Price__value, .ProductCard__price'); 
                         const oldPriceEl = card.querySelector('.ProductCard__price--old, .ProductCard__OldPrice');
@@ -445,30 +420,6 @@ def scrape_green_prices():
 
                 # 5. Scrape stock AND price from cart page
                 print("  [GREEN] Scraping stock and prices from cart...")
-                
-                # DEBUG: Dump first cart card HTML to understand structure
-                debug_html = driver.execute_script("""
-                    const card = document.querySelector('.HProductCard, .BasketItem');
-                    if (card) {
-                        return card.outerHTML.substring(0, 2000);
-                    }
-                    return 'NO CART CARD FOUND';
-                """)
-                print("  [DEBUG] First cart card HTML sample:")
-                print(debug_html[:1500] if debug_html else "EMPTY")
-                
-                # DEBUG: Find any card with "Форели" to see its text
-                debug_foreli = driver.execute_script("""
-                    let result = 'NOT FOUND';
-                    document.querySelectorAll('.HProductCard, .BasketItem').forEach(card => {
-                        if (card.innerText.includes('Форели') || card.innerText.includes('форели')) {
-                            result = 'FOUND: ' + card.innerText.substring(0, 500);
-                        }
-                    });
-                    return result;
-                """)
-                print("  [DEBUG] Форели card text:", debug_foreli[:300] if debug_foreli else "EMPTY")
-                
                 stock_map = driver.execute_script("""
                     const stockMap = {};
                     document.querySelectorAll('.HProductCard, .BasketItem').forEach(card => {

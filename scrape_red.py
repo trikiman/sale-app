@@ -184,7 +184,7 @@ def scrape_red_prices():
                          if (bgEl) {
                              const bg = window.getComputedStyle(bgEl).backgroundImage;
                              if (bg && bg !== 'none' && bg.startsWith('url')) {
-                                 imgSrc = bg.replace(/^url\(['"]?/, '').replace(/['"]?\)$/, '');
+                                 imgSrc = bg.replace(/^url\\(['"]?/, '').replace(/['"]?\\)$/, '');
                              }
                          }
                     }
