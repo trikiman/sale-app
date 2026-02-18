@@ -19,7 +19,7 @@ Scrapers run every 5 minutes via `scheduler.py`, merge results into `data/propos
 
 ```
 scheduler.py (every 5 min)
-  ├── scrape_green.py  → data/green_products.json
+  ├── scrape_green.py  → data/green_products.json  (+ live_count metadata)
   ├── scrape_red.py    → data/red_products.json
   ├── scrape_yellow.py → data/yellow_products.json
   └── scrape_merge.py  → data/proposals.json + miniapp/public/data.json
@@ -27,7 +27,7 @@ scheduler.py (every 5 min)
 backend/main.py (FastAPI, port 8000)
   └── serves proposals.json via REST API
 
-miniapp/ (React + Vite, port 5174)
+miniapp/ (React + Vite, port 5173)
   └── reads miniapp/public/data.json directly (no API call needed)
 
 bot/ (Telegram bot)
@@ -59,10 +59,10 @@ python login.py              # opens browser, saves data/cookies.json
 ## Current State (as of 2026-02-18)
 
 ### ✅ Working
-- Green scraper: **77 products** (fixed today after 33 days broken)
+- Green scraper: **85 products** (fixed today after 33 days broken)
 - Red scraper: **25 products**
 - Yellow scraper: **132 products**
-- Mini app: **234 total products**, updated at 07:05
+- Mini app: **242 total products**, updated at 09:06
 - Session auth: `data/cookies.json` (26 VkusVill cookies, saved via `login.py`)
 
 ### 🔑 Auth Architecture (IMPORTANT)
@@ -72,11 +72,23 @@ Green scraper uses **cookie-based auth** (NOT a Chrome profile):
 3. No `--user-data-dir` → no profile corruption issues
 4. If green scraper stops finding products → run `python login.py` again
 
+### 🔔 Green Staleness Warning
+When green scraper runs, it reads the **live item count** from the VkusVill cart page button
+(e.g. `"61 товар"` → `61`) and saves it as `live_count` in `green_products.json`.
+
+`scrape_merge.py` copies this as `greenLiveCount` into `proposals.json`.
+
+In the mini app, if `|scraped_green_count − live_count| > 2`, a red banner appears:
+> ⚠️ ЗЕЛЁНЫЕ ЦЕННИКИ УСТАРЕЛИ  
+> На сайте 61 товаров, у нас 85 — данные могли устареть
+
+This warns that some products may have sold out between the last scrape and now.
+
 ### Chrome Profiles
 - `data/chrome_profile_login/` — used by `login.py` only
 - `data/chrome_profile_red/` — used by `scrape_red.py`
 - `data/chrome_profile_yellow/` — used by `scrape_yellow.py`
-- `data/chrome_profile_green/` — **DELETED** (was corrupted; green now uses cookies.json)
+- `data/chrome_profile_green/` — **UNUSED** (was corrupted; green now uses cookies.json)
 
 ---
 
@@ -85,10 +97,10 @@ Green scraper uses **cookie-based auth** (NOT a Chrome profile):
 | File | Purpose |
 |------|---------|
 | `config.py` | All config: tokens, paths, URLs, categories |
-| `scrape_green.py` | Green prices scraper (cookie-based auth) |
+| `scrape_green.py` | Green prices scraper (cookie-based auth + live_count capture) |
 | `scrape_red.py` | Red prices scraper (Chrome profile) |
 | `scrape_yellow.py` | Yellow prices scraper (Chrome profile) |
-| `scrape_merge.py` | Merges all 3 → proposals.json + miniapp |
+| `scrape_merge.py` | Merges all 3 → proposals.json + miniapp (includes greenLiveCount) |
 | `login.py` | Manual login → saves data/cookies.json |
 | `scheduler.py` | Runs all scrapers every 5 min |
 | `utils.py` | Shared: ChromeLock, save_products_safe, parse_stock, etc. |
@@ -110,9 +122,10 @@ Green scraper uses **cookie-based auth** (NOT a Chrome profile):
 
 ### Other fixes
 - `config.py`: Added missing `TELEGRAM_BOT_TOKEN`, `POLLING_INTERVAL`, `CATEGORIES`
-- `backend/main.py`: `user_id: int` → `str` (guest user support)
+- `backend/main.py`: `user_id: int` → `str` (guest user support), added `greenLiveCount` field
 - All scrapers: Added `version_main=144` (ChromeDriver/Chrome version match)
 - All scrapers: Added `cleanup_profile_locks()` (defensive LOCK file cleanup)
+- Git: Removed tracked `__pycache__/config.cpython-312.pyc` (was causing VS Code checkpoint errors)
 
 ---
 
@@ -138,9 +151,6 @@ Green scraper uses **cookie-based auth** (NOT a Chrome profile):
 
 ## Git Status
 
-Last commit: `a673cc63` (before today's fixes)
-Today's changes are uncommitted. To commit:
-```bash
-git add -A
-git commit -m "fix: green scraper cookie-based auth + pagination fix (BUG-008)"
-```
+Last commits:
+- `823b54a` — feat: green staleness warning — compare live page count vs scraped count
+- `fbe0856` — fix: green scraper cookie-based auth + pagination fix (BUG-008)
