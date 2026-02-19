@@ -128,6 +128,159 @@ def init_driver():
             raise e
 
 
+def ensure_cart_not_empty(driver):
+    """If cart is empty, add a product from 'Добавьте в заказ' section on the cart page."""
+    is_empty = driver.execute_script("""
+        const cartItems = document.querySelectorAll('.HProductCard, .BasketItem, .VV_CartItem');
+        return cartItems.length === 0;
+    """)
+    if not is_empty:
+        print("  [GREEN] Cart has items, no need to add random product.")
+        return
+
+    print("  [GREEN] Cart is empty! Adding item from 'Добавьте в заказ' section...")
+    # The cart page has a "Добавьте в заказ" section with product cards and "В корзину" buttons
+    added = driver.execute_script("""
+        // Find "В корзину" buttons in the "Добавьте в заказ" section
+        const btns = document.querySelectorAll('.ProductCard__add, .ProductCard__addToCart, button');
+        for (const btn of btns) {
+            if (btn.innerText.includes('В корзину') && btn.offsetParent !== null) {
+                btn.click();
+                return true;
+            }
+        }
+        return false;
+    """)
+    if added:
+        print("  [GREEN] Product added from 'Добавьте в заказ'.")
+        time.sleep(3)
+        # Refresh to get updated cart state
+        driver.refresh()
+        time.sleep(8)
+    else:
+        print("  [GREEN] Could not add product, continuing anyway...")
+
+
+def ensure_bolshe_tovarov_toggle(driver):
+    """Open delivery slots modal and enable 'Больше товаров' toggle if it's OFF.
+    
+    This toggle controls whether the extended assortment (including green prices)
+    is available. When OFF, green products may show 0.
+    """
+    # 1. Open delivery slots modal by clicking "Изменить" link
+    print("  [GREEN] Opening delivery slots modal to check 'Больше товаров' toggle...")
+    modal_opened = driver.execute_script("""
+        // Try to find and click the "Изменить" link that opens delivery slots
+        const links = document.querySelectorAll('.js-delivery-slots-load, a[class*="delivery-slots"]');
+        for (const link of links) {
+            if (link.offsetParent !== null || link.offsetWidth > 0) {
+                link.click();
+                return 'clicked_link';
+            }
+        }
+        // Fallback: find by text
+        const allLinks = document.querySelectorAll('a, button');
+        for (const el of allLinks) {
+            if (el.innerText.trim() === 'Изменить' && el.closest('[class*="delivery"], [class*="Delivery"]')) {
+                el.click();
+                return 'clicked_text';
+            }
+        }
+        return 'not_found';
+    """)
+    print(f"  [GREEN] Delivery modal trigger: {modal_opened}")
+    
+    if modal_opened == 'not_found':
+        print("  [GREEN] Could not find delivery modal trigger, skipping toggle check.")
+        return False
+    
+    time.sleep(3)  # Wait for modal to open and delivery slots to load
+    
+    # 2. Check if the "Больше товаров" toggle exists and its state
+    toggle_state = driver.execute_script("""
+        // Look for the toggle inside #js-delivery-slots-scroller
+        const scroller = document.getElementById('js-delivery-slots-scroller');
+        if (!scroller) return 'no_scroller';
+        
+        // Find the "Больше товаров" section - look for text content
+        const labels = scroller.querySelectorAll('label, .VV_TogglerItem__Label, [class*="Toggler"]');
+        for (const label of labels) {
+            const text = label.textContent || '';
+            if (text.includes('Больше товаров') || text.includes('больше товаров')) {
+                // Found it! Check toggle state
+                const toggler = label.querySelector('.VV_Toggler');
+                const btn = label.querySelector('.VV_Toggler__Btn');
+                const input = label.querySelector('input[type="checkbox"]');
+                
+                // Check if toggle is ON - various indicators
+                const isActive = (toggler && toggler.classList.contains('VV_Toggler--active')) ||
+                                 (toggler && toggler.classList.contains('active')) ||
+                                 (btn && btn.classList.contains('VV_Toggler__Btn--active')) ||
+                                 (input && input.checked) ||
+                                 (toggler && toggler.getAttribute('data-active') === 'true');
+                
+                return isActive ? 'on' : 'off';
+            }
+        }
+        return 'not_found';
+    """)
+    print(f"  [GREEN] 'Больше товаров' toggle state: {toggle_state}")
+    
+    # 3. If toggle is OFF, click it to enable
+    if toggle_state == 'off':
+        print("  [GREEN] Toggle is OFF, enabling 'Больше товаров'...")
+        clicked = driver.execute_script("""
+            const scroller = document.getElementById('js-delivery-slots-scroller');
+            if (!scroller) return false;
+            
+            const labels = scroller.querySelectorAll('label, .VV_TogglerItem__Label, [class*="Toggler"]');
+            for (const label of labels) {
+                const text = label.textContent || '';
+                if (text.includes('Больше товаров') || text.includes('больше товаров')) {
+                    // Click the toggle button or the label itself
+                    const btn = label.querySelector('.VV_Toggler__Btn');
+                    if (btn) { btn.click(); return true; }
+                    const toggler = label.querySelector('.VV_Toggler');
+                    if (toggler) { toggler.click(); return true; }
+                    label.click();
+                    return true;
+                }
+            }
+            return false;
+        """)
+        if clicked:
+            print("  [GREEN] Toggle clicked! Waiting for page to update...")
+            time.sleep(5)  # Wait for assortment to refresh
+            
+            # Close the modal
+            driver.execute_script("""
+                const closeBtn = document.querySelector('.Modal__close, .js-modal-close, .VV_ModalClose');
+                if (closeBtn) closeBtn.click();
+            """)
+            time.sleep(2)
+            
+            # Refresh the cart page to see updated green products
+            driver.get(GREEN_URL)
+            time.sleep(8)
+            return True
+        else:
+            print("  [GREEN] Could not click toggle.")
+    elif toggle_state == 'on':
+        print("  [GREEN] Toggle is already ON, good.")
+    elif toggle_state == 'not_found':
+        print("  [GREEN] 'Больше товаров' toggle not found in delivery modal.")
+    elif toggle_state == 'no_scroller':
+        print("  [GREEN] Delivery slots scroller not found - modal may not have loaded.")
+    
+    # Close modal regardless
+    driver.execute_script("""
+        const closeBtn = document.querySelector('.Modal__close, .js-modal-close, .VV_ModalClose');
+        if (closeBtn) closeBtn.click();
+    """)
+    time.sleep(1)
+    return False
+
+
 def scrape_green_prices():
     print("🔄 [GREEN] Starting...")
     driver = None
@@ -168,6 +321,14 @@ def scrape_green_prices():
             else:  # Automation/non-interactive mode
                 print("❌ [GREEN] Aborting - no TTY for login prompt")
                 return []
+
+        # Ensure cart is not empty (needed for delivery modal access)
+        ensure_cart_not_empty(driver)
+
+        # Check and enable "Больше товаров" toggle if OFF
+        toggle_changed = ensure_bolshe_tovarov_toggle(driver)
+        if toggle_changed:
+            print("  [GREEN] Toggle was enabled, page refreshed. Re-checking green section...")
 
         # Check for green section
         if "Зелёные ценники" not in driver.page_source:
@@ -597,9 +758,16 @@ def scrape_green_prices():
         traceback.print_exc()
     finally:
         if driver:
+            # Prevent undetected_chromedriver __del__ from calling quit() again
+            # which causes "OSError: [WinError 6] The handle is invalid"
+            # Must nullify __del__ BEFORE quit() so GC can't trigger it later
+            try:
+                driver.__class__.__del__ = lambda self: None
+            except Exception:
+                pass
             try:
                 driver.quit()
-            except:
+            except OSError:
                 pass
 
     # Save to file — enhanced format with live_count metadata for staleness detection

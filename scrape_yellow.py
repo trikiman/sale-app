@@ -16,80 +16,51 @@ if sys.platform == 'win32':
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 YELLOW_URL = "https://vkusvill.ru/offers/?F%5B212%5D%5B%5D=278&F%5BDEF_3%5D=1&sf4=Y&statepop"
+COOKIES_PATH = os.path.join(BASE_DIR, "data", "cookies.json")
 
 
-def cleanup_profile_locks(profile_dir):
-    """Remove stale LOCK files AND fix Chrome crash-recovery dialog.
-    When Chrome is force-killed, exit_type='Crashed' causes a restore dialog
-    that blocks the debug port on next startup → 'chrome not reachable'.
-    """
-    import glob
-    import json as _json
+def load_cookies(driver):
+    """Load VkusVill session cookies from cookies.json into Chrome."""
+    if not os.path.exists(COOKIES_PATH):
+        print(f"  [YELLOW] No cookies.json found at {COOKIES_PATH}")
+        print(f"  [YELLOW] Run 'python login.py' to save your VkusVill session.")
+        return False
 
-    # 1. Remove LevelDB LOCK files
-    for lock_path in glob.glob(os.path.join(profile_dir, '**', 'LOCK'), recursive=True):
+    with open(COOKIES_PATH, 'r', encoding='utf-8') as f:
+        cookies = json.load(f)
+
+    # Must navigate to the domain first before adding cookies
+    driver.get("https://vkusvill.ru")
+    time.sleep(2)
+
+    added = 0
+    for cookie in cookies:
         try:
-            os.remove(lock_path)
-            print(f"  [YELLOW] Removed stale LOCK: {lock_path}")
+            clean = {k: v for k, v in cookie.items()
+                     if k in ('name', 'value', 'domain', 'path', 'secure', 'httpOnly', 'expiry')}
+            if clean.get('domain', '').startswith('.'):
+                clean['domain'] = clean['domain'][1:]
+            driver.add_cookie(clean)
+            added += 1
         except Exception:
             pass
 
-    # 2. Reset exit_type=Normal so Chrome doesn't show crash recovery dialog
-    prefs_path = os.path.join(profile_dir, 'Default', 'Preferences')
-    if os.path.exists(prefs_path):
-        try:
-            with open(prefs_path, 'r', encoding='utf-8') as f:
-                prefs = _json.load(f)
-            profile_prefs = prefs.setdefault('profile', {})
-            if profile_prefs.get('exit_type') != 'Normal' or not profile_prefs.get('exited_cleanly', True):
-                profile_prefs['exit_type'] = 'Normal'
-                profile_prefs['exited_cleanly'] = True
-                with open(prefs_path, 'w', encoding='utf-8') as f:
-                    _json.dump(prefs, f)
-                print(f"  [YELLOW] Fixed Preferences: exit_type=Normal")
-        except Exception as e:
-            print(f"  [YELLOW] Could not fix Preferences: {e}")
-
-    # 3. Remove session files that trigger restore dialog
-    for session_file in ['Last Session', 'Last Tabs', 'Current Session', 'Current Tabs']:
-        fpath = os.path.join(profile_dir, 'Default', session_file)
-        if os.path.exists(fpath):
-            try:
-                os.remove(fpath)
-                print(f"  [YELLOW] Removed session file: {session_file}")
-            except Exception:
-                pass
+    print(f"  [YELLOW] Loaded {added}/{len(cookies)} cookies from cookies.json")
+    return added > 0
 
 
 def init_driver():
-    # Use dedicated profile for Yellow scraper
-    profile = os.path.join(BASE_DIR, "data", "chrome_profile_yellow")
-    os.makedirs(profile, exist_ok=True)
-
-    # Clean up stale LOCK files before starting Chrome
-    cleanup_profile_locks(profile)
-
+    """Initialize Chrome without a persistent profile (cookie-based auth)."""
     options = uc.ChromeOptions()
     options.add_argument('--lang=ru-RU')
     options.add_argument('--no-sandbox')
     options.add_argument('--start-maximized')
-    options.add_argument(f'--user-data-dir={profile}')
-    # Suppress startup tasks that block debug port readiness in profile-based Chrome
-    options.add_argument('--no-first-run')
-    options.add_argument('--no-default-browser-check')
-    options.add_argument('--disable-default-apps')
-    options.add_argument('--disable-background-networking')
-    options.add_argument('--disable-sync')
-    options.add_argument('--disable-extensions')
 
-    # Use global lock to prevent race conditions during Chrome startup
-    # WinError 183 occurs when multiple processes try to initialize Chrome profiles simultaneously
     with ChromeLock():
         try:
             driver = uc.Chrome(options=options, headless=False, version_main=144)
             return driver
         except OSError as e:
-            # Fallback retry just in case, though lock should prevent most collisions
             if "WinError 183" in str(e):
                 print(f"⚠️ [YELLOW] WinError 183 despite lock, retrying once...")
                 time.sleep(2)
@@ -105,8 +76,24 @@ def scrape_yellow_prices():
 
     try:
         driver = init_driver()
+
+        # Load session cookies
+        cookies_ok = load_cookies(driver)
+        if not cookies_ok:
+            print("⚠️ [YELLOW] No cookies loaded. Run 'python login.py' first.")
+
         driver.get(YELLOW_URL)
         time.sleep(10)  # Wait for initial load
+
+        # Check if logged in
+        is_logged_in = driver.execute_script("""
+            return !document.body.innerText.includes('Войти') &&
+                   (document.body.innerText.includes('Кабинет') ||
+                    document.body.innerText.includes('Выход'));
+        """)
+        if not is_logged_in:
+            print("⚠️ [YELLOW] Not logged in! Results may be for wrong location.")
+            print("  [YELLOW] Run 'python login.py' to fix.")
 
         # Validate that YELLOW filter "Скидка по вашей карте" is active
         is_active = driver.execute_script("""
@@ -126,7 +113,7 @@ def scrape_yellow_prices():
 
         # Smart pagination: click once, scroll 500px, count in-stock products
         # Stop when in-stock count stops increasing
-        prev_total = 0
+        prev_in_stock = 0
         no_increase_count = 0
 
         for batch in range(20):  # Max 20 iterations (safety limit)
@@ -163,16 +150,16 @@ def scrape_yellow_prices():
 
             print(f"  [YELLOW] Total: {total_count}, In-stock: {in_stock_count}")
 
-            # Stop if total count didn't increase (no new content loaded)
-            if total_count <= prev_total:
+            # Stop if in-stock count didn't increase (no new relevant products)
+            if in_stock_count <= prev_in_stock:
                 no_increase_count += 1
                 if no_increase_count >= 2:
-                    print(f"  [YELLOW] No new content loaded - done")
+                    print(f"  [YELLOW] No new in-stock products - done")
                     break
             else:
                 no_increase_count = 0
 
-            prev_total = total_count
+            prev_in_stock = in_stock_count
 
         raw_products = driver.execute_script("""
             const products = [];
@@ -280,11 +267,17 @@ def scrape_yellow_prices():
 
     except Exception as e:
         print(f"❌ [YELLOW] Error: {e}")
+        import traceback
+        traceback.print_exc()
     finally:
         if driver:
             try:
+                driver.__class__.__del__ = lambda self: None
+            except Exception:
+                pass
+            try:
                 driver.quit()
-            except:
+            except OSError:
                 pass
 
     # Save to temp file

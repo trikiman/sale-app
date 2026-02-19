@@ -1,126 +1,21 @@
-# VkusVill Sale Monitor - Telegram Bot
+# VkusVill Sale Monitor Bot
 
-🛒 Telegram бот для мониторинга скидок и зелёных ценников во ВкусВилле.
+A Telegram bot to monitor VkusVill product prices and add them to cart.
 
-## Возможности
+## Features
+-   **Price Monitoring**: Checks Yellow/Red price tags.
+-   **Add to Cart**: Adds items to VkusVill cart via API.
+-   **Authentication**: Supports per-user VkusVill accounts.
 
-- 🟢 **Зелёные ценники** - товары со скидкой 40%
-- 📂 **Избранные категории** - уведомления только по интересующим категориям
-- 🔔 **Автоматические уведомления** - проверка каждые 5 минут
-- 👥 **Мультипользовательский** - каждый пользователь настраивает свои избранные
+## Documentation
+This project uses "GitHub Projects as Memory" methodology for documentation.
+See **[docs/memory](./docs/memory/README.md)** for:
+-   [Project Context](./docs/memory/PROJECT_CONTEXT.md)
+-   [Roadmap](./docs/memory/ROADMAP.md)
+-   [Current Task](./docs/memory/CURRENT_TASK.md)
+-   [Knowledge Base](./docs/memory/KNOWLEDGE_BASE.md)
 
-## Установка
-
-### 1. Установить зависимости
-
-```bash
-cd e:\Projects\saleapp
-pip install -r requirements.txt
-python -m playwright install chromium
-```
-
-### 2. Войти в аккаунт VkusVill
-
-Бот использует браузерную автоматизацию и требует авторизации:
-
-```bash
-python login.py
-```
-
-Откроется браузер. Нужно:
-1. Залогиниться в свой аккаунт VkusVill
-2. Зайти на https://vkusvill.ru/cart/
-3. Убедиться, что видны товары и зелёные ценники
-4. Нажать ENTER в терминале
-
-Сессия будет сохранена и использована ботом.
-
-### 3. Запустить бота
-
-```bash
-python main.py
-```
-
-## Команды бота
-
-| Команда | Описание |
-|---------|----------|
-| `/start` | Начать работу с ботом |
-| `/help` | Справка по командам |
-| `/categories` | Список всех категорий |
-| `/add` | Добавить категорию в избранное |
-| `/remove` | Убрать категорию из избранного |
-| `/favorites` | Показать мои избранные |
-| `/sales` | Текущие зелёные ценники |
-| `/check` | Проверить скидки сейчас |
-
-## Структура проекта
-
-```
-saleapp/
-├── main.py              # Точка входа
-├── login.py             # Скрипт для входа в VkusVill
-├── config.py            # Настройки
-├── requirements.txt     # Зависимости
-├── data/
-│   ├── saleapp.db       # SQLite база данных
-│   └── browser_state.json # Сохранённая сессия браузера
-├── database/
-│   ├── __init__.py
-│   ├── models.py        # Модели данных
-│   └── db.py            # Операции с БД
-├── scraper/
-│   ├── __init__.py
-│   ├── session.py       # (устаревший) HTTP сессия
-│   └── vkusvill.py      # Парсер VkusVill на Playwright
-└── bot/
-    ├── __init__.py
-    ├── handlers.py      # Команды бота
-    └── notifier.py      # Уведомления
-```
-
-## Категории
-
-Доступные категории для отслеживания:
-
-- `vegetables` - Овощи, фрукты, ягоды, зелень
-- `ready_meals` - Готовая еда
-- `sweets` - Сладости и десерты
-- `dairy` - Молочные продукты
-- `meat` - Мясо, мясные деликатесы
-- `bakery` - Хлеб, выпечка
-- `drinks` - Напитки
-- `frozen` - Замороженные продукты
-- `fish` - Рыба и морепродукты
-- `grocery` - Бакалея
-- `your_discounts` - Ваши скидки
-- `new` - Новинки
-- `hits` - Хиты
-
-## Как это работает
-
-1. При запуске `login.py` открывается браузер для входа в VkusVill
-2. После входа сессия сохраняется в `data/browser_state.json`
-3. Бот использует Playwright в headless режиме для парсинга страниц
-4. Каждые 5 минут проверяются зелёные ценники
-5. Если товар из избранной категории - отправляется уведомление
-6. Бот запоминает отправленные уведомления чтобы не спамить
-
-## Troubleshooting
-
-### Бот не видит товары / ошибка авторизации
-- Перезапустите `python login.py` и войдите заново
-- Убедитесь, что сессия не истекла
-
-### Playwright не установлен
-```bash
-python -m playwright install chromium
-```
-
-### Нет уведомлений
-- Проверьте, что добавлены категории через /favorites  
-- Убедитесь, что бот запущен и работает
-- Проверьте логи на ошибки
-
-### Сессия истекла
-Если бот перестал работать, перезапустите `login.py` для нового входа.
+## Setup
+1.  Install dependencies: `pip install -r requirements.txt`
+2.  Configure `config.py`.
+3.  Run: `python main.py`

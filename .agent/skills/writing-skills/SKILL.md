@@ -1,6 +1,6 @@
 ---
 name: writing-skills
-description: Use when creating new skills, editing existing skills, or verifying skills work before deployment
+description: Use when creating new skills, updating or editing existing skills, adding content to a skill, improving a skill, or verifying skills work before deployment. Triggers on "create skill", "update skill", "add to skill", "improve skill", "edit skill", "fix skill".
 ---
 
 # Writing Skills

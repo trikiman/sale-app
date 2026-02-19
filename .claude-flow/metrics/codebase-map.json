@@ -1,0 +1,11 @@
+{
+  "timestamp": "2026-02-19T13:51:01.113Z",
+  "projectRoot": "E:\\Projects\\saleapp",
+  "structure": {
+    "hasPackageJson": false,
+    "hasTsConfig": false,
+    "hasClaudeConfig": true,
+    "hasClaudeFlow": true
+  },
+  "scannedAt": 1771509061113
+}
