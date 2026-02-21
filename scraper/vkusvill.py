@@ -212,13 +212,17 @@ def format_products_grouped(products: List[Product]) -> str:
 class PlaywrightScraper:
     """Scrapes VkusVill using Playwright browser automation"""
     
-    def __init__(self):
+    def __init__(self, cookies_path: Optional[str] = None):
         self._playwright = None
         self._browser: Optional[Browser] = None
         self._context: Optional[BrowserContext] = None
         self._page: Optional[Page] = None
         self._initialized = False
-        self._storage_path = os.path.join(os.path.dirname(config.DATABASE_PATH), "browser_state.json")
+        
+        if cookies_path:
+            self._storage_path = cookies_path
+        else:
+            self._storage_path = os.path.join(os.path.dirname(config.DATABASE_PATH), "browser_state.json")
     
     async def initialize(self):
         """Initialize the browser"""
@@ -296,6 +300,110 @@ class PlaywrightScraper:
             
         except Exception as e:
             print(f"Error checking login status: {e}")
+            return False
+            
+    async def send_sms_code(self, phone: str) -> bool:
+        """Navigates to login page and enters phone number to trigger SMS."""
+        await self.initialize()
+        try:
+            await self._page.goto(config.VKUSVILL_BASE_URL, wait_until="domcontentloaded")
+            
+            # Try to click Login button via Javascript to bypass overlay/visibility checks
+            try:
+                await self._page.evaluate("document.querySelector('.js-header-login-btn').click()")
+                await self._page.wait_for_timeout(1000)
+            except Exception as e:
+                print(f"JS click failed: {e}. Falling back to /auth/")
+                await self._page.goto(f"{config.VKUSVILL_BASE_URL}/auth/", wait_until="domcontentloaded")
+            # Wait for phone input
+            phone_input = self._page.locator("input.js-input-mask-phone, input[type='tel']").first
+            await phone_input.wait_for(state="visible", timeout=10000)
+            
+            # Enter phone number and submit
+            phone_clean = phone[-10:]
+            await phone_input.focus()
+            await self._page.keyboard.press("End")
+            await phone_input.press_sequentially(phone_clean, delay=50)
+            
+            # Click submit via JS
+            await self._page.evaluate("""
+                let btn = document.querySelector('button.js-user-form-submit-btn') || 
+                          document.querySelector('button[type=\"submit\"]');
+                if(btn) btn.click();
+            """)
+            
+            # Wait a moment to ensure SMS is requested - check for the SMS code input specifically
+            try:
+                sms_input = self._page.locator("input.js-user-form-checksms-api-sms")
+                await sms_input.wait_for(state="visible", timeout=10000)
+                return True
+            except Exception as e:
+                print(f"SMS code input didn't appear: {e}")
+                # Sometimes it might just be slow, so wait a bit more as fallback
+                await self._page.wait_for_timeout(2000)
+                return True
+            
+        except Exception as e:
+            print(f"Error sending SMS code: {e}")
+            return False
+            
+    async def submit_sms_code(self, code: str) -> bool:
+        """Enters the received SMS code and saves the session if successful."""
+        try:
+            # Based on subagent research, there is a single code input box
+            single_input = self._page.locator("input.js-user-form-checksms-api-sms, input[placeholder*='код']")
+            await single_input.fill(code)
+                
+            # Submit button dynamically changes from Продолжить to Войти, but keeps the same class
+            submit_btn = self._page.locator("button.js-user-form-submit-btn").first
+            if await submit_btn.count() > 0 and await submit_btn.is_visible():
+                await submit_btn.click()
+                
+            # Wait for login to complete — the modal should close or page reload
+            await self._page.wait_for_timeout(5000)
+            
+            # Inject delivery address cookies so VkusVill knows which store to use
+            # These coordinates are for Красногорск, Подмосковный бульвар, 11
+            await self._context.add_cookies([
+                {"name": "MLD_LAT", "value": "55.823229", "domain": ".vkusvill.ru", "path": "/"},
+                {"name": "MLD_LON", "value": "37.372656", "domain": ".vkusvill.ru", "path": "/"},
+                {"name": "DeliverySelectLast", "value": "d", "domain": ".vkusvill.ru", "path": "/"},
+                {"name": "UF_USER_AUTH", "value": "Y", "domain": ".vkusvill.ru", "path": "/"},
+            ])
+            
+            # Navigate to main page — this triggers VkusVill to bind address to server session
+            await self._page.goto("https://vkusvill.ru/", wait_until="domcontentloaded")
+            await self._page.wait_for_timeout(3000)
+            
+            # Try to trigger delivery address binding via VkusVill's internal JS
+            try:
+                await self._page.evaluate("""
+                    () => {
+                        // Set cookies via JS as well for redundancy
+                        document.cookie = "MLD_LAT=55.823229; path=/; domain=.vkusvill.ru";
+                        document.cookie = "MLD_LON=37.372656; path=/; domain=.vkusvill.ru";
+                        document.cookie = "DeliverySelectLast=d; path=/; domain=.vkusvill.ru";
+                        document.cookie = "UF_USER_AUTH=Y; path=/; domain=.vkusvill.ru";
+                    }
+                """)
+            except Exception:
+                pass
+            
+            # Navigate again so the server picks up the address cookies
+            await self._page.goto("https://vkusvill.ru/", wait_until="domcontentloaded")
+            await self._page.wait_for_timeout(3000)
+            
+            # Save the cookies
+            await self.save_state()
+            
+            # Export cookies for VkusVillCart
+            cookies = await self._context.cookies()
+            with open(self._storage_path, 'w', encoding='utf-8') as f:
+                json.dump(cookies, f)
+            
+            return True
+        except Exception as e:
+            print(f"Error submitting SMS code: {e}")
             return False
     
     def _parse_price(self, price_str: Optional[str]) -> Optional[float]:

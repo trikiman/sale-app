@@ -5,7 +5,7 @@ Sends Telegram notifications when matching sales are found
 import logging
 from typing import List, Dict, Set
 
-from telegram import Bot
+from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
 from telegram.error import TelegramError
 
@@ -54,12 +54,18 @@ class Notifier:
             
             # Send product messages
             for product in products_to_notify[:10]:  # Limit to 10 per notification
+                is_grn = 1 if product.is_green_price else 0
+                price_type = 222 if product.is_green_price else 1
+                callback_data = f"cart_add_{product.id}_{is_grn}_{price_type}"
+                keyboard = [[InlineKeyboardButton("🛒 В корзину", callback_data=callback_data)]]
+                
                 try:
                     await self.bot.send_message(
                         chat_id=user_id,
                         text=product.formatted_message,
                         parse_mode=ParseMode.HTML,
-                        disable_web_page_preview=True
+                        disable_web_page_preview=True,
+                        reply_markup=InlineKeyboardMarkup(keyboard)
                     )
                     
                     # Record notification

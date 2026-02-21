@@ -1,22 +1,79 @@
 # Project Context
 
 ## Overview
-This project is a personal Telegram bot assistant for monitoring sales and adding products to the cart at **VkusVill** (ВкусВилл) grocery chain.
+VkusVill Sale Monitor — monitors VkusVill green/red/yellow prices, notifies family members via Telegram, and lets them add products to their VkusVill cart without visiting the site.
 
-## Core Goals
-1.  **Monitor Sales**: Scrape VkusVill products (Yellow/Red tags) and notify the user when favorite items are discounted.
-2.  **Add to Cart via API**: Allow users to add discounted products directly to their VkusVill cart via Telegram command.
-3.  **Per-User Authentication**: Each user authenticates with their own VkusVill account (using phone/SMS).
-4.  **No Selenium Dependency**: Use direct HTTP API for reliability and speed (successfully reverse-engineered).
+**Users only go to VkusVill.ru to finalize delivery and pay.**
 
-## Architecture
--   **Bot**: Python `python-telegram-bot`
--   **Database**: SQLite (`salebot.db`) via SQLAlchemy
--   **Scrapers**: `requests` + `BeautifulSoup` (for catalog) / custom scripts (legacy Selenium for scraping, migrating to API where possible)
--   **Cart API**: `cart/vkusvill_api.py` (pure HTTP client using `requests.Session`)
--   **Environment**: Windows, MINGW64
+## Architecture (3 Services)
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  Telegram Bot  │  Scheduler        │  Backend (FastAPI)  │
+│  python main.py│  scheduler_svc.py │  uvicorn backend    │
+├──────────────────────────────────────────────────────────┤
+│  Notifications │  Scrape prices    │  Admin panel        │
+│  "В корзину"   │  every 5 min      │  Web app (products) │
+│  "Открыть сайт"│  tech account     │  Cart API           │
+│  /login        │                   │  Login API          │
+└──────────────────────────────────────────────────────────┘
+```
+
+### Two Account Types
+
+| | Technical Account | User Account |
+|---|---|---|
+| **Purpose** | Scrape green/red/yellow prices | Add items to user's cart |
+| **How many** | 1 shared | 1 per family member |
+| **Cookies** | `data/cookies.json` | `data/user_cookies/{tg_id}.json` |
+| **Login** | Manual or admin panel | Web app login page (or /login in Telegram) |
+| **Used by** | Scheduler only | Telegram "В корзину" + Web app |
+
+### Cart Add Flow
+When user clicks "🛒 В корзину" (Telegram or Web):
+1. Load user's cookies from `data/user_cookies/{tg_id}.json`
+2. POST to `basket_add.php` API (instant, ~1s)
+3. **No browser opened** — pure HTTP via raw Cookie header
+
+### User Login Flow
+**Primary**: Web app login page (phone + SMS form)
+**Fallback**: `/login` command in Telegram bot
+
+1. User enters phone → backend opens headless Chrome → submits to VkusVill
+2. VkusVill sends SMS → user enters code
+3. Backend submits code → exports cookies to `data/user_cookies/{tg_id}.json`
+4. Both Telegram and Web app now work for this user
+
+### Telegram Features
+- **Notifications**: New green/red prices → message with product card
+- **"В корзину"** button: Adds to VkusVill cart via API
+- **"Открыть"** button: Opens web app (Telegram Mini App or browser)
+- **/login**: Fallback login via chat
+
+### Web App
+- Browse scraped products (green/red/yellow)
+- "В корзину" buttons
+- Login page
+- Served by Backend (production build, not separate server)
+
+### Admin Panel
+- Password-protected (`ADMIN_TOKEN`)
+- Accessible remotely (for AWS hosting)
+- Manage technical account, view logs, etc.
+
+## Tech Stack
+- **Bot**: `python-telegram-bot`
+- **Database**: SQLite (`salebot.db`) via SQLAlchemy
+- **Scrapers**: `undetected_chromedriver` + `BeautifulSoup`
+- **Cart API**: `cart/vkusvill_api.py` (raw Cookie header, `requests`)
+- **Login**: `undetected_chromedriver` (NOT Playwright)
+- **Backend**: FastAPI
+- **Frontend**: React (built → served by backend)
+- **Hosting**: AWS EC2
 
 ## Key Decisions
--   **Move away from Selenium for Cart**: Selenium is slow and unstable for transactional actions. We use the internal API `basket_add.php` instead for reliability.
--   **Session Management**: Cookies are stored in `data/cookies/{user_id}.json`. Users must re-login periodically (session expiration handling pending).
--   **GitHub Methodology**: Using this directory as project memory.
+- **API for cart, browser for login**: Cart = instant HTTP. Login = browser once for SMS.
+- **Raw Cookie header**: `requests` cookie jar can't handle `__Host-PHPSESSID` correctly.
+- **undetected_chromedriver everywhere**: One browser engine for scraping + login.
+- **Session has delivery address**: VkusVill binds address server-side to PHPSESSID.
+- **3 services, not 5**: No separate frontend dev server. React built once.

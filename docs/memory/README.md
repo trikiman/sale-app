@@ -1,10 +1,22 @@
-# Project Memory (GitHub Projects as Memory)
+# docs/memory — Project Documentation Hub
 
-This directory serves as the project's long-term memory, following the methodology described in [sereja.tech](https://sereja.tech/blog/github-projects-ai-agent-memory/). Since `gh` CLI is not available, we simulate the structure with markdown files.
+All project documentation lives here. This is the single source of truth.
 
-## Structure
+## Files
 
-- **[PROJECT_CONTEXT.md](./PROJECT_CONTEXT.md)**: The "Why" and "What". High-level architecture, goals, and constraints.
-- **[ROADMAP.md](./ROADMAP.md)**: The "Plan". Master Issue equivalent. Tracks major milestones.
-- **[CURRENT_TASK.md](./CURRENT_TASK.md)**: The "Now". Active implementation details for the current focus (VkusVill Cart API).
-- **[KNOWLEDGE_BASE.md](./KNOWLEDGE_BASE.md)**: Learned facts, API specs, and key decisions.
+| File | Purpose |
+|------|---------|
+| **PROJECT_CONTEXT.md** | Architecture, tech stack, key decisions |
+| **ROADMAP.md** | Milestones and progress tracker |
+| **CURRENT_TASK.md** | What's being worked on right now |
+| **KNOWLEDGE_BASE.md** | VkusVill API reference (cart, cookies, sessions) |
+| **BUG_REPORT.md** | Bug tracker (all bugs and fixes) |
+| **DEPLOY.md** | AWS EC2 deployment guide |
+| **LOGIC_FLOW.md** | How scrapers, data flow, and MiniApp work together |
+| **categories-reference.md** | VkusVill category mappings |
+
+## Subfolders
+
+| Folder | Purpose |
+|--------|---------|
+| **plans/** | Design docs for major features (date-prefixed) |

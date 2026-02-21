@@ -25,6 +25,16 @@ node_modules/
 # Debug files
 debug*.html
 debug*.png
+login_*.png
+*.html.dump
+popup.html
+login_modal_dump.html
+
+# Replit leftovers
+replit_*/
+
+# Agent DBs
+vectors.db
 
 # Windows reserved device names (cannot be handled by git on Windows)
 NUL

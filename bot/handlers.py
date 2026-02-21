@@ -245,10 +245,16 @@ async def sales_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         
         for product in products[:count]:
+            is_grn = 1 if product.is_green_price else 0
+            price_type = 222 if product.is_green_price else 1
+            callback_data = f"cart_add_{product.id}_{is_grn}_{price_type}"
+            keyboard = [[InlineKeyboardButton("🛒 В корзину", callback_data=callback_data)]]
+            
             await update.message.reply_text(
                 product.formatted_message,
                 parse_mode=ParseMode.HTML,
-                disable_web_page_preview=True
+                disable_web_page_preview=True,
+                reply_markup=InlineKeyboardMarkup(keyboard)
             )
         
         if len(products) > count:
@@ -264,6 +270,27 @@ async def sales_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "❌ Ошибка при загрузке. Попробуй позже!",
             parse_mode=ParseMode.HTML
         )
+
+
+async def test_cart_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /test_cart command — send a test product card to verify cart button works."""
+    test_product_id = 731
+    callback_data = f"cart_add_{test_product_id}_0_1"
+    keyboard = [[InlineKeyboardButton("🛒 В корзину", callback_data=callback_data)]]
+    
+    text = (
+        "🧪 <b>Тестовая карточка товара</b>\n\n"
+        "🍌 <b>Бананы</b>\n"
+        "💰 Цена: ~165 ₽/кг\n"
+        "📦 ID: 731\n\n"
+        "Нажми кнопку ниже, чтобы проверить добавление в корзину:"
+    )
+    
+    await update.message.reply_text(
+        text,
+        parse_mode=ParseMode.HTML,
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
 
 async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -343,10 +370,16 @@ async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         
         for product in list(all_products.values())[:count]:
+            is_grn = 1 if product.is_green_price else 0
+            price_type = 222 if product.is_green_price else 1
+            callback_data = f"cart_add_{product.id}_{is_grn}_{price_type}"
+            keyboard = [[InlineKeyboardButton("🛒 В корзину", callback_data=callback_data)]]
+            
             await update.message.reply_text(
                 product.formatted_message,
                 parse_mode=ParseMode.HTML,
-                disable_web_page_preview=True
+                disable_web_page_preview=True,
+                reply_markup=InlineKeyboardMarkup(keyboard)
             )
             
     except Exception as e:
@@ -419,6 +452,53 @@ async def handle_remove_category(update: Update, context: ContextTypes.DEFAULT_T
         )
 
 
+async def handle_cart_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle 'Add to Cart' button press via VkusVillCart API"""
+    query = update.callback_query
+    await query.answer("Запрос отправляется...")
+    
+    parts = query.data.split('_')
+    if len(parts) >= 5:
+        product_id = int(parts[2])
+        is_green = int(parts[3])
+        price_type = int(parts[4])
+        user_id = update.effective_user.id
+        
+        # Resolve paths dynamically
+        import os
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        cookies_path = os.path.join(base_dir, "data", "user_cookies", f"{user_id}.json")
+        
+        try:
+            from cart.vkusvill_api import VkusVillCart
+            import logging
+            logger = logging.getLogger(__name__)
+            
+            if not os.path.exists(cookies_path):
+                await query.answer("❌ Вы не авторизованы! Напишите /login боту.", show_alert=True)
+                return
+                
+            cart = VkusVillCart(cookies_path=cookies_path)
+            result = cart.add(product_id=product_id, price_type=price_type, is_green=is_green)
+            
+            if result.get('success'):
+                msg = f"✅ Добавлено!\n\nКорзина: {result.get('cart_items', '?')} шт. на {result.get('cart_total', '?')} руб."
+                await query.answer(msg, show_alert=True)
+            else:
+                error = result.get('error', 'Неизвестная ошибка')
+                msg = f"❌ Ошибка: {error}"
+                await query.answer(msg, show_alert=True)
+                
+            cart.close()
+            
+        except Exception as e:
+            import logging
+            logging.getLogger(__name__).error(f"Cart add error: {e}")
+            await query.answer("❌ Ошибка при обращении к API", show_alert=True)
+    else:
+        await query.answer("❌ Ошибка в данных кнопки", show_alert=True)
+
+
 async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Route callback queries to appropriate handlers"""
     query = update.callback_query
@@ -428,12 +508,19 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         await handle_add_category(update, context)
     elif data.startswith("rm_cat:"):
         await handle_remove_category(update, context)
+    elif data.startswith("cart_add_"):
+        await handle_cart_add(update, context)
     else:
         await query.answer("Неизвестное действие")
 
 
 def setup_handlers(application: Application):
     """Set up all bot handlers"""
+    from bot.auth import get_login_conv_handler
+    
+    # Must add ConversationHandler before simple command handlers that might conflict
+    application.add_handler(get_login_conv_handler())
+    
     # Command handlers
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
@@ -443,6 +530,7 @@ def setup_handlers(application: Application):
     application.add_handler(CommandHandler("favorites", favorites_command))
     application.add_handler(CommandHandler("sales", sales_command))
     application.add_handler(CommandHandler("check", check_command))
+    application.add_handler(CommandHandler("test_cart", test_cart_command))
     
     # Callback query handler
     application.add_handler(CallbackQueryHandler(handle_callback_query))
