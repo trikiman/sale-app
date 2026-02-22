@@ -58,3 +58,6 @@ data/red_products.json
 data/yellow_products.json
 data/proposals.json
 miniapp/public/data.json
+
+# Claude Workspace
+.claude/
