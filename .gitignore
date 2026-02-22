@@ -61,3 +61,4 @@ miniapp/public/data.json
 
 # Claude Workspace
 .claude/
+.agent/
