@@ -151,6 +151,8 @@ class Product(BaseModel):
 class ProductsResponse(BaseModel):
     updatedAt: str
     greenLiveCount: Optional[int] = 0
+    dataStale: Optional[bool] = False
+    staleInfo: Optional[List[str]] = None
     products: List[Product]
 
 

@@ -98,6 +98,11 @@ Each card gets a **colored tint class** based on sale type:
 
 User toggles between grid (⊞) and list (☰). Stored in `localStorage('vv_view_mode')`.
 
+| Mode | Image Height | Columns |
+|------|-------------|---------|
+| Grid | 160px | auto-fill, min 220px |
+| List | 300px | 1 column, max 600px |
+
 ### Header Order
 
 ```

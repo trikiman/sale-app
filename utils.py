@@ -309,15 +309,16 @@ def deduplicate_products(products):
 
     return list(product_map.values())
 
-def save_products_safe(products, output_path):
+def save_products_safe(products, output_path, success=True):
     """
     Safely saves products to a JSON file.
-    - If products list is empty, does NOT overwrite existing file (prevents data loss on scraper error).
+    - If success is False (scraper error/blocked), does NOT overwrite existing file.
+    - If success is True, SAVES the file even if products list is empty (reflecting live OOS state).
     - Creates directory if needed.
     - Saves with UTF-8 encoding and indent=2.
     """
-    if not products:
-        print(f"Warning: No products found. Skipping save to {output_path} to prevent overwriting existing data.")
+    if not success:
+        print(f"⚠️ Scraper did not complete successfully. Skipping save to {output_path} to preserve previous data for staleness detection.")
         return False
 
     try:
@@ -325,8 +326,8 @@ def save_products_safe(products, output_path):
 
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(products, f, ensure_ascii=False, indent=2)
-        print(f"Successfully saved {len(products)} products to {output_path}")
+        print(f"✅ Successfully saved {len(products)} products to {output_path}")
         return True
     except Exception as e:
-        print(f"Error saving file {output_path}: {e}")
+        print(f"❌ Error saving file {output_path}: {e}")
         return False

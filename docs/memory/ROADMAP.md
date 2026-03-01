@@ -13,15 +13,26 @@
 - [x] "🛒 В корзину" button in Telegram bot
 - [x] `/test_cart` command for quick testing
 
-## Milestone 3: Architecture Redesign 🚧
+## Milestone 3: Architecture Redesign ✅
 - [x] Simplify to 3 services (Bot + Scheduler + Backend)
 - [x] Update `run_app.bat` with Telegram bot
+- [x] Card redesign: top-bottom layout, hero images, type tints
+- [x] Dark/light theme switcher
+- [x] Grid/list view toggle
 - [ ] Add "Открыть" web app button to Telegram notifications
 - [ ] Build web app login page (phone + SMS)
 - [ ] Backend API endpoints for cart + auth
-- [ ] Build products page for web app
 - [ ] Serve web app from backend (production build)
 - [ ] Admin panel: remote access with password
+
+## Milestone 3.5: Data Pipeline Hardening ✅
+- [x] Staleness detection in `scrape_merge.py` (10-minute threshold)
+- [x] `scrape_success` flag in all scrapers
+- [x] `save_products_safe()` redesigned with `success` parameter
+- [x] `dataStale` + `staleInfo` propagated to frontend via FastAPI
+- [x] Yellow "⚠️ Данные устарели" warning banner
+- [x] `updatedAt` shows oldest source file time (not merge time)
+- [x] Vite proxy fix (removed `rewrite` rule stripping `/api/`)
 
 ## Milestone 4: Deployment (AWS)
 - [ ] Docker containerization

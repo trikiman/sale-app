@@ -152,6 +152,10 @@ body {
   background: var(--tg-theme-secondary-bg-color);
 }
 
+.product-grid.list-view .card-image-wrap {
+  height: 300px;
+}
+
 .card-hero-img {
   width: 100%;
   height: 100%;

@@ -22,7 +22,7 @@ def merge_products():
     green_live_count = 0  # Live count from VkusVill page (for staleness detection)
     source_timestamps = []  # Track source file ages
     stale_files = []  # Files older than threshold
-    STALE_HOURS = 6  # Consider data stale after 6 hours
+    STALE_MINUTES = 10  # Consider data stale after 10 minutes
     
     # Load each color's products
     for color in ['green', 'red', 'yellow']:
@@ -30,13 +30,13 @@ def merge_products():
         if os.path.exists(path):
             # Check file age
             file_mtime = os.path.getmtime(path)
-            file_age_hours = (datetime.now().timestamp() - file_mtime) / 3600
+            file_age_minutes = (datetime.now().timestamp() - file_mtime) / 60
             file_time = datetime.fromtimestamp(file_mtime)
             source_timestamps.append(file_mtime)
             
-            if file_age_hours > STALE_HOURS:
-                stale_files.append(f"{color} ({file_age_hours:.0f}h old)")
-                print(f"  ⚠️ {color}_products.json is STALE ({file_age_hours:.0f} hours old, last: {file_time.strftime('%Y-%m-%d %H:%M')})")
+            if file_age_minutes > STALE_MINUTES:
+                stale_files.append(f"{color} ({file_age_minutes:.0f}m old)")
+                print(f"  ⚠️ {color}_products.json is STALE ({file_age_minutes:.0f} minutes old, last: {file_time.strftime('%Y-%m-%d %H:%M')})")
             
             with open(path, 'r', encoding='utf-8') as f:
                 data = json.load(f)

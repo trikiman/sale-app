@@ -73,6 +73,7 @@ def scrape_red_prices():
     print("🔄 [RED] Starting...")
     driver = None
     products = []
+    scrape_success = False
 
     try:
         driver = init_driver()
@@ -264,6 +265,7 @@ def scrape_red_prices():
         products = deduplicate_products(products)
 
         print(f"✅ [RED] Found {len(products)} products")
+        scrape_success = True
 
     except Exception as e:
         print(f"❌ [RED] Error: {e}")
@@ -280,9 +282,11 @@ def scrape_red_prices():
             except OSError:
                 pass
 
-    # Save to temp file
-    output_path = os.path.join(DATA_DIR, "red_products.json")
-    save_products_safe(products, output_path)
+        # Save to temp file
+        # Moved inside finally block so it always runs, using scrape_success to know if it's safe to overwrite
+        output_path = os.path.join(DATA_DIR, "red_products.json")
+        save_products_safe(products, output_path, success=scrape_success)
+
     return products
 
 

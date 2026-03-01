@@ -286,6 +286,7 @@ def scrape_green_prices():
     driver = None
     products = []
     live_count = 0  # Count shown on VkusVill live page (for staleness check)
+    scrape_success = False
 
     try:
         driver = init_driver()
@@ -332,7 +333,8 @@ def scrape_green_prices():
 
         # Check for green section
         if "Зелёные ценники" not in driver.page_source:
-            print("⚠️ [GREEN] Section not found on page")
+            print("⚠️ [GREEN] Section not found on page - assuming 0 items")
+            scrape_success = True
             return []
 
         print("✅ [GREEN] Found section, scrolling to load...")
@@ -751,6 +753,7 @@ def scrape_green_prices():
         products = deduplicate_products(products)
 
         print(f"✅ [GREEN] Found {len(products)} products with revealed stock")
+        scrape_success = True
 
     except Exception as e:
         print(f"❌ [GREEN] Error: {e}")
@@ -770,23 +773,25 @@ def scrape_green_prices():
             except OSError:
                 pass
 
-    # Save to file — enhanced format with live_count metadata for staleness detection
-    output_path = os.path.join(DATA_DIR, "green_products.json")
-    if products:
-        output_data = {
-            "live_count": live_count,
-            "scraped_count": len(products),
-            "products": products
-        }
-        try:
-            os.makedirs(os.path.dirname(output_path), exist_ok=True)
-            with open(output_path, 'w', encoding='utf-8') as f:
-                json.dump(output_data, f, ensure_ascii=False, indent=2)
-            print(f"✅ Saved {len(products)} products (live_count={live_count}) → {output_path}")
-        except Exception as e:
-            print(f"❌ Error saving {output_path}: {e}")
-    else:
-        print(f"⚠️ No products found — keeping existing {output_path} to prevent data loss.")
+        # Save to file — enhanced format with live_count metadata for staleness detection
+        # Moved inside finally block so early returns (like finding 0 items) STILL SAVE the empty state!
+        output_path = os.path.join(DATA_DIR, "green_products.json")
+        if scrape_success:
+            output_data = {
+                "live_count": live_count,
+                "scraped_count": len(products),
+                "products": products
+            }
+            try:
+                os.makedirs(os.path.dirname(output_path), exist_ok=True)
+                with open(output_path, 'w', encoding='utf-8') as f:
+                    json.dump(output_data, f, ensure_ascii=False, indent=2)
+                print(f"✅ Saved {len(products)} products (live_count={live_count}) → {output_path}")
+            except Exception as e:
+                print(f"❌ Error saving {output_path}: {e}")
+        else:
+            print(f"⚠️ Scraper failed or was blocked — keeping existing {output_path} to allow staleness detection.")
+
     return products
 
 
