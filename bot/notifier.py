@@ -5,7 +5,7 @@ Sends Telegram notifications when matching sales are found
 import logging
 from typing import List, Dict, Set
 
-from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.constants import ParseMode
 from telegram.error import TelegramError
 
@@ -57,7 +57,10 @@ class Notifier:
                 is_grn = 1 if product.is_green_price else 0
                 price_type = 222 if product.is_green_price else 1
                 callback_data = f"cart_add_{product.id}_{is_grn}_{price_type}"
-                keyboard = [[InlineKeyboardButton("🛒 В корзину", callback_data=callback_data)]]
+                keyboard = [[
+                    InlineKeyboardButton("🛒 В корзину", callback_data=callback_data),
+                    InlineKeyboardButton("🌐 Открыть", web_app=WebAppInfo(url=config.WEB_APP_URL))
+                ]]
                 
                 try:
                     await self.bot.send_message(

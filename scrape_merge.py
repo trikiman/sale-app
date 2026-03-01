@@ -20,11 +20,24 @@ def merge_products():
     
     all_products = []
     green_live_count = 0  # Live count from VkusVill page (for staleness detection)
+    source_timestamps = []  # Track source file ages
+    stale_files = []  # Files older than threshold
+    STALE_HOURS = 6  # Consider data stale after 6 hours
     
     # Load each color's products
     for color in ['green', 'red', 'yellow']:
         path = os.path.join(DATA_DIR, f"{color}_products.json")
         if os.path.exists(path):
+            # Check file age
+            file_mtime = os.path.getmtime(path)
+            file_age_hours = (datetime.now().timestamp() - file_mtime) / 3600
+            file_time = datetime.fromtimestamp(file_mtime)
+            source_timestamps.append(file_mtime)
+            
+            if file_age_hours > STALE_HOURS:
+                stale_files.append(f"{color} ({file_age_hours:.0f}h old)")
+                print(f"  ⚠️ {color}_products.json is STALE ({file_age_hours:.0f} hours old, last: {file_time.strftime('%Y-%m-%d %H:%M')})")
+            
             with open(path, 'r', encoding='utf-8') as f:
                 data = json.load(f)
                 # Handle both formats: array or object with 'products' key
@@ -50,6 +63,10 @@ def merge_products():
         else:
             print(f"  ⚠️ No {color} products file found")
     
+    if stale_files:
+        print(f"\n  🚨 STALE DATA WARNING: {', '.join(stale_files)}")
+        print(f"  🚨 Run scrapers to refresh!\n")
+    
     # Count by type
     all_products = deduplicate_products(all_products)
 
@@ -62,10 +79,20 @@ def merge_products():
     red_count = len([p for p in all_products if p['type'] == 'red'])
     yellow_count = len([p for p in all_products if p['type'] == 'yellow'])
     
+    # Use the OLDEST source file timestamp as updatedAt (not current time!)
+    # This honestly reflects when data was actually scraped
+    if source_timestamps:
+        oldest_ts = min(source_timestamps)
+        data_time = datetime.fromtimestamp(oldest_ts).strftime("%Y-%m-%d %H:%M:%S")
+    else:
+        data_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
     # Save results
     output = {
-        "updatedAt": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "updatedAt": data_time,
         "greenLiveCount": green_live_count,
+        "dataStale": len(stale_files) > 0,
+        "staleInfo": stale_files if stale_files else None,
         "products": all_products
     }
     
@@ -86,6 +113,8 @@ def merge_products():
     print(f"  💚 Green: {green_count}")
     print(f"  🔴 Red: {red_count}")
     print(f"  🟡 Yellow: {yellow_count}")
+    if stale_files:
+        print(f"  ⚠️ DATA IS STALE — updatedAt: {data_time}")
     print(f"{'='*60}")
 
 

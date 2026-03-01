@@ -5,6 +5,7 @@ Serves product data, handles favorites, and provides admin panel
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Header, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import List, Optional
 from collections import deque
@@ -14,11 +15,17 @@ import os
 import sys
 import subprocess
 import threading
+import logging
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from database.db import Database
+from scraper.vkusvill import PlaywrightScraper
+from cart.vkusvill_api import VkusVillCart
+from bot.auth import get_user_cookies_path, normalize_phone
+
+logger = logging.getLogger(__name__)
 
 # Load admin token from config / env
 try:
@@ -44,6 +51,12 @@ db = Database()
 BASE_PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_PROJECT_DIR, "data")
 PROPOSALS_PATH = os.path.join(DATA_DIR, "proposals.json")
+MINIAPP_DIST = os.path.join(BASE_PROJECT_DIR, "miniapp", "dist")
+
+# Mount assets directory if it exists
+assets_dir = os.path.join(MINIAPP_DIST, "assets")
+if os.path.exists(assets_dir):
+    app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
 # ─── Scraper State ────────────────────────────────────────────────────────────
 
@@ -63,6 +76,9 @@ _run_locks: dict = {
     name: threading.Lock()
     for name in ["green", "red", "yellow", "merge", "login"]
 }
+
+# Temporary memory to store Playwright scraper instances during login flow
+_login_scrapers: dict = {}
 
 
 def _run_script(name: str, script_path: str):
@@ -148,15 +164,38 @@ class FavoriteResponse(BaseModel):
     product_name: str
     is_favorite: bool
 
+class AuthPhoneRequest(BaseModel):
+    user_id: str
+    phone: str
+
+class AuthCodeRequest(BaseModel):
+    user_id: str
+    code: str
+
+class CartAddRequest(BaseModel):
+    user_id: str
+    product_id: int
+    is_green: int
+    price_type: int
+
 
 # ─── Public Endpoints ─────────────────────────────────────────────────────────
 
 @app.get("/")
 def root():
-    return {"status": "ok", "message": "VkusVill Mini App API"}
+    index_path = os.path.join(MINIAPP_DIST, "index.html")
+    if os.path.exists(index_path):
+        return FileResponse(index_path)
+    return {"status": "ok", "message": "VkusVill Mini App API (Frontend not built yet)"}
 
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon():
+    vite_svg = os.path.join(MINIAPP_DIST, "vite.svg")
+    if os.path.exists(vite_svg):
+        return FileResponse(vite_svg)
+    return HTMLResponse(status_code=404)
 
-@app.get("/products", response_model=ProductsResponse)
+@app.get("/api/products", response_model=ProductsResponse)
 def get_products():
     """Get all products from proposals.json"""
     try:
@@ -169,7 +208,7 @@ def get_products():
         raise HTTPException(status_code=500, detail="Invalid JSON data")
 
 
-@app.get("/favorites/{user_id}")
+@app.get("/api/favorites/{user_id}")
 def get_favorites(user_id: str):
     favorites = db.get_user_favorite_products(user_id)
     return {
@@ -178,7 +217,7 @@ def get_favorites(user_id: str):
     }
 
 
-@app.post("/favorites/{user_id}", response_model=FavoriteResponse)
+@app.post("/api/favorites/{user_id}", response_model=FavoriteResponse)
 def toggle_favorite(user_id: str, request: FavoriteRequest):
     db.upsert_user(user_id)
     favorites = db.get_user_favorite_products(user_id)
@@ -191,13 +230,13 @@ def toggle_favorite(user_id: str, request: FavoriteRequest):
         return FavoriteResponse(product_id=request.product_id, product_name=request.product_name, is_favorite=True)
 
 
-@app.delete("/favorites/{user_id}/{product_id}")
+@app.delete("/api/favorites/{user_id}/{product_id}")
 def remove_favorite(user_id: str, product_id: str):
     success = db.remove_favorite_product(user_id, product_id)
     return {"success": success, "product_id": product_id}
 
 
-@app.post("/sync")
+@app.post("/api/sync")
 def sync_products():
     try:
         if not os.path.exists(PROPOSALS_PATH):
@@ -211,7 +250,7 @@ def sync_products():
         raise HTTPException(status_code=500, detail=str(exc))
 
 
-@app.get("/new-products")
+@app.get("/api/new-products")
 def get_new_products():
     try:
         if not os.path.exists(PROPOSALS_PATH):
@@ -224,6 +263,92 @@ def get_new_products():
         return {"new_products": new_products, "count": len(new_products)}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+# ─── Auth Endpoints ───────────────────────────────────────────────────────────
+
+@app.get("/api/auth/status/{user_id}")
+def auth_status(user_id: str):
+    """Check if the user is authenticated (has cookies)."""
+    cookies_path = get_user_cookies_path(int(user_id) if user_id.isdigit() else user_id)
+    return {"authenticated": os.path.exists(cookies_path)}
+
+
+@app.post("/api/auth/login")
+async def auth_login(req: AuthPhoneRequest):
+    user_id = req.user_id
+    vkusvill_phone = normalize_phone(req.phone)
+    if not vkusvill_phone:
+        raise HTTPException(status_code=400, detail="Invalid phone number format")
+
+    if user_id in _login_scrapers:
+        await _login_scrapers[user_id].close()
+        del _login_scrapers[user_id]
+
+    scraper = PlaywrightScraper(cookies_path=get_user_cookies_path(int(user_id) if user_id.isdigit() else user_id))
+    try:
+        await scraper.initialize()
+        success = await scraper.send_sms_code(vkusvill_phone)
+        if success:
+            _login_scrapers[user_id] = scraper
+            return {"success": True, "message": "SMS sent"}
+        else:
+            await scraper.close()
+            raise HTTPException(status_code=500, detail="Failed to send SMS")
+    except Exception as e:
+        await scraper.close()
+        logger.error(f"Login error stage 1: {e}")
+        raise HTTPException(status_code=500, detail="System error during login")
+
+
+@app.post("/api/auth/verify")
+async def auth_verify(req: AuthCodeRequest):
+    user_id = req.user_id
+    scraper = _login_scrapers.get(user_id)
+    
+    if not scraper:
+        raise HTTPException(status_code=400, detail="Session expired or not found")
+
+    try:
+        success = await scraper.submit_sms_code(req.code)
+        if success:
+            return {"success": True, "message": "Successfully authenticated"}
+        else:
+            raise HTTPException(status_code=400, detail="Invalid code or timeout")
+    except Exception as e:
+        logger.error(f"Login verify error: {e}")
+        raise HTTPException(status_code=500, detail="System error during verify")
+    finally:
+        await scraper.close()
+        del _login_scrapers[user_id]
+
+
+# ─── Cart Endpoints ───────────────────────────────────────────────────────────
+
+@app.post("/api/cart/add")
+def cart_add_endpoint(req: CartAddRequest):
+    """Add a product to the user's VkusVill cart."""
+    cookies_path = get_user_cookies_path(int(req.user_id) if req.user_id.isdigit() else req.user_id)
+    if not os.path.exists(cookies_path):
+        raise HTTPException(status_code=401, detail="User not authenticated")
+
+    try:
+        cart = VkusVillCart(cookies_path=cookies_path)
+        result = cart.add(product_id=req.product_id, price_type=req.price_type, is_green=req.is_green)
+        cart.close()
+
+        if result.get("success"):
+            return {
+                "success": True, 
+                "cart_items": result.get("cart_items"),
+                "cart_total": result.get("cart_total")
+            }
+        else:
+            error = result.get("error", "Unknown API error")
+            raise HTTPException(status_code=400, detail=error)
+    except Exception as e:
+        logger.error(f"Cart add error: {e}")
+        raise HTTPException(status_code=500, detail="Failed to communicate with Cart API")
 
 
 # ─── Admin Endpoints ──────────────────────────────────────────────────────────

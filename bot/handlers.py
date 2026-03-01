@@ -4,7 +4,7 @@ Telegram Bot Handlers for VkusVill Sale Monitor
 import logging
 from typing import List
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import (
     Application, 
     CommandHandler, 
@@ -248,7 +248,10 @@ async def sales_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             is_grn = 1 if product.is_green_price else 0
             price_type = 222 if product.is_green_price else 1
             callback_data = f"cart_add_{product.id}_{is_grn}_{price_type}"
-            keyboard = [[InlineKeyboardButton("🛒 В корзину", callback_data=callback_data)]]
+            keyboard = [[
+                InlineKeyboardButton("🛒 В корзину", callback_data=callback_data),
+                InlineKeyboardButton("🌐 Открыть", web_app=WebAppInfo(url=config.WEB_APP_URL))
+            ]]
             
             await update.message.reply_text(
                 product.formatted_message,
@@ -276,7 +279,10 @@ async def test_cart_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /test_cart command — send a test product card to verify cart button works."""
     test_product_id = 731
     callback_data = f"cart_add_{test_product_id}_0_1"
-    keyboard = [[InlineKeyboardButton("🛒 В корзину", callback_data=callback_data)]]
+    keyboard = [[
+        InlineKeyboardButton("🛒 В корзину", callback_data=callback_data),
+        InlineKeyboardButton("🌐 Открыть", web_app=WebAppInfo(url=config.WEB_APP_URL))
+    ]]
     
     text = (
         "🧪 <b>Тестовая карточка товара</b>\n\n"
@@ -373,7 +379,10 @@ async def check_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             is_grn = 1 if product.is_green_price else 0
             price_type = 222 if product.is_green_price else 1
             callback_data = f"cart_add_{product.id}_{is_grn}_{price_type}"
-            keyboard = [[InlineKeyboardButton("🛒 В корзину", callback_data=callback_data)]]
+            keyboard = [[
+                InlineKeyboardButton("🛒 В корзину", callback_data=callback_data),
+                InlineKeyboardButton("🌐 Открыть", web_app=WebAppInfo(url=config.WEB_APP_URL))
+            ]]
             
             await update.message.reply_text(
                 product.formatted_message,

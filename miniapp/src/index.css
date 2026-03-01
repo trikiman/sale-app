@@ -12,6 +12,20 @@
   --tg-theme-button-color: #4dabf7;
   --tg-theme-button-text-color: #ffffff;
   --tg-theme-secondary-bg-color: #16213e;
+  --card-bg: rgba(255, 255, 255, 0.08);
+  --card-border: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="light"] {
+  --tg-theme-bg-color: #f5f5f7;
+  --tg-theme-text-color: #1a1a2e;
+  --tg-theme-hint-color: #666666;
+  --tg-theme-link-color: #2563eb;
+  --tg-theme-button-color: #2563eb;
+  --tg-theme-button-text-color: #ffffff;
+  --tg-theme-secondary-bg-color: #e8e8ed;
+  --card-bg: rgba(255, 255, 255, 0.85);
+  --card-border: rgba(0, 0, 0, 0.08);
 }
 
 body {
@@ -25,7 +39,397 @@ body {
   line-height: 1.5;
 }
 
+/* App container — full width with padding */
+.app-container {
+  max-width: 1600px;
+  margin: 0 auto;
+}
+
+/* === PRODUCT GRID === */
+.product-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.product-grid.list-view {
+  grid-template-columns: 1fr;
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+/* === VERTICAL CARD === */
+.card-vertical {
+  background: var(--card-bg);
+  backdrop-filter: blur(10px);
+  border: 1px solid var(--card-border);
+  border-radius: 16px;
+  overflow: hidden;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.card-vertical:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+}
+
+/* Card type tints — dark theme */
+.card-tint-green {
+  background: rgba(34, 197, 94, 0.08);
+  border-color: rgba(34, 197, 94, 0.25);
+  border-left: 3px solid rgba(34, 197, 94, 0.6);
+}
+
+.card-tint-red {
+  background: rgba(239, 68, 68, 0.08);
+  border-color: rgba(239, 68, 68, 0.25);
+  border-left: 3px solid rgba(239, 68, 68, 0.6);
+}
+
+.card-tint-yellow {
+  background: rgba(234, 179, 8, 0.08);
+  border-color: rgba(234, 179, 8, 0.25);
+  border-left: 3px solid rgba(234, 179, 8, 0.6);
+}
+
+/* Card type tints — light theme */
+[data-theme="light"] .card-tint-green {
+  background: rgba(34, 197, 94, 0.1);
+  border-color: rgba(34, 197, 94, 0.3);
+  border-left: 3px solid rgba(34, 197, 94, 0.7);
+}
+
+[data-theme="light"] .card-tint-red {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+  border-left: 3px solid rgba(239, 68, 68, 0.7);
+}
+
+[data-theme="light"] .card-tint-yellow {
+  background: rgba(234, 179, 8, 0.1);
+  border-color: rgba(234, 179, 8, 0.3);
+  border-left: 3px solid rgba(234, 179, 8, 0.7);
+}
+
+/* Light theme — price colors need to be darker for contrast */
+[data-theme="light"] .card-price {
+  color: inherit;
+}
+
+[data-theme="light"] .card-tint-green .card-price {
+  color: #16a34a;
+}
+
+[data-theme="light"] .card-tint-red .card-price {
+  color: #dc2626;
+}
+
+[data-theme="light"] .card-tint-yellow .card-price {
+  color: #ca8a04;
+}
+
+/* Light theme — header pills */
+[data-theme="light"] .header-pill {
+  color: #374151 !important;
+}
+
+/* Light theme — filter buttons */
+[data-theme="light"] .category-chip {
+  background: rgba(0, 0, 0, 0.06);
+  color: #374151;
+}
+
+[data-theme="light"] .category-chip.active {
+  background: var(--tg-theme-button-color);
+  color: #fff;
+}
+
+.card-image-wrap {
+  position: relative;
+  width: 100%;
+  height: 160px;
+  overflow: hidden;
+  background: var(--tg-theme-secondary-bg-color);
+}
+
+.card-hero-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: opacity 0.3s;
+}
+
+.card-hero-fallback {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--tg-theme-secondary-bg-color);
+}
+
+/* Discount badge — top left on image */
+.card-discount {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  background: rgba(34, 197, 94, 0.9);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+/* Favorite button — top right on image */
+.card-fav-btn {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 10;
+  padding: 6px;
+  border-radius: 50%;
+  backdrop-filter: blur(8px);
+  background: rgba(0, 0, 0, 0.4);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.card-fav-btn.active {
+  background: rgba(239, 68, 68, 0.25);
+  transform: scale(1.1);
+}
+
+.card-fav-btn.loading {
+  opacity: 0.7;
+  cursor: wait;
+}
+
+/* Type badge — bottom left on image */
+.card-type-badge {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 20px;
+  backdrop-filter: blur(8px);
+  font-weight: 500;
+}
+
+/* Card body */
+.card-body {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.card-title {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  margin: 0;
+}
+
+.card-price-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: auto;
+}
+
+.card-prices {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.card-price {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--tg-theme-button-color);
+}
+
+.card-old-price {
+  font-size: 12px;
+  opacity: 0.5;
+  text-decoration: line-through;
+}
+
+.card-stock {
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+/* Border colors for card types */
+.border-green-500\/30 {
+  border-color: rgba(34, 197, 94, 0.3);
+}
+
+.border-red-500\/30 {
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.border-yellow-500\/30 {
+  border-color: rgba(234, 179, 8, 0.3);
+}
+
+/* === VIEW TOGGLE === */
+.view-toggle-group {
+  display: flex;
+  gap: 2px;
+  margin-left: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 2px;
+}
+
+.view-toggle-btn {
+  width: 32px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 16px;
+  color: var(--tg-theme-hint-color);
+  transition: all 0.2s;
+}
+
+.view-toggle-btn.active {
+  background: var(--tg-theme-button-color);
+  color: var(--tg-theme-button-text-color);
+}
+
+.view-toggle-btn:hover:not(.active) {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* flex-wrap utility */
+.flex-wrap {
+  flex-wrap: wrap;
+}
+
 /* Utility classes */
+
+/* Header pill buttons */
+.header-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 500;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  text-decoration: none;
+  transition: opacity 0.2s, background 0.2s;
+}
+
+/* Uniform action buttons — same bg/color for all */
+.header-pill-action {
+  background: rgba(71, 85, 105, 0.4);
+  color: #cbd5e1;
+}
+
+.header-pill-action:hover {
+  background: rgba(71, 85, 105, 0.6);
+  color: #f1f5f9;
+}
+
+/* Auth success state — green */
+.header-pill-success {
+  background: rgba(34, 197, 94, 0.2);
+  color: #4ade80;
+}
+
+/* Light theme overrides */
+[data-theme="light"] .header-pill-action {
+  background: rgba(71, 85, 105, 0.12);
+  color: #475569;
+}
+
+[data-theme="light"] .header-pill-action:hover {
+  background: rgba(71, 85, 105, 0.2);
+  color: #1e293b;
+}
+
+[data-theme="light"] .header-pill-success {
+  background: rgba(34, 197, 94, 0.15);
+  color: #16a34a;
+}
+
+/* === LOGIN PAGE === */
+.login-card {
+  background: var(--card-bg);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--card-border);
+}
+
+.login-input {
+  width: 100%;
+  padding: 12px 16px;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  outline: none;
+  color: var(--tg-theme-text-color);
+  font-size: 14px;
+  transition: border-color 0.2s;
+}
+
+.login-input:focus {
+  border-color: var(--tg-theme-button-color);
+}
+
+.login-input:disabled {
+  opacity: 0.5;
+}
+
+.login-btn {
+  width: 100%;
+  padding: 12px;
+  font-weight: 700;
+  font-size: 14px;
+  border: none;
+  border-radius: 20px;
+  cursor: pointer;
+  background: var(--tg-theme-button-color);
+  color: var(--tg-theme-button-text-color);
+  transition: opacity 0.2s;
+}
+
+.login-btn:hover {
+  opacity: 0.85;
+}
+
+.login-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Light theme login */
+[data-theme="light"] .login-input {
+  background: rgba(0, 0, 0, 0.04);
+}
+
 .min-h-screen {
   min-height: 100vh;
 }
@@ -425,7 +829,7 @@ body {
   background-color: rgba(239, 68, 68, 0.2);
 }
 
-/* Yellow type card styling */  
+/* Yellow type card styling */
 .bg-yellow-500\/20 {
   background-color: rgba(234, 179, 8, 0.2);
 }
@@ -473,4 +877,71 @@ body {
 
 .duration-300 {
   transition-duration: 300ms;
+}
+
+/* Cart button */
+.cart-btn {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--tg-theme-button-color, #4dabf7);
+  color: var(--tg-theme-button-text-color, #ffffff);
+  border: none;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(77, 171, 247, 0.3);
+  transition: all 0.2s ease;
+}
+
+.cart-btn:hover {
+  opacity: 0.85;
+  transform: scale(1.05);
+}
+
+.cart-btn:active {
+  transform: scale(0.9);
+}
+
+/* Stronger active filter buttons */
+.bg-green-500\/50 {
+  background-color: rgba(34, 197, 94, 0.5);
+}
+
+.bg-red-500\/50 {
+  background-color: rgba(239, 68, 68, 0.5);
+}
+
+.bg-yellow-500\/50 {
+  background-color: rgba(234, 179, 8, 0.5);
+}
+
+.text-green-200 {
+  color: #bbf7d0;
+}
+
+.text-red-200 {
+  color: #fecaca;
+}
+
+.text-yellow-200 {
+  color: #fef08a;
+}
+
+.border-2 {
+  border-width: 2px;
+}
+
+.border-green-400\/70 {
+  border-color: rgba(74, 222, 128, 0.7);
+}
+
+.border-red-400\/70 {
+  border-color: rgba(248, 113, 113, 0.7);
+}
+
+.border-yellow-400\/70 {
+  border-color: rgba(250, 204, 21, 0.7);
 }

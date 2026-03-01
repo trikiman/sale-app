@@ -22,6 +22,8 @@ const CATEGORY_EMOJIS = {
   'Другое': '📦',
 }
 
+import Login from './Login'
+
 function getCategoryEmoji(category) {
   // Simple partial match for categories not in the exact map
   if (CATEGORY_EMOJIS[category]) return CATEGORY_EMOJIS[category]
@@ -30,7 +32,7 @@ function getCategoryEmoji(category) {
   return '📦'
 }
 
-function ProductCard({ product, index, isFavorite, onToggleFavorite, favoritesLoading }) {
+function ProductCard({ product, index, isFavorite, onToggleFavorite, favoritesLoading, onAddToCart, viewMode }) {
   const [imageLoaded, setImageLoaded] = useState(false)
   const [imageError, setImageError] = useState(false)
 
@@ -44,9 +46,9 @@ function ProductCard({ product, index, isFavorite, onToggleFavorite, favoritesLo
 
   // Type badge config
   const typeConfig = {
-    green: { bg: 'bg-green-500/20', text: 'text-green-400', label: '🟢 Зелёная' },
-    red: { bg: 'bg-red-500/20', text: 'text-red-400', label: '🔴 Красная' },
-    yellow: { bg: 'bg-yellow-500/20', text: 'text-yellow-400', label: '🟡 Жёлтая' }
+    green: { bg: 'bg-green-500/20', text: 'text-green-400', label: '🟢 Зелёная', border: 'border-green-500/30', priceColor: '#4ade80', tint: 'card-tint-green' },
+    red: { bg: 'bg-red-500/20', text: 'text-red-400', label: '🔴 Красная', border: 'border-red-500/30', priceColor: '#f87171', tint: 'card-tint-red' },
+    yellow: { bg: 'bg-yellow-500/20', text: 'text-yellow-400', label: '🟡 Жёлтая', border: 'border-yellow-500/30', priceColor: '#facc15', tint: 'card-tint-yellow' }
   }
   const config = typeConfig[product.type] || typeConfig.green
 
@@ -55,80 +57,84 @@ function ProductCard({ product, index, isFavorite, onToggleFavorite, favoritesLo
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -20 }}
-      transition={{ duration: 0.3, delay: Math.min(index * 0.05, 0.5) }}
-      className={`glass-card p-3 flex gap-3 ${config.bg} border-l-2 ${config.text} border-current relative group`}
+      transition={{ duration: 0.3, delay: Math.min(index * 0.03, 0.3) }}
+      className={`card-vertical ${config.tint}`}
     >
-      {/* Favorite Button */}
-      <motion.button
-        whileTap={{ scale: 0.8 }}
-        onClick={(e) => {
-          e.stopPropagation()
-          if (!favoritesLoading) onToggleFavorite(product)
-        }}
-        disabled={favoritesLoading}
-        className={`absolute top-2 right-2 z-10 p-2 rounded-full backdrop-blur-sm transition-all flex items-center justify-center ${isFavorite ? 'bg-red-500/20 text-red-500 scale-110' : 'bg-black/40 text-white hover:bg-black/60'
-          } ${favoritesLoading ? 'opacity-70 cursor-wait' : ''}`}
-      >
-        {favoritesLoading ? (
-          <div className="w-5 h-5 border-2 border-white/50 border-t-transparent rounded-full animate-spin" />
-        ) : (
-          isFavorite ? '❤️' : '🤍'
-        )}
-      </motion.button>
-
-      {/* Image */}
-      <div className="relative w-20 h-20 flex-shrink-0 rounded-xl overflow-hidden bg-gray-100 dark:bg-gray-800">
+      {/* Hero Image */}
+      <div className="card-image-wrap">
         {!imageLoaded && !imageError && product.image && <div className="absolute inset-0 skeleton" />}
 
         {product.image && !imageError ? (
           <img
             src={product.image}
             alt={product.name}
-            className={`w-full h-full object-cover transition-opacity duration-300 ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
+            className={`card-hero-img ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
             onLoad={() => setImageLoaded(true)}
             onError={() => setImageError(true)}
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center bg-gray-200/50">
-            <span className="text-3xl">{getCategoryEmoji(product.category)}</span>
+          <div className="card-hero-fallback">
+            <span className="text-4xl">{getCategoryEmoji(product.category)}</span>
           </div>
         )}
 
-        {/* Stock badge removed to avoid confusion with type colors (Bug #7) */}
+        {/* Discount badge on image */}
+        {hasDiscount && (
+          <span className="card-discount">-{discount}%</span>
+        )}
+
+        {/* Favorite button on image */}
+        <motion.button
+          whileTap={{ scale: 0.8 }}
+          onClick={(e) => {
+            e.stopPropagation()
+            if (!favoritesLoading) onToggleFavorite(product)
+          }}
+          disabled={favoritesLoading}
+          className={`card-fav-btn ${isFavorite ? 'active' : ''} ${favoritesLoading ? 'loading' : ''}`}
+        >
+          {favoritesLoading ? (
+            <div className="w-5 h-5 border-2 border-white/50 border-t-transparent rounded-full animate-spin" />
+          ) : (
+            isFavorite ? '❤️' : '🤍'
+          )}
+        </motion.button>
+
+        {/* Type badge on image */}
+        <span className={`card-type-badge ${config.bg} ${config.text}`}>
+          {config.label}
+        </span>
       </div>
 
-      {/* Info */}
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-1 pr-8">
-          <h3 className="font-medium text-sm leading-tight line-clamp-2 flex-1">
-            {product.name}
-          </h3>
+      {/* Card Body */}
+      <div className="card-body">
+        <h3 className="card-title">{product.name}</h3>
+
+        <div className="card-price-row">
+          <div className="card-prices">
+            <span className="card-price" style={{ color: config.priceColor }}>{product.currentPrice}₽</span>
+            {hasDiscount && (
+              <span className="card-old-price">{product.oldPrice}₽</span>
+            )}
+          </div>
+          <motion.button
+            whileTap={{ scale: 0.85 }}
+            onClick={(e) => {
+              e.stopPropagation()
+              onAddToCart(product)
+            }}
+            className="cart-btn"
+            aria-label="Добавить в корзину"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 100 4 2 2 0 000-4z" />
+            </svg>
+          </motion.button>
         </div>
-        <div className="flex items-center gap-2 mb-1">
-          <span className={`text-xs px-2 py-0.5 rounded-full ${config.bg} ${config.text} whitespace-nowrap`}>
-            {config.label.split(' ')[0]}
-          </span>
-        </div>
-        <div className="flex items-center gap-2">
-          <span className="text-lg font-bold text-[var(--tg-theme-button-color)]">
-            {product.currentPrice}₽
-          </span>
-          {hasDiscount && (
-            <>
-              <span className="text-xs opacity-60 line-through">
-                {product.oldPrice}₽
-              </span>
-              <span className="discount-badge">
-                -{discount}%
-              </span>
-            </>
-          )}
-        </div>
-        <p className="text-xs opacity-60 mt-1">
-          {product.stock !== 99 && (
-            <>📦 {product.stock} {product.unit}</>
-          )}
-        </p>
+
+        {product.stock !== 99 && (
+          <span className="card-stock">📦 {product.stock} {product.unit}</span>
+        )}
       </div>
     </motion.div>
   )
@@ -179,6 +185,8 @@ function App() {
   const [selectedCategory, setSelectedCategory] = useState('all')
   const [loading, setLoading] = useState(true)
   const [favoritesLoading, setFavoritesLoading] = useState(true)
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [showLogin, setShowLogin] = useState(false)
   const [error, setError] = useState(null)
   const [updatedAt, setUpdatedAt] = useState(null)
   const [favorites, setFavorites] = useState(new Set())
@@ -201,10 +209,24 @@ function App() {
     yellow: true
   })
   const [greenLiveCount, setGreenLiveCount] = useState(null)
+  const [dataStale, setDataStale] = useState(false)
   const [scraperRunning, setScraperRunning] = useState(false)
   const [scraperDone, setScraperDone] = useState(false)
   const [showTokenInput, setShowTokenInput] = useState(false)
   const [tokenInputValue, setTokenInputValue] = useState('')
+  const [viewMode, setViewMode] = useState(() => localStorage.getItem('vv_view_mode') || 'grid')
+  const [theme, setTheme] = useState(() => localStorage.getItem('vv_theme') || 'dark')
+
+  // Apply theme
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    localStorage.setItem('vv_theme', theme)
+  }, [theme])
+
+  // Persist view mode
+  useEffect(() => {
+    localStorage.setItem('vv_view_mode', viewMode)
+  }, [viewMode])
 
   useEffect(() => {
     // Load favorites
@@ -221,6 +243,14 @@ function App() {
         // console.error('Failed to load favorites:', err)
       })
       .finally(() => setFavoritesLoading(false))
+
+    // Check auth status
+    fetch(`/api/auth/status/${userId}`)
+      .then(res => res.json())
+      .then(data => {
+        setIsAuthenticated(data.authenticated)
+      })
+      .catch(err => console.warn('Failed to check auth status:', err))
   }, [userId])
 
   const handleToggleFavorite = async (product) => {
@@ -287,10 +317,11 @@ function App() {
           setProducts(data.products)
           setUpdatedAt(data.updatedAt)
           if (data.greenLiveCount !== undefined) setGreenLiveCount(data.greenLiveCount)
+          if (data.dataStale) setDataStale(true)
         } else if (Array.isArray(data) && data.length > 0) {
           setProducts(data)
         } else {
-          setError('No products found')
+          setError('Товары не найдены')
         }
       })
       .catch(err => {
@@ -304,6 +335,7 @@ function App() {
               setProducts(data.products)
               setUpdatedAt(data.updatedAt)
               if (data.greenLiveCount !== undefined) setGreenLiveCount(data.greenLiveCount)
+              if (data.dataStale) setDataStale(true)
             } else {
               setProducts(data)
             }
@@ -330,17 +362,75 @@ function App() {
     }
   }, [])
 
-  // Apply both category and type filters (memoized for performance)
+  const handleAddToCart = async (product) => {
+    if (!isAuthenticated) {
+      setShowLogin(true)
+      return
+    }
+
+    try {
+      const isGreen = product.type === 'green' ? 1 : 0
+      const priceType = product.type === 'green' ? 222 : 1
+
+      const res = await fetch('/api/cart/add', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          user_id: userId,
+          product_id: parseInt(product.id, 10),
+          is_green: isGreen,
+          price_type: priceType
+        })
+      })
+
+      const data = await res.json()
+      if (res.ok && data.success) {
+        if (window.Telegram?.WebApp) {
+          window.Telegram.WebApp.showAlert(`Добавлено в корзину\nВ корзине: ${data.cart_items} товаров, ${data.cart_total} ₽`)
+        } else {
+          alert(`Добавлено в корзину\nВ корзине: ${data.cart_items} товаров, ${data.cart_total} ₽`)
+        }
+      } else {
+        if (res.status === 401) {
+          setIsAuthenticated(false)
+          setShowLogin(true)
+        } else {
+          const errStr = data.detail || 'Не удалось добавить в корзину. Попробуйте ещё раз'
+          if (window.Telegram?.WebApp) window.Telegram.WebApp.showAlert(errStr)
+          else alert(errStr)
+        }
+      }
+    } catch (err) {
+      console.error(err)
+      alert("Нет связи с сервером. Попробуйте ещё раз")
+    }
+  }
+
+  // Apply both category and type filters + sorting (memoized for performance)
   const filteredProducts = useMemo(() => {
     const activeTypes = Object.entries(typeFilters)
       .filter(([, active]) => active)
       .map(([k]) => k)
 
-    return products.filter(p => {
+    const filtered = products.filter(p => {
       const categoryMatch = selectedCategory === 'all' || p.category === selectedCategory
       const typeMatch = activeTypes.includes(p.type)
       return categoryMatch && typeMatch
     })
+
+    // Sort yellow products by discount % (highest first) when yellow-only is active
+    const onlyYellow = activeTypes.length === 1 && activeTypes[0] === 'yellow'
+    if (onlyYellow) {
+      filtered.sort((a, b) => {
+        const discA = a.oldPrice > 0 ? ((a.oldPrice - a.currentPrice) / a.oldPrice) : 0
+        const discB = b.oldPrice > 0 ? ((b.oldPrice - b.currentPrice) / b.oldPrice) : 0
+        return discB - discA
+      })
+    }
+
+    return filtered
   }, [products, typeFilters, selectedCategory])
 
   // Build dynamic categories from products (after type filtering)
@@ -391,27 +481,63 @@ function App() {
     headerEmoji = '🏷️'
   }
 
+  if (showLogin) {
+    return (
+      <div className="min-h-screen p-4 app-container">
+        {/* Back button */}
+        <button
+          onClick={() => setShowLogin(false)}
+          className="header-pill header-pill-action mb-4"
+        >
+          ◀ Назад
+        </button>
+        <Login
+          userId={userId}
+          onLoginSuccess={() => {
+            setIsAuthenticated(true)
+            setShowLogin(false)
+          }}
+        />
+      </div>
+    )
+  }
+
   return (
-    <div className="min-h-screen p-4 max-w-lg mx-auto">
+    <div className="min-h-screen p-4 app-container">
       {/* Header */}
       <motion.div
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         className="text-center mb-6"
       >
-        <h1 className="text-2xl font-bold mb-1">{headerEmoji} {headerTitle}</h1>
+        <h1 className="text-2xl font-bold mb-2">{headerEmoji} {headerTitle}</h1>
 
-        {/* Updated At + Admin link */}
-        <div className="text-center text-xs opacity-60 mb-2 flex items-center justify-center gap-3">
-          <span>Обновлено: {updatedAt ? new Date(updatedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : '---'}</span>
+        {/* Controls row: Auth + Theme + Admin */}
+        <div className="flex items-center justify-center gap-2 mb-3 flex-wrap">
+          {isAuthenticated ? (
+            <span className="header-pill header-pill-success">{'\u2705'} Авторизован</span>
+          ) : (
+            <button
+              onClick={() => setShowLogin(true)}
+              className="header-pill header-pill-action"
+            >
+              {'\ud83d\udd10'} Войти
+            </button>
+          )}
+          <button
+            onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
+            className="header-pill header-pill-action"
+            aria-label="Переключить тему"
+          >
+            {theme === 'dark' ? '\u2600\ufe0f' : '\ud83c\udf19'}
+          </button>
           <a
-            href={`${window.location.protocol}//${window.location.hostname}:8000/admin`}
+            href="/admin"
             target="_blank"
             rel="noreferrer"
-            className="px-2 py-0.5 rounded-md text-xs font-medium opacity-50 hover:opacity-100 transition-opacity"
-            style={{ background: 'rgba(71,85,105,0.4)', color: '#94a3b8', textDecoration: 'none' }}
+            className="header-pill header-pill-action"
           >
-            🛠️ Admin
+            {'\ud83d\udee0\ufe0f'} Админ
           </a>
         </div>
 
@@ -435,6 +561,22 @@ function App() {
           </div>
         </div>
 
+        {/* Updated At — below stats */}
+        <div className="text-center text-xs opacity-60 mt-1">
+          Обновлено: {updatedAt ? new Date(updatedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : '---'}
+        </div>
+
+        {/* Stale data warning — shown when merge detected old files */}
+        {dataStale && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="mt-2 px-4 py-2 rounded-xl bg-yellow-500/20 border border-yellow-500/50 text-yellow-300 text-center text-xs"
+          >
+            ⚠️ Данные устарели — товары и цены могут не совпадать с сайтом
+          </motion.div>
+        )}
+
         {/* Green staleness warning — shown when live page count differs by more than 2 */}
         {greenLiveCount !== null && greenLiveCount > 0 && Math.abs(countGreen - greenLiveCount) > 2 && (
           <motion.div
@@ -442,13 +584,13 @@ function App() {
             animate={{ opacity: 1, scale: 1 }}
             className="mt-3 px-4 py-2 rounded-xl bg-red-500/20 border border-red-500/50 text-red-400 text-center"
           >
-            <div className="font-bold text-sm">⚠️ ЗЕЛЁНЫЕ ЦЕННИКИ УСТАРЕЛИ</div>
+            <div className="font-bold text-sm">⚠️ Зелёные ценники могли устареть</div>
             <div className="text-xs opacity-70 mt-0.5">
               На сайте {greenLiveCount} товаров, у нас {countGreen} — данные могли устареть
             </div>
             {scraperDone ? (
               <div className="mt-2 text-xs text-green-400 font-medium">
-                ✅ Скрапер запущен — обновите страницу через ~2 мин
+                ✅ Обновление запущено — данные появятся через ~2 минуты
               </div>
             ) : showTokenInput ? (
               /* Inline token input — avoids window.prompt() which is blocked in Telegram WebApp */
@@ -471,7 +613,7 @@ function App() {
                     }
                     if (e.key === 'Escape') { setShowTokenInput(false); setTokenInputValue('') }
                   }}
-                  placeholder="Admin token..."
+                  placeholder="Токен администратора"
                   autoFocus
                   className="flex-1 text-xs px-2 py-1 rounded-lg bg-black/40 border border-red-500/40 text-red-200 outline-none max-w-40"
                 />
@@ -489,10 +631,11 @@ function App() {
                       .catch(() => setScraperRunning(false))
                   }}
                   className="text-xs px-3 py-1 rounded-lg bg-red-500/40 border border-red-500/60 text-red-200 font-bold"
-                >OK</button>
+                >Подтвердить</button>
                 <button
                   onClick={() => { setShowTokenInput(false); setTokenInputValue('') }}
                   className="text-xs px-2 py-1 rounded-lg bg-black/30 text-red-400"
+                  aria-label="Отмена"
                 >✕</button>
               </div>
             ) : (
@@ -521,13 +664,12 @@ function App() {
                     setShowTokenInput(true)
                   }
                 }}
-                className={`mt-2 px-4 py-1.5 rounded-lg text-xs font-bold border transition-all ${
-                  scraperRunning
-                    ? 'bg-red-500/10 border-red-500/30 opacity-60 cursor-wait'
-                    : 'bg-red-500/30 border-red-500/50 hover:bg-red-500/40 cursor-pointer'
-                }`}
+                className={`mt-2 px-4 py-1.5 rounded-lg text-xs font-bold border transition-all ${scraperRunning
+                  ? 'bg-red-500/10 border-red-500/30 opacity-60 cursor-wait'
+                  : 'bg-red-500/30 border-red-500/50 hover:bg-red-500/40 cursor-pointer'
+                  }`}
               >
-                {scraperRunning ? '⏳ Запускается...' : '🔄 Обновить зелёные'}
+                {scraperRunning ? '⏳ Запускаем…' : '🔄 Обновить данные'}
               </motion.button>
             )}
           </motion.div>
@@ -539,7 +681,7 @@ function App() {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 0.15 }}
-        className="flex gap-2 mb-3 justify-center relative z-20"
+        className="flex gap-2 mb-3 justify-center relative z-20 flex-wrap items-center"
       >
         {/* Select All Button if any are unchecked */}
         {!Object.values(typeFilters).every(v => v) && (
@@ -552,9 +694,9 @@ function App() {
         )}
 
         {[
-          { key: 'green', label: '🟢 Зелёные', activeClass: 'bg-green-500/30 text-green-300 border border-green-400/50' },
-          { key: 'red', label: '🔴 Красные', activeClass: 'bg-red-500/30 text-red-300 border border-red-400/50' },
-          { key: 'yellow', label: '🟡 Жёлтые', activeClass: 'bg-yellow-500/30 text-yellow-300 border border-yellow-400/50' }
+          { key: 'green', label: '🟢 Зелёные', activeClass: 'bg-green-500/50 text-green-200 border-2 border-green-400/70' },
+          { key: 'red', label: '🔴 Красные', activeClass: 'bg-red-500/50 text-red-200 border-2 border-red-400/70' },
+          { key: 'yellow', label: '🟡 Жёлтые', activeClass: 'bg-yellow-500/50 text-yellow-200 border-2 border-yellow-400/70' }
         ].map(({ key, label, activeClass }) => (
           <button
             key={key}
@@ -590,6 +732,24 @@ function App() {
             {label}
           </button>
         ))}
+
+        {/* View mode toggle */}
+        <div className="view-toggle-group">
+          <button
+            onClick={() => setViewMode('list')}
+            className={`view-toggle-btn ${viewMode === 'list' ? 'active' : ''}`}
+            aria-label="Список"
+          >
+            ☰
+          </button>
+          <button
+            onClick={() => setViewMode('grid')}
+            className={`view-toggle-btn ${viewMode === 'grid' ? 'active' : ''}`}
+            aria-label="Сетка"
+          >
+            ⊞
+          </button>
+        </div>
       </motion.div>
 
       {/* Category Filter */}
@@ -609,19 +769,21 @@ function App() {
       {/* Loading state */}
       {loading && (
         <div className="text-center py-8 opacity-60">
-          Загрузка...
+          Загружаем товары…
         </div>
       )}
 
       {/* Error state */}
       {error && (
         <div className="text-center py-8 text-red-400">
-          Ошибка: {error}
+          <div className="text-lg mb-1">😔</div>
+          <div>{error}</div>
+          <button onClick={() => window.location.reload()} className="mt-3 px-4 py-2 rounded-xl bg-red-500/20 border border-red-500/40 text-red-300 text-sm hover:bg-red-500/30 transition-all">Обновить страницу</button>
         </div>
       )}
 
-      {/* Product List */}
-      <div className="space-y-3">
+      {/* Product Grid */}
+      <div className={`product-grid ${viewMode === 'list' ? 'list-view' : ''}`}>
         <AnimatePresence mode="popLayout">
           {filteredProducts.map((product, index) => (
             <ProductCard
@@ -630,7 +792,9 @@ function App() {
               index={index}
               isFavorite={favorites.has(product.id)}
               onToggleFavorite={handleToggleFavorite}
+              onAddToCart={handleAddToCart}
               favoritesLoading={favoritesLoading}
+              viewMode={viewMode}
             />
           ))}
         </AnimatePresence>
@@ -640,8 +804,9 @@ function App() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             className="text-center py-8 opacity-60"
+            style={{ gridColumn: '1 / -1' }}
           >
-            Нет товаров в этой категории
+            В этой категории пока нет товаров. Попробуйте другой фильтр
           </motion.div>
         )}
       </div>

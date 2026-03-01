@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "skills": {
+    "find-skills": {
+      "source": "smallnest/goclaw",
+      "sourceType": "github",
+      "computedHash": "90eabbce07fdac7048a16e28ca1d78ea9be5694ca15eef50ea517e634cd7d336"
+    },
+    "verify": {
+      "source": "facebook/react",
+      "sourceType": "github",
+      "computedHash": "574405a87621e4e16e60bb136dbefa05bd6a2c67bf30848e4583ff2158b17d71"
+    }
+  }
+}
