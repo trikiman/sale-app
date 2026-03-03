@@ -2,9 +2,11 @@
 VkusVill Sale Monitor Configuration
 """
 import os
+from dotenv import load_dotenv
+load_dotenv()
 
 # Telegram Bot Configuration
-TELEGRAM_TOKEN = "8395628734:AAGWGAWsQN3RomSrp9UhRD0QLTsqIsX8_44"
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 TELEGRAM_BOT_TOKEN = TELEGRAM_TOKEN  # alias used by main.py
 
 # VkusVill URLs
@@ -22,8 +24,12 @@ DATABASE_PATH = os.path.join(DATA_DIR, "salebot.db")
 # Cookie file path
 COOKIE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cookies.json")
 
+# Shared user cookies (one VkusVill account for all family members)
+USER_COOKIES_DIR = os.path.join(DATA_DIR, "user_cookies")
+SHARED_USER_COOKIES = os.path.join(USER_COOKIES_DIR, "shared.json")
+
 # Admin panel token (set ADMIN_TOKEN env variable on AWS to override)
-ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "vv-admin-2026")
+ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")
 
 # Web App URL (Telegram requires HTTPS)
 WEB_APP_URL = os.environ.get("WEB_APP_URL", "https://t.me/your_bot_name/app")

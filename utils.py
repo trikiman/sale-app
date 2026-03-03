@@ -36,7 +36,7 @@ class ChromeLock:
                 if self.file_handle:
                     try:
                         self.file_handle.close()
-                    except:
+                    except Exception:
                         pass
                     self.file_handle = None
 
@@ -53,7 +53,7 @@ class ChromeLock:
                 else:
                     import fcntl
                     fcntl.flock(self.file_handle, fcntl.LOCK_UN)
-            except:
+            except Exception:
                 pass
             finally:
                 self.file_handle.close()
@@ -63,7 +63,7 @@ class ChromeLock:
         try:
             if os.path.exists(self.filename):
                 os.remove(self.filename)
-        except:
+        except Exception:
             pass
 
     def __enter__(self):
@@ -84,7 +84,7 @@ def load_category_db():
             try:
                 with open(CATEGORY_DB_PATH, 'r', encoding='utf-8') as f:
                     _category_db_cache = json.load(f)
-            except:
+            except Exception:
                 _category_db_cache = {"products": {}}
         else:
             _category_db_cache = {"products": {}}

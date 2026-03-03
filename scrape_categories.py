@@ -77,7 +77,7 @@ def load_existing_db():
         try:
             with open(DB_PATH, 'r', encoding='utf-8') as f:
                 return json.load(f)
-        except:
+        except Exception:
             pass
     return {"last_updated": None, "products": {}}
 
@@ -215,7 +215,7 @@ def scrape_all_categories():
         if driver:
             try:
                 driver.quit()
-            except:
+            except Exception:
                 pass
     
     # Save database

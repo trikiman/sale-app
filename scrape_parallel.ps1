@@ -9,7 +9,7 @@ Write-Host "VkusVill PARALLEL Scraper with Claude Subagents" -ForegroundColor Cy
 Write-Host "Time: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')" -ForegroundColor Cyan
 Write-Host "============================================================" -ForegroundColor Cyan
 
-$projectPath = "D:\Projects\saleapp"
+$projectPath = $PSScriptRoot
 
 # Run all 3 scrapers in parallel using subagents
 Write-Host "`n🚀 Launching 3 parallel scraper subagents..." -ForegroundColor Yellow

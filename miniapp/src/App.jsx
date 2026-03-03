@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import CartPanel from './CartPanel'
 import './index.css'
 
 // Emoji lookup for known categories
@@ -24,6 +25,11 @@ const CATEGORY_EMOJIS = {
 
 import Login from './Login'
 
+// Normalize \xa0 (non-breaking space) to regular space in category strings
+function normalizeCategory(cat) {
+  return cat ? cat.replace(/\u00a0/g, ' ') : cat
+}
+
 function getCategoryEmoji(category) {
   // Simple partial match for categories not in the exact map
   if (CATEGORY_EMOJIS[category]) return CATEGORY_EMOJIS[category]
@@ -32,7 +38,7 @@ function getCategoryEmoji(category) {
   return '📦'
 }
 
-function ProductCard({ product, index, isFavorite, onToggleFavorite, favoritesLoading, onAddToCart, viewMode }) {
+function ProductCard({ product, index, isFavorite, onToggleFavorite, favoritesLoading, onAddToCart, viewMode, cartState }) {
   const [imageLoaded, setImageLoaded] = useState(false)
   const [imageError, setImageError] = useState(false)
 
@@ -121,14 +127,27 @@ function ProductCard({ product, index, isFavorite, onToggleFavorite, favoritesLo
             whileTap={{ scale: 0.85 }}
             onClick={(e) => {
               e.stopPropagation()
-              onAddToCart(product)
+              if (cartState !== 'loading') onAddToCart(product)
             }}
-            className="cart-btn"
+            className={`cart-btn ${cartState === 'success' ? 'cart-btn-success' : ''} ${cartState === 'error' ? 'cart-btn-error' : ''}`}
             aria-label="Добавить в корзину"
+            disabled={cartState === 'loading'}
           >
-            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 100 4 2 2 0 000-4z" />
-            </svg>
+            {cartState === 'loading' ? (
+              <span className="cart-btn-spinner" />
+            ) : cartState === 'success' ? (
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+              </svg>
+            ) : cartState === 'error' ? (
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            ) : (
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 100 4 2 2 0 000-4z" />
+              </svg>
+            )}
           </motion.button>
         </div>
 
@@ -155,10 +174,10 @@ function CategoryFilter({ selected, onSelect, categories }) {
     <div className="relative group">
       {/* Scroll Indicators */}
       {canScrollLeft && (
-        <div className="absolute left-0 top-0 bottom-2 w-8 bg-gradient-to-r from-black/50 to-transparent z-10 pointer-events-none rounded-l-xl" />
+        <div className="absolute left-0 top-0 bottom-2 w-8 z-10 pointer-events-none rounded-l-xl scroll-indicator-left bg-gradient-to-r from-black/50 to-transparent" />
       )}
       {canScrollRight && (
-        <div className="absolute right-0 top-0 bottom-2 w-8 bg-gradient-to-l from-black/50 to-transparent z-10 pointer-events-none rounded-r-xl" />
+        <div className="absolute right-0 top-0 bottom-2 w-8 z-10 pointer-events-none rounded-r-xl scroll-indicator-right bg-gradient-to-l from-black/50 to-transparent" />
       )}
 
       <div
@@ -304,55 +323,64 @@ function App() {
     }
   }
 
-  useEffect(() => {
-    // Load products from API
+  // Reusable product loader (used for initial load + auto-refresh)
+  const loadProducts = (isAutoRefresh = false) => {
+    if (!isAutoRefresh) setLoading(true)
     fetch('/api/products')
       .then(res => {
         if (!res.ok) throw new Error('Failed to load data')
         return res.json()
       })
       .then(data => {
-        // Handle both old format (array) and new format (object with updatedAt)
         if (data.products && Array.isArray(data.products)) {
-          setProducts(data.products)
+          // On auto-refresh, only update if data actually changed
+          if (isAutoRefresh && data.updatedAt === updatedAt) return
+          setProducts(data.products.map(p => ({ ...p, category: normalizeCategory(p.category) })))
           setUpdatedAt(data.updatedAt)
           if (data.greenLiveCount !== undefined) setGreenLiveCount(data.greenLiveCount)
-          if (data.dataStale) setDataStale(true)
+          setDataStale(!!data.dataStale)
         } else if (Array.isArray(data) && data.length > 0) {
-          setProducts(data)
-        } else {
+          setProducts(data.map(p => ({ ...p, category: normalizeCategory(p.category) })))
+        } else if (!isAutoRefresh) {
           setError('Товары не найдены')
         }
       })
       .catch(err => {
+        if (isAutoRefresh) return // Silently ignore auto-refresh errors
         console.error('API Error:', err)
-        // Fallback to static file if API fails — MUST return the promise so
-        // .finally() waits for the fallback to resolve before setLoading(false)
         return fetch('./data.json')
           .then(res => res.json())
           .then(data => {
             if (data.products) {
-              setProducts(data.products)
+              setProducts(data.products.map(p => ({ ...p, category: normalizeCategory(p.category) })))
               setUpdatedAt(data.updatedAt)
               if (data.greenLiveCount !== undefined) setGreenLiveCount(data.greenLiveCount)
               if (data.dataStale) setDataStale(true)
             } else {
-              setProducts(data)
+              setProducts(Array.isArray(data) ? data.map(p => ({ ...p, category: normalizeCategory(p.category) })) : data)
             }
           })
           .catch(() => setError(err.message))
       })
       .finally(() => {
-        setLoading(false)
+        if (!isAutoRefresh) setLoading(false)
       })
+  }
 
+  useEffect(() => {
+    loadProducts(false)
+
+    // Auto-refresh every 60s
+    const refreshInterval = setInterval(() => loadProducts(true), 60000)
+    return () => clearInterval(refreshInterval)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
     // Apply Telegram theme if available
     if (window.Telegram?.WebApp) {
       const tg = window.Telegram.WebApp
       tg.ready()
       tg.expand()
-
-      // Set CSS variables from Telegram theme
       if (tg.themeParams) {
         const root = document.documentElement
         Object.entries(tg.themeParams).forEach(([key, value]) => {
@@ -362,11 +390,20 @@ function App() {
     }
   }, [])
 
+  // Per-product cart button state: 'loading' | 'success' | 'error' | null
+  const [cartStates, setCartStates] = useState({})
+  const [cartPanelOpen, setCartPanelOpen] = useState(false)
+  const [cartCount, setCartCount] = useState(0)
+  const [showFavoritesOnly, setShowFavoritesOnly] = useState(false)
+
   const handleAddToCart = async (product) => {
     if (!isAuthenticated) {
       setShowLogin(true)
       return
     }
+
+    const pid = product.id
+    setCartStates(s => ({ ...s, [pid]: 'loading' }))
 
     try {
       const isGreen = product.type === 'green' ? 1 : 0
@@ -374,12 +411,10 @@ function App() {
 
       const res = await fetch('/api/cart/add', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           user_id: userId,
-          product_id: parseInt(product.id, 10),
+          product_id: parseInt(pid, 10),
           is_green: isGreen,
           price_type: priceType
         })
@@ -387,24 +422,21 @@ function App() {
 
       const data = await res.json()
       if (res.ok && data.success) {
-        if (window.Telegram?.WebApp) {
-          window.Telegram.WebApp.showAlert(`Добавлено в корзину\nВ корзине: ${data.cart_items} товаров, ${data.cart_total} ₽`)
-        } else {
-          alert(`Добавлено в корзину\nВ корзине: ${data.cart_items} товаров, ${data.cart_total} ₽`)
-        }
+        setCartStates(s => ({ ...s, [pid]: 'success' }))
+        setCartCount(data.cart_items || cartCount + 1)
+        setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), 2000)
       } else {
         if (res.status === 401) {
           setIsAuthenticated(false)
           setShowLogin(true)
-        } else {
-          const errStr = data.detail || 'Не удалось добавить в корзину. Попробуйте ещё раз'
-          if (window.Telegram?.WebApp) window.Telegram.WebApp.showAlert(errStr)
-          else alert(errStr)
         }
+        setCartStates(s => ({ ...s, [pid]: 'error' }))
+        setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), 2000)
       }
     } catch (err) {
       console.error(err)
-      alert("Нет связи с сервером. Попробуйте ещё раз")
+      setCartStates(s => ({ ...s, [pid]: 'error' }))
+      setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), 2000)
     }
   }
 
@@ -417,7 +449,8 @@ function App() {
     const filtered = products.filter(p => {
       const categoryMatch = selectedCategory === 'all' || p.category === selectedCategory
       const typeMatch = activeTypes.includes(p.type)
-      return categoryMatch && typeMatch
+      const favMatch = !showFavoritesOnly || favorites.has(p.id)
+      return categoryMatch && typeMatch && favMatch
     })
 
     // Sort yellow products by discount % (highest first) when yellow-only is active
@@ -431,7 +464,7 @@ function App() {
     }
 
     return filtered
-  }, [products, typeFilters, selectedCategory])
+  }, [products, typeFilters, selectedCategory, showFavoritesOnly, favorites])
 
   // Build dynamic categories from products (after type filtering)
   const categories = useMemo(() => {
@@ -484,12 +517,11 @@ function App() {
   if (showLogin) {
     return (
       <div className="min-h-screen p-4 app-container">
-        {/* Back button */}
         <button
           onClick={() => setShowLogin(false)}
           className="header-pill header-pill-action mb-4"
         >
-          ◀ Назад
+          {'\u25c0'} Назад
         </button>
         <Login
           userId={userId}
@@ -515,13 +547,37 @@ function App() {
         {/* Controls row: Auth + Theme + Admin */}
         <div className="flex items-center justify-center gap-2 mb-3 flex-wrap">
           {isAuthenticated ? (
-            <span className="header-pill header-pill-success">{'\u2705'} Авторизован</span>
+            <>
+              <button
+                onClick={async () => {
+                  try {
+                    await fetch('/api/auth/logout', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ user_id: userId })
+                    })
+                  } catch (e) { }
+                  setIsAuthenticated(false)
+                }}
+                className="header-pill header-pill-success"
+                title="Нажмите чтобы выйти"
+              >
+                🚪 Выйти
+              </button>
+              <button
+                onClick={() => setCartPanelOpen(true)}
+                className="header-pill header-pill-cart"
+                title="Корзина"
+              >
+                🛒{cartCount > 0 && <span className="cart-badge">{cartCount}</span>}
+              </button>
+            </>
           ) : (
             <button
               onClick={() => setShowLogin(true)}
               className="header-pill header-pill-action"
             >
-              {'\ud83d\udd10'} Войти
+              🔑 Войти
             </button>
           )}
           <button
@@ -575,6 +631,13 @@ function App() {
           >
             ⚠️ Данные устарели — товары и цены могут не совпадать с сайтом
           </motion.div>
+        )}
+
+        {/* Client-side time check — if data is older than 15 min */}
+        {!dataStale && updatedAt && (Date.now() - new Date(updatedAt).getTime() > 15 * 60 * 1000) && (
+          <div className="stale-info-bar">
+            Обновлено {Math.round((Date.now() - new Date(updatedAt).getTime()) / 60000)} мин. назад
+          </div>
         )}
 
         {/* Green staleness warning — shown when live page count differs by more than 2 */}
@@ -687,24 +750,28 @@ function App() {
         {!Object.values(typeFilters).every(v => v) && (
           <button
             onClick={() => setTypeFilters({ green: true, red: true, yellow: true })}
-            className="text-xs px-3 py-1.5 rounded-full transition-all bg-blue-500/20 text-blue-400 border border-blue-500/30"
+            className="text-xs px-3 py-1.5 rounded-full transition-all type-chip type-chip-all active"
           >
             Все
           </button>
         )}
 
+        <button
+          onClick={() => setShowFavoritesOnly(f => !f)}
+          className={`text-xs px-3 py-1.5 rounded-full transition-all type-chip ${showFavoritesOnly ? 'type-chip-fav active' : 'bg-gray-700/30 text-gray-500 border border-gray-600/30 opacity-60'}`}
+        >
+          ❤️{favorites.size > 0 ? ` ${products.filter(p => favorites.has(p.id)).length}` : ''}
+        </button>
+
         {[
-          { key: 'green', label: '🟢 Зелёные', activeClass: 'bg-green-500/50 text-green-200 border-2 border-green-400/70' },
-          { key: 'red', label: '🔴 Красные', activeClass: 'bg-red-500/50 text-red-200 border-2 border-red-400/70' },
-          { key: 'yellow', label: '🟡 Жёлтые', activeClass: 'bg-yellow-500/50 text-yellow-200 border-2 border-yellow-400/70' }
+          { key: 'green', label: '🟢 Зелёные', activeClass: 'type-chip-green active' },
+          { key: 'red', label: '🔴 Красные', activeClass: 'type-chip-red active' },
+          { key: 'yellow', label: '🟡 Жёлтые', activeClass: 'type-chip-yellow active' }
         ].map(({ key, label, activeClass }) => (
           <button
             key={key}
             onClick={() => {
-              // Smart toggle logic:
-              // 1. If ALL are selected -> Click selects ONLY that one (Radio behavior)
-              // 2. If ONLY that one is selected -> Click resets to ALL (Toggle off -> All)
-              // 3. Otherwise -> Standard toggle
+              // Smart toggle logic
               setTypeFilters(prev => {
                 const allSelected = Object.values(prev).every(v => v)
                 const onlyThisSelected = prev[key] && !Object.entries(prev).some(([k, v]) => k !== key && v)
@@ -717,14 +784,13 @@ function App() {
                 }
 
                 const next = { ...prev, [key]: !prev[key] }
-                // If this would turn the last one off, reset to all
                 if (!Object.values(next).some(v => v)) {
                   return { green: true, red: true, yellow: true }
                 }
                 return next
               })
             }}
-            className={`text-xs px-3 py-1.5 rounded-full transition-all ${typeFilters[key]
+            className={`text-xs px-3 py-1.5 rounded-full transition-all type-chip ${typeFilters[key]
               ? activeClass
               : 'bg-gray-700/30 text-gray-500 border border-gray-600/30 opacity-60'
               }`}
@@ -793,6 +859,7 @@ function App() {
               isFavorite={favorites.has(product.id)}
               onToggleFavorite={handleToggleFavorite}
               onAddToCart={handleAddToCart}
+              cartState={cartStates[product.id] || null}
               favoritesLoading={favoritesLoading}
               viewMode={viewMode}
             />
@@ -812,6 +879,13 @@ function App() {
       </div>
 
       {/* Footer removed as moved to header */}
+
+      {/* Cart Panel */}
+      <CartPanel
+        isOpen={cartPanelOpen}
+        onClose={() => setCartPanelOpen(false)}
+        userId={userId}
+      />
     </div>
   )
 }

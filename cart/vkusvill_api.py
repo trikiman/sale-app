@@ -273,6 +273,56 @@ class VkusVillCart:
             'raw': result
         }
 
+    def remove(self, product_id: int) -> dict:
+        """Remove a product from the VkusVill cart."""
+        self._ensure_session()
+        
+        url = "https://vkusvill.ru/ajax/delivery_order/basket_remove.php"
+        data = {
+            'id': product_id,
+            'user_id': self.user_id,
+        }
+        if self.sessid:
+            data['sessid'] = self.sessid
+        
+        try:
+            result = self._request(url, data)
+        except Exception as e:
+            logger.error(f"Cart remove failed: {e}")
+            return {'success': False, 'error': str(e)}
+        
+        success = str(result.get('success', '')).upper() in ['Y', 'TRUE', '1']
+        totals = result.get('totals', {})
+        
+        logger.info(f"{'✅' if success else '❌'} Remove {product_id}: {result.get('error', 'ok')}")
+        return {
+            'success': success,
+            'items_count': totals.get('Q_ITEMS', 0),
+            'total_price': totals.get('PRICE_FINAL', 0),
+        }
+
+    def clear_all(self) -> dict:
+        """Remove all items from the VkusVill cart."""
+        self._ensure_session()
+        
+        # First get all items
+        cart = self.get_cart()
+        if not cart.get('success'):
+            return cart
+        
+        raw = cart.get('raw', {})
+        basket = raw.get('basket', {})
+        removed = 0
+        
+        for key, item in basket.items():
+            if isinstance(item, dict) and item.get('PRODUCT_ID'):
+                pid = item['PRODUCT_ID']
+                self.remove(int(pid))
+                removed += 1
+        
+        logger.info(f"🗑 Cleared {removed} items from cart")
+        return {'success': True, 'removed': removed}
+
     def close(self):
         """Clear session data."""
         self._cookie_str = ""

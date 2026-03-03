@@ -59,3 +59,19 @@ price_type: 222         # 1=Regular, 222=Red/Sale/Green
 1. **Playwright sessions lack address**: Playwright login creates a new PHPSESSID with no delivery address → cart API fails. Use `undetected_chromedriver` instead.
 2. **Cookie expiry**: PHPSESSID expires after ~24h of inactivity. User must re-login.
 3. **Address binding**: Selecting address in the browser UI binds it server-side. No known API endpoint to set address programmatically.
+4. **VkusVill anti-bot on login click**: `undetected_chromedriver` can load VkusVill homepage (424K page) but clicking the login button (`button.js-header-login-`) crashes the Chrome session. The anti-bot detects automation and kills DevTools connection. Headless mode (`--headless=new`) also crashes Chrome v145 on Windows 11 — use offscreen window (`--window-position=-2400,-2400`) as workaround.
+
+## Chrome on Windows 11 Notes
+- Chrome v145.0.7632.117 installed (after Win10→Win11 reinstall)
+- `undetected_chromedriver` 3.5.5
+- `--headless=new` crashes — use `--window-position=-2400,-2400` instead
+- `version_main=145` required (was 144 before Chrome update)
+- `WinError 6: The handle is invalid` on `driver.quit()` is harmless cleanup warning
+- Non-headless mode works fine for page loading/scraping
+
+## VkusVill Login Page Selectors (as of 2026-03-02)
+- Login button: `button.js-header-login-` (class `VV_ResetStyleBtn UniversMainIcBtn js-header-login-`)
+- Also exists: `button.VV_ResetStyleBtn.VV_FFXMenuNav__ListLink._auth._btn` in side menu
+- Phone input (after login form opens): `input.js-user-form-getcode-api-phone`, `input[type="tel"]`
+- SMS code input: `input.js-user-form-checksms-api-sms`
+- Get code button: button with text "Получить код"

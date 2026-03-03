@@ -1,0 +1,290 @@
+[
+  {
+    "name": "__Host-PHPSESSID",
+    "value": "o00s3HunpIG6oOBs8pO0cRVmquowHHD2",
+    "domain": "vkusvill.ru",
+    "path": "/",
+    "secure": true,
+    "httpOnly": true,
+    "expiry": -1
+  },
+  {
+    "name": "UF_USER_BUY_SITE",
+    "value": "N",
+    "domain": ".vkusvill.ru",
+    "path": "/",
+    "secure": false,
+    "httpOnly": false,
+    "expiry": 1803594026
+  },
+  {
+    "name": "UF_USER_AUTH",
+    "value": "N",
+    "domain": ".vkusvill.ru",
+    "path": "/",
+    "secure": false,
+    "httpOnly": false,
+    "expiry": 1803594026
+  },
+  {
+    "name": "BXVV_SALE_UID",
+    "value": "645253683",
+    "domain": "vkusvill.ru",
+    "path": "/",
+    "secure": false,
+    "httpOnly": false,
+    "expiry": 1803594026
+  },
+  {
+    "name": "SERVERID",
+    "value": "bitrix03",
+    "domain": ".vkusvill.ru",
+    "path": "/",
+    "secure": false,
+    "httpOnly": false,
+    "expiry": -1
+  },
+  {
+    "name": "qrator_msid2",
+    "value": "v2.0.1772490027.286.2d54decbY9dW8ZQi|K046h3qHMupLeTxz|kVT1C8jo1ol7wuRx4vwjFnxj3rzmVEOqWseAIhqRLGxgHwfNiSvT9v0e2iVc50zkpGaT+4KKcwIbmhH1K5J+8Q==-ycPlb1uXQ7Yty+87Fig+Q7j3sA8=",
+    "domain": ".vkusvill.ru",
+    "path": "/",
+    "secure": false,
+    "httpOnly": true,
+    "expiry": 1772491026
+  },
+  {
+    "name": "_vv_card",
+    "value": "A402373",
+    "domain": ".vkusvill.ru",
+    "path": "/",
+    "secure": false,
+    "httpOnly": false,
+    "expiry": 1804026028
+  },
+  {
+    "name": "_ym_uid",
+    "value": "1772490035700288917",
+    "domain": ".vkusvill.ru",
+    "path": "/",
+    "secure": true,
+    "httpOnly": false,
+    "expiry": 1804026034
+  },
+  {
+    "name": "_ym_d",
+    "value": "1772490035",
+    "domain": ".vkusvill.ru",
+    "path": "/",
+    "secure": true,
+    "httpOnly": false,
+    "expiry": 1804026034
+  },
+  {
+    "name": "ymex",
+    "value": "2087850035.yrts.1772490035#2087850035.yrtsi.1772490035",
+    "domain": ".yandex.ru",
+    "path": "/",
+    "secure": true,
+    "httpOnly": false,
+    "expiry": 1804026035
+  },
+  {
+    "name": "receive-cookie-deprecation",
+    "value": "1",
+    "domain": ".yandex.ru",
+    "path": "/",
+    "secure": true,
+    "httpOnly": true,
+    "expiry": 1804026055
+  },
+  {
+    "name": "yabs-sid",
+    "value": "1018846101772490035",
+    "domain": "mc.yandex.ru",
+    "path": "/",
+    "secure": true,
+    "httpOnly": false,
+    "expiry": -1
+  },
+  {
+    "name": "i",
+    "value": "6lMJWZR2JNLwtR34sUTG41UeFL8HmQFe1cMVUDPF2s5xqnqdaT63vi3Ddh8NLkz0erYCTSICkF0HMAPi+JuuEiBZ5CI=",
+    "domain": ".yandex.ru",
+    "path": "/",
+    "secure": true,
+    "httpOnly": true,
+    "expiry": 1807050034
+  },
+  {
+    "name": "yandexuid",
+    "value": "2026579781772490035",
+    "domain": ".yandex.ru",
+    "path": "/",
+    "secure": true,
+    "httpOnly": false,
+    "expiry": 1807050034
+  },
+  {
+    "name": "yuidss",
+    "value": "2026579781772490035",
+    "domain": ".yandex.ru",
+    "path": "/",
+    "secure": true,
+    "httpOnly": false,
+    "expiry": 1807050034
+  },
+  {
+    "name": "remixlang",
+    "value": "3",
+    "domain": ".vk.com",
+    "path": "/",
+    "secure": true,
+    "httpOnly": false,
+    "expiry": 1804165203
+  },
+  {
+    "name": "_ym_isad",
+    "value": "2",
+    "domain": ".vkusvill.ru",
+    "path": "/",
+    "secure": true,
+    "httpOnly": false,
+    "expiry": 1772562034
+  },
+  {
+    "name": "remixstlid",
+    "value": "9083849487240953003_f9WWPKpgfJL33ObkloePZtNZHKBHtJqgMK1f7Zv3jos",
+    "domain": ".vk.com",
+    "path": "/",
+    "secure": true,
+    "httpOnly": false,
+    "expiry": 1804026034
+  },
+  {
+    "name": "prcl",
+    "value": "2ea9fca604904e",
+    "domain": ".vk.com",
+    "path": "/",
+    "secure": true,
+    "httpOnly": true,
+    "expiry": 1772572834
+  },
+  {
+    "name": "_TADUID",
+    "value": "5090720353042829466",
+    "domain": ".targetads.io",
+    "path": "/",
+    "secure": true,
+    "httpOnly": false,
+    "expiry": 1804026035
+  },
+  {
+    "name": "tmr_lvid",
+    "value": "b0ef4988a3f0bc4c87193d5c5916ff90",
+    "domain": ".vkusvill.ru",
+    "path": "/",
+    "secure": false,
+    "httpOnly": false,
+    "expiry": 1801261235
+  },
+  {
+    "name": "tmr_lvidTS",
+    "value": "1772490035575",
+    "domain": ".vkusvill.ru",
+    "path": "/",
+    "secure": false,
+    "httpOnly": false,
+    "expiry": 1801261235
+  },
+  {
+    "name": "domain_sid",
+    "value": "mWPnj0JMWe5EQNi08X5wg%3A1772490036626",
+    "domain": "vkusvill.ru",
+    "path": "/",
+    "secure": false,
+    "httpOnly": false,
+    "expiry": 1773094836
+  },
+  {
+    "name": "_ym_uid",
+    "value": "1772490039885991907",
+    "domain": ".smartcaptcha.yandexcloud.net",
+    "path": "/",
+    "secure": true,
+    "httpOnly": false,
+    "expiry": 1804026038
+  },
+  {
+    "name": "_ym_d",
+    "value": "1772490039",
+    "domain": ".smartcaptcha.yandexcloud.net",
+    "path": "/",
+    "secure": true,
+    "httpOnly": false,
+    "expiry": 1804026038
+  },
+  {
+    "name": "_ym_isad",
+    "value": "2",
+    "domain": ".smartcaptcha.yandexcloud.net",
+    "path": "/",
+    "secure": true,
+    "httpOnly": false,
+    "expiry": 1772562038
+  },
+  {
+    "name": "_ym_visorc",
+    "value": "b",
+    "domain": ".smartcaptcha.yandexcloud.net",
+    "path": "/",
+    "secure": true,
+    "httpOnly": false,
+    "expiry": 1772491839
+  },
+  {
+    "name": "bh",
+    "value": "EkEiTm90OkEtQnJhbmQiO3Y9Ijk5IiwgIkdvb2dsZSBDaHJvbWUiO3Y9IjE0NSIsICJDaHJvbWl1bSI7dj0iMTQ1IhoDeDg2Ig4xNDUuMC43NjMyLjExNyoCPzA6CSJXaW5kb3dzIkIGMTkuMC4wSgI2NFJbIk5vdDpBLUJyYW5kIjt2PSI5OS4wLjAuMCIsIkdvb2dsZSBDaHJvbWUiO3Y9IjE0NS4wLjc2MzIuMTE3IiwiQ2hyb21pdW0iO3Y9IjE0NS4wLjc2MzIuMTE3ImC4mpjNBmoe3Mrh/wiS2KGxA5/P4eoD+/rw5w3r//32D52nzIcI",
+    "domain": ".yandex.ru",
+    "path": "/",
+    "secure": true,
+    "httpOnly": false,
+    "expiry": 1807050039
+  },
+  {
+    "name": "WE_USE_COOKIE",
+    "value": "Y",
+    "domain": ".vkusvill.ru",
+    "path": "/",
+    "secure": false,
+    "httpOnly": false,
+    "expiry": 1807050041
+  },
+  {
+    "name": "tmr_detect",
+    "value": "0%7C1772490045249",
+    "domain": "vkusvill.ru",
+    "path": "/",
+    "secure": false,
+    "httpOnly": false,
+    "expiry": 1772576445
+  },
+  {
+    "name": "PVID",
+    "value": "03PzMP0-Lg2c00003L2hfSYc:::0-0-0-ec065f4-0-ec06634:CAASEB5NkFptrskBrV68YAKOX-YaYGlsFs_SGjAAOy_gng064NS7YYk3QwPlOcyiAvIp6XZfyeWDXPShpI9uyaKHK92oQ7jC-xPmev4QhVUYbu0CMgfRi2jnlz-tR_ACzcN4UnHiaicmyUSm24sZHx2h8Rj64w",
+    "domain": "top-fwz1.mail.ru",
+    "path": "/",
+    "secure": true,
+    "httpOnly": true,
+    "expiry": 1804112499
+  },
+  {
+    "name": "VID",
+    "value": "03PzMP0-Lg2c00003L2hfSYc:::0-0-0-ec065f4-0-ec06634:CAASEB5NkFptrskBrV68YAKOX-YaYGlsFs_SGjAAOy_gng064NS7YYk3QwPlOcyiAvIp6XZfyeWDXPShpI9uyaKHK92oQ7jC-xPmev4QhVUYbu0CMgfRi2jnlz-tR_ACzcN4UnHiaicmyUSm24sZHx2h8Rj64w",
+    "domain": ".mail.ru",
+    "path": "/",
+    "secure": true,
+    "httpOnly": true,
+    "expiry": 1804112499
+  }
+]

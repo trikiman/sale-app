@@ -21,6 +21,6 @@ echo   Telegram:  Bot is polling (check its window)
 echo   Backend:   http://localhost:8000
 echo   Admin:     http://localhost:8000/admin
 echo   Frontend:  http://localhost:5173
-echo   Token:     vv-admin-2026
+echo   Token:     (set ADMIN_TOKEN in .env)
 echo.
 pause

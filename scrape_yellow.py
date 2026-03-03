@@ -55,16 +55,17 @@ def init_driver():
     options.add_argument('--lang=ru-RU')
     options.add_argument('--no-sandbox')
     options.add_argument('--start-maximized')
+    options.add_argument('--disable-features=LocalNetworkAccessChecks')
 
     with ChromeLock():
         try:
-            driver = uc.Chrome(options=options, headless=False, version_main=144)
+            driver = uc.Chrome(options=options, headless=False, version_main=145)
             return driver
         except OSError as e:
             if "WinError 183" in str(e):
                 print(f"⚠️ [YELLOW] WinError 183 despite lock, retrying once...")
                 time.sleep(2)
-                driver = uc.Chrome(options=options, headless=False, version_main=144)
+                driver = uc.Chrome(options=options, headless=False, version_main=145)
                 return driver
             raise e
 

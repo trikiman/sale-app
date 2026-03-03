@@ -339,9 +339,13 @@ class PlaywrightScraper:
                 return True
             except Exception as e:
                 print(f"SMS code input didn't appear: {e}")
-                # Sometimes it might just be slow, so wait a bit more as fallback
-                await self._page.wait_for_timeout(2000)
-                return True
+                # Retry with longer wait before giving up
+                await self._page.wait_for_timeout(3000)
+                sms_input = self._page.locator("input.js-user-form-checksms-api-sms")
+                if await sms_input.count() > 0:
+                    return True
+                print("SMS code input still not found after retry — SMS likely not sent")
+                return False
             
         except Exception as e:
             print(f"Error sending SMS code: {e}")
@@ -363,10 +367,11 @@ class PlaywrightScraper:
             await self._page.wait_for_timeout(5000)
             
             # Inject delivery address cookies so VkusVill knows which store to use
-            # These coordinates are for Красногорск, Подмосковный бульвар, 11
+            delivery_lat = os.environ.get("DELIVERY_LAT", "55.823229")
+            delivery_lon = os.environ.get("DELIVERY_LON", "37.372656")
             await self._context.add_cookies([
-                {"name": "MLD_LAT", "value": "55.823229", "domain": ".vkusvill.ru", "path": "/"},
-                {"name": "MLD_LON", "value": "37.372656", "domain": ".vkusvill.ru", "path": "/"},
+                {"name": "MLD_LAT", "value": delivery_lat, "domain": ".vkusvill.ru", "path": "/"},
+                {"name": "MLD_LON", "value": delivery_lon, "domain": ".vkusvill.ru", "path": "/"},
                 {"name": "DeliverySelectLast", "value": "d", "domain": ".vkusvill.ru", "path": "/"},
                 {"name": "UF_USER_AUTH", "value": "Y", "domain": ".vkusvill.ru", "path": "/"},
             ])
@@ -377,14 +382,14 @@ class PlaywrightScraper:
             
             # Try to trigger delivery address binding via VkusVill's internal JS
             try:
-                await self._page.evaluate("""
-                    () => {
+                await self._page.evaluate(f"""
+                    () => {{
                         // Set cookies via JS as well for redundancy
-                        document.cookie = "MLD_LAT=55.823229; path=/; domain=.vkusvill.ru";
-                        document.cookie = "MLD_LON=37.372656; path=/; domain=.vkusvill.ru";
+                        document.cookie = "MLD_LAT={delivery_lat}; path=/; domain=.vkusvill.ru";
+                        document.cookie = "MLD_LON={delivery_lon}; path=/; domain=.vkusvill.ru";
                         document.cookie = "DeliverySelectLast=d; path=/; domain=.vkusvill.ru";
                         document.cookie = "UF_USER_AUTH=Y; path=/; domain=.vkusvill.ru";
-                    }
+                    }}
                 """)
             except Exception:
                 pass
@@ -393,11 +398,9 @@ class PlaywrightScraper:
             await self._page.goto("https://vkusvill.ru/", wait_until="domcontentloaded")
             await self._page.wait_for_timeout(3000)
             
-            # Save the cookies
-            await self.save_state()
-            
-            # Export cookies for VkusVillCart
+            # Export cookies for VkusVillCart (flat list format, not Playwright storageState)
             cookies = await self._context.cookies()
+            os.makedirs(os.path.dirname(self._storage_path), exist_ok=True)
             with open(self._storage_path, 'w', encoding='utf-8') as f:
                 json.dump(cookies, f)
             
@@ -441,7 +444,7 @@ class PlaywrightScraper:
             try:
                 await self._page.click("#js-Delivery__Order-green-show-all", timeout=5000)
                 await self._page.wait_for_timeout(2000)
-            except:
+            except Exception:
                 print("Could not find 'show all' button")
                 return []
             
@@ -488,7 +491,7 @@ class PlaywrightScraper:
                         
                         // Parse prices from text
                         const text = card.innerText;
-                        const priceMatches = text.match(/([\d\s]+)\s*руб/g) || [];
+                        const priceMatches = text.match(/([\\d\\s]+)\\s*руб/g) || [];
                         let currentPrice = '';
                         let oldPrice = '';
                         
@@ -542,7 +545,7 @@ class PlaywrightScraper:
             try:
                 await self._page.keyboard.press("Escape")
                 await self._page.wait_for_timeout(500)
-            except:
+            except Exception:
                 pass
             
             # Extract stock counts from cart items
@@ -600,7 +603,7 @@ class PlaywrightScraper:
                         if stock_match:
                             try:
                                 stock_count = int(float(stock_match.group(1).replace(',', '.')))
-                            except:
+                            except (ValueError, TypeError):
                                 stock_count = 1
                     
                     products.append(Product(

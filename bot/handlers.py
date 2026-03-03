@@ -477,16 +477,16 @@ async def handle_cart_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
         import os
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         cookies_path = os.path.join(base_dir, "data", "user_cookies", f"{user_id}.json")
-        
+
         try:
             from cart.vkusvill_api import VkusVillCart
             import logging
             logger = logging.getLogger(__name__)
-            
+
             if not os.path.exists(cookies_path):
-                await query.answer("❌ Вы не авторизованы! Напишите /login боту.", show_alert=True)
+                await query.answer("❌ Вы не авторизованы! Войдите через веб-приложение.", show_alert=True)
                 return
-                
+
             cart = VkusVillCart(cookies_path=cookies_path)
             result = cart.add(product_id=product_id, price_type=price_type, is_green=is_green)
             
@@ -526,10 +526,10 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
 def setup_handlers(application: Application):
     """Set up all bot handlers"""
     from bot.auth import get_login_conv_handler
-    
+
     # Must add ConversationHandler before simple command handlers that might conflict
     application.add_handler(get_login_conv_handler())
-    
+
     # Command handlers
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))

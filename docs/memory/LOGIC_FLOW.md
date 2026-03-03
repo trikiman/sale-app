@@ -67,13 +67,77 @@ Because the MiniApp reads from a static `data.json` file, it doesn't need to wai
 *   **Filtering**: Users can quickly toggle between Green, Red, and Yellow prices.
 *   **Categories**: Items are automatically grouped by their real VkusVill categories (e.g., "Dairy", "Meat", "Fruits").
 *   **Stock Levels**: The app detects if an item is out of stock and marks it clearly.
-*   **Stale Data Warning**: If data is older than 10 minutes, a yellow "⚠️ Данные устарели" banner appears.
+*   **Auto-Refresh**: Products re-fetch every 60 seconds. If `updatedAt` changes (scraper ran), UI updates silently. No manual F5 needed.
+*   **Stale Data**: If data is >15 min old, a subtle gray bar shows "Обновлено X мин. назад". If merge flagged `dataStale: true`, a yellow warning appears.
+*   **Cart Button Feedback**: Click "🛒" → spinner spins → green ✓ on success (2s) or red ✗ on error (2s). No popup `alert()` — all feedback is in-button.
+*   **Favorites**: Hearts toggle instantly (optimistic update). Stored server-side in SQLite. Works for both Telegram users (numeric ID) and guest users (string ID).
 *   **Dark/Light Theme**: Toggle stored in `localStorage('vv_theme')`.
 *   **Grid/List View**: Toggle stored in `localStorage('vv_view_mode')`. List view has taller 300px images.
 
 ---
 
-## Part 4: Automation (The Pulse)
+## Part 4: User Authentication & Cart
+
+### Two Separate Account Types (CRITICAL — Do NOT Mix)
+
+| | Technical Account | User Accounts (up to 5) |
+|---|---|---|
+| **Purpose** | Scrape prices only | Add to cart, pay, receive delivery |
+| **How many** | 1 | 1 per family member (own phone, own payment) |
+| **Cookies file** | `data/cookies.json` | `data/auth/{phone}/cookies.json` |
+| **Login tool** | `login.py` (manual, run once) | Web app login page (automated per user) |
+| **Used by** | Scheduler scrapers only | "В корзину" button (Telegram + Web) |
+| **Address** | Same shared address | Same shared address |
+
+**Rule**: Technical cookies and user cookies must NEVER be mixed.
+
+### Why nodriver (Not Playwright, Not undetected_chromedriver)
+- **Playwright**: Creates PHPSESSID but doesn't bind delivery address server-side → cart adds fail with `POPUP_ANALOGS`
+- **undetected_chromedriver**: VkusVill anti-bot kills the Chrome session on login button click (BUG-021)
+- **nodriver**: CDP-native, bypasses anti-bot. Uses `Input.dispatchKeyEvent` for masked input fields.
+
+**Chrome flags**: `--disable-features=LocalNetworkAccessChecks` required on all Chrome instances (login + scrapers) to prevent LAN access permission dialog from blocking VkusVill's AJAX.
+
+### User Login Flow (Web App)
+1. User enters phone number (accepts `89..`, `+79..`, `79..`, `9..` formats)
+2. Frontend sends `POST /api/auth/login`
+3. **If cookies+PIN exist**: returns `{need_pin: true}` → user enters 4-digit PIN → no browser needed!
+4. **If fresh phone**: Backend opens Chrome via `nodriver`, types phone via CDP, triggers SMS
+5. User enters SMS code → `POST /api/auth/verify` → code entered in browser → cookies saved
+6. User sets a 4-digit PIN (stored server-side) for future fast re-login
+7. Cookies valid ~1-3 months (based on VkusVill's cookie expiry)
+
+### PIN Re-login (No Browser!)
+- User enters phone → backend finds existing cookies+PIN → asks for PIN
+- PIN correct → return stored cookies immediately (no Chrome, instant)
+- Wrong PIN: 3 attempts max, shows remaining ("Осталось 2 попытки")
+- "Новый вход" checkbox: forces SMS flow, deletes old cookies after verify
+
+### Logout
+- `POST /api/auth/logout` — renames `cookies.json` → `cookies.bak.json`
+- Cookies preserved for PIN re-login
+
+### Cart Add Flow (No Browser Needed)
+1. User clicks "🛒 В корзину"
+2. Backend loads `data/auth/{phone}/cookies.json`
+3. Pure HTTP POST to `basket_add.php` with raw Cookie header (~1s)
+4. No browser opened — instant API call
+
+### Auth Status Check
+- `GET /api/auth/status/{user_id}` checks phone-mapped cookie file existence
+- No fallback to old `data/user_cookies/` path (removed — was causing logout to not persist)
+- Frontend shows Login component if not authenticated, logout button if authenticated
+
+### Cart Button UX
+- Button shows 🛒 cart icon by default
+- On click: spinner animation → API call → green ✓ (success, 2s) or red ✗ (error, 2s)
+- All feedback is in-button, no popup alerts
+- If not authenticated, opens login modal instead
+
+
+---
+
+## Part 5: Automation (The Pulse)
 
 ### The Heartbeat (Scheduler)
 The system runs continuously via `scheduler_service.py`. It triggers all three scrapers in parallel, waits for completion (with a 10-minute timeout per scraper), then runs the merge step:

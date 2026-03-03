@@ -112,18 +112,19 @@ def init_driver():
     options.add_argument('--lang=ru-RU')
     options.add_argument('--no-sandbox')
     options.add_argument('--start-maximized')
+    options.add_argument('--disable-features=LocalNetworkAccessChecks')
     # NOTE: No --user-data-dir to avoid profile corruption issues
     # Session is managed via cookies.json (see login.py)
 
     with ChromeLock():
         try:
-            driver = uc.Chrome(options=options, headless=False, version_main=144)
+            driver = uc.Chrome(options=options, headless=False, version_main=145)
             return driver
         except OSError as e:
             if "WinError 183" in str(e):
                 print(f"⚠️ [GREEN] WinError 183 despite lock, retrying once...")
                 time.sleep(2)
-                driver = uc.Chrome(options=options, headless=False, version_main=144)
+                driver = uc.Chrome(options=options, headless=False, version_main=145)
                 return driver
             raise e
 
@@ -331,8 +332,9 @@ def scrape_green_prices():
         if toggle_changed:
             print("  [GREEN] Toggle was enabled, page refreshed. Re-checking green section...")
 
-        # Check for green section
-        if "Зелёные ценники" not in driver.page_source:
+        # Check for green section (robust match for ё/е)
+        page_source = driver.page_source
+        if "Зелёные ценники" not in page_source and "Зеленые ценники" not in page_source:
             print("⚠️ [GREEN] Section not found on page - assuming 0 items")
             scrape_success = True
             return []
@@ -582,6 +584,12 @@ def scrape_green_prices():
                 time.sleep(2)  # Wait for cart to update
 
                 # 5. Scrape stock AND price from cart page
+                print("  [GREEN] Scrolling cart to load all items...")
+                driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+                time.sleep(2)
+                driver.execute_script("window.scrollTo(0, 0);")
+                time.sleep(1)
+
                 print("  [GREEN] Scraping stock and prices from cart...")
                 stock_map = driver.execute_script("""
                     const stockMap = {};
@@ -720,7 +728,7 @@ def scrape_green_prices():
                                 current = int(p.get('currentPrice', 0))
                                 if current > 1:
                                     p['oldPrice'] = str(int(current * 1.67))  # ~40% discount means 1.67x markup
-                            except:
+                            except (ValueError, TypeError):
                                 pass
                     else:
                         # Debug: product not in cart
@@ -762,16 +770,13 @@ def scrape_green_prices():
     finally:
         if driver:
             # Prevent undetected_chromedriver __del__ from calling quit() again
-            # which causes "OSError: [WinError 6] The handle is invalid"
-            # Must nullify __del__ BEFORE quit() so GC can't trigger it later
+            # which causes "OSError: [WinError 6] The handle is invalid" on Windows
             try:
-                driver.__class__.__del__ = lambda self: None
-            except Exception:
-                pass
-            try:
+                # Localized fix for WinError 6
                 driver.quit()
-            except OSError:
-                pass
+            except Exception as e:
+                if "WinError 6" not in str(e):
+                    print(f"⚠️ [GREEN] Error during driver.quit(): {e}")
 
         # Save to file — enhanced format with live_count metadata for staleness detection
         # Moved inside finally block so early returns (like finding 0 items) STILL SAVE the empty state!

@@ -41,7 +41,7 @@ def login():
     driver = None
     try:
         print("Opening VkusVill (anti-bot mode enabled)...")
-        driver = uc.Chrome(options=options, headless=False, version_main=144)
+        driver = uc.Chrome(options=options, headless=False, version_main=145)
         driver.get("https://vkusvill.ru/")
         time.sleep(5)
 
@@ -77,10 +77,18 @@ def login():
             with open(cookies_path, 'w', encoding='utf-8') as f:
                 json.dump(all_cookies, f, indent=2)
 
+            # Also save to shared user cookies (used by cart "Add to Cart" for all family members)
+            shared_cookies_dir = os.path.join(os.path.dirname(cookies_path), "user_cookies")
+            os.makedirs(shared_cookies_dir, exist_ok=True)
+            shared_path = os.path.join(shared_cookies_dir, "shared.json")
+            with open(shared_path, 'w', encoding='utf-8') as f:
+                json.dump(all_cookies, f, indent=2)
+
             print(f"✅ Saved {len(all_cookies)} cookies ({len(vv_cookies)} VkusVill) to:")
             print(f"   {cookies_path}")
+            print(f"   {shared_path}")
             print()
-            print("Green scraper will now use these cookies for authentication.")
+            print("Scrapers + cart 'Add to Cart' will now use these cookies.")
             print("If it stops working, run login.py again.")
         else:
             print()
@@ -90,7 +98,12 @@ def login():
                 all_cookies = driver.get_cookies()
                 with open(cookies_path, 'w', encoding='utf-8') as f:
                     json.dump(all_cookies, f, indent=2)
-                print(f"✅ Saved {len(all_cookies)} cookies to {cookies_path}")
+                shared_cookies_dir = os.path.join(os.path.dirname(cookies_path), "user_cookies")
+                os.makedirs(shared_cookies_dir, exist_ok=True)
+                shared_path = os.path.join(shared_cookies_dir, "shared.json")
+                with open(shared_path, 'w', encoding='utf-8') as f:
+                    json.dump(all_cookies, f, indent=2)
+                print(f"✅ Saved {len(all_cookies)} cookies to {cookies_path} + {shared_path}")
             else:
                 print("❌ Cookies not saved.")
 

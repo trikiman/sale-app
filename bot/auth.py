@@ -45,7 +45,8 @@ def clean_phone_number(phone: str) -> str:
 async def login_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Starts the login process and asks for a phone number."""
     telegram_id = update.effective_user.id
-    
+    context.user_data["_login_telegram_id"] = telegram_id
+
     await update.message.reply_text(
         "🔐 <b>Авторизация во ВкусВилл</b>\n\n"
         "Чтобы добавлять товары в корзину, мне нужно авторизоваться в вашем профиле.\n\n"
@@ -166,26 +167,36 @@ async def receive_code(update: Update, context: ContextTypes.DEFAULT_TYPE) -> in
         await update.message.reply_text("❌ Произошла ошибка при проверке кода.")
     finally:
         # Always close the browser when done with login!
-        await scraper.close()
-        if telegram_id in _scrapers:
-            del _scrapers[telegram_id]
-            
+        await _cleanup_scraper(telegram_id)
+
     return ConversationHandler.END
 
 
 async def cancel_login(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Cancels and ends the conversation."""
     telegram_id = update.effective_user.id
-    
+
     await update.message.reply_text("Авторизация отменена.")
-    
+
+    await _cleanup_scraper(telegram_id)
+    return ConversationHandler.END
+
+
+async def _cleanup_scraper(telegram_id: int):
+    """Close and remove scraper for a user, if any."""
     if telegram_id in _scrapers:
         try:
             await _scrapers[telegram_id].close()
-        except:
+        except Exception:
             pass
         del _scrapers[telegram_id]
-        
+
+
+async def _timeout_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Called when conversation_timeout fires — clean up leaked scraper."""
+    telegram_id = context.user_data.get("_login_telegram_id")
+    if telegram_id:
+        await _cleanup_scraper(telegram_id)
     return ConversationHandler.END
 
 
@@ -196,7 +207,8 @@ def get_login_conv_handler() -> ConversationHandler:
         states={
             PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_phone)],
             CODE: [MessageHandler(filters.TEXT & ~filters.COMMAND, receive_code)],
+            ConversationHandler.TIMEOUT: [MessageHandler(filters.ALL, _timeout_handler)],
         },
         fallbacks=[CommandHandler("cancel", cancel_login)],
-        conversation_timeout=300 # 5 minutes timeout
+        conversation_timeout=300  # 5 minutes timeout
     )
