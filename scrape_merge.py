@@ -79,10 +79,10 @@ def merge_products():
     red_count = len([p for p in all_products if p['type'] == 'red'])
     yellow_count = len([p for p in all_products if p['type'] == 'yellow'])
     
-    # Use the OLDEST source file timestamp as updatedAt (not current time!)
-    # This honestly reflects when data was actually scraped
+    # Use the NEWEST source file timestamp as updatedAt
+    # This reflects the most recent successful scraper run
     if source_timestamps:
-        oldest_ts = min(source_timestamps)
+        oldest_ts = max(source_timestamps)
         data_time = datetime.fromtimestamp(oldest_ts).strftime("%Y-%m-%d %H:%M:%S")
     else:
         data_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

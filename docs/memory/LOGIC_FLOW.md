@@ -45,7 +45,7 @@ Upon completion, the system generates a summary in the logs:
 Instead of a complex database server, the app uses a simple file called `proposals.json` located in the `data/` folder. This file is the "source of truth" for the entire system.
 
 ### Staleness Detection
-The merge step checks each source file's modification time. If any file is older than **10 minutes**, the output is flagged with `dataStale: true` and `staleInfo` detailing which files are stale. The `updatedAt` timestamp reflects the **oldest source file**, not the merge time — so users always know how old the data really is.
+The merge step checks each source file's modification time. If any file is older than **10 minutes**, the output is flagged with `dataStale: true` and `staleInfo` detailing which files are stale. The `updatedAt` timestamp reflects the **newest source file** (changed in Sprint 5 to reflect the most recent successful run instead of the oldest, BUG-035), so users always see the time of the latest active data collection.
 
 ### The `scrape_success` Flag
 Each scraper tracks whether it completed successfully. If it crashes (e.g. Chrome window closes), it sets `scrape_success = False` and the old data file is preserved for staleness detection. If it succeeds but finds 0 items (legitimate out-of-stock), it sets `scrape_success = True` and saves the empty list, clearing stale data.

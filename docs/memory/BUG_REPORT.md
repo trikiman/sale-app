@@ -133,6 +133,12 @@
 
 ## ✅ Fixed Bugs (2026-03-05 — UI/UX Polish)
 
+### BUG-035: Frontend `updatedAt` Stuck Due to Oldest File Fallback
+**Status:** Fixed ✅ | **Severity:** Medium | **Date:** 2026-03-05
+**File:** `scrape_merge.py`
+**Symptom:** The frontend UI said "Обновлено: 03:03" even when modern scraper runs finished at 05:52, making it look like data wasn't refreshing. F5 didn't help.
+**Fix:** The script was taking `min(source_timestamps)` (oldest file) instead of newest. Changed it to `max(source_timestamps)` so the frontend UI matches the latest successful scraper completion.
+
 ### BUG-034: Two PIN Inputs Displayed Simultaneously
 **Status:** Fixed ✅ | **Severity:** Medium | **Date:** 2026-03-05
 **File:** `miniapp/src/Login.jsx`

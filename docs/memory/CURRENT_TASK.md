@@ -68,19 +68,28 @@
 - **BUG-031 fixed**: After logout, `cookies.json` is renamed to `cookies.bak.json`, but the PIN shortcut path still checked `os.path.exists(cookies_path)` — which was `False` after logout. User was forced into full SMS flow even though `.bak` cookies existed for PIN re-login.
 - **Fix**: PIN shortcut now also checks for `.bak` cookies and restores them if PIN is correct.
 
+### Sprint 5 (Complete ✅ — 2026-03-05)
+
+#### UI/UX Polishing (`miniapp/src/`)
+- **BUG-034**: Fixed the PIN setup flow in `Login.jsx`. It no longer displays two PIN inputs stacked on top of each other. Uses sequential rendering with Framer Motion slide animations for a cleaner mobile view.
+- **BUG-033**: Fixed silent "Add to Cart" API failures. Extracted `data.detail` from backend 400 errors and implemented a global Toast notification (`toastMessage`) at the bottom of the screen to clearly explain why a cart action failed (e.g. "Товар распродан").
+- **Playwright Mock Testing**: Added `test_verified_bugs.py` inside `miniapp/` to test UI components. Mocked API routes to safely test the PIN setup animations and Cart error toasts *without* hitting the VkusVill SMS rate limits.
+
+#### Backend & Config
+- **BUG-032**: Hardcoded the default Admin Token fallback and HTML placeholder to `122662Rus` per owner request.
+- **BUG-035**: Fixed a sync issue where `scrape_merge.py` kept the frontend `updatedAt` timestamp stuck on `03:03`. Changed the script to take `max(source_timestamps)` instead of `min()`, ensuring the UI reflects the newest successful scrape time rather than getting permanently stuck on a stale file.
+
 ---
 
-### 🛑 Handoff State (Updated 2026-03-04)
-- **Current Focus**: All Sprint 4 items complete. Category scraper works, login bugs fixed.
-- **Current Blocker**: None. System is functional.
+### 🛑 Handoff State (Updated 2026-03-05)
+- **Current Focus**: Sprint 5 UI/UX Polish completed and verified via Playwright Mocks.
+- **Current Blocker**: Cannot run live SMS tests due to the strict VkusVill daily SMS limit (only 2 left for the day on the test phone `89166076650`). 
 - **Next Immediate Steps**:
-  1. Integrate `category_db.json` into the merge pipeline (`utils.py`) so products get correct categories in the UI
-  2. Verify end-to-end cart add with user cookies (phone 9958993023 never completed first login — rate-limited, needs to wait 24h and retry)
-  3. Restart backend to pick up the `safe_evaluate` fix
+  1. Do NOT test the live login flow! We must conserve the remaining SMS verification attempts for the final project wrap-up check.
+  2. Revisit the pending Bug Report items (e.g. User Interface bugs, or the missing `/api/auth/logout` endpoint in backend) or any other features the user requests.
 
 ---
 
 ### Known Issues
-- VkusVill daily SMS limit: 4 requests/day per phone. After hitting limit, must wait 24h.
-- Some green/red products may be out of stock ("Товар закончился") — this is VkusVill-side, not a bug.
-- Phone 9958993023: never completed first login (no cookies exist). Hit rate limit. Must wait 24h and retry.
+- VkusVill daily SMS limit is very strict (max 4 requests per day per phone). Live authentication testing must be strictly minimized.
+- `green_products.json` and `red_products.json` scraping relies on external Chrome windows successfully dumping data. Do not manually delete these JSONs while the frontend relies on them, otherwise the `updatedAt` fallback handles the missing files dynamically.
