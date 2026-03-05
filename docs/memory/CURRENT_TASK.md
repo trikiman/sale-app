@@ -1,7 +1,7 @@
 # Current Task
 
-## Status: Sprint 2 — In Progress 🔧
-**Date**: 2026-03-03 04:50
+## Status: Sprint 4 — Category Scraper & Login Fixes Complete ✅
+**Date**: 2026-03-04
 
 ---
 
@@ -37,26 +37,50 @@
 ### Sprint 3 (Complete ✅)
 
 #### UI/UX Polishing (`miniapp/src/`)
-- **Login/Logout Icons**: Changed ✅ to proper 🚪 logout icon, and 🔑 for login.
+- **Login/Logout Icons**: Changed to proper logout/login icons.
 - **Cart Panel**: Added 40x40 product thumbnails.
-- **Cart Management**: Added per-item remove ✕ buttons (which turns into a bigger 🗑 icon at quantity=1) and a clear-all 🗑 button in the cart panel header.
-- **Quantity Controls**: Built `−` `count` `+` quantity controls for each cart item. The `+` button is disabled when the item hits its `max_q`.
-- **Cart Polish**: Item price rows now show the current price and a strikethrough old price. Shows stock info like list view. 
-- **Cart Performance**: Wrapped `fetchCart` in `useCallback` and added a 30s cache. Opening the cart is now instant while it refreshes in the background silently.
+- **Cart Management**: Per-item remove buttons and clear-all button in cart panel header.
+- **Quantity Controls**: `−` `count` `+` controls per cart item, `+` disabled at `max_q`.
+- **Cart Polish**: Current price + strikethrough old price, stock info in cart.
+- **Cart Performance**: `fetchCart` wrapped in `useCallback` with 30s cache.
 
 #### Backend (`backend/main.py` & `cart/vkusvill_api.py`)
-- **API Endpoints**: Added `POST /api/cart/remove` and `POST /api/cart/clear`. 
-- **API Wrapper Methods**: Built `remove(product_id)` and `clear_all()` in the `VkusVillCart` class to correctly hit `basket_remove.php` via raw cookie headers.
+- **API Endpoints**: Added `POST /api/cart/remove` and `POST /api/cart/clear`.
+- **API Wrapper Methods**: `remove(product_id)` and `clear_all()` in `VkusVillCart`.
 
 ---
 
-### 🛑 Handoff State (Added 2026-03-03)
-- **Current Focus:** `scrape_categories.py` / New Category Scraper Feature.
-- **Current Blocker:** The system currently relies on the user's personal deal pages (Green/Red/Yellow) which do *not* contain accurate category information. As a result, items are categorized wildly incorrectly in the app (e.g. cakes in Veggies, bread in Dairy). 
-- **Next Immediate Step:** We brainstormed and agreed on building a new scraper script. The next agent must write a script (`scrape_categories.py`) to systematically fetch the top-level VkusVill categories (e.g. `https://vkusvill.ru/goods/gotovaya-eda/`), gather its subgroup URLs (e.g. `.../salaty/`), and then extract every product ID into a master lookup mapping (`product_id -> {group, subgroup}`). This mapping file will then be consumed by `utils.py` during the deal merge phase to correctly categorize everything.
+### Sprint 4 (Complete ✅ — 2026-03-04)
+
+#### Category Scraper (`scrape_categories.py`)
+- **Complete async rewrite**: Replaced `requests` + `ThreadPoolExecutor(6)` with `aiohttp` + `asyncio.gather()`
+- **All 28 categories scraped in parallel** via `asyncio.gather(*tasks)`, semaphore limits to 10 concurrent HTTP requests
+- **Performance**: ~10,951 products scraped across all categories (previously was sequential/slow)
+- **Inter-page delay**: Reduced from 0.3s → 0.15s (async sleep)
+- **Output**: `data/category_db.json` — maps `product_id → {name, category}`
+- **Dependency added**: `aiohttp` package installed
+
+#### Login Rate-Limit Detection Fix (`backend/main.py`)
+- **BUG-030 fixed**: Immediate rate-limit check after SMS button click was using raw `tab.evaluate()` instead of `safe_evaluate()`. nodriver returns `ExceptionDetails` dict on JS errors, `isinstance(page_text, str)` returned `False`, so rate-limit keywords were never checked → user got generic error instead of specific 429 "Номер заблокирован" message.
+- **Fix**: Changed `tab.evaluate("document.body.innerText")` → `safe_evaluate(tab, "document.body.innerText")` at line ~569
+
+#### Login PIN Shortcut Fix (`backend/main.py`)
+- **BUG-031 fixed**: After logout, `cookies.json` is renamed to `cookies.bak.json`, but the PIN shortcut path still checked `os.path.exists(cookies_path)` — which was `False` after logout. User was forced into full SMS flow even though `.bak` cookies existed for PIN re-login.
+- **Fix**: PIN shortcut now also checks for `.bak` cookies and restores them if PIN is correct.
+
+---
+
+### 🛑 Handoff State (Updated 2026-03-04)
+- **Current Focus**: All Sprint 4 items complete. Category scraper works, login bugs fixed.
+- **Current Blocker**: None. System is functional.
+- **Next Immediate Steps**:
+  1. Integrate `category_db.json` into the merge pipeline (`utils.py`) so products get correct categories in the UI
+  2. Verify end-to-end cart add with user cookies (phone 9958993023 never completed first login — rate-limited, needs to wait 24h and retry)
+  3. Restart backend to pick up the `safe_evaluate` fix
 
 ---
 
 ### Known Issues
 - VkusVill daily SMS limit: 4 requests/day per phone. After hitting limit, must wait 24h.
 - Some green/red products may be out of stock ("Товар закончился") — this is VkusVill-side, not a bug.
+- Phone 9958993023: never completed first login (no cookies exist). Hit rate limit. Must wait 24h and retry.

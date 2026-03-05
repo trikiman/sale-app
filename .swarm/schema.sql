@@ -292,7 +292,7 @@ CREATE TABLE IF NOT EXISTS metadata (
 INSERT OR REPLACE INTO metadata (key, value) VALUES
   ('schema_version', '3.0.0'),
   ('backend', 'hybrid'),
-  ('created_at', '2026-03-02T15:34:04.063Z'),
+  ('created_at', '2026-03-03T23:32:33.414Z'),
   ('sql_js', 'true'),
   ('vector_embeddings', 'enabled'),
   ('pattern_learning', 'enabled'),

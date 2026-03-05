@@ -584,6 +584,21 @@ def scrape_green_prices():
                 time.sleep(2)  # Wait for cart to update
 
                 # 5. Scrape stock AND price from cart page
+                # VkusVill's cart uses lazy loading. We must scroll to the bottom to load all items.
+                print("  [GREEN] Scrolling cart page to load all items...")
+                driver.execute_script("""
+                    let totalHeight = 0;
+                    let distance = 300;
+                    let timer = setInterval(() => {
+                        window.scrollBy(0, distance);
+                        totalHeight += distance;
+                        if (totalHeight >= document.body.scrollHeight) {
+                            clearInterval(timer);
+                        }
+                    }, 100);
+                """)
+                import time
+                time.sleep(2) # Give it 2 seconds to finish scrolling and load DOM
                 print("  [GREEN] Scrolling cart to load all items...")
                 driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
                 time.sleep(2)

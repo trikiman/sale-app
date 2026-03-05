@@ -10,6 +10,7 @@ export default function Login({ userId, onLoginSuccess }) {
   const [pin, setPin] = useState('')
   const [newPin, setNewPin] = useState('')
   const [confirmPin, setConfirmPin] = useState('')
+  const [setPinStep, setSetPinStep] = useState(1) // 1: new, 2: confirm
   const [forceSms, setForceSms] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -53,7 +54,7 @@ export default function Login({ userId, onLoginSuccess }) {
         body: JSON.stringify({ user_id: userId, phone, pin: pinValue })
       })
       const data = await res.json()
-      if (res.ok && data.success) onLoginSuccess()
+      if (res.ok && data.success) onLoginSuccess(phone)
       else { setError(data.detail || 'Неверный PIN'); setPin('') }
     } catch { setError('Нет связи с сервером') }
     finally { setLoading(false) }
@@ -82,7 +83,7 @@ export default function Login({ userId, onLoginSuccess }) {
           setVerifiedPhone(data.phone)
           setStep('set_pin')
         } else {
-          onLoginSuccess()
+          onLoginSuccess(phone)
         }
       } else { setError(data.detail || 'Неверный код'); setCode('') }
     } catch { setError('Нет связи с сервером') }
@@ -97,22 +98,40 @@ export default function Login({ userId, onLoginSuccess }) {
   }
 
   // ── Set PIN Step (with confirm) ──
-  const handleSetPin = async (e) => {
-    e.preventDefault()
-    if (newPin.length !== 4) { setError('PIN должен быть 4 цифры'); return }
-    if (newPin !== confirmPin) { setError('PIN не совпадают. Попробуйте ещё раз.'); setConfirmPin(''); return }
+  const doSetPinSubmit = async (pin1, pin2) => {
+    if (pin1.length !== 4 || pin2.length !== 4) return
+    if (pin1 !== pin2) { setError('PIN не совпадают. Попробуйте ещё раз.'); setConfirmPin(''); setSetPinStep(1); setNewPin(''); return }
     setLoading(true); setError(null)
     try {
       const res = await fetch('/api/auth/set-pin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: userId, phone: verifiedPhone, pin: newPin })
+        body: JSON.stringify({ user_id: userId, phone: verifiedPhone, pin: pin1 })
       })
       const data = await res.json()
-      if (res.ok && data.success) onLoginSuccess()
+      if (res.ok && data.success) onLoginSuccess(verifiedPhone)
       else setError(data.detail || 'Не удалось установить PIN')
     } catch { setError('Нет связи с сервером') }
     finally { setLoading(false) }
+  }
+
+  const handleSetPin = async (e) => {
+    e.preventDefault()
+    doSetPinSubmit(newPin, confirmPin)
+  }
+
+  const handleNewPinChange = (val) => {
+    const clean = val.replace(/\D/g, '').slice(0, 4)
+    setNewPin(clean)
+    setError(null)
+    if (clean.length === 4) setTimeout(() => setSetPinStep(2), 150)
+  }
+
+  const handleConfirmPinChange = (val) => {
+    const clean = val.replace(/\D/g, '').slice(0, 4)
+    setConfirmPin(clean)
+    setError(null)
+    if (clean.length === 4) setTimeout(() => doSetPinSubmit(newPin, clean), 150)
   }
 
   const renderStep = () => {
@@ -164,14 +183,26 @@ export default function Login({ userId, onLoginSuccess }) {
 
       case 'set_pin':
         return (
-          <motion.form key="setpin" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} onSubmit={handleSetPin} className="login-form">
-            <div className="login-hint">Придумайте 4-значный PIN</div>
-            <input type="password" inputMode="numeric" placeholder="Новый PIN" value={newPin} onChange={(e) => setNewPin(e.target.value.replace(/\D/g, '').slice(0, 4))} maxLength={4} className="login-input login-input-code" disabled={loading} autoFocus />
-            <input type="password" inputMode="numeric" placeholder="Повторите PIN" value={confirmPin} onChange={(e) => setConfirmPin(e.target.value.replace(/\D/g, '').slice(0, 4))} maxLength={4} className="login-input login-input-code" disabled={loading || newPin.length !== 4} />
-            <button type="submit" disabled={loading || newPin.length !== 4 || confirmPin.length !== 4} className="login-btn">
-              {loading ? <><Spinner /> Сохраняем…</> : 'Установить PIN'}
+          <motion.form key={`setpin-${setPinStep}`} initial={{ opacity: 0, x: setPinStep === 1 ? -20 : 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: setPinStep === 1 ? 20 : -20 }} onSubmit={handleSetPin} className="login-form">
+            <div className="login-hint">{setPinStep === 1 ? 'Придумайте 4-значный PIN' : 'Повторите PIN'}</div>
+
+            {setPinStep === 1 ? (
+              <input type="password" inputMode="numeric" placeholder="Новый PIN" value={newPin} onChange={(e) => handleNewPinChange(e.target.value)} maxLength={4} className="login-input login-input-code" disabled={loading} autoFocus />
+            ) : (
+              <input type="password" inputMode="numeric" placeholder="Повторите PIN" value={confirmPin} onChange={(e) => handleConfirmPinChange(e.target.value)} maxLength={4} className="login-input login-input-code" disabled={loading} autoFocus />
+            )}
+
+            {setPinStep === 2 && (
+              <button type="submit" disabled={loading || confirmPin.length !== 4} className="login-btn">
+                {loading ? <><Spinner /> Сохраняем…</> : 'Установить PIN'}
+              </button>
+            )}
+            <button type="button" onClick={() => {
+              if (setPinStep === 2) { setSetPinStep(1); setConfirmPin(''); setNewPin(''); setError(null) }
+              else onLoginSuccess(verifiedPhone)
+            }} className="login-back-btn" disabled={loading}>
+              {setPinStep === 2 ? 'Назад' : 'Пропустить'}
             </button>
-            <button type="button" onClick={() => onLoginSuccess()} className="login-back-btn" disabled={loading}>Пропустить</button>
           </motion.form>
         )
     }

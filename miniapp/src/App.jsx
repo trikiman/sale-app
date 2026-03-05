@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import CartPanel from './CartPanel'
 import './index.css'
@@ -21,6 +21,7 @@ const CATEGORY_EMOJIS = {
   'Готовая еда': '🍱',
   'Сладости': '🍰',
   'Другое': '📦',
+  'Новинки': '🆕',
 }
 
 import Login from './Login'
@@ -160,9 +161,21 @@ function ProductCard({ product, index, isFavorite, onToggleFavorite, favoritesLo
 }
 
 function CategoryFilter({ selected, onSelect, categories }) {
-  // Check if scroll is possible
+  const scrollRef = useRef(null)
   const [canScrollLeft, setCanScrollLeft] = useState(false)
   const [canScrollRight, setCanScrollRight] = useState(true)
+
+  // Scroll selected chip to center whenever selection changes
+  useEffect(() => {
+    const container = scrollRef.current
+    if (!container) return
+    const active = container.querySelector('.category-chip.active')
+    if (!active) return
+    container.scrollTo({
+      left: active.offsetLeft - container.clientWidth / 2 + active.offsetWidth / 2,
+      behavior: 'smooth',
+    })
+  }, [selected])
 
   const checkScroll = (e) => {
     const el = e.target
@@ -172,7 +185,6 @@ function CategoryFilter({ selected, onSelect, categories }) {
 
   return (
     <div className="relative group">
-      {/* Scroll Indicators */}
       {canScrollLeft && (
         <div className="absolute left-0 top-0 bottom-2 w-8 z-10 pointer-events-none rounded-l-xl scroll-indicator-left bg-gradient-to-r from-black/50 to-transparent" />
       )}
@@ -181,6 +193,7 @@ function CategoryFilter({ selected, onSelect, categories }) {
       )}
 
       <div
+        ref={scrollRef}
         className="flex gap-2 overflow-x-auto pb-2 px-4 -mx-4 scrollbar-hide relative"
         onScroll={checkScroll}
       >
@@ -205,9 +218,12 @@ function App() {
   const [loading, setLoading] = useState(true)
   const [favoritesLoading, setFavoritesLoading] = useState(true)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
+  const [userPhone, setUserPhone] = useState(null)
   const [showLogin, setShowLogin] = useState(false)
   const [error, setError] = useState(null)
+  const [toastMessage, setToastMessage] = useState(null)
   const [updatedAt, setUpdatedAt] = useState(null)
+  const updatedAtRef = useRef(null)
   const [favorites, setFavorites] = useState(new Set())
   const [userId] = useState(() => {
     // Get user ID from Telegram if available
@@ -235,6 +251,8 @@ function App() {
   const [tokenInputValue, setTokenInputValue] = useState('')
   const [viewMode, setViewMode] = useState(() => localStorage.getItem('vv_view_mode') || 'grid')
   const [theme, setTheme] = useState(() => localStorage.getItem('vv_theme') || 'dark')
+  const [categorizingRunning, setCategorizingRunning] = useState(false)
+  const [categorizingDone, setCategorizingDone] = useState(false)
 
   // Apply theme
   useEffect(() => {
@@ -268,6 +286,7 @@ function App() {
       .then(res => res.json())
       .then(data => {
         setIsAuthenticated(data.authenticated)
+        if (data.phone) setUserPhone(data.phone)
       })
       .catch(err => console.warn('Failed to check auth status:', err))
   }, [userId])
@@ -334,9 +353,10 @@ function App() {
       .then(data => {
         if (data.products && Array.isArray(data.products)) {
           // On auto-refresh, only update if data actually changed
-          if (isAutoRefresh && data.updatedAt === updatedAt) return
+          if (isAutoRefresh && data.updatedAt === updatedAtRef.current) return
           setProducts(data.products.map(p => ({ ...p, category: normalizeCategory(p.category) })))
           setUpdatedAt(data.updatedAt)
+          updatedAtRef.current = data.updatedAt
           if (data.greenLiveCount !== undefined) setGreenLiveCount(data.greenLiveCount)
           setDataStale(!!data.dataStale)
         } else if (Array.isArray(data) && data.length > 0) {
@@ -354,6 +374,7 @@ function App() {
             if (data.products) {
               setProducts(data.products.map(p => ({ ...p, category: normalizeCategory(p.category) })))
               setUpdatedAt(data.updatedAt)
+              updatedAtRef.current = data.updatedAt
               if (data.greenLiveCount !== undefined) setGreenLiveCount(data.greenLiveCount)
               if (data.dataStale) setDataStale(true)
             } else {
@@ -370,9 +391,20 @@ function App() {
   useEffect(() => {
     loadProducts(false)
 
-    // Auto-refresh every 60s
+    // Auto-refresh via SSE for instant updates
+    const eventSource = new EventSource('/api/stream')
+    eventSource.addEventListener('update', () => {
+      console.log('SSE update received: refreshing products')
+      loadProducts(true)
+    })
+
+    // Fallback polling just in case SSE disconnects
     const refreshInterval = setInterval(() => loadProducts(true), 60000)
-    return () => clearInterval(refreshInterval)
+
+    return () => {
+      clearInterval(refreshInterval)
+      eventSource.close()
+    }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -429,6 +461,9 @@ function App() {
         if (res.status === 401) {
           setIsAuthenticated(false)
           setShowLogin(true)
+        } else {
+          setToastMessage({ text: data.detail || 'Не удалось добавить товар', type: 'error' })
+          setTimeout(() => setToastMessage(null), 3000)
         }
         setCartStates(s => ({ ...s, [pid]: 'error' }))
         setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), 2000)
@@ -436,9 +471,36 @@ function App() {
     } catch (err) {
       console.error(err)
       setCartStates(s => ({ ...s, [pid]: 'error' }))
+      setToastMessage({ text: 'Ошибка сети', type: 'error' })
       setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), 2000)
+      setTimeout(() => setToastMessage(null), 3000)
     }
   }
+
+  const triggerCategoryScraper = () => {
+    setCategorizingRunning(true)
+    fetch('/api/admin/run/categories', { method: 'POST' })
+      .catch(() => setCategorizingRunning(false))
+  }
+
+  // Poll categories scraper status while running
+  useEffect(() => {
+    if (!categorizingRunning) return
+    const interval = setInterval(() => {
+      fetch('/api/admin/run/categories/status')
+        .then(r => r.json())
+        .then(data => {
+          if (!data.running) {
+            setCategorizingRunning(false)
+            setCategorizingDone(true)
+            setSelectedCategory('all')
+            loadProducts(false)
+          }
+        })
+        .catch(() => setCategorizingRunning(false))
+    }, 3000)
+    return () => clearInterval(interval)
+  }, [categorizingRunning]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Apply both category and type filters + sorting (memoized for performance)
   const filteredProducts = useMemo(() => {
@@ -468,17 +530,21 @@ function App() {
 
   // Build dynamic categories from products (after type filtering)
   const categories = useMemo(() => {
-    // Use same OR logic as filteredProducts
     const activeTypes = Object.entries(typeFilters).filter(([, active]) => active).map(([k]) => k)
     const productsAfterTypeFilter = products.filter(p => activeTypes.includes(p.type))
-    const uniqueCategories = [...new Set(productsAfterTypeFilter.map(p => p.category))].sort()
-    return [
+    const noveltyCount = productsAfterTypeFilter.filter(p => p.category === 'Новинки').length
+    // Sort all categories except 'Новинки' (pinned to position 1)
+    const uniqueCategories = [...new Set(
+      productsAfterTypeFilter.filter(p => p.category !== 'Новинки').map(p => p.category)
+    )].sort()
+    const chips = [
       { id: 'all', label: '🏷️ Все' },
-      ...uniqueCategories.map(cat => ({
-        id: cat,
-        label: `${getCategoryEmoji(cat)} ${cat}`
-      }))
+      ...uniqueCategories.map(cat => ({ id: cat, label: `${getCategoryEmoji(cat)} ${cat}` }))
     ]
+    if (noveltyCount > 0) {
+      chips.splice(1, 0, { id: 'Новинки', label: `🆕 Новинки (${noveltyCount})` })
+    }
+    return chips
   }, [products, typeFilters])
 
   // Calculate counts for header
@@ -525,8 +591,9 @@ function App() {
         </button>
         <Login
           userId={userId}
-          onLoginSuccess={() => {
+          onLoginSuccess={(phone) => {
             setIsAuthenticated(true)
+            if (phone) setUserPhone(phone)
             setShowLogin(false)
           }}
         />
@@ -558,11 +625,12 @@ function App() {
                     })
                   } catch (e) { }
                   setIsAuthenticated(false)
+                  setUserPhone(null)
                 }}
                 className="header-pill header-pill-success"
                 title="Нажмите чтобы выйти"
               >
-                🚪 Выйти
+                🚪 Выйти {userPhone ? `(${userPhone.replace(/(\d{3})\d{5}(\d{2})/, '$1-***-**-$2')})` : ''}
               </button>
               <button
                 onClick={() => setCartPanelOpen(true)}
@@ -832,6 +900,33 @@ function App() {
         />
       </motion.div>
 
+      {/* Новинки banner — shown when user selects uncategorized products chip */}
+      {selectedCategory === 'Новинки' && (
+        <motion.div
+          initial={{ opacity: 0, scale: 0.95 }}
+          animate={{ opacity: 1, scale: 1 }}
+          className="mb-4 px-4 py-3 rounded-xl bg-yellow-500/10 border border-yellow-500/30 text-center"
+        >
+          <div className="text-xs opacity-70 mb-2">
+            {filteredProducts.length} товаров ещё не распределены по категориям
+          </div>
+          {categorizingDone ? (
+            <div className="text-xs text-green-400 font-medium">
+              ✅ Готово — категории обновляются
+            </div>
+          ) : (
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              disabled={categorizingRunning}
+              onClick={triggerCategoryScraper}
+              className={`header-pill header-pill-action ${categorizingRunning ? 'opacity-60 cursor-wait' : ''}`}
+            >
+              {categorizingRunning ? '⏳ Определяем...' : '🔄 Определить категории'}
+            </motion.button>
+          )}
+        </motion.div>
+      )}
+
       {/* Loading state */}
       {loading && (
         <div className="text-center py-8 opacity-60">
@@ -886,6 +981,21 @@ function App() {
         onClose={() => setCartPanelOpen(false)}
         userId={userId}
       />
+
+      {/* Floating Toast Notification */}
+      <AnimatePresence>
+        {toastMessage && (
+          <motion.div
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 50 }}
+            className={`fixed bottom-24 left-1/2 -translate-x-1/2 px-4 py-2.5 rounded-xl shadow-[0_0_20px_rgba(0,0,0,0.3)] z-50 text-sm font-medium whitespace-nowrap border ${toastMessage.type === 'error' ? 'bg-[#2a1313] text-red-400 border-red-500/30' : 'bg-[#132a18] text-green-400 border-green-500/30'
+              }`}
+          >
+            {toastMessage.text}
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

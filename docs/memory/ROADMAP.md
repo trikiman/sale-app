@@ -41,7 +41,7 @@
 - [x] Bare `except:` → `except Exception:` everywhere
 - [x] Resource leak fixes (TTL cleanup for login sessions, timeout handlers for bot)
 
-## Milestone 3.7: Web Login via nodriver (IN PROGRESS)
+## Milestone 3.7: Web Login via nodriver ✅
 - [x] Backend auth endpoints rewritten (Playwright → undetected_chromedriver → nodriver)
 - [x] Frontend login page restored (Login.jsx + gate in App.jsx)
 - [x] Per-user cookies architecture restored
@@ -52,10 +52,22 @@
 - [x] Auth endpoints changed to `async def`, cookies extracted via CDP
 - [x] WindowsProactorEventLoopPolicy fix for `--reload` mode
 - [x] BUG-022–025 fixed (HTTPException swallowed, cart.close leak, hardcoded token)
-- [ ] **BUG-026**: Fix JS SyntaxError in `tab.evaluate()` f-string (phone never fills → 500)
-- [ ] **BUG-027**: Fix UnicodeEncodeError on Windows cp1252 console
+- [x] **BUG-026 fixed**: CDP `Input.dispatchKeyEvent` for masked input fields
+- [x] **BUG-027 fixed**: `sys.stdout.reconfigure(encoding='utf-8')` at startup
+- [x] **BUG-028 fixed**: Chrome `LocalNetworkAccessChecks` monkey-patch for nodriver
+- [x] **BUG-030 fixed**: Rate-limit detection → `safe_evaluate()` for immediate check
+- [x] **BUG-031 fixed**: PIN shortcut checks `.bak` cookies after logout
 - [ ] Verify cart add works with saved cookies (end-to-end API test)
 - [ ] Clean up unused shared login code (`SHARED_USER_COOKIES` in config, `shared.json` in login.py)
+
+## Milestone 3.8: Category Scraper ✅
+- [x] `scrape_categories.py` — async rewrite with `aiohttp` + `asyncio`
+- [x] 28 VkusVill categories scraped in parallel (~10,951 products)
+- [x] Output: `data/category_db.json` (product_id → {name, category})
+- [x] Integrate `category_db.json` into `utils.py` merge pipeline (3-tier: DB → raw category → keyword fallback)
+- [x] Manual trigger: `POST /api/admin/run/categories` + status polling endpoint
+- [x] Frontend "Новинки" chip + "Определить категории" button with spinner/done states
+- [x] Auto-merge after category scraper completes (rebuilds `proposals.json`)
 
 ## Milestone 4: Deployment (AWS)
 - [ ] Docker containerization

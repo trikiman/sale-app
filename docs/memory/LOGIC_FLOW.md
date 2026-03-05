@@ -137,6 +137,41 @@ Because the MiniApp reads from a static `data.json` file, it doesn't need to wai
 
 ---
 
+## Part 4b: Category Scraper (Added 2026-03-04)
+
+### Purpose
+The price scrapers (green/red/yellow) get category info from the user's personal deal pages, which is often wrong (e.g. cakes in "Veggies"). The category scraper builds an independent, accurate `product_id → category` mapping from VkusVill's public catalog.
+
+### Architecture
+- **Pure HTTP** — no browser needed. Uses `aiohttp` + `asyncio` (not Selenium/nodriver).
+- **28 categories** defined in `CATEGORIES` list (e.g. "Готовая еда", "Молочные продукты", "Напитки")
+- **All categories scraped in parallel** via `asyncio.gather()`, with `asyncio.Semaphore(10)` limiting concurrent HTTP requests
+- **Pages within a category are sequential** — pagination requires checking if previous page returned products before requesting the next
+
+### Data Flow
+1. `scrape_categories.py` fetches all category listing pages from `vkusvill.ru/goods/{category}/`
+2. Each page is parsed with `BeautifulSoup` — extracts `.ProductCard` elements → `{id, name}`
+3. Product IDs are extracted from card links via regex (`/goods/(\d+)` or `-(\d+).html`)
+4. Results merged into `data/category_db.json`: `{products: {pid: {name, category}}, last_updated: ISO}`
+5. During the deal merge step, `utils.py` reads `category_db.json` to override inaccurate categories from the price scrapers
+
+### Output File: `data/category_db.json`
+```json
+{
+  "last_updated": "2026-03-04T...",
+  "products": {
+    "12345": {"name": "Салат Цезарь", "category": "Готовая еда"},
+    "67890": {"name": "Молоко 3.2%", "category": "Молочные продукты, яйцо"}
+  }
+}
+```
+
+### Performance
+- ~10,951 products across 28 categories
+- Runs in ~1-2 minutes (all categories in parallel, 0.15s delay between pages)
+
+---
+
 ## Part 5: Automation (The Pulse)
 
 ### The Heartbeat (Scheduler)

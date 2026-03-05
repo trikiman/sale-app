@@ -196,8 +196,8 @@ def normalize_category(raw_cat, product_name, product_id=None):
             # Return the raw category as-is (VkusVill's actual category)
             return raw_cat
     
-    # Tier 3: Keyword fallback for truly unknown items
-    return keyword_fallback(product_name)
+    # Tier 3: Not in DB and no meaningful raw category → 'Новинки' (triggers category scraper prompt)
+    return 'Новинки'
 
 def parse_stock(text):
     """
@@ -205,7 +205,7 @@ def parse_stock(text):
     Returns float for kg items, int for шт items, 99 if valid but no number, or 0 if OOS.
     """
     if not text:
-        return 0
+        return 99
 
     text_lower = text.lower()
 

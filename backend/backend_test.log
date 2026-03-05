@@ -1,0 +1,820 @@
+2026-03-05 04:53:59,513 [INFO] nodriver.core.browser: starting
+	executable :C:\Program Files\Google\Chrome\Application\chrome.exe
+
+arguments:
+--remote-allow-origins=*
+	--no-first-run
+	--no-service-autorun
+	--no-default-browser-check
+	--homepage=about:blank
+	--no-pings
+	--password-store=basic
+	--disable-infobars
+	--disable-breakpad
+	--disable-dev-shm-usage
+	--disable-session-crashed-bubble
+	--disable-search-engine-choice-screen
+	--user-data-dir=C:\Users\rust-\AppData\Local\Temp\uc_juxr15vr
+	--disable-session-crashed-bubble
+	--disable-features=IsolateOrigins,site-per-process,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations
+	--window-position=-2400,-2400
+	--window-size=1280,720
+	--disable-gpu
+	--disable-blink-features=AutomationControlled
+	--no-sandbox
+	--lang=ru-RU,ru
+	--no-sandbox
+	--remote-debugging-host=127.0.0.1
+	--remote-debugging-port=56171
+2026-03-05 04:53:59,515 [ERROR] backend.main: Login error: NotImplementedError: 
+Traceback (most recent call last):
+  File "E:\Projects\saleapp\backend\main.py", line 509, in auth_login
+    browser = await uc.start(
+              ^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\site-packages\nodriver\core\util.py", line 102, in start
+    return await Browser.create(config)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\site-packages\nodriver\core\browser.py", line 95, in create
+    await instance.start()
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\site-packages\nodriver\core\browser.py", line 412, in start
+    await asyncio.create_subprocess_exec(
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\asyncio\subprocess.py", line 224, in create_subprocess_exec
+    transport, protocol = await loop.subprocess_exec(
+                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1756, in subprocess_exec
+    transport = await self._make_subprocess_transport(
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 528, in _make_subprocess_transport
+    raise NotImplementedError
+NotImplementedError
+
+2026-03-05 05:00:49,275 [INFO] nodriver.core.browser: starting
+	executable :C:\Program Files\Google\Chrome\Application\chrome.exe
+
+arguments:
+--remote-allow-origins=*
+	--no-first-run
+	--no-service-autorun
+	--no-default-browser-check
+	--homepage=about:blank
+	--no-pings
+	--password-store=basic
+	--disable-infobars
+	--disable-breakpad
+	--disable-dev-shm-usage
+	--disable-session-crashed-bubble
+	--disable-search-engine-choice-screen
+	--user-data-dir=C:\Users\rust-\AppData\Local\Temp\uc_b9dxxidg
+	--disable-session-crashed-bubble
+	--disable-features=IsolateOrigins,site-per-process,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations
+	--window-position=-2400,-2400
+	--window-size=1280,720
+	--disable-gpu
+	--disable-blink-features=AutomationControlled
+	--no-sandbox
+	--lang=ru-RU,ru
+	--no-sandbox
+	--remote-debugging-host=127.0.0.1
+	--remote-debugging-port=56504
+2026-03-05 05:00:49,552 [INFO] nodriver.core.browser: enabling autodiscover targets
+2026-03-05 05:02:46,231 [INFO] nodriver.core.browser: starting
+	executable :C:\Program Files\Google\Chrome\Application\chrome.exe
+
+arguments:
+--remote-allow-origins=*
+	--no-first-run
+	--no-service-autorun
+	--no-default-browser-check
+	--homepage=about:blank
+	--no-pings
+	--password-store=basic
+	--disable-infobars
+	--disable-breakpad
+	--disable-dev-shm-usage
+	--disable-session-crashed-bubble
+	--disable-search-engine-choice-screen
+	--user-data-dir=C:\Users\rust-\AppData\Local\Temp\uc_uf5cdo2c
+	--disable-session-crashed-bubble
+	--disable-features=IsolateOrigins,site-per-process,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations
+	--window-position=-2400,-2400
+	--window-size=1280,720
+	--disable-gpu
+	--disable-blink-features=AutomationControlled
+	--no-sandbox
+	--lang=ru-RU,ru
+	--no-sandbox
+	--remote-debugging-host=127.0.0.1
+	--remote-debugging-port=63660
+2026-03-05 05:02:46,503 [INFO] nodriver.core.browser: enabling autodiscover targets
+2026-03-05 05:02:46,507 [INFO] __main__: [test_auto] Navigating to VkusVill personal page...
+2026-03-05 05:02:52,348 [INFO] __main__: [test_auto] Page loaded.
+2026-03-05 05:02:53,949 [INFO] __main__: [test_auto] Typing phone number: 999***66
+2026-03-05 05:02:55,213 [INFO] __main__: [test_auto] Phone number typed.
+2026-03-05 05:02:57,809 [INFO] __main__: [test_auto] Clicking submit button via JS...
+2026-03-05 05:03:02,929 [INFO] __main__: [test_auto] Waiting for SMS confirmation screen...
+2026-03-05 05:03:46,641 [INFO] nodriver.core.browser: terminated browser with pid 46948 successfully
+2026-03-05 05:05:37,389 [INFO] nodriver.core.browser: starting
+	executable :C:\Program Files\Google\Chrome\Application\chrome.exe
+
+arguments:
+--remote-allow-origins=*
+	--no-first-run
+	--no-service-autorun
+	--no-default-browser-check
+	--homepage=about:blank
+	--no-pings
+	--password-store=basic
+	--disable-infobars
+	--disable-breakpad
+	--disable-dev-shm-usage
+	--disable-session-crashed-bubble
+	--disable-search-engine-choice-screen
+	--user-data-dir=C:\Users\rust-\AppData\Local\Temp\uc_4zru3__a
+	--disable-session-crashed-bubble
+	--disable-features=IsolateOrigins,site-per-process,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations
+	--window-position=-2400,-2400
+	--window-size=1280,720
+	--disable-gpu
+	--disable-blink-features=AutomationControlled
+	--no-sandbox
+	--lang=ru-RU,ru
+	--no-sandbox
+	--remote-debugging-host=127.0.0.1
+	--remote-debugging-port=56190
+2026-03-05 05:05:37,669 [INFO] nodriver.core.browser: enabling autodiscover targets
+2026-03-05 05:06:40,271 [INFO] nodriver.core.browser: terminated browser with pid 97612 successfully
+2026-03-05 05:06:40,272 [INFO] nodriver.core.browser: starting
+	executable :C:\Program Files\Google\Chrome\Application\chrome.exe
+
+arguments:
+--remote-allow-origins=*
+	--no-first-run
+	--no-service-autorun
+	--no-default-browser-check
+	--homepage=about:blank
+	--no-pings
+	--password-store=basic
+	--disable-infobars
+	--disable-breakpad
+	--disable-dev-shm-usage
+	--disable-session-crashed-bubble
+	--disable-search-engine-choice-screen
+	--user-data-dir=C:\Users\rust-\AppData\Local\Temp\uc_ngp_l9v1
+	--disable-session-crashed-bubble
+	--disable-features=IsolateOrigins,site-per-process,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations
+	--window-position=-2400,-2400
+	--window-size=1280,720
+	--disable-gpu
+	--disable-blink-features=AutomationControlled
+	--no-sandbox
+	--lang=ru-RU,ru
+	--no-sandbox
+	--remote-debugging-host=127.0.0.1
+	--remote-debugging-port=51804
+2026-03-05 05:06:40,519 [INFO] nodriver.core.browser: enabling autodiscover targets
+2026-03-05 05:06:59,299 [INFO] nodriver.core.browser: terminated browser with pid 131940 successfully
+2026-03-05 05:09:02,218 [INFO] nodriver.core.browser: starting
+	executable :C:\Program Files\Google\Chrome\Application\chrome.exe
+
+arguments:
+--remote-allow-origins=*
+	--no-first-run
+	--no-service-autorun
+	--no-default-browser-check
+	--homepage=about:blank
+	--no-pings
+	--password-store=basic
+	--disable-infobars
+	--disable-breakpad
+	--disable-dev-shm-usage
+	--disable-session-crashed-bubble
+	--disable-search-engine-choice-screen
+	--user-data-dir=C:\Users\rust-\AppData\Local\Temp\uc_j0stmf4x
+	--disable-session-crashed-bubble
+	--disable-features=IsolateOrigins,site-per-process,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations
+	--window-position=-2400,-2400
+	--window-size=1280,720
+	--disable-gpu
+	--disable-blink-features=AutomationControlled
+	--no-sandbox
+	--lang=ru-RU,ru
+	--no-sandbox
+	--remote-debugging-host=127.0.0.1
+	--remote-debugging-port=65330
+2026-03-05 05:09:02,492 [INFO] nodriver.core.browser: enabling autodiscover targets
+2026-03-05 05:09:51,745 [INFO] nodriver.core.browser: terminated browser with pid 184940 successfully
+2026-03-05 05:11:17,066 [INFO] nodriver.core.browser: starting
+	executable :C:\Program Files\Google\Chrome\Application\chrome.exe
+
+arguments:
+--remote-allow-origins=*
+	--no-first-run
+	--no-service-autorun
+	--no-default-browser-check
+	--homepage=about:blank
+	--no-pings
+	--password-store=basic
+	--disable-infobars
+	--disable-breakpad
+	--disable-dev-shm-usage
+	--disable-session-crashed-bubble
+	--disable-search-engine-choice-screen
+	--user-data-dir=C:\Users\rust-\AppData\Local\Temp\uc_7qvnuyfj
+	--disable-session-crashed-bubble
+	--disable-features=IsolateOrigins,site-per-process,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations
+	--window-position=-2400,-2400
+	--window-size=1280,720
+	--disable-gpu
+	--disable-blink-features=AutomationControlled
+	--no-sandbox
+	--lang=ru-RU,ru
+	--no-sandbox
+	--remote-debugging-host=127.0.0.1
+	--remote-debugging-port=60055
+2026-03-05 05:11:17,349 [INFO] nodriver.core.browser: enabling autodiscover targets
+2026-03-05 05:12:10,160 [INFO] nodriver.core.browser: terminated browser with pid 29196 successfully
+2026-03-05 05:13:12,975 [INFO] nodriver.core.browser: starting
+	executable :C:\Program Files\Google\Chrome\Application\chrome.exe
+
+arguments:
+--remote-allow-origins=*
+	--no-first-run
+	--no-service-autorun
+	--no-default-browser-check
+	--homepage=about:blank
+	--no-pings
+	--password-store=basic
+	--disable-infobars
+	--disable-breakpad
+	--disable-dev-shm-usage
+	--disable-session-crashed-bubble
+	--disable-search-engine-choice-screen
+	--user-data-dir=C:\Users\rust-\AppData\Local\Temp\uc_5ojlf602
+	--disable-session-crashed-bubble
+	--disable-features=IsolateOrigins,site-per-process,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations
+	--window-position=-2400,-2400
+	--window-size=1280,720
+	--disable-gpu
+	--disable-blink-features=AutomationControlled
+	--no-sandbox
+	--lang=ru-RU,ru
+	--no-sandbox
+	--remote-debugging-host=127.0.0.1
+	--remote-debugging-port=63699
+2026-03-05 05:13:13,266 [INFO] nodriver.core.browser: enabling autodiscover targets
+2026-03-05 05:14:00,367 [INFO] nodriver.core.browser: terminated browser with pid 73856 successfully
+2026-03-05 05:14:54,878 [INFO] nodriver.core.browser: starting
+	executable :C:\Program Files\Google\Chrome\Application\chrome.exe
+
+arguments:
+--remote-allow-origins=*
+	--no-first-run
+	--no-service-autorun
+	--no-default-browser-check
+	--homepage=about:blank
+	--no-pings
+	--password-store=basic
+	--disable-infobars
+	--disable-breakpad
+	--disable-dev-shm-usage
+	--disable-session-crashed-bubble
+	--disable-search-engine-choice-screen
+	--user-data-dir=C:\Users\rust-\AppData\Local\Temp\uc_7fvirwoe
+	--disable-session-crashed-bubble
+	--disable-features=IsolateOrigins,site-per-process,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations
+	--window-position=-2400,-2400
+	--window-size=1280,720
+	--disable-gpu
+	--disable-blink-features=AutomationControlled
+	--no-sandbox
+	--lang=ru-RU,ru
+	--no-sandbox
+	--remote-debugging-host=127.0.0.1
+	--remote-debugging-port=55931
+2026-03-05 05:14:55,167 [INFO] nodriver.core.browser: enabling autodiscover targets
+2026-03-05 05:15:42,448 [INFO] nodriver.core.browser: terminated browser with pid 111500 successfully
+2026-03-05 05:16:57,054 [INFO] nodriver.core.browser: starting
+	executable :C:\Program Files\Google\Chrome\Application\chrome.exe
+
+arguments:
+--remote-allow-origins=*
+	--no-first-run
+	--no-service-autorun
+	--no-default-browser-check
+	--homepage=about:blank
+	--no-pings
+	--password-store=basic
+	--disable-infobars
+	--disable-breakpad
+	--disable-dev-shm-usage
+	--disable-session-crashed-bubble
+	--disable-search-engine-choice-screen
+	--user-data-dir=C:\Users\rust-\AppData\Local\Temp\uc_kjy8nt4r
+	--disable-session-crashed-bubble
+	--disable-features=IsolateOrigins,site-per-process,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations
+	--window-position=-2400,-2400
+	--window-size=1280,720
+	--disable-gpu
+	--disable-blink-features=AutomationControlled
+	--no-sandbox
+	--lang=ru-RU,ru
+	--no-sandbox
+	--remote-debugging-host=127.0.0.1
+	--remote-debugging-port=54621
+2026-03-05 05:16:57,340 [INFO] nodriver.core.browser: enabling autodiscover targets
+2026-03-05 05:17:48,307 [INFO] nodriver.core.browser: terminated browser with pid 170348 successfully
+2026-03-05 05:19:38,003 [INFO] nodriver.core.browser: starting
+	executable :C:\Program Files\Google\Chrome\Application\chrome.exe
+
+arguments:
+--remote-allow-origins=*
+	--no-first-run
+	--no-service-autorun
+	--no-default-browser-check
+	--homepage=about:blank
+	--no-pings
+	--password-store=basic
+	--disable-infobars
+	--disable-breakpad
+	--disable-dev-shm-usage
+	--disable-session-crashed-bubble
+	--disable-search-engine-choice-screen
+	--user-data-dir=C:\Users\rust-\AppData\Local\Temp\uc_94w8tsah
+	--disable-session-crashed-bubble
+	--disable-features=IsolateOrigins,site-per-process,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations
+	--window-position=-2400,-2400
+	--window-size=1280,720
+	--disable-gpu
+	--disable-blink-features=AutomationControlled
+	--no-sandbox
+	--lang=ru-RU,ru
+	--no-sandbox
+	--remote-debugging-host=127.0.0.1
+	--remote-debugging-port=59907
+2026-03-05 05:19:38,264 [INFO] nodriver.core.browser: enabling autodiscover targets
+2026-03-05 05:20:33,840 [INFO] __main__: Saved 32 cookies for phone 9166076650
+2026-03-05 05:20:33,840 [INFO] nodriver.core.browser: terminated browser with pid 34252 successfully
+2026-03-05 05:27:26,381 [INFO] cart.vkusvill_api: Loaded 32 cookies from E:\Projects\saleapp\data\auth\9166076650\cookies.json
+2026-03-05 05:27:27,152 [INFO] cart.vkusvill_api: Extracted sessid from page: 6c98ce8f...
+2026-03-05 05:27:27,153 [INFO] cart.vkusvill_api: Extracted user_id from page: 148107
+2026-03-05 05:27:27,153 [INFO] cart.vkusvill_api: Session ready (user_id=148107, sessid=6c98ce8f...)
+2026-03-05 05:27:35,588 [INFO] cart.vkusvill_api: Loaded 32 cookies from E:\Projects\saleapp\data\auth\9166076650\cookies.json
+2026-03-05 05:27:36,396 [INFO] cart.vkusvill_api: Extracted sessid from page: 6c98ce8f...
+2026-03-05 05:27:36,396 [INFO] cart.vkusvill_api: Extracted user_id from page: 148107
+2026-03-05 05:27:36,396 [INFO] cart.vkusvill_api: Session ready (user_id=148107, sessid=6c98ce8f...)
+2026-03-05 05:27:36,841 [WARNING] cart.vkusvill_api: ❌ Failed to add 59057: Ошибка, обновите страницу (type=<class 'str'>, val=N)
+2026-03-05 05:31:08,965 [INFO] cart.vkusvill_api: Loaded 32 cookies from E:\Projects\saleapp\data\auth\9166076650\cookies.json
+2026-03-05 05:31:09,746 [INFO] cart.vkusvill_api: Extracted sessid from page: 6c98ce8f...
+2026-03-05 05:31:09,751 [INFO] cart.vkusvill_api: Extracted user_id from page: 148107
+2026-03-05 05:31:09,752 [INFO] cart.vkusvill_api: Session ready (user_id=148107, sessid=6c98ce8f...)
+2026-03-05 05:31:10,267 [WARNING] cart.vkusvill_api: ❌ Failed to add 63603: Ошибка, обновите страницу (type=<class 'str'>, val=N)
+2026-03-05 05:31:14,334 [INFO] cart.vkusvill_api: Loaded 32 cookies from E:\Projects\saleapp\data\auth\9166076650\cookies.json
+2026-03-05 05:31:15,128 [INFO] cart.vkusvill_api: Extracted sessid from page: 6c98ce8f...
+2026-03-05 05:31:15,129 [INFO] cart.vkusvill_api: Extracted user_id from page: 148107
+2026-03-05 05:31:15,130 [INFO] cart.vkusvill_api: Session ready (user_id=148107, sessid=6c98ce8f...)
+2026-03-05 05:31:15,573 [WARNING] cart.vkusvill_api: ❌ Failed to add 59057: Ошибка, обновите страницу (type=<class 'str'>, val=N)
+2026-03-05 05:31:19,607 [INFO] cart.vkusvill_api: Loaded 32 cookies from E:\Projects\saleapp\data\auth\9166076650\cookies.json
+2026-03-05 05:31:20,340 [INFO] cart.vkusvill_api: Extracted sessid from page: 6c98ce8f...
+2026-03-05 05:31:20,345 [INFO] cart.vkusvill_api: Extracted user_id from page: 148107
+2026-03-05 05:31:20,346 [INFO] cart.vkusvill_api: Session ready (user_id=148107, sessid=6c98ce8f...)
+2026-03-05 05:31:20,790 [WARNING] cart.vkusvill_api: ❌ Failed to add 59057: Ошибка, обновите страницу (type=<class 'str'>, val=N)
+2026-03-05 05:38:13,822 [INFO] cart.vkusvill_api: Loaded 32 cookies from E:\Projects\saleapp\data\auth\9166076650\cookies.json
+2026-03-05 05:38:14,583 [INFO] cart.vkusvill_api: Extracted sessid from page: 6c98ce8f...
+2026-03-05 05:38:14,585 [INFO] cart.vkusvill_api: Extracted user_id from page: 148107
+2026-03-05 05:38:14,586 [INFO] cart.vkusvill_api: Session ready (user_id=148107, sessid=6c98ce8f...)
+2026-03-05 05:38:15,043 [WARNING] cart.vkusvill_api: ❌ Failed to add 63603: Ошибка, обновите страницу (type=<class 'str'>, val=N)
+2026-03-05 05:38:20,090 [INFO] cart.vkusvill_api: Loaded 32 cookies from E:\Projects\saleapp\data\auth\9166076650\cookies.json
+2026-03-05 05:38:20,805 [INFO] cart.vkusvill_api: Extracted sessid from page: 6c98ce8f...
+2026-03-05 05:38:20,806 [INFO] cart.vkusvill_api: Extracted user_id from page: 148107
+2026-03-05 05:38:20,807 [INFO] cart.vkusvill_api: Session ready (user_id=148107, sessid=6c98ce8f...)
+2026-03-05 05:38:21,190 [WARNING] cart.vkusvill_api: ❌ Failed to add 63603: Ошибка, обновите страницу (type=<class 'str'>, val=N)
+2026-03-05 05:38:28,507 [INFO] cart.vkusvill_api: Loaded 32 cookies from E:\Projects\saleapp\data\auth\9166076650\cookies.json
+2026-03-05 05:38:29,239 [INFO] cart.vkusvill_api: Extracted sessid from page: 6c98ce8f...
+2026-03-05 05:38:29,240 [INFO] cart.vkusvill_api: Extracted user_id from page: 148107
+2026-03-05 05:38:29,241 [INFO] cart.vkusvill_api: Session ready (user_id=148107, sessid=6c98ce8f...)
+2026-03-05 05:38:29,654 [WARNING] cart.vkusvill_api: ❌ Failed to add 59057: Ошибка, обновите страницу (type=<class 'str'>, val=N)
+2026-03-05 05:38:34,823 [INFO] cart.vkusvill_api: Loaded 32 cookies from E:\Projects\saleapp\data\auth\9166076650\cookies.json
+2026-03-05 05:38:35,566 [INFO] cart.vkusvill_api: Extracted sessid from page: 6c98ce8f...
+2026-03-05 05:38:35,566 [INFO] cart.vkusvill_api: Extracted user_id from page: 148107
+2026-03-05 05:38:35,568 [INFO] cart.vkusvill_api: Session ready (user_id=148107, sessid=6c98ce8f...)
+2026-03-05 05:38:35,969 [WARNING] cart.vkusvill_api: ❌ Failed to add 63603: Ошибка, обновите страницу (type=<class 'str'>, val=N)
+2026-03-05 05:38:53,264 [INFO] cart.vkusvill_api: Loaded 32 cookies from E:\Projects\saleapp\data\auth\9166076650\cookies.json
+2026-03-05 05:38:54,052 [INFO] cart.vkusvill_api: Extracted sessid from page: 6c98ce8f...
+2026-03-05 05:38:54,052 [INFO] cart.vkusvill_api: Extracted user_id from page: 148107
+2026-03-05 05:38:54,055 [INFO] cart.vkusvill_api: Session ready (user_id=148107, sessid=6c98ce8f...)
+2026-03-05 05:38:54,481 [WARNING] cart.vkusvill_api: ❌ Failed to add 63603: Ошибка, обновите страницу (type=<class 'str'>, val=N)
+2026-03-05 05:40:17,860 [INFO] nodriver.core.browser: starting
+	executable :C:\Program Files\Google\Chrome\Application\chrome.exe
+
+arguments:
+--remote-allow-origins=*
+	--no-first-run
+	--no-service-autorun
+	--no-default-browser-check
+	--homepage=about:blank
+	--no-pings
+	--password-store=basic
+	--disable-infobars
+	--disable-breakpad
+	--disable-dev-shm-usage
+	--disable-session-crashed-bubble
+	--disable-search-engine-choice-screen
+	--user-data-dir=C:\Users\rust-\AppData\Local\Temp\uc_lgmmf_l_
+	--disable-session-crashed-bubble
+	--disable-features=IsolateOrigins,site-per-process,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations
+	--window-position=-2400,-2400
+	--window-size=1280,720
+	--disable-gpu
+	--disable-blink-features=AutomationControlled
+	--no-sandbox
+	--lang=ru-RU,ru
+	--no-sandbox
+	--remote-debugging-host=127.0.0.1
+	--remote-debugging-port=65289
+2026-03-05 05:40:18,135 [INFO] nodriver.core.browser: enabling autodiscover targets
+2026-03-05 05:40:27,418 [INFO] nodriver.core.browser: starting
+	executable :C:\Program Files\Google\Chrome\Application\chrome.exe
+
+arguments:
+--remote-allow-origins=*
+	--no-first-run
+	--no-service-autorun
+	--no-default-browser-check
+	--homepage=about:blank
+	--no-pings
+	--password-store=basic
+	--disable-infobars
+	--disable-breakpad
+	--disable-dev-shm-usage
+	--disable-session-crashed-bubble
+	--disable-search-engine-choice-screen
+	--user-data-dir=C:\Users\rust-\AppData\Local\Temp\uc_f4u5a234
+	--disable-session-crashed-bubble
+	--disable-features=IsolateOrigins,site-per-process,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations
+	--window-position=-2400,-2400
+	--window-size=1280,720
+	--disable-gpu
+	--disable-blink-features=AutomationControlled
+	--no-sandbox
+	--lang=ru-RU,ru
+	--no-sandbox
+	--remote-debugging-host=127.0.0.1
+	--remote-debugging-port=63548
+2026-03-05 05:40:27,703 [INFO] nodriver.core.browser: enabling autodiscover targets
+2026-03-05 05:41:18,458 [INFO] nodriver.core.browser: terminated browser with pid 43116 successfully
+2026-03-05 05:41:18,518 [INFO] nodriver.core.browser: starting
+	executable :C:\Program Files\Google\Chrome\Application\chrome.exe
+
+arguments:
+--remote-allow-origins=*
+	--no-first-run
+	--no-service-autorun
+	--no-default-browser-check
+	--homepage=about:blank
+	--no-pings
+	--password-store=basic
+	--disable-infobars
+	--disable-breakpad
+	--disable-dev-shm-usage
+	--disable-session-crashed-bubble
+	--disable-search-engine-choice-screen
+	--user-data-dir=C:\Users\rust-\AppData\Local\Temp\uc_rwl_h0ri
+	--disable-session-crashed-bubble
+	--disable-features=IsolateOrigins,site-per-process,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations
+	--window-position=-2400,-2400
+	--window-size=1280,720
+	--disable-gpu
+	--disable-blink-features=AutomationControlled
+	--no-sandbox
+	--lang=ru-RU,ru
+	--no-sandbox
+	--remote-debugging-host=127.0.0.1
+	--remote-debugging-port=53062
+2026-03-05 05:41:18,799 [INFO] nodriver.core.browser: enabling autodiscover targets
+2026-03-05 05:42:10,972 [INFO] nodriver.core.browser: starting
+	executable :C:\Program Files\Google\Chrome\Application\chrome.exe
+
+arguments:
+--remote-allow-origins=*
+	--no-first-run
+	--no-service-autorun
+	--no-default-browser-check
+	--homepage=about:blank
+	--no-pings
+	--password-store=basic
+	--disable-infobars
+	--disable-breakpad
+	--disable-dev-shm-usage
+	--disable-session-crashed-bubble
+	--disable-search-engine-choice-screen
+	--user-data-dir=C:\Users\rust-\AppData\Local\Temp\uc_h9ryizia
+	--disable-session-crashed-bubble
+	--disable-features=IsolateOrigins,site-per-process,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations
+	--window-position=-2400,-2400
+	--window-size=1280,720
+	--disable-gpu
+	--disable-blink-features=AutomationControlled
+	--no-sandbox
+	--lang=ru-RU,ru
+	--no-sandbox
+	--remote-debugging-host=127.0.0.1
+	--remote-debugging-port=50737
+2026-03-05 05:42:11,249 [INFO] nodriver.core.browser: enabling autodiscover targets
+2026-03-05 05:42:31,565 [INFO] nodriver.core.browser: terminated browser with pid 23960 successfully
+2026-03-05 05:42:49,920 [INFO] nodriver.core.browser: starting
+	executable :C:\Program Files\Google\Chrome\Application\chrome.exe
+
+arguments:
+--remote-allow-origins=*
+	--no-first-run
+	--no-service-autorun
+	--no-default-browser-check
+	--homepage=about:blank
+	--no-pings
+	--password-store=basic
+	--disable-infobars
+	--disable-breakpad
+	--disable-dev-shm-usage
+	--disable-session-crashed-bubble
+	--disable-search-engine-choice-screen
+	--user-data-dir=C:\Users\rust-\AppData\Local\Temp\uc_j0m65604
+	--disable-session-crashed-bubble
+	--disable-features=IsolateOrigins,site-per-process,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations
+	--window-position=-2400,-2400
+	--window-size=1280,720
+	--disable-gpu
+	--disable-blink-features=AutomationControlled
+	--no-sandbox
+	--lang=ru-RU,ru
+	--no-sandbox
+	--remote-debugging-host=127.0.0.1
+	--remote-debugging-port=65417
+2026-03-05 05:42:50,221 [INFO] nodriver.core.browser: enabling autodiscover targets
+2026-03-05 05:43:41,195 [INFO] nodriver.core.browser: terminated browser with pid 98700 successfully
+2026-03-05 05:43:49,264 [INFO] nodriver.core.browser: starting
+	executable :C:\Program Files\Google\Chrome\Application\chrome.exe
+
+arguments:
+--remote-allow-origins=*
+	--no-first-run
+	--no-service-autorun
+	--no-default-browser-check
+	--homepage=about:blank
+	--no-pings
+	--password-store=basic
+	--disable-infobars
+	--disable-breakpad
+	--disable-dev-shm-usage
+	--disable-session-crashed-bubble
+	--disable-search-engine-choice-screen
+	--user-data-dir=C:\Users\rust-\AppData\Local\Temp\uc_sd9qsi4a
+	--disable-session-crashed-bubble
+	--disable-features=IsolateOrigins,site-per-process,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations
+	--window-position=-2400,-2400
+	--window-size=1280,720
+	--disable-gpu
+	--disable-blink-features=AutomationControlled
+	--no-sandbox
+	--lang=ru-RU,ru
+	--no-sandbox
+	--remote-debugging-host=127.0.0.1
+	--remote-debugging-port=57421
+2026-03-05 05:43:49,550 [INFO] nodriver.core.browser: enabling autodiscover targets
+2026-03-05 05:44:10,916 [ERROR] asyncio: Task exception was never retrieved
+future: <Task finished name='Task-851' coro=<Browser.update_targets() done, defined at C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\site-packages\nodriver\core\browser.py:571> exception=ConnectionRefusedError(22, 'The remote computer refused the network connection', None, 1225, None)>
+Traceback (most recent call last):
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\site-packages\nodriver\core\browser.py", line 573, in update_targets
+    targets = await self._get_targets()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\site-packages\nodriver\core\browser.py", line 568, in _get_targets
+    info = await self.connection.send(cdp.target.get_targets(), _is_update=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\site-packages\nodriver\core\connection.py", line 514, in send
+    await self.connect()
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\site-packages\nodriver\core\connection.py", line 329, in connect
+    self._websocket = await websockets.connect(
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\site-packages\websockets\asyncio\client.py", line 544, in __await_impl__
+    self.connection = await self.create_connection()
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\site-packages\websockets\asyncio\client.py", line 470, in create_connection
+    _, connection = await loop.create_connection(factory, **kwargs)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1132, in create_connection
+    raise exceptions[0]
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1107, in create_connection
+    sock = await self._connect_sock(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1010, in _connect_sock
+    await self.sock_connect(sock, address)
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\asyncio\proactor_events.py", line 729, in sock_connect
+    return await self._proactor.connect(sock, address)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\asyncio\windows_events.py", line 803, in _poll
+    value = callback(transferred, key, ov)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\asyncio\windows_events.py", line 599, in finish_connect
+    ov.getresult()
+ConnectionRefusedError: [WinError 1225] The remote computer refused the network connection
+2026-03-05 05:44:10,965 [ERROR] asyncio: Task exception was never retrieved
+future: <Task finished name='Task-850' coro=<Browser.update_targets() done, defined at C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\site-packages\nodriver\core\browser.py:571> exception=ConnectionRefusedError(22, 'The remote computer refused the network connection', None, 1225, None)>
+Traceback (most recent call last):
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\site-packages\nodriver\core\browser.py", line 573, in update_targets
+    targets = await self._get_targets()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\site-packages\nodriver\core\browser.py", line 568, in _get_targets
+    info = await self.connection.send(cdp.target.get_targets(), _is_update=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\site-packages\nodriver\core\connection.py", line 514, in send
+    await self.connect()
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\site-packages\nodriver\core\connection.py", line 329, in connect
+    self._websocket = await websockets.connect(
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\site-packages\websockets\asyncio\client.py", line 544, in __await_impl__
+    self.connection = await self.create_connection()
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\site-packages\websockets\asyncio\client.py", line 470, in create_connection
+    _, connection = await loop.create_connection(factory, **kwargs)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1132, in create_connection
+    raise exceptions[0]
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1107, in create_connection
+    sock = await self._connect_sock(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1010, in _connect_sock
+    await self.sock_connect(sock, address)
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\asyncio\proactor_events.py", line 729, in sock_connect
+    return await self._proactor.connect(sock, address)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\asyncio\windows_events.py", line 803, in _poll
+    value = callback(transferred, key, ov)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\asyncio\windows_events.py", line 599, in finish_connect
+    ov.getresult()
+ConnectionRefusedError: [WinError 1225] The remote computer refused the network connection
+2026-03-05 05:44:10,968 [ERROR] asyncio: Task exception was never retrieved
+future: <Task finished name='Task-852' coro=<Browser.update_targets() done, defined at C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\site-packages\nodriver\core\browser.py:571> exception=ConnectionRefusedError(22, 'The remote computer refused the network connection', None, 1225, None)>
+Traceback (most recent call last):
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\site-packages\nodriver\core\browser.py", line 573, in update_targets
+    targets = await self._get_targets()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\site-packages\nodriver\core\browser.py", line 568, in _get_targets
+    info = await self.connection.send(cdp.target.get_targets(), _is_update=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\site-packages\nodriver\core\connection.py", line 514, in send
+    await self.connect()
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\site-packages\nodriver\core\connection.py", line 329, in connect
+    self._websocket = await websockets.connect(
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\site-packages\websockets\asyncio\client.py", line 544, in __await_impl__
+    self.connection = await self.create_connection()
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\site-packages\websockets\asyncio\client.py", line 470, in create_connection
+    _, connection = await loop.create_connection(factory, **kwargs)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1132, in create_connection
+    raise exceptions[0]
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1107, in create_connection
+    sock = await self._connect_sock(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1010, in _connect_sock
+    await self.sock_connect(sock, address)
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\asyncio\proactor_events.py", line 729, in sock_connect
+    return await self._proactor.connect(sock, address)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\asyncio\windows_events.py", line 803, in _poll
+    value = callback(transferred, key, ov)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\asyncio\windows_events.py", line 599, in finish_connect
+    ov.getresult()
+ConnectionRefusedError: [WinError 1225] The remote computer refused the network connection
+2026-03-05 05:44:10,970 [ERROR] asyncio: Task exception was never retrieved
+future: <Task finished name='Task-849' coro=<Browser.update_targets() done, defined at C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\site-packages\nodriver\core\browser.py:571> exception=ConnectionRefusedError(22, 'The remote computer refused the network connection', None, 1225, None)>
+Traceback (most recent call last):
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\site-packages\nodriver\core\browser.py", line 573, in update_targets
+    targets = await self._get_targets()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\site-packages\nodriver\core\browser.py", line 568, in _get_targets
+    info = await self.connection.send(cdp.target.get_targets(), _is_update=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\site-packages\nodriver\core\connection.py", line 514, in send
+    await self.connect()
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\site-packages\nodriver\core\connection.py", line 329, in connect
+    self._websocket = await websockets.connect(
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\site-packages\websockets\asyncio\client.py", line 544, in __await_impl__
+    self.connection = await self.create_connection()
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\site-packages\websockets\asyncio\client.py", line 470, in create_connection
+    _, connection = await loop.create_connection(factory, **kwargs)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1132, in create_connection
+    raise exceptions[0]
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1107, in create_connection
+    sock = await self._connect_sock(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1010, in _connect_sock
+    await self.sock_connect(sock, address)
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\asyncio\proactor_events.py", line 729, in sock_connect
+    return await self._proactor.connect(sock, address)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\asyncio\windows_events.py", line 803, in _poll
+    value = callback(transferred, key, ov)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\asyncio\windows_events.py", line 599, in finish_connect
+    ov.getresult()
+ConnectionRefusedError: [WinError 1225] The remote computer refused the network connection
+2026-03-05 05:44:16,987 [INFO] nodriver.core.browser: starting
+	executable :C:\Program Files\Google\Chrome\Application\chrome.exe
+
+arguments:
+--remote-allow-origins=*
+	--no-first-run
+	--no-service-autorun
+	--no-default-browser-check
+	--homepage=about:blank
+	--no-pings
+	--password-store=basic
+	--disable-infobars
+	--disable-breakpad
+	--disable-dev-shm-usage
+	--disable-session-crashed-bubble
+	--disable-search-engine-choice-screen
+	--user-data-dir=C:\Users\rust-\AppData\Local\Temp\uc_peeojgeo
+	--disable-session-crashed-bubble
+	--disable-features=IsolateOrigins,site-per-process,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations
+	--window-position=-2400,-2400
+	--window-size=1280,720
+	--disable-gpu
+	--disable-blink-features=AutomationControlled
+	--no-sandbox
+	--lang=ru-RU,ru
+	--no-sandbox
+	--remote-debugging-host=127.0.0.1
+	--remote-debugging-port=57026
+2026-03-05 05:44:17,276 [INFO] nodriver.core.browser: enabling autodiscover targets
+2026-03-05 05:44:56,193 [INFO] nodriver.core.browser: starting
+	executable :C:\Program Files\Google\Chrome\Application\chrome.exe
+
+arguments:
+--remote-allow-origins=*
+	--no-first-run
+	--no-service-autorun
+	--no-default-browser-check
+	--homepage=about:blank
+	--no-pings
+	--password-store=basic
+	--disable-infobars
+	--disable-breakpad
+	--disable-dev-shm-usage
+	--disable-session-crashed-bubble
+	--disable-search-engine-choice-screen
+	--user-data-dir=C:\Users\rust-\AppData\Local\Temp\uc_1bivajoc
+	--disable-session-crashed-bubble
+	--disable-features=IsolateOrigins,site-per-process,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations
+	--window-position=-2400,-2400
+	--window-size=1280,720
+	--disable-gpu
+	--disable-blink-features=AutomationControlled
+	--no-sandbox
+	--lang=ru-RU,ru
+	--no-sandbox
+	--remote-debugging-host=127.0.0.1
+	--remote-debugging-port=53419
+2026-03-05 05:44:56,461 [INFO] nodriver.core.browser: enabling autodiscover targets
+2026-03-05 05:45:46,094 [ERROR] asyncio: Task exception was never retrieved
+future: <Task finished name='Task-1114' coro=<Browser.update_targets() done, defined at C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\site-packages\nodriver\core\browser.py:571> exception=ConnectionRefusedError(22, 'The remote computer refused the network connection', None, 1225, None)>
+Traceback (most recent call last):
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\site-packages\nodriver\core\browser.py", line 573, in update_targets
+    targets = await self._get_targets()
+              ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\site-packages\nodriver\core\browser.py", line 568, in _get_targets
+    info = await self.connection.send(cdp.target.get_targets(), _is_update=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\site-packages\nodriver\core\connection.py", line 514, in send
+    await self.connect()
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\site-packages\nodriver\core\connection.py", line 329, in connect
+    self._websocket = await websockets.connect(
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\site-packages\websockets\asyncio\client.py", line 544, in __await_impl__
+    self.connection = await self.create_connection()
+                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\site-packages\websockets\asyncio\client.py", line 470, in create_connection
+    _, connection = await loop.create_connection(factory, **kwargs)
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1132, in create_connection
+    raise exceptions[0]
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1107, in create_connection
+    sock = await self._connect_sock(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\asyncio\base_events.py", line 1010, in _connect_sock
+    await self.sock_connect(sock, address)
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\asyncio\proactor_events.py", line 729, in sock_connect
+    return await self._proactor.connect(sock, address)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\asyncio\windows_events.py", line 803, in _poll
+    value = callback(transferred, key, ov)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\asyncio\windows_events.py", line 599, in finish_connect
+    ov.getresult()
+ConnectionRefusedError: [WinError 1225] The remote computer refused the network connection

@@ -35,18 +35,21 @@ When user clicks "🛒 В корзину" (Telegram or Web):
 2. POST to `basket_add.php` API (instant, ~1s)
 3. **No browser opened** — pure HTTP via raw Cookie header
 
-### User Login Flow (Redesigned 2026-03-02)
-**Web app login page** (primary) — now uses `undetected_chromedriver` instead of Playwright
+### User Login Flow (Redesigned 2026-03-03)
+**Web app login page** (primary) — uses `nodriver` (CDP-native, bypasses anti-bot)
 
-1. User enters phone in web app → backend opens headless Chrome (undetected_chromedriver)
-2. Chrome navigates to VkusVill, enters phone, triggers SMS
-3. User enters code in web app → backend submits code in Chrome
-4. Chrome navigates to cart page (binds delivery address server-side)
-5. Full cookies saved to `data/user_cookies/{tg_id}.json`
-6. PHPSESSID expires ~24h → user re-logins via web app
+1. User enters phone in web app → backend opens offscreen Chrome via `nodriver`
+2. Chrome navigates to VkusVill `/personal/`, fills phone via CDP `Input.dispatchKeyEvent`
+3. VkusVill sends SMS → user enters code in web app → backend submits code in Chrome
+4. Chrome navigates to `/personal/` + waits for `UF_USER_AUTH=Y` cookie
+5. Full cookies saved to `data/auth/{phone}/cookies.json`
+6. User sets 4-digit PIN for fast re-login (no browser needed next time)
 
-**Key fix**: Replaced Playwright with `undetected_chromedriver` — gets full cookies including address binding.
-**Current blocker**: VkusVill anti-bot kills Chrome session on login button click (BUG-021).
+**Key fixes**:
+- Switched from Playwright → undetected_chromedriver → `nodriver` (BUG-021: anti-bot killed Chrome)
+- CDP `Input.dispatchKeyEvent` for masked inputs (BUG-026: JS setter didn't update mask state)
+- `safe_evaluate()` helper for reliable JS evaluation (nodriver swallows errors as ExceptionDetails dict)
+- Rate-limit detection via `safe_evaluate` (BUG-030: rate-limit messages were silently swallowed)
 
 ### Telegram Features
 - **Notifications**: New green/red prices → message with product card
@@ -55,10 +58,10 @@ When user clicks "🛒 В корзину" (Telegram or Web):
 - **/login**: Fallback login via Telegram chat (still uses Playwright in `bot/auth.py` — may lack address binding)
 
 ### Important Architecture Rules
-1. **NEVER mix technical and user cookies** — technical (`data/cookies.json`) is for scrapers only, user cookies (`data/user_cookies/{tg_id}.json`) are per-person for cart/payment
+1. **NEVER mix technical and user cookies** — technical (`data/cookies.json`) is for scrapers only, user cookies (`data/auth/{phone}/cookies.json`) are per-person for cart/payment
 2. **Each family member has their OWN VkusVill account** (own phone, own payment method) — same store, same delivery address, but separate accounts
 3. **Up to 5 user accounts** + 1 technical account = 6 total
-4. **Playwright only in bot fallback** (`bot/auth.py`) — web app uses `undetected_chromedriver` (`backend/main.py`)
+4. **Web app login uses `nodriver`** (`backend/main.py`) — CDP-native, bypasses anti-bot. Bot fallback (`bot/auth.py`) still uses Playwright.
 
 ### Web App
 - Browse scraped products (green/red/yellow)
@@ -74,9 +77,10 @@ When user clicks "🛒 В корзину" (Telegram or Web):
 ## Tech Stack
 - **Bot**: `python-telegram-bot`
 - **Database**: SQLite (`salebot.db`) via SQLAlchemy
-- **Scrapers**: `undetected_chromedriver` + `BeautifulSoup`
+- **Price Scrapers**: `undetected_chromedriver` + `BeautifulSoup` (green/red/yellow)
+- **Category Scraper**: `aiohttp` + `asyncio` + `BeautifulSoup` (no browser needed — pure HTTP)
 - **Cart API**: `cart/vkusvill_api.py` (raw Cookie header, `requests`)
-- **Login**: `undetected_chromedriver` for both `login.py` (tech) and web app (users)
+- **Login**: `nodriver` (CDP-native) for web app login (`backend/main.py`)
 - **Backend**: FastAPI
 - **Frontend**: React (built → served by backend)
 - **Hosting**: AWS EC2
@@ -84,10 +88,12 @@ When user clicks "🛒 В корзину" (Telegram or Web):
 ## Key Decisions
 - **API for cart, browser for login**: Cart = instant HTTP. Login = browser once for SMS.
 - **Raw Cookie header**: `requests` cookie jar can't handle `__Host-PHPSESSID` correctly.
-- **undetected_chromedriver for scrapers + web login**: One browser engine. Playwright only in bot fallback.
+- **nodriver for web login**: CDP-native, bypasses VkusVill anti-bot (BUG-021). `undetected_chromedriver` for price scrapers.
+- **Category scraper uses pure HTTP** (`aiohttp`): No browser needed — just fetches HTML pages and parses with BeautifulSoup. All 28 categories in parallel.
 - **Session has delivery address**: VkusVill binds address server-side to PHPSESSID.
 - **3 services, not 5**: No separate frontend dev server. React built once.
 - **Offscreen window, not headless**: `--headless=new` crashes Chrome v145 on Win11. Use `--window-position=-2400,-2400`.
+- **`safe_evaluate()` for all nodriver JS calls**: nodriver swallows JS errors as ExceptionDetails dicts — must always use the wrapper.
 
 ## Cleanup Needed
 - `config.py`: Remove `SHARED_USER_COOKIES` (unused after shared login revert)

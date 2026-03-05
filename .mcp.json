@@ -1,14 +1,13 @@
 {
   "mcpServers": {
     "claude-flow": {
-      "command": "cmd",
+      "command": "npx",
       "args": [
-        "/c",
-        "npx",
-        "-y",
-        "@claude-flow/cli@latest",
+        "ruflo@latest",
         "mcp",
-        "start"
+        "start",
+        "-p",
+        "3055"
       ],
       "env": {
         "npm_config_update_notifier": "false",

@@ -15,6 +15,7 @@ from datetime import datetime
 import json
 import os
 import sys
+from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
 
 # Windows: asyncio.create_subprocess_exec() requires ProactorEventLoop.
 # uvicorn --reload spawns a worker subprocess with SelectorEventLoop (Windows default)
@@ -46,7 +47,10 @@ import config
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)]
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler(os.path.join(os.path.dirname(__file__), "backend_test.log"), encoding='utf-8')
+    ]
 )
 logger = logging.getLogger(__name__)
 
@@ -54,7 +58,7 @@ logger = logging.getLogger(__name__)
 try:
     from config import ADMIN_TOKEN
 except Exception:
-    ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")
+    ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "122662Rus")
 
 app = FastAPI(title="VkusVill Mini App API", version="1.0.0")
 
@@ -88,11 +92,12 @@ if os.path.exists(assets_dir):
 # ─── Scraper State ────────────────────────────────────────────────────────────
 
 scraper_status: dict = {
-    "green":  {"running": False, "last_run": None, "exit_code": None, "last_output": ""},
-    "red":    {"running": False, "last_run": None, "exit_code": None, "last_output": ""},
-    "yellow": {"running": False, "last_run": None, "exit_code": None, "last_output": ""},
-    "merge":  {"running": False, "last_run": None, "exit_code": None, "last_output": ""},
-    "login":  {"running": False, "last_run": None, "exit_code": None, "last_output": ""},
+    "green":      {"running": False, "last_run": None, "exit_code": None, "last_output": ""},
+    "red":        {"running": False, "last_run": None, "exit_code": None, "last_output": ""},
+    "yellow":     {"running": False, "last_run": None, "exit_code": None, "last_output": ""},
+    "merge":      {"running": False, "last_run": None, "exit_code": None, "last_output": ""},
+    "login":      {"running": False, "last_run": None, "exit_code": None, "last_output": ""},
+    "categories": {"running": False, "last_run": None, "exit_code": None, "last_output": ""},
 }
 
 log_buffer: deque = deque(maxlen=300)
@@ -101,7 +106,7 @@ _scraper_processes: dict = {}
 # Per-name locks — prevent two simultaneous requests launching the same scraper twice
 _run_locks: dict = {
     name: threading.Lock()
-    for name in ["green", "red", "yellow", "merge", "login"]
+    for name in ["green", "red", "yellow", "merge", "login", "categories"]
 }
 
 # Per-user login sessions: {user_id: {"driver": uc.Chrome, "created_at": float}}
@@ -228,6 +233,26 @@ def get_products():
         return data
     except json.JSONDecodeError:
         raise HTTPException(status_code=500, detail="Invalid JSON data")
+
+
+@app.get("/api/stream")
+async def stream_updates():
+    """SSE endpoint for live UI updates. Broadcasts 'update' when proposals.json changes."""
+    import asyncio
+    async def event_generator():
+        last_mtime = 0
+        if os.path.exists(PROPOSALS_PATH):
+            last_mtime = os.path.getmtime(PROPOSALS_PATH)
+            
+        while True:
+            await asyncio.sleep(2)  # Check every 2 seconds
+            if os.path.exists(PROPOSALS_PATH):
+                current_mtime = os.path.getmtime(PROPOSALS_PATH)
+                if current_mtime > last_mtime:
+                    last_mtime = current_mtime
+                    yield "event: update\ndata: {}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @app.get("/api/favorites/{user_id}")
@@ -441,6 +466,15 @@ async def auth_login(req: AuthPhoneRequest):
     import nodriver as uc
     import asyncio
     import time as _time
+    import sys
+
+    # Windows subprocess fix: Uvicorn worker threads might use SelectorEventLoop 
+    # which crashes nodriver when it tries to spawn Chrome.
+    if sys.platform == 'win32':
+        try:
+            asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+        except Exception:
+            pass
 
     # Patch nodriver Config to include LocalNetworkAccessChecks in --disable-features
     # (nodriver builds its own --disable-features, overriding any browser_args)
@@ -459,8 +493,10 @@ async def auth_login(req: AuthPhoneRequest):
     if not phone_raw:
         raise HTTPException(status_code=400, detail="Некорректный формат телефона. Примеры: 9166076650, +79166076650, 89166076650")
 
-    # Check if this phone already has valid cookies + PIN (skip browser!)
-    if not req.force_sms and _phone_has_valid_cookies(phone_raw):
+    # Check if this phone already has valid cookies (or .bak from logout) + PIN (skip browser!)
+    _cookies_path = _phone_cookies_path(phone_raw)
+    _has_cookies_or_bak = os.path.exists(_cookies_path) or os.path.exists(_cookies_path + ".bak")
+    if not req.force_sms and _has_cookies_or_bak:
         pin_data = _load_pin_data(phone_raw)
         if pin_data and pin_data.get("pin_hash"):
             # Save user→phone mapping
@@ -484,6 +520,10 @@ async def auth_login(req: AuthPhoneRequest):
                 '--window-position=-2400,-2400',
                 '--window-size=1280,720',
                 '--disable-gpu',
+                '--disable-blink-features=AutomationControlled',
+                '--disable-infobars',
+                '--no-sandbox',
+                '--lang=ru-RU,ru',
             ],
             sandbox=False,
         )
@@ -496,62 +536,57 @@ async def auth_login(req: AuthPhoneRequest):
             await tab.save_screenshot(os.path.join(DATA_DIR, f"login_{user_id}_1_init.png"))
         except: pass
 
-        # BUG-026: Use CDP Input.dispatchKeyEvent for real keyboard simulation
-        # The masked input only updates its internal state from real keyboard events
-        
-        # 1. Focus the phone input via JS
-        await tab.evaluate("""
-            (function() {
-                var input = document.querySelector('input.js-user-form-checksms-api-phone1') ||
-                            document.querySelector('input[name="USER_PHONE"]');
-                if (input) { input.focus(); input.click(); }
-            })()
-        """)
-        await asyncio.sleep(0.5)
+        # BUG-026: Bypass the strict phone mask physically
+        # React aggressive masks often block JS focus or `.value` setters.
 
-        # 2. Type each digit using CDP Input.dispatchKeyEvent (real keyboard simulation)
-        for digit in phone_raw:
-            # keyDown
-            await tab.send(uc.cdp.input_.dispatch_key_event(
-                type_='keyDown',
-                key=digit,
-                text=digit,
-                code=f'Digit{digit}',
-                windows_virtual_key_code=ord(digit),
-                native_virtual_key_code=ord(digit),
-            ))
-            # keyUp
-            await tab.send(uc.cdp.input_.dispatch_key_event(
-                type_='keyUp',
-                key=digit,
-                code=f'Digit{digit}',
-                windows_virtual_key_code=ord(digit),
-                native_virtual_key_code=ord(digit),
-            ))
-            await asyncio.sleep(0.12)  # Give mask time to process each keystroke
+        # 1. Get coordinates of the input box and click it to focus
+        input_box = await tab.select('input.js-user-form-checksms-api-phone1', timeout=2)
+        if not input_box:
+            input_box = await tab.select('input[name="USER_PHONE"]', timeout=2)
+            
+        if input_box:
+            # Physically click the center of the element to trigger React focus events
+            await input_box.mouse_click()
+            await asyncio.sleep(0.5)
 
-        await asyncio.sleep(1.5)  # Let mask process the phone number
-        
+            # 2. Type cleanly using raw CDP to guarantee realistic typing speed
+            for digit in phone_raw:
+                await tab.send(uc.cdp.input_.dispatch_key_event(
+                    type_='keyDown',
+                    key=digit,
+                    text=digit,
+                    code=f'Digit{digit}',
+                    windows_virtual_key_code=ord(digit),
+                    native_virtual_key_code=ord(digit),
+                ))
+                await asyncio.sleep(0.05)
+                await tab.send(uc.cdp.input_.dispatch_key_event(
+                    type_='keyUp',
+                    key=digit,
+                    code=f'Digit{digit}',
+                    windows_virtual_key_code=ord(digit),
+                    native_virtual_key_code=ord(digit),
+                ))
+                await asyncio.sleep(0.2)  # Give mask time to format the number
+            await asyncio.sleep(1.0)
+        else:
+            logger.error("Could not find phone input box on VkusVill login page")
+
         # DEBUG: After phone entry
         try:
             await tab.save_screenshot(os.path.join(DATA_DIR, f"login_{user_id}_2_phone.png"))
         except: pass
 
-        # 3. Force-enable the button (mask's onChange doesn't fire from CDP events)
-        #    then click it via JS (safe since we enabled it)
-        await tab.evaluate("""
-            (function() {
-                var btn = document.querySelector('button.js-user-form-submit-btn');
-                if (!btn) return "no_btn";
-                // Force-enable the button 
-                btn.disabled = false;
-                btn.classList.remove('disabled');
-                btn.removeAttribute('disabled');
-                // Click it
-                btn.click();
-                return "clicked";
-            })()
-        """)
+        # 3. Locate the submit button and click it naturally
+        # If the mask accepted the input, this button should be enabled.
+        submit_btn = await tab.select('button.js-user-form-submit-btn', timeout=2)
+        if submit_btn:
+            # Force enable just in case React is lagging
+            await tab.evaluate("document.querySelector('button.js-user-form-submit-btn').disabled = false;")
+            await tab.evaluate("document.querySelector('button.js-user-form-submit-btn').classList.remove('disabled');")
+            await submit_btn.click()
+        else:
+            logger.error("Could not find submit button on VkusVill login page")
 
         await asyncio.sleep(5)  # Wait for SMS trigger
         
@@ -560,30 +595,60 @@ async def auth_login(req: AuthPhoneRequest):
             await tab.save_screenshot(os.path.join(DATA_DIR, f"login_{user_id}_3_after_click.png"))
         except: pass
 
+        # Immediate rate-limit check — the error dialog appears right after click
+        # (don't wait 30s to tell the user their number is blocked)
+        # Use safe_evaluate to handle ExceptionDetails from nodriver
+        try:
+            page_text = await safe_evaluate(tab, "document.body.innerText")
+            if isinstance(page_text, str):
+                if 'заблокирован' in page_text or 'суточный лимит' in page_text:
+                    try:
+                        await tab.save_screenshot(os.path.join(DATA_DIR, f"login_{user_id}_4_rate_limit.png"))
+                    except: pass
+                    try: browser.stop()
+                    except Exception: pass
+                    raise HTTPException(status_code=429, detail="Ваш номер заблокирован для отправки SMS. Исчерпан суточный лимит (4 запроса). Попробуйте завтра.")
+                if 'Превышено количество попыток' in page_text:
+                    try:
+                        await tab.save_screenshot(os.path.join(DATA_DIR, f"login_{user_id}_4_rate_limit.png"))
+                    except: pass
+                    try: browser.stop()
+                    except Exception: pass
+                    raise HTTPException(status_code=429, detail="Превышено количество попыток. Запросите новую СМС через 3 минуты.")
+        except HTTPException:
+            raise
+        except Exception:
+            pass  # If early check fails, continue to polling loop
+
         # Wait up to 30s for ACTUAL page transition to SMS code input
         # (NOT just checking input[name="SMS"] existence — it's a false positive,
         #  it exists on page load. Check for VISIBLE SMS input or "Введите код" text)
         sms_found = False
         for _ in range(30):
             await asyncio.sleep(1)
-            result = await tab.evaluate("""
-                (function() {
-                    var sms = document.querySelector('input[name="SMS"]');
-                    var smsVisible = sms ? (sms.offsetParent !== null && 
-                                            sms.getBoundingClientRect().height > 0) : false;
-                    var codeText = document.body.innerText.includes('Введите код');
-                    // Check for rate limit error popup
-                    var rateLimit = document.body.innerText.includes('Превышено количество попыток');
-                    var dailyBlock = document.body.innerText.includes('заблокирован');
-                    if (rateLimit || dailyBlock) return 'RATE_LIMIT:' + (dailyBlock ? 'DAILY' : 'SESSION');
-                    return smsVisible || codeText ? 'OK' : false;
-                })()
-            """)
+            try:
+                result = await safe_evaluate(tab, """
+                    (function() {
+                        var sms = document.querySelector('input[name="SMS"]');
+                        var smsVisible = sms ? (sms.offsetParent !== null &&
+                                                sms.getBoundingClientRect().height > 0) : false;
+                        var codeText = document.body.innerText.includes('Введите код');
+                        // Check for rate limit error popup
+                        var rateLimit = document.body.innerText.includes('Превышено количество попыток');
+                        var dailyBlock = document.body.innerText.includes('заблокирован') ||
+                                         document.body.innerText.includes('суточный лимит');
+                        if (rateLimit || dailyBlock) return 'RATE_LIMIT:' + (dailyBlock ? 'DAILY' : 'SESSION');
+                        return smsVisible || codeText ? 'OK' : false;
+                    })()
+                """)
+            except Exception:
+                result = None
             if isinstance(result, str) and result.startswith('RATE_LIMIT'):
                 try:
                     await tab.save_screenshot(os.path.join(DATA_DIR, f"login_{user_id}_4_rate_limit.png"))
                 except: pass
-                browser.stop()
+                try: browser.stop()
+                except Exception: pass
                 if 'DAILY' in result:
                     raise HTTPException(status_code=429, detail="Ваш номер заблокирован для отправки SMS. Исчерпан суточный лимит (4 запроса). Попробуйте завтра.")
                 raise HTTPException(status_code=429, detail="Превышено количество попыток. Запросите новую СМС через 3 минуты.")
@@ -596,7 +661,8 @@ async def auth_login(req: AuthPhoneRequest):
             try:
                 await tab.save_screenshot(os.path.join(DATA_DIR, f"login_{user_id}_4_no_sms.png"))
             except: pass
-            browser.stop()
+            try: browser.stop()
+            except Exception: pass
             raise HTTPException(status_code=500, detail="Не удалось отправить SMS. Попробуйте позже.")
 
         # Take success screenshot showing SMS code input screen
@@ -806,8 +872,18 @@ def auth_logout(req: AuthLogoutRequest):
     phone = _get_phone_for_user(req.user_id)
     if phone:
         cp = _phone_cookies_path(phone)
+        bak = cp + ".bak"
         if os.path.exists(cp):
-            os.rename(cp, cp + ".bak")
+            if os.path.exists(bak):
+                try:
+                    os.remove(bak)
+                except Exception:
+                    pass
+            try:
+                os.rename(cp, bak)
+            except Exception as e:
+                import logging
+                logging.getLogger(__name__).error(f"Logout rename error: {e}")
     return {"success": True, "message": "Вы вышли из аккаунта"}
 
 
@@ -862,36 +938,38 @@ def cart_items_endpoint(user_id: str):
     try:
         cart = VkusVillCart(cookies_path=cookies_path)
         try:
-            result = cart.get_cart()
+            data = cart.get_cart()
         finally:
             cart.close()
 
-        if not result.get("success"):
-            raise HTTPException(status_code=502, detail=result.get("error", "Cart fetch failed"))
+        if not data.get("success"):
+            raise HTTPException(status_code=502, detail=data.get("error", "Cart fetch failed"))
 
-        # Parse basket items from raw response
-        raw = result.get("raw", {})
-        basket_items = []
-        basket = raw.get("basket", {})
-        if isinstance(basket, dict):
-            for key, item in basket.items():
-                if isinstance(item, dict) and item.get("NAME"):
-                    basket_items.append({
-                        "id": item.get("PRODUCT_ID", key),
-                        "name": item.get("NAME", ""),
-                        "price": item.get("PRICE", 0),
-                        "quantity": item.get("Q", 1),
-                        "can_buy": item.get("CAN_BUY") == "Y" or item.get("CAN_BUY") is True,
-                        "max_q": item.get("MAX_Q", 0),
-                        "image": item.get("PICTURE", ""),
-                    })
-
-        totals = raw.get("totals", {})
+        # VkusVill sometimes returns {} for empty basket, or a dict of items instead of list
+        raw_items = data.get('items', [])
+        if isinstance(raw_items, dict):
+            items_list = list(raw_items.values())
+        elif isinstance(raw_items, list):
+            items_list = raw_items
+        else:
+            items_list = []
+            
         return {
-            "success": True,
-            "items": basket_items,
-            "items_count": totals.get("Q_ITEMS", len(basket_items)),
-            "total_price": totals.get("PRICE_FINAL", 0),
+            "items_count": data.get("items_count", 0),
+            "total_price": data.get("total_price", 0),
+            "items": [
+                {
+                    "id": item.get("PRODUCT_ID") if isinstance(item, dict) else None,
+                    "name": item.get("NAME") if isinstance(item, dict) else "",
+                    "price": float(item.get("PRICE", 0)) if isinstance(item, dict) else 0,
+                    "old_price": float(item.get("BASE_PRICE", 0)) if isinstance(item, dict) else 0,
+                    "quantity": int(item.get("Q", 0)) if isinstance(item, dict) else 0,
+                    "image": item.get("DETAIL_PICTURE_SRC") if isinstance(item, dict) else "",
+                    "can_buy": str(item.get("CAN_BUY", "")).upper() in ['Y', 'TRUE', '1'] if isinstance(item, dict) else False,
+                    "max_q": int(item.get("MAX_Q", 0)) if isinstance(item, dict) and item.get("MAX_Q") else 0,
+                }
+                for item in items_list if isinstance(item, dict)
+            ]
         }
     except HTTPException:
         raise
@@ -980,11 +1058,12 @@ def admin_run_scraper(
     _require_token(token)
 
     script_map = {
-        "green":  os.path.join(BASE_PROJECT_DIR, "scrape_green.py"),
-        "red":    os.path.join(BASE_PROJECT_DIR, "scrape_red.py"),
-        "yellow": os.path.join(BASE_PROJECT_DIR, "scrape_yellow.py"),
-        "merge":  os.path.join(BASE_PROJECT_DIR, "scrape_merge.py"),
-        "login":  os.path.join(BASE_PROJECT_DIR, "login.py"),
+        "green":      os.path.join(BASE_PROJECT_DIR, "scrape_green.py"),
+        "red":        os.path.join(BASE_PROJECT_DIR, "scrape_red.py"),
+        "yellow":     os.path.join(BASE_PROJECT_DIR, "scrape_yellow.py"),
+        "merge":      os.path.join(BASE_PROJECT_DIR, "scrape_merge.py"),
+        "login":      os.path.join(BASE_PROJECT_DIR, "login.py"),
+        "categories": os.path.join(BASE_PROJECT_DIR, "scrape_categories.py"),
     }
 
     if scraper == "all":
@@ -998,8 +1077,77 @@ def admin_run_scraper(
             detail=f"Unknown scraper '{scraper}'. Use: green, red, yellow, merge, login, all",
         )
 
-    background_tasks.add_task(_run_script, scraper, script_map[scraper])
-    return {"started": scraper, "message": f"{scraper} scraper started in background"}
+    def worker_with_merge():
+        # First run the requested script
+        _run_script(scraper, script_map[scraper])
+        # After it finishes, run the merge script so proposals.json updates
+        _run_script("merge", script_map["merge"])
+
+    background_tasks.add_task(worker_with_merge)
+    return {"started": scraper, "message": f"{scraper} scraper started in background (auto-merge on completion)"}
+
+
+@app.post("/api/admin/run/categories")
+def admin_run_categories():
+    """Run category scraper + auto-merge in sequence (background).
+    Populates category_db.json then rebuilds proposals.json with new categories.
+    No auth required — anyone can trigger categorization.
+    """
+    lock = _run_locks["categories"]
+    with lock:
+        if scraper_status["categories"]["running"]:
+            return {"started": False, "message": "Categories scraper already running"}
+        scraper_status["categories"]["running"] = True
+        scraper_status["categories"]["last_run"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        scraper_status["categories"]["last_output"] = ""
+
+    categories_script = os.path.join(BASE_PROJECT_DIR, "scrape_categories.py")
+    merge_script = os.path.join(BASE_PROJECT_DIR, "scrape_merge.py")
+
+    def worker():
+        lines: list = []
+        try:
+            # Phase 1: build category_db.json
+            proc = subprocess.Popen(
+                [sys.executable, categories_script],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                cwd=BASE_PROJECT_DIR, text=True, encoding="utf-8", errors="replace",
+            )
+            for line in proc.stdout:
+                line = line.rstrip()
+                lines.append(line)
+                log_buffer.append(f"[categories] {line}")
+            proc.wait()
+            scraper_status["categories"]["exit_code"] = proc.returncode
+            log_buffer.append(f"[categories] Finished (exit {proc.returncode}), auto-merging...")
+
+            # Phase 2: re-merge so proposals.json picks up new categories
+            proc2 = subprocess.Popen(
+                [sys.executable, merge_script],
+                stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                cwd=BASE_PROJECT_DIR, text=True, encoding="utf-8", errors="replace",
+            )
+            for line in proc2.stdout:
+                line = line.rstrip()
+                lines.append(line)
+                log_buffer.append(f"[categories/merge] {line}")
+            proc2.wait()
+            log_buffer.append(f"[categories] Auto-merge done (exit {proc2.returncode})")
+        except Exception as exc:
+            log_buffer.append(f"[categories] Exception: {exc}")
+            scraper_status["categories"]["exit_code"] = -1
+        finally:
+            scraper_status["categories"]["running"] = False
+            scraper_status["categories"]["last_output"] = "\n".join(lines[-40:])
+
+    threading.Thread(target=worker, daemon=True).start()
+    return {"started": "categories", "message": "Category scraper started (auto-merge on completion)"}
+
+
+@app.get("/api/admin/run/categories/status")
+def admin_categories_status():
+    """Return current status of the categories scraper."""
+    return scraper_status["categories"]
 
 
 @app.get("/admin/logs")

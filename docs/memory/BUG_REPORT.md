@@ -93,15 +93,80 @@
 
 ---
 
+## 🟠 New Bugs Found (2026-03-04 — UI/UX Sweep)
+
+### Category 1 — Logic Errors
+
+**[LOGIC] Theme Toggle Desync (Critical)**
+- **File**: [App.jsx](file:///e:/Projects/saleapp/miniapp/src/App.jsx) (line 628)
+- **Problem**: Clicking the theme toggle changes the icon (☀️/🌙) but **leaves the body background and CSS variables in Dark Mode**. The `data-theme` attribute on `<html>` is updated, but many Tailwind/CSS rules seem to be stuck or missing light-mode variations for the root container.
+- **Impact**: Application is unusable in Light Mode.
+
+**[LOGIC] Cart Add API Validation (422/400)**
+- **File**: [backend/main.py](file:///e:/Projects/saleapp/backend/main.py)
+- **Problem**: Some "Add to Cart" clicks trigger `422 Unprocessable Entity` or `400 Bad Request`. Likely due to `product_id` type mismatch (string vs int) or invalid price types for specific products when guest users try to interact.
+- **Impact**: Items cannot be added to cart.
+
+### Category 2 — Null / Undefined / Empty
+
+**[NULL] Favorite Toggle Rollback Failure**
+- **File**: [App.jsx](file:///e:/Projects/saleapp/miniapp/src/App.jsx) (line 327)
+- **Problem**: If the favorites API fails, the rollback logic may cause a double-trigger or UI flicker because the functional state update `setFavorites(prev => ...)` doesn't perfectly match the original `wasInFavorites` snapshotted outside.
+
 ### Category 6 — UI/UX & Aesthetics
 
-**[UX] Low Contrast in Light Mode**
-- **File**: [index.css](file:///e:/Projects/saleapp/miniapp/src/index.css) (line 137)
-- **Problem**: Filter chips ("Зелёные", etc.) are unreadable in Light Mode.
+**[UX] Missing Horizontal Scroll Indicators (Desktop)**
+- **File**: [index.css](file:///e:/Projects/saleapp/miniapp/src/index.css) (line 197)
+- **Problem**: Category menu uses `scrollbar-hide`. On desktop, there is no visual hint (fading edge or arrows) that more categories exist to the right.
+- **Impact**: Poor discoverability for non-touch users.
 
-**[UX] Hidden Category Navigation**
-- **File**: [App.jsx](file:///e:/Projects/saleapp/miniapp/src/App.jsx) (line 160)
-- **Problem**: No visual indication of more items in horizontal scroll on desktop.
+**[UX] Low Contrast in Button states (Light Mode)**
+- **File**: [index.css](file:///e:/Projects/saleapp/miniapp/src/index.css) (line 192)
+- **Problem**: In Light Mode (if it worked), "Зелёные" and "Красные" active chips still use white text. White text on light-green/red background fails contrast accessibility.
+- **Severity**: Medium.
+
+**[UX] Out-of-Stock Increment Logic**
+- **File**: [CartPanel.jsx](file:///e:/Projects/saleapp/miniapp/src/CartPanel.jsx)
+- **Problem**: Items marked as ❌ (OOS) are visual-only; if the `can_buy` flag from API is `true` despite the label, the UI allows clicking `+`, leading to confusion when the checkout eventually fails.
+
+---
+
+## ✅ Fixed Bugs (2026-03-05 — UI/UX Polish)
+
+### BUG-034: Two PIN Inputs Displayed Simultaneously
+**Status:** Fixed ✅ | **Severity:** Medium | **Date:** 2026-03-05
+**File:** `miniapp/src/Login.jsx`
+**Symptom:** During PIN setup, the UI showed both "Enter PIN" and "Confirm PIN" input boxes stacked on top of each other, cluttering the mobile view.
+**Fix:** Refactored the PIN setup step to use sequential rendering (`setPinStep` state) and Framer Motion slide animations (like iOS), showing only one 4-digit input at a time. Verified manually in Chrome.
+
+### BUG-033: Silent API Failures on "Add to Cart"
+**Status:** Fixed ✅ | **Severity:** High | **Date:** 2026-03-05
+**File:** `miniapp/src/App.jsx`
+**Symptom:** If a product was out of stock or API threw a 400 error, the UI button silently flashed a red 'X' for 2 seconds and reverted to normal. Users had no idea *why* the click failed.
+**Fix:** Extracted `data.detail` from the backend API error response and implemented a globally visible Toast notification (`toastMessage`) at the bottom of the screen to clearly explain the failure (e.g. "Товар распродан"). Verified manually in Chrome.
+
+### BUG-032: Hardcoded Admin Token Default
+**Status:** Fixed ✅ | **Severity:** Low | **Date:** 2026-03-05
+**Files:** `config.py`, `backend/main.py`, `backend/admin.html`
+**Symptom:** The default missing-environment-variable fallback for the admin panel token was `""` in some places and `vv-admin-2026` in HTML placeholder.
+**Fix:** Standardized the default fallback and placeholder to `122662Rus` as requested by the owner.
+
+---
+
+## ✅ Fixed Bugs (2026-03-04 — Category Scraper & Login Fixes)
+
+### BUG-031: PIN Shortcut Bypassed After Logout (.bak Cookie Check)
+**Status:** Fixed ✅ | **Severity:** Medium | **Date:** 2026-03-04
+**File:** `backend/main.py` (PIN re-login path)
+**Symptom:** After logout, user was forced into full SMS flow even though cookies existed as `.bak`. PIN shortcut checked `os.path.exists(cookies_path)` which was `False` after rename.
+**Fix:** PIN shortcut now also checks for `.bak` cookies and restores them if PIN is correct.
+
+### BUG-030: Rate-Limit Detection Silently Fails (safe_evaluate Missing)
+**Status:** Fixed ✅ | **Severity:** High | **Date:** 2026-03-04
+**File:** `backend/main.py` (line ~569, immediate rate-limit check after SMS button click)
+**Symptom:** When VkusVill showed "Номер заблокирован" or "Превышено количество попыток", user got generic "Ошибка при попытке входа" instead of specific 429 rate-limit message. No `rate_limit` screenshot was ever created.
+**Root Cause:** Immediate rate-limit check used raw `tab.evaluate("document.body.innerText")`. nodriver returns `ExceptionDetails` dict on JS errors. `isinstance(page_text, str)` was `False` → rate-limit keywords never checked → silently skipped → 30s timeout → generic error.
+**Fix:** Changed `tab.evaluate()` → `safe_evaluate(tab, "document.body.innerText")`. The `safe_evaluate` helper (lines 412-422) properly detects ExceptionDetails and raises Python exceptions.
 
 ---
 
