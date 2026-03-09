@@ -24,7 +24,15 @@ The system uses a multi-process architecture to maximize speed. Instead of one l
 The scraper doesn't just download a list of items; it acts like a real person using a web browser. This is necessary because VkusVill displays different prices based on whether you are logged in and what is in your cart.
 
 ### The "Browser"
-Each parallel scraper uses a real Chrome browser controlled by software (`undetected_chromedriver`). They use **cookie-based authentication** — session cookies are loaded from `data/cookies.json` on each run. No persistent Chrome profiles are used (to avoid profile corruption from force-kills).
+Each parallel scraper uses a real Chrome browser controlled by **`nodriver`** (CDP-native). They use **cookie-based authentication** and, as of 2026-03-08, the green scraper can also reuse a persistent technical Chrome profile from [data/tech_profile](E:/Projects/saleapp/data/tech_profile). If no persistent technical profile exists, it falls back to a temp profile created via `tempfile.mkdtemp()` and cleaned up in `finally`. Chrome process must still be killed via `proc.kill()` after `browser.stop()`.
+
+### Green Scraper Profile-State Discovery (Added 2026-03-08)
+- The green cart block on VkusVill is not reliably reproducible from exported cookies alone.
+- With fresh [data/cookies.json](E:/Projects/saleapp/data/cookies.json) and even a copied [data/tech_profile](E:/Projects/saleapp/data/tech_profile), the scraper browser can still see only `.ProductCard._lazyView` placeholders inside `#js-Delivery__Order-green-state-not-empty`.
+- The page's lazy initializer (`initLazyGreenLabelsSlider`) posts to `/ajax/index_page_lazy_load.php` with `code=cart_green_labels` and `version=LIKE_MP`, but that request returns empty JSON (`count_prods_total=0`) even in the real browser session.
+- Therefore the live green items currently observed in MCP are coming from browser/profile state present in the real Chrome session, not from a simple replayable lazy-load endpoint.
+
+`undetected_chromedriver` is fully removed as of 2026-03-05 (BUG-060).
 
 ---
 
@@ -49,6 +57,8 @@ The merge step checks each source file's modification time. If any file is older
 
 ### The `scrape_success` Flag
 Each scraper tracks whether it completed successfully. If it crashes (e.g. Chrome window closes), it sets `scrape_success = False` and the old data file is preserved for staleness detection. If it succeeds but finds 0 items (legitimate out-of-stock), it sets `scrape_success = True` and saves the empty list, clearing stale data.
+
+As of 2026-03-08, a green scrape that completes with placeholder-derived or otherwise obviously bogus data can still mark success. The current investigation showed a run saving 4 wrong green products to [green_products.json](E:/Projects/saleapp/data/green_products.json) while [proposals.json](E:/Projects/saleapp/data/proposals.json) still held 1 manually synced green item. Do not treat the current green pipeline as verified until the profile-state mismatch is resolved.
 
 ### Public Access
 To make the data available to the MiniApp (which runs in a user's web browser), the system copies the latest results to `miniapp/public/data.json`. This makes loading the data nearly instantaneous for the end user.
@@ -122,6 +132,26 @@ Because the MiniApp reads from a static `data.json` file, it doesn't need to wai
 2. Backend loads `data/auth/{phone}/cookies.json`
 3. Pure HTTP POST to `basket_add.php` with raw Cookie header (~1s)
 4. No browser opened — instant API call
+
+### Cart View Flow (`GET /api/cart/items/{user_id}`)
+1. Load cookies via phone mapping
+2. POST to `basket_recalc.php` (read-only — does NOT add items) with `{COUPON:'', BONUS:''}`
+3. Parse `basket` dict — keys are `{PRODUCT_ID}_{INDEX}` format (e.g. `731_0`)
+4. Return formatted items list to frontend CartPanel
+
+### Cart Remove Flow (`POST /api/cart/remove`)
+1. Load cookies via phone mapping
+2. Call `VkusVillCart.remove(product_id)` which:
+   a. Calls `get_cart()` to find the basket key for `product_id`
+   b. POST to `basket_update.php` with `{id: basket_key, type: 'del', q: 0, q_old: prev_qty}`
+3. `basket_remove.php` does NOT exist (returns 404) — do NOT use it
+
+### Cart Clear Flow (`POST /api/cart/clear`)
+1. Load cookies via phone mapping
+2. Call `VkusVillCart.clear_all()` which:
+   a. Calls `get_cart()` once to get all basket keys
+   b. For each basket key: POST to `basket_update.php` with `type=del`
+3. Returns `{success: true, removed: N}`
 
 ### Auth Status Check
 - `GET /api/auth/status/{user_id}` checks phone-mapped cookie file existence

@@ -6,14 +6,13 @@
 
 ### Category 1 — Logic Errors
 
-**[LOGIC] Inconsistent Discount Synthesis Formulas**
-- **Files**: [scrape_green.py](file:///e:/Projects/saleapp/scrape_green.py) (line 730) vs [utils.py](file:///e:/Projects/saleapp/utils.py) (line 269)
-- **Problem**: `scrape_green.py` uses `p * 1.67` (~40% off) while `utils.py` uses `p / 0.6` (~40% off). These mathematical variations produce different rounding results (e.g., for 100 руб, one gives 167, the other 166), causing flip-flopping prices in the UI.
+**[LOGIC] Inconsistent Discount Synthesis Formulas** — **Fixed ✅ 2026-03-05**
+- **Files**: `scrape_green.py` (line 745) + `utils.py` (line 269)
+- **Fix**: Standardized both to `int(round(curr / 0.6))` — deterministic 167 for 100₽ input.
 
-**[LOGIC] Unstable Product IDs (Hash Salt)**
-- **File**: [scraper/vkusvill.py](file:///e:/Projects/saleapp/scraper/vkusvill.py) (line 589)
-- **Problem**: Uses `f"unknown_{hash(p['name'])}"` for fallback IDs. Python's `hash()` is salted per-process. Every time the scraper restarts, product IDs change.
-- **Impact**: Broken "favorites" and "new product" notifications for any item without a clean URL-based ID.
+**[LOGIC] Unstable Product IDs (Hash Salt)** — **Fixed ✅ 2026-03-05**
+- **File**: `scraper/vkusvill.py` (line 589)
+- **Fix**: Replaced `hash()` with `hashlib.md5(name.encode()).hexdigest()[:12]` — deterministic across restarts.
 
 **[LOGIC] Silent Pagination Limits**
 - **Files**: [scrape_green.py](file:///e:/Projects/saleapp/scrape_green.py) (line 441) and [scraper/vkusvill.py](file:///e:/Projects/saleapp/scraper/vkusvill.py) (line 458)
@@ -23,9 +22,22 @@
 - **File**: [scrape_green.py](file:///e:/Projects/saleapp/scrape_green.py) (line 336)
 - **Problem**: Specifically checks for "Зелёные" (with `ё`). If site uses "Зеленые", scraper returns 0 items silently.
 
-**[LOGIC] Missing `/api/auth/logout` Backend Endpoint**
-- **File**: [backend/main.py](file:///e:/Projects/saleapp/backend/main.py)
-- **Problem**: Frontend committed a logout button that POSTs to this endpoint, but it does not exist in the backend (returns 404).
+**[LOGIC] Session Cookies Dropped due to Timestamp 0 (BUG-065)**
+- **File**: [scrape_green.py](file:///e:/Projects/saleapp/scrape_green.py) (`_load_cookies`)
+- **Problem**: `__Host-PHPSESSID` with `expiry=0` loaded via CDP causes Chrome to evaluate timestamp 1970 and drop the cookie, resulting in an anonymous session and 0 green items. Documented in `livedatamismatch.md` but unpatched.
+
+**[LOGIC] Green Scraper Profile-State Mismatch After Fresh Tech Login (2026-03-08)**
+- **Files**: [scrape_green.py](file:///e:/Projects/saleapp/scrape_green.py), [backend/main.py](file:///e:/Projects/saleapp/backend/main.py)
+- **Problem**: Even after a fresh admin tech-login rewrites `data/cookies.json` and copies a persistent `data/tech_profile`, the automatic green scraper still does not reproduce the live browser's cart green block. In the scraper browser, `#js-Delivery__Order-green-state-not-empty` often contains only `.ProductCard._lazyView` placeholders. The page's own lazy request (`POST /ajax/index_page_lazy_load.php` with `code=cart_green_labels`, `version=LIKE_MP`) returns `count_prods_total=0`, while MCP/live Chrome still shows real green items.
+- **Impact**: `scrape_green.py -> scrape_merge.py` is not trustworthy. A fresh scrape can save bogus green products or use a wrong modal path, and the app may only match live after manual intervention.
+
+**[LOGIC] greenMissing flag logic flaw (BUG-066)**
+- **File**: [backend/scrape_merge.py](file:///e:/Projects/saleapp/backend/scrape_merge.py) (line 91)
+- **Problem**: The `greenMissing` flag only checks `not os.path.exists(...)`. If the file exists but has an empty products list due to scraper failure or empty cart, `greenMissing` remains false. Documented in `livedatamismatch.md`.
+
+**[LOGIC] Missing `/api/auth/logout` Backend Endpoint** — **False Positive ✅ 2026-03-05**
+- **File**: `backend/main.py` line 928
+- **Verdict**: Endpoint exists as `@app.post("/api/auth/logout")`. This was added during Sprint 1 but the bug report was never updated.
 
 ---
 
@@ -65,17 +77,21 @@
 - **File**: [backend/main.py](file:///e:/Projects/saleapp/backend/main.py) (line 635)
 - **Problem**: `except Exception` caught `HTTPException`, returning 500 instead of the actual 400 error from the VkusVill API. (Regression risk: verify all endpoints).
 
-**[ERROR] Missing Proxy in Vite Config**
-- **File**: [miniapp/vite.config.js](file:///e:/Projects/saleapp/miniapp/vite.config.js) (line 9)
-- **Problem**: `/admin` not proxied; clicking Admin button in dev results in 404.
+**[ERROR] Missing Proxy in Vite Config** — **False Positive ✅ 2026-03-05**
+- **File**: `miniapp/vite.config.js`
+- **Verdict**: `/admin` proxy exists in `vite.config.js`. The bug entry was outdated.
 
 ---
 
 ### Category 5 — Security & Input Validation
 
-**[SECURITY] SQL Injection Vulnerability**
-- **File**: [database/db.py](file:///e:/Projects/saleapp/database/db.py) (line 260)
-- **Problem**: Use of `f"IN ({placeholders})"` where placeholders are built via string repetition of user-supplied `product_ids` length. While IDs are currently from internal scrapers, if `proposals.json` is user-tampered, it's a vector for injection.
+**[SECURITY] Global Playwright scraper mixes user sessions in bot**
+- **File**: `bot/handlers.py` and `scraper/vkusvill.py`
+- **Problem**: For the `/sales` and `/check` commands, the bot invokes `get_scraper()`, which uses a global singleton `PlaywrightScraper` initialized with the master `browser_state.json`. Any user of the bot executes queries against the admin's session rather than their own.
+
+**[SECURITY] SQL Injection Vulnerability** — **False Positive ✅ 2026-03-05**
+- **File**: `database/db.py` (line 260)
+- **Verdict**: `placeholders` = `?,?,?` (question marks), not user data. Values passed as parameterized tuple. No actual injection vector.
 
 **[SECURITY] Missing Admin Token Validation on Run**
 - **File**: [backend/main.py](file:///e:/Projects/saleapp/backend/main.py) (line 672)
@@ -113,7 +129,48 @@
 - **File**: [App.jsx](file:///e:/Projects/saleapp/miniapp/src/App.jsx) (line 327)
 - **Problem**: If the favorites API fails, the rollback logic may cause a double-trigger or UI flicker because the functional state update `setFavorites(prev => ...)` doesn't perfectly match the original `wasInFavorites` snapshotted outside.
 
+### Category 3 — Resource & Concurrency
+
+**[CONCURRENCY] Cart Quantity Double-Click Race Condition**
+- **File**: [CartPanel.jsx](file:///e:/Projects/saleapp/miniapp/src/CartPanel.jsx) (line 73)
+- **Problem**: Rapidly clicking `+` or `-` on an item fires multiple requests. Although the specific item's button is disabled via `isBusy`, the `fetchCart(false)` triggered on `res.ok` causes a background refetch. A late-arriving read (if server processes out of order) can overwrite state with stale quantities.
+- **Severity**: Low
+
+### Category 4 — Error Handling
+
+**[ERROR] Swallowed Cart 400 Errors in UI**
+- **File**: [App.jsx](file:///e:/Projects/saleapp/miniapp/src/App.jsx) (`handleAddToCart`)
+- **Problem**: When adding an out-of-stock item, the API returns `400 Bad Request` ("Товар распродан"). The UI swallows this error and just reverts the spinner instead of showing the error text in a toast notification.
+
 ### Category 6 — UI/UX & Aesthetics
+
+**[UX] Native Confirm Dialog on "Clear Cart"**
+- **File**: `CartPanel.jsx` (line 88)
+- **Problem**: Uses `window.confirm('Очистить всю корзину?')`. Native confirms are blocked in many embedded WebViews (like some Telegram clients) and break test automation. Should use a custom modal/dialog.
+
+**[UX] Sequential PIN Input Focus Loss**
+- **File**: `miniapp/src/Login.jsx` (line 186)
+- **Problem**: When `setPinStep` changes from 1 to 2, the container form's `key` changes from `setpin-1` to `setpin-2`. React completely unmounts and remounts the DOM nodes. On mobile browsers, this causes the new input to lose keyboard focus despite having `autoFocus`, forcing the user to tap again.
+
+**[UX] Scraper Trigger UI Stuck on 403 Forbidden**
+- **File**: `miniapp/src/App.jsx` (lines 770, 790)
+- **Problem**: In the inline admin token input, if the user submits a wrong token and the backend returns 403, the promise chain completes with `null`. The subsequent `.then(data => ...)` skips `setScraperRunning(false)`, leaving the UI permanently trapped in "Запуск..." state unless the page is refreshed.
+
+**[UX] Stuck 0-Quantity Items in Cart**
+- **File**: [CartPanel.jsx](file:///e:/Projects/saleapp/miniapp/src/CartPanel.jsx)
+- **Problem**: Items can get stuck displaying `0 шт` (quantity 0) without being removed from the list when the trash icon is clicked or quantity is decremented to 0.
+
+**[REACT] Duplicate Keys in Product List**
+- **File**: [App.jsx](file:///e:/Projects/saleapp/miniapp/src/App.jsx)
+- **Problem**: Console logging `Encountered two children with the same key, '113285'`. Due to the nature of merging multiple scraper outputs, product IDs might not be unique, causing React to get confused during list renders and animations.
+
+**[UX] Ghost "Empty" State Message during Animations**
+- **File**: [App.jsx](file:///e:/Projects/saleapp/miniapp/src/App.jsx) (line 970)
+- **Problem**: When `filteredProducts.length === 0`, the "В этой категории пока нет товаров" message renders immediately. However, if previous items are still fading out (via Framer Motion's `AnimatePresence`), the message appears overlaid or below visibly existing items, creating a "ghost" effect.
+
+**[UX] Broken Color/Category Filtering (Grid View Animations)**
+- **File**: [App.jsx](file:///e:/Projects/saleapp/miniapp/src/App.jsx)
+- **Problem**: In Grid view, `popLayout` with `AnimatePresence` coupled with potential non-unique `product.id` limits (see Bug #2 "Unstable Product IDs") causes React/Framer Motion to incorrectly recycle DOM nodes. This results in red items seemingly remaining on the screen when only the yellow filter is active, or category switching failing to visually clear old items.
 
 **[UX] Missing Horizontal Scroll Indicators (Desktop)**
 - **File**: [index.css](file:///e:/Projects/saleapp/miniapp/src/index.css) (line 197)
@@ -128,6 +185,15 @@
 **[UX] Out-of-Stock Increment Logic**
 - **File**: [CartPanel.jsx](file:///e:/Projects/saleapp/miniapp/src/CartPanel.jsx)
 - **Problem**: Items marked as ❌ (OOS) are visual-only; if the `can_buy` flag from API is `true` despite the label, the UI allows clicking `+`, leading to confusion when the checkout eventually fails.
+
+**[UX] Auto-submit Race Condition / Confusing UI in Login**
+- **File**: [Login.jsx](file:///e:/Projects/saleapp/miniapp/src/Login.jsx) (lines 134, 195)
+- **Problem**: Entering the 4th digit on the "Confirm PIN" screen triggers a `setTimeout` auto-submit in 150ms. However, an "Установить PIN" (Set PIN) submit button remains visible and clickable, creating a confusing UX or potential double-submit race condition if the user clicks it during the 150ms window.
+- **Severity**: Low
+
+**[UX] Lack of Dedicated Mobile Breakpoints**
+- **File**: [index.css](file:///e:/Projects/saleapp/miniapp/src/index.css) (Global)
+- **Problem**: Beyond `grid-template-columns: repeat(auto-fill, minmax(220px, 1fr))`, there are **zero** `@media` queries in custom CSS to handle specific mobile layout adjustments (e.g., shrinking padding, adjusting header sizes on very small screens <380px).
 
 ---
 
@@ -367,4 +433,274 @@ When a scraper crashed (e.g. `NoSuchWindowException`) OR legitimately found 0 it
 
 ---
 
-*Last verified: 2026-03-03 — login flow end-to-end, scraper LocalNetworkAccess fix*
+## 🔴 New Bugs Found (2026-03-05 — Automated Bug Hunt)
+
+*Found by 8 parallel code analysis agents + live browser testing on 192.168.88.98:5173*
+
+### Category 1 — Security
+
+**BUG-036: [SECURITY] Admin Token Logged in Plaintext** — **Fixed ✅ 2026-03-05**
+- **File**: `backend/main.py` line 165
+- **Severity**: High
+- **Fix**: Changed to log only the token length, not the value.
+
+**BUG-037: [SECURITY] Auth Data Not Gitignored** — **Fixed ✅ 2026-03-05**
+- **File**: `.gitignore`
+- **Severity**: Critical
+- **Fix**: Added `data/auth/`, `data/user_cookies/`, `data/user_phone_map.json` to `.gitignore`.
+
+**BUG-038: [SECURITY] IDOR on Favorites Endpoints (No Auth)**
+- **File**: `backend/main.py` lines 272-296
+- **Severity**: High
+- **Problem**: `/api/favorites/{user_id}` GET/POST/DELETE endpoints accept any `user_id` with zero authentication. No token, no session, no Telegram `initData` validation.
+- **Impact**: Anyone can read, add, or delete favorites for any user by guessing their Telegram user ID.
+
+**BUG-039: [SECURITY] IDOR on Cart Endpoints (No Auth)**
+- **File**: `backend/main.py` (cart add/remove/clear endpoints)
+- **Severity**: High
+- **Problem**: Cart endpoints accept `user_id` from request body with no authentication. An attacker can add/remove/clear items in any user's VkusVill cart.
+- **Impact**: Cart manipulation for any user account.
+
+**BUG-040: [SECURITY] CORS Origin Wrong for Telegram MiniApps** — **Fixed ✅ 2026-03-05**
+- **File**: `backend/main.py` line 70
+- **Severity**: Medium
+- **Fix**: Added `https://web.telegram.org` to allowed origins.
+
+### Category 2 — Logic & Integration
+
+**BUG-041: [LOGIC] Frontend/Backend Route Mismatch — Scraper Trigger Fails** — **Fixed ✅ 2026-03-05**
+- **File**: `backend/main.py` line 1165
+- **Severity**: High
+- **Fix**: Changed `@app.post("/admin/run/{scraper}")` → `@app.post("/api/admin/run/{scraper}")` to match frontend calls.
+
+**BUG-042: [LOGIC] Phone Input Has No Length Validation** — **Fixed ✅ 2026-03-05**
+- **File**: `miniapp/src/Login.jsx` line 152
+- **Severity**: Medium
+- **Fix**: Button now requires `phone.replace(/\D/g, '').length < 10` digits. Also filters non-numeric input.
+
+**BUG-043: [LOGIC] `confirm()` Dialog Blocks in Telegram WebView** — **Fixed ✅ 2026-03-05**
+- **File**: `miniapp/src/CartPanel.jsx` line 88
+- **Severity**: Medium
+- **Fix**: Uses `Telegram.WebApp.showConfirm()` inside Telegram, falls back to `confirm()` in browser.
+
+**BUG-044: **[LOGIC] Telegram notifications only sent to the first matching user**
+- **File**: `bot/notifier.py` (`notify_new_green_prices`)
+- **Problem**: The system loops over all users. For User A, it finds matching products, marks them as *globally* "seen" in the database (`seen_products`), and sends the message. When User B is processed for the exact same products, `get_new_products` returns empty because User A already marked them seen. Thus, only the first matched user ever receives a notification for a new product.
+
+**[LOGIC] Missing auto-merge for "Run All" scrapers**
+- **File**: `backend/main.py` (line 1225)
+- **Problem**: When `scraper == "all"`, the backend adds `green`, `red`, and `yellow` tasks to the background but completely skips queuing the `merge` task. The frontend will stall waiting for `proposals.json` to update.
+
+**[LOGIC] Cart API remove deletes wrong item if same product exists multiple times**
+- **File**: `cart/vkusvill_api.py` (`remove`)
+- **Problem**: When a user clicks "remove" on a product, the API searches the cart's items dictionary by `PRODUCT_ID` and breaks on the *first* match. If the user has both the regular-price version and green-price version of the exact same product in their cart, clicking remove on either will arbitrarily delete whichever one the dictionary iterator yields first, corrupting the cart state.
+
+**[LOGIC] Hardcoded Delivery Coordinates for All Telegram Users**
+- **File**: `scraper/vkusvill.py` (`submit_sms_code`)
+- **Problem**: When a user logs in via the Telegram bot, their `MLD_LAT` and `MLD_LON` cookies are hardcoded to env variables (defaulting to a specific Moscow address). This breaks green price availability for users in other regions.
+
+**[LOGIC] Flawed Category Keyword Fallback Priorities**
+- **File**: `utils.py` (`keyword_fallback`)
+- **Problem**: The priority order of substring matching causes incorrect categorizations. For example, "Сок апельсиновый" matches "апельсин" (Fruits) before it safely checks "сок" (Drinks). "Яйца куриные С0" matches "курин" (Meat) before "яйц" (Eggs). These bugs are even hardcoded as passing assertions in `test_categories.py`!
+
+### Category 3 — Resource & Error Handling
+
+**[RESOURCE] Category Database Grows Infinitely**
+- **File**: `scrape_categories.py` (`scrape_all_categories_async`)
+- **Problem**: The scraper only inserts or updates items in `category_db.json`. It never evicts products that have been removed from the VkusVill catalog. Over time, the JSON file will bloat indefinitely with discontinued "ghost" products.
+
+**BUG-045: [RESOURCE] Chrome Process Leak on Login Timeout**
+- **File**: `backend/main.py` (login session cleanup)
+- **Severity**: High
+- **Problem**: `_login_sessions` stores nodriver browser instances with TTL cleanup only reactively (on each new login request). If no new login request arrives for hours, stale Chrome processes accumulate indefinitely.
+- **Impact**: Memory/CPU leak on server — each zombie Chrome process uses ~200MB RAM.
+
+**BUG-046: [ERROR] Scraper `worker_with_merge` Race Condition**
+- **File**: `scheduler_service.py` / `backend/main.py`
+- **Severity**: Medium
+- **Problem**: "Run all" triggers scrapers as independent background tasks with no synchronization barrier for the merge step.
+
+### Category 4 — UI/UX (Browser Testing)
+
+**BUG-047: [UX] Login Phone Input Accepts Non-Numeric Characters** — **Fixed ✅ 2026-03-05**
+- **File**: `miniapp/src/Login.jsx` line 142
+- **Severity**: Low
+- **Fix**: Input now filters to digits, `+`, spaces, `(`, `)`, `-` only.
+
+### Category 5 — Scraper & Data Pipeline
+
+**BUG-048: [RESOURCE] Temp Chrome Profile Directories Never Cleaned Up** — **Fixed ✅ 2026-03-05**
+- **File**: `scrape_green.py`, `scrape_prices.py`
+- **Severity**: Medium
+- **Fix**: `_launch_browser()` now returns `tmp_profile` path. `finally` block calls `shutil.rmtree()` to clean up.
+
+**BUG-049: [LOGIC] `keyword_fallback()` is Dead Code — Never Called** — **Fixed ✅ 2026-03-05**
+- **File**: `utils.py` line 199
+- **Severity**: Medium
+- **Fix**: Added Tier 3 call to `keyword_fallback(product_name)` before falling through to "Новинки".
+
+**BUG-050: [LOGIC] `_category_db_cache` Never Invalidated in Long-Running Process** — **Fixed ✅ 2026-03-05**
+- **File**: `utils.py` lines 77-91
+- **Severity**: Medium
+- **Fix**: Cache now checks `os.path.getmtime()` and refreshes when the file changes.
+
+**BUG-051: [LOGIC] ID Regex Mismatch Between Green and Prices Scrapers** — **Fixed ✅ 2026-03-05**
+- **File**: `scrape_prices.py` line 239
+- **Severity**: High
+- **Fix**: Changed regex from `/-(\\d+)\\.html/` to `/(?:-)?(\\d+)\\.html/` to match with or without dash.
+
+**BUG-052: [ERROR] `scrape_prices.py` No `finally` Block — Partial Results Lost on Exception** — **Fixed ✅ 2026-03-05**
+- **File**: `scrape_prices.py` lines 304-314
+- **Severity**: High
+- **Fix**: Moved save logic into `finally` block with `scrape_success` flag (same pattern as `scrape_green.py`).
+
+**BUG-053: [LOGIC] Category Scraper Last-Wins Overwrites Category Assignments**
+- **File**: `scrape_categories.py` lines 214-226
+- **Severity**: Medium
+- **Problem**: When a product appears in multiple VkusVill categories, the last-processed category silently overwrites the first. Async task completion order varies between runs.
+- **Impact**: Product categories can non-deterministically flip between runs.
+
+### Category 6 — Bot & Telegram
+
+**BUG-054: [LOGIC] Double `query.answer()` in `handle_cart_add` — Feedback Broken** — **Fixed ✅ 2026-03-05**
+- **File**: `bot/handlers.py` lines 464-508
+- **Severity**: High
+- **Fix**: Removed early `query.answer()`. Now answers once with the final result (success/error).
+
+**BUG-055: [RESOURCE] `cart.close()` Not Called on Exception in Bot Handler** — **Fixed ✅ 2026-03-05**
+- **File**: `bot/handlers.py`
+- **Severity**: Medium
+- **Fix**: Wrapped cart operations in `try/finally` with `cart.close()` in the finally block.
+
+**BUG-056: [LOGIC] Fuzzy Category Matching Produces False Positives**
+- **File**: `bot/handlers.py` lines 346-356
+- **Severity**: Medium
+- **Problem**: Category matching checks if any single word from a slug appears in the product category. The word "продукты" matches "Молочные продукты", "Замороженные продукты", etc.
+- **Impact**: Users subscribed to "Frozen products" also receive notifications for dairy and other categories.
+
+**BUG-057: [CONCURRENCY] SQLite Concurrent Write Contention** — **Fixed ✅ 2026-03-05**
+- **File**: `database/db.py` line 30
+- **Severity**: Medium
+- **Fix**: Added `PRAGMA journal_mode=WAL` and `timeout=10` to connection setup.
+
+**BUG-058: [NULL] `Product.formatted_line` Crashes When `original_price` is None** — **Fixed ✅ 2026-03-05**
+- **File**: `scraper/vkusvill.py` line 155
+- **Severity**: Medium
+- **Fix**: Added null check — shows price without strikethrough when `original_price` is None.
+
+---
+
+### Summary (2026-03-05 Automated Bug Hunt)
+
+| Severity | Found | Fixed | Open |
+|----------|-------|-------|------|
+| Critical | 1 | 1 | 0 |
+| High | 7 | 5 | 2 |
+| Medium | 12 | 9 | 3 |
+| Low | 1 | 1 | 0 |
+| **Total** | **21** | **16 fixed** | **5 open** |
+
+---
+
+## ✅ Fixed Bugs (2026-03-05 — Sprint 6)
+
+### BUG-059: Chrome Process Leak After Login (auth_verify)
+**Status:** Fixed ✅ | **Severity:** High | **Date:** 2026-03-05
+**File:** `backend/main.py` (`auth_login`, `auth_verify`, `_evict_stale_login_sessions`)
+**Symptom:** After each login attempt (success or failure), Chrome process kept running — 31 stuck processes observed.
+**Root Cause:** `_chrome_proc = subprocess.Popen(...)` was a local variable in `auth_login`, never stored in the session dict. `browser.stop()` only sent a graceful CDP close but couldn't kill the OS process.
+**Fix:** Stored `"proc": _chrome_proc` in `_login_sessions[user_id]`. All 3 cleanup paths now call `entry["proc"].kill()` after `browser.stop()`: `auth_verify` finally, `_evict_stale_login_sessions`, and old-session cleanup in `auth_login`.
+
+### BUG-060: `scrape_red.py` and `scrape_yellow.py` Never Migrated to nodriver
+**Status:** Fixed ✅ | **Severity:** Critical | **Date:** 2026-03-05
+**Files:** `scrape_red.py`, `scrape_yellow.py`
+**Symptom:** Red and yellow scraper buttons in admin panel launched but failed immediately — `import undetected_chromedriver` crashed because Chrome 145 is incompatible with that library.
+**Root Cause:** `scrape_green.py` was previously migrated to nodriver but red/yellow were missed.
+**Fix:** Rewrote both files using the same nodriver pattern as `scrape_green.py`: `subprocess.Popen` + `nodriver.Browser.create()`, CDP cookie injection via `network.set_cookies()`, async JS evaluation with `_deserialize()` helper, proper `proc.kill()` + `shutil.rmtree(tmp_profile)` cleanup in finally.
+
+### BUG-041: Admin HTML Route Mismatch (Correction)
+**Note:** Previous fix entry was incorrect about which file was changed. The backend route `/api/admin/run/{scraper}` was already correct. The bug was in `backend/admin.html` calling `fetch('/admin/run/' + name)` instead of `fetch('/api/admin/run/' + name)`. Fixed in `admin.html` on 2026-03-05.
+
+### SMS Code Entry Fix (auth_verify)
+**Status:** Fixed ✅ | **Date:** 2026-03-05
+**File:** `backend/main.py` (`auth_verify`)
+**Symptom:** Tech account login returned `UF_USER_AUTH=N` — VkusVill rejected the SMS code.
+**Root Cause:** `auth_verify` used `element.send_keys(code)` for the SMS masked input. VkusVill's input mask requires real keyboard events to update its internal state — same issue as the phone field (BUG-026).
+**Fix:** Rewrote SMS code entry to use CDP `dispatch_key_event()` per digit, identical to the working phone input method. Verified: login succeeded, 46 cookies saved with `UF_USER_AUTH=Y`.
+
+---
+
+---
+
+## ✅ Fixed Bugs (2026-03-05 — Sprint 7 Cart Fixes)
+
+### BUG-061: `get_cart()` Adds "Борщ с говядиной" to Cart Every Call
+**Status:** Fixed ✅ | **Severity:** High | **Date:** 2026-03-05
+**File:** `cart/vkusvill_api.py` (`get_cart`)
+**Symptom:** Every time the cart panel opened or `GET /api/cart/items/{user_id}` was called, product 42530 (Борщ с говядиной) was silently added to the user's VkusVill cart. After clearing cart, it immediately reappeared on the next view.
+**Root Cause:** `get_cart()` used `basket_add.php` with `{'id': 42530}` as a "dummy" request, expecting it to fail. Product 42530 is real and available → VkusVill added it.
+**Fix:** Changed to use `basket_recalc.php` with `{'COUPON': '', 'BONUS': ''}` — a proper read-only cart endpoint (`Delivery_BasketRefresh` JS function uses it).
+
+### BUG-062: `remove()` Calls Non-Existent `basket_remove.php` (404)
+**Status:** Fixed ✅ | **Severity:** High | **Date:** 2026-03-05
+**File:** `cart/vkusvill_api.py` (`remove`)
+**Symptom:** Removing items from cart (trash button, `−` to 0) silently failed. Remove API returned JSON decode error. Cart never decreased.
+**Root Cause:** `basket_remove.php` returns HTTP 404 — endpoint doesn't exist on VkusVill.
+**Fix:** VkusVill uses `basket_update.php` with params: `id=<basket_key>` (e.g. `731_0`), `type=del`, `q=0`, `q_old=<old_qty>`. The `remove()` method now:
+1. Calls `get_cart()` to find the basket key for the given product_id
+2. Calls `basket_update.php` with correct params and `referer='/cart/'`
+
+### BUG-063: `clear_all()` Reports Success But Clears Nothing
+**Status:** Fixed ✅ | **Severity:** High | **Date:** 2026-03-05
+**File:** `cart/vkusvill_api.py` (`clear_all`)
+**Symptom:** "🗑 Очистить" button responded (no error), returned `{removed: N}`, but cart still had all items.
+**Root Cause:** `clear_all()` called `self.remove(product_id)` which used the broken `basket_remove.php` → always returned failure → but `removed` counter incremented anyway (didn't check result).
+**Fix:** `clear_all()` now iterates basket keys directly from `get_cart()` response and calls `basket_update.php` with `type=del` for each. Checks actual success response.
+
+### BUG-064: `CartAddRequest` Missing Defaults → CartPanel Quantity Buttons Return 422
+**Status:** Fixed ✅ | **Severity:** High | **Date:** 2026-03-05
+**File:** `backend/main.py` (`CartAddRequest`)
+**Symptom:** The `+` and `−` quantity buttons in CartPanel, and the trash remove button, silently failed. No toast error shown.
+**Root Cause:** `CartAddRequest` model required `is_green: int` and `price_type: int` with no defaults. `CartPanel.jsx`'s `handleQuantity` and `handleRemove` only sent `{user_id, product_id}` → FastAPI 422 validation error → frontend `catch` block showed no user feedback.
+**Fix:** Added `is_green: int = 0` and `price_type: int = 1` defaults to `CartAddRequest`. Note: `cart_remove_endpoint` also uses `CartAddRequest` — the defaults fix it too.
+
+---
+
+**Remaining Open Bugs:**
+1. **BUG-038** (High) — IDOR on favorites endpoints (needs `initData` validation)
+2. **BUG-039** (High) — IDOR on cart endpoints (needs `initData` validation)
+3. **BUG-046** (Medium) — Scraper run-all merge race condition
+4. **BUG-053** (Medium) — Category scraper last-wins overwrites
+5. **BUG-056** (Medium) — Fuzzy category matching false positives in bot
+*(BUG-045 Chrome proc leak — resolved by BUG-059 fix)*
+
+---
+
+---
+
+## ✅ Fixed Bugs (2026-03-07 — Sprint 8)
+
+### BUG-NEW-001: Green Items = 0 (basket_recalc.php Field Names)
+**Status:** Fixed ✅ | **Severity:** Critical | **Date:** 2026-03-07
+**File:** `scrape_green.py` (`_fetch_green_from_basket`)
+**Symptom:** Green scraper returned 0 products. Admin showed "📦 24 🟢 24 🔴 0 🟡 0" but after scrape "📦 24 🟢 0".
+**Root Cause:** Two issues: (1) `basket_recalc.php` returns `IMG` field not `PICTURE`, `URL` not `DETAIL_PAGE_URL`, `BASE_PRICE` not `PRICE_OLD`. (2) VkusVill hides green items from the products section when they're already in the cart — the main JS scrape returned empty. Fallback `_fetch_green_from_basket()` existed but was broken due to field name mismatches.
+**Fix:** Corrected all field names in `_fetch_green_from_basket()`. Also added `CAN_BUY != 'Y'` filter to skip OOS items, and fixed `MAX_Q=0` bug (`0 or 99` = 99, changed to `max_q if max_q is not None else 99`).
+
+### BUG-NEW-002: clean_price("1 399") Returns "1" (Thousands Separator Space)
+**Status:** Fixed ✅ | **Severity:** High | **Date:** 2026-03-07
+**File:** `utils.py` (`clean_price`)
+**Symptom:** Products like "Дорадо 400/600 горячего копчения" showed "1₽/2₽" instead of "1399₽/2100₽".
+**Root Cause:** VkusVill uses space as thousands separator (`"1 399"`). `clean_price()` regex `(\d+(?:\.\d+)?)` matched only `"1"` before the space.
+**Fix:** Added `re.sub(r'(\d)\s+(\d)', r'\1\2', s)` before regex extraction to join digit groups separated by spaces.
+
+### BUG-NEW-003: Safari iOS 17 WebKit Jetsam Kill (iPhone 14 Pro Max)
+**Status:** Fixed ✅ | **Severity:** Critical | **Date:** 2026-03-07
+**File:** `miniapp/src/App.jsx`
+**Symptom:** App crashed on iPhone 14 Pro Max Safari 3 times in a row with "повторно возникла проблема" (WebKit process killed by OS). Backend logs showed no client connections from that IP after page load.
+**Root Cause:** 82 simultaneous `motion.div` WAAPI animations (Framer Motion `initial/animate` props create Web Animations API instances) + all 82 product images loading at once → WebKit jetsam memory kill.
+**Fix:** Removed `motion.div` wrapper on `ProductCard` (replaced with plain `div`). Added `loading="lazy"` to product images. Changed `AnimatePresence mode="popLayout"` to plain `AnimatePresence`. Kept animations only on modals/drawers.
+
+---
+
+*Last verified: 2026-03-07 — Sprint 8 (green scraper, price fix, Safari crash fix, product detail drawer)*

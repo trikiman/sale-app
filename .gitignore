@@ -7,6 +7,9 @@ logs/
 *.pem
 vkusvill_cookies.json
 cookies.json
+data/auth/
+data/user_cookies/
+data/user_phone_map.json
 
 # Python
 __pycache__/

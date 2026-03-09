@@ -3,6 +3,7 @@ VkusVill Playwright-based Scraper
 Uses browser automation for authenticated scraping
 """
 import asyncio
+import hashlib
 import json
 import os
 import re
@@ -149,9 +150,10 @@ class Product:
         weight_part = f", {self.weight_str}" if self.weight_str else ""
         stock_part = f" [{self.stock_count}шт]" if self.stock_count > 0 else ""
         
+        price_part = f"{self.original_price:.0f}₽ → " if self.original_price else ""
         return (
             f"{self.weight_emoji}{self.stock_emoji} {self.name}{weight_part}\n"
-            f"    {self.original_price:.0f}₽ → <b>{self.current_price:.0f}₽</b> (-{self.discount_percent}%){stock_part}"
+            f"    {price_part}<b>{self.current_price:.0f}₽</b> (-{self.discount_percent}%){stock_part}"
         )
     
     @property
@@ -586,7 +588,7 @@ class PlaywrightScraper:
                     # Generate ID from URL
                     url = p['url']
                     product_id = re.search(r'/(\d+)', url)
-                    product_id = product_id.group(1) if product_id else f"unknown_{hash(p['name'])}"
+                    product_id = product_id.group(1) if product_id else f"unknown_{hashlib.md5(p['name'].encode('utf-8')).hexdigest()[:12]}"
                     
                     # Parse category
                     category = p['category']

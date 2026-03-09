@@ -2,6 +2,15 @@
 
 ## VkusVill Cart API
 
+### Endpoints (all confirmed working as of 2026-03-05)
+
+| Purpose | Endpoint | Method |
+|---------|----------|--------|
+| Add item | `basket_add.php` | POST |
+| Remove/modify item | `basket_update.php` | POST |
+| Read cart (no side effects) | `basket_recalc.php` | POST |
+| ~~Remove item~~ | ~~`basket_remove.php`~~ | ~~POST~~ — **404, does not exist** |
+
 ### Add to Cart
 **Endpoint**: `POST https://vkusvill.ru/ajax/delivery_order/basket_add.php`
 
@@ -56,18 +65,66 @@ price_type: 222         # 1=Regular, 222=Red/Sale/Green
 - **Red/Sale Price**: `isGreen=0`, `price_type=222`
 
 ## Known Issues
-1. **Playwright sessions lack address**: Playwright login creates a new PHPSESSID with no delivery address → cart API fails. Use `undetected_chromedriver` instead.
+1. **Playwright sessions lack address**: Playwright login creates a new PHPSESSID with no delivery address → cart API fails. Use `nodriver` instead.
 2. **Cookie expiry**: PHPSESSID expires after ~24h of inactivity. User must re-login.
 3. **Address binding**: Selecting address in the browser UI binds it server-side. No known API endpoint to set address programmatically.
-4. **VkusVill anti-bot on login click**: `undetected_chromedriver` can load VkusVill homepage (424K page) but clicking the login button (`button.js-header-login-`) crashes the Chrome session. The anti-bot detects automation and kills DevTools connection. Headless mode (`--headless=new`) also crashes Chrome v145 on Windows 11 — use offscreen window (`--window-position=-2400,-2400`) as workaround.
+4. **VkusVill anti-bot on login click**: `undetected_chromedriver` was fingerprinted. All auth and scrapers now use `nodriver` (CDP-native). Chrome launched via `subprocess.Popen` + `nodriver.Browser.create(host, port)`.
 
 ## Chrome on Windows 11 Notes
-- Chrome v145.0.7632.117 installed (after Win10→Win11 reinstall)
-- `undetected_chromedriver` 3.5.5
-- `--headless=new` crashes — use `--window-position=-2400,-2400` instead
-- `version_main=145` required (was 144 before Chrome update)
-- `WinError 6: The handle is invalid` on `driver.quit()` is harmless cleanup warning
-- Non-headless mode works fine for page loading/scraping
+- Chrome v145.0.7632.117 installed
+- **All scrapers use `nodriver`** — `undetected_chromedriver` is no longer used anywhere
+- `--headless=new` crashes — use `--window-position=-2400,-2400` (offscreen) for auth login
+- Scrapers use `--start-maximized` (visible) which works fine on Windows
+- Chrome launched via `subprocess.Popen(args)` + `nodriver.Browser.create(host='127.0.0.1', port=port)`
+- Temp profiles: `tempfile.mkdtemp(prefix='uc_XXX_')` — cleaned up by `shutil.rmtree()` in finally blocks
+- Chrome process must be killed via `proc.kill()` after `browser.stop()` — graceful CDP close alone leaves zombie processes
+
+## nodriver SMS/Phone Input Pattern
+VkusVill uses masked inputs that only respond to real keyboard events:
+```python
+for digit in code:
+    await tab.send(uc.cdp.input_.dispatch_key_event(
+        type_='keyDown', key=digit, text=digit,
+        code=f'Digit{digit}',
+        windows_virtual_key_code=ord(digit),
+        native_virtual_key_code=ord(digit),
+    ))
+    await asyncio.sleep(0.05)
+    await tab.send(uc.cdp.input_.dispatch_key_event(
+        type_='keyUp', key=digit,
+        code=f'Digit{digit}',
+        windows_virtual_key_code=ord(digit),
+        native_virtual_key_code=ord(digit),
+    ))
+    await asyncio.sleep(0.15)
+```
+`send_keys()` and JS value setters do NOT work on VkusVill's masked inputs.
+
+### Read Cart (no side effects)
+**Endpoint**: `POST https://vkusvill.ru/ajax/delivery_order/basket_recalc.php`
+**Referer**: `https://vkusvill.ru/cart/` (required)
+**Payload**: `{COUPON: '', BONUS: '', sessid: '<sessid>'}`
+**Response**: Same structure as `basket_add.php` — `{success:'Y', basket:{...}, totals:{Q_ITEMS, PRICE_FINAL}}`
+**Basket key format**: `{PRODUCT_ID}_{INDEX}` e.g. `731_0`, `731_1` — NOT `{product_id}_{price_type}`
+
+### Remove/Delete Cart Item
+**Endpoint**: `POST https://vkusvill.ru/ajax/delivery_order/basket_update.php`
+**Referer**: `https://vkusvill.ru/cart/` (required)
+**Payload for delete**:
+```
+id: 731_0           # basket key (from get_cart response)
+productId: 731      # product ID
+isGreen: 0          # 1 if green item
+q: 0                # target quantity (0 = delete)
+q_old: 1            # previous quantity
+koef: 1
+step: 1
+coupon:
+bonus:
+type: del           # 'del' for delete, 'basket_up'/'basket_down' for qty change
+typeBtn:
+sessid: <sessid>
+```
 
 ## VkusVill Login Page Selectors (as of 2026-03-02)
 - Login button: `button.js-header-login-` (class `VV_ResetStyleBtn UniversMainIcBtn js-header-login-`)

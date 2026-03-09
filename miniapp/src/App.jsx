@@ -1,6 +1,9 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import CartPanel from './CartPanel'
+import ProductDetail from './ProductDetail'
+import { buildCategoryRunView } from './categoryRunStatus'
+import { getCardMetaBadges, mergeResolvedWeights, shouldFetchMissingWeight } from './productMeta'
 import './index.css'
 
 // Emoji lookup for known categories
@@ -39,9 +42,10 @@ function getCategoryEmoji(category) {
   return '📦'
 }
 
-function ProductCard({ product, index, isFavorite, onToggleFavorite, favoritesLoading, onAddToCart, viewMode, cartState }) {
+function ProductCard({ product, index, isFavorite, onToggleFavorite, favoritesLoading, onAddToCart, viewMode, cartState, onOpenDetail }) {
   const [imageLoaded, setImageLoaded] = useState(false)
   const [imageError, setImageError] = useState(false)
+  const metaBadges = getCardMetaBadges(product)
 
   // Calculate real discount percentage
   const oldPriceVal = parseFloat(product.oldPrice)
@@ -55,26 +59,24 @@ function ProductCard({ product, index, isFavorite, onToggleFavorite, favoritesLo
   const typeConfig = {
     green: { bg: 'bg-green-500/20', text: 'text-green-400', label: '🟢 Зелёная', border: 'border-green-500/30', priceColor: '#4ade80', tint: 'card-tint-green' },
     red: { bg: 'bg-red-500/20', text: 'text-red-400', label: '🔴 Красная', border: 'border-red-500/30', priceColor: '#f87171', tint: 'card-tint-red' },
-    yellow: { bg: 'bg-yellow-500/20', text: 'text-yellow-400', label: '🟡 Жёлтая', border: 'border-yellow-500/30', priceColor: '#facc15', tint: 'card-tint-yellow' }
+    yellow: { bg: 'bg-yellow-500/20', text: 'text-yellow-400', label: '🟡 Жёлтая', border: 'border-yellow-500/30', priceColor: '#facc15', tint: 'card-tint-yellow' },
+    _default: { bg: 'bg-gray-500/20', text: 'text-gray-400', label: '📦 Другое', border: 'border-gray-500/30', priceColor: '#9ca3af', tint: '' }
   }
-  const config = typeConfig[product.type] || typeConfig.green
+  const config = typeConfig[product.type] || typeConfig._default
 
   return (
-    <motion.div
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -20 }}
-      transition={{ duration: 0.3, delay: Math.min(index * 0.03, 0.3) }}
+    <div
       className={`card-vertical ${config.tint}`}
     >
-      {/* Hero Image */}
-      <div className="card-image-wrap">
+      {/* Hero Image — clickable to open detail */}
+      <div className="card-image-wrap" onClick={() => onOpenDetail(product)} style={{ cursor: 'pointer' }}>
         {!imageLoaded && !imageError && product.image && <div className="absolute inset-0 skeleton" />}
 
         {product.image && !imageError ? (
           <img
             src={product.image}
             alt={product.name}
+            loading="lazy"
             className={`card-hero-img ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
             onLoad={() => setImageLoaded(true)}
             onError={() => setImageError(true)}
@@ -152,11 +154,18 @@ function ProductCard({ product, index, isFavorite, onToggleFavorite, favoritesLo
           </motion.button>
         </div>
 
-        {product.stock !== 99 && (
-          <span className="card-stock">📦 {product.stock} {product.unit}</span>
-        )}
+        <div className="card-meta-row">
+          {metaBadges.map((badge) => (
+            <span
+              key={`${badge.kind}-${badge.text}`}
+              className={badge.kind === 'stock' ? 'card-stock' : 'card-weight'}
+            >
+              {badge.text}
+            </span>
+          ))}
+        </div>
       </div>
-    </motion.div>
+    </div>
   )
 }
 
@@ -214,6 +223,7 @@ function CategoryFilter({ selected, onSelect, categories }) {
 
 function App() {
   const [products, setProducts] = useState([])
+  const [resolvedWeights, setResolvedWeights] = useState({})
   const [selectedCategory, setSelectedCategory] = useState('all')
   const [loading, setLoading] = useState(true)
   const [favoritesLoading, setFavoritesLoading] = useState(true)
@@ -245,6 +255,7 @@ function App() {
   })
   const [greenLiveCount, setGreenLiveCount] = useState(null)
   const [dataStale, setDataStale] = useState(false)
+  const [greenMissing, setGreenMissing] = useState(false)
   const [scraperRunning, setScraperRunning] = useState(false)
   const [scraperDone, setScraperDone] = useState(false)
   const [showTokenInput, setShowTokenInput] = useState(false)
@@ -253,6 +264,7 @@ function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem('vv_theme') || 'dark')
   const [categorizingRunning, setCategorizingRunning] = useState(false)
   const [categorizingDone, setCategorizingDone] = useState(false)
+  const [categorizingStatus, setCategorizingStatus] = useState(null)
 
   // Apply theme
   useEffect(() => {
@@ -281,17 +293,27 @@ function App() {
       })
       .finally(() => setFavoritesLoading(false))
 
-    // Check auth status
+    // Check auth status, then load initial cart count
     fetch(`/api/auth/status/${userId}`)
       .then(res => res.json())
       .then(data => {
         setIsAuthenticated(data.authenticated)
         if (data.phone) setUserPhone(data.phone)
+        if (data.authenticated) {
+          fetch(`/api/cart/items/${userId}`)
+            .then(r => r.json())
+            .then(cart => { if (cart.items_count != null) setCartCount(cart.items_count) })
+            .catch(() => { })
+        }
       })
       .catch(err => console.warn('Failed to check auth status:', err))
   }, [userId])
 
+  const [favBusy, setFavBusy] = useState(new Set())
   const handleToggleFavorite = async (product) => {
+    // Debounce: skip if already in-flight for this product
+    if (favBusy.has(product.id)) return
+    setFavBusy(s => { const n = new Set(s); n.add(product.id); return n })
     // Store original state for potential rollback
     const wasInFavorites = favorites.has(product.id)
 
@@ -339,6 +361,8 @@ function App() {
         }
         return next
       })
+    } finally {
+      setFavBusy(s => { const n = new Set(s); n.delete(product.id); return n })
     }
   }
 
@@ -359,6 +383,7 @@ function App() {
           updatedAtRef.current = data.updatedAt
           if (data.greenLiveCount !== undefined) setGreenLiveCount(data.greenLiveCount)
           setDataStale(!!data.dataStale)
+          setGreenMissing(!!data.greenMissing)
         } else if (Array.isArray(data) && data.length > 0) {
           setProducts(data.map(p => ({ ...p, category: normalizeCategory(p.category) })))
         } else if (!isAutoRefresh) {
@@ -368,20 +393,7 @@ function App() {
       .catch(err => {
         if (isAutoRefresh) return // Silently ignore auto-refresh errors
         console.error('API Error:', err)
-        return fetch('./data.json')
-          .then(res => res.json())
-          .then(data => {
-            if (data.products) {
-              setProducts(data.products.map(p => ({ ...p, category: normalizeCategory(p.category) })))
-              setUpdatedAt(data.updatedAt)
-              updatedAtRef.current = data.updatedAt
-              if (data.greenLiveCount !== undefined) setGreenLiveCount(data.greenLiveCount)
-              if (data.dataStale) setDataStale(true)
-            } else {
-              setProducts(Array.isArray(data) ? data.map(p => ({ ...p, category: normalizeCategory(p.category) })) : data)
-            }
-          })
-          .catch(() => setError(err.message))
+        setError('Не удалось загрузить данные. Проверьте подключение.')
       })
       .finally(() => {
         if (!isAutoRefresh) setLoading(false)
@@ -391,14 +403,19 @@ function App() {
   useEffect(() => {
     loadProducts(false)
 
-    // Auto-refresh via SSE for instant updates
+    // Auto-refresh via SSE for instant updates (with reconnect limit)
+    let sseErrors = 0
     const eventSource = new EventSource('/api/stream')
     eventSource.addEventListener('update', () => {
-      console.log('SSE update received: refreshing products')
+      sseErrors = 0
       loadProducts(true)
     })
+    eventSource.onerror = () => {
+      sseErrors++
+      if (sseErrors > 5) { eventSource.close() }
+    }
 
-    // Fallback polling just in case SSE disconnects
+    // Fallback polling (covers SSE disconnections)
     const refreshInterval = setInterval(() => loadProducts(true), 60000)
 
     return () => {
@@ -424,6 +441,20 @@ function App() {
 
   // Per-product cart button state: 'loading' | 'success' | 'error' | null
   const [cartStates, setCartStates] = useState({})
+  const [selectedProduct, setSelectedProduct] = useState(null)
+  const pendingWeightIdsRef = useRef(new Set())
+  const [soldOutIds, setSoldOutIds] = useState(() => {
+    try {
+      const stored = localStorage.getItem('soldOutIds')
+      const expiry = localStorage.getItem('soldOutIds_expiry')
+      if (stored && expiry && Date.now() < parseInt(expiry)) {
+        return new Set(JSON.parse(stored))
+      }
+      localStorage.removeItem('soldOutIds')
+      localStorage.removeItem('soldOutIds_expiry')
+      return new Set()
+    } catch { return new Set() }
+  })
   const [cartPanelOpen, setCartPanelOpen] = useState(false)
   const [cartCount, setCartCount] = useState(0)
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false)
@@ -453,6 +484,7 @@ function App() {
       })
 
       const data = await res.json()
+      console.log('[cart/add]', res.status, data)
       if (res.ok && data.success) {
         setCartStates(s => ({ ...s, [pid]: 'success' }))
         setCartCount(data.cart_items || cartCount + 1)
@@ -462,8 +494,18 @@ function App() {
           setIsAuthenticated(false)
           setShowLogin(true)
         } else {
-          setToastMessage({ text: data.detail || 'Не удалось добавить товар', type: 'error' })
-          setTimeout(() => setToastMessage(null), 3000)
+          setToastMessage({ text: 'Этот продукт уже раскупили', type: 'error' })
+          setTimeout(() => setToastMessage(null), 4000)
+          if (res.status === 400) {
+            setSoldOutIds(s => {
+              const next = new Set([...s, pid])
+              try {
+                localStorage.setItem('soldOutIds', JSON.stringify([...next]))
+                localStorage.setItem('soldOutIds_expiry', String(Date.now() + 4 * 60 * 60 * 1000))
+              } catch { }
+              return next
+            })
+          }
         }
         setCartStates(s => ({ ...s, [pid]: 'error' }))
         setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), 2000)
@@ -478,29 +520,99 @@ function App() {
   }
 
   const triggerCategoryScraper = () => {
+    setCategorizingDone(false)
     setCategorizingRunning(true)
-    fetch('/api/admin/run/categories', { method: 'POST' })
-      .catch(() => setCategorizingRunning(false))
+    setCategorizingStatus({
+      running: true,
+      last_run: new Date().toISOString(),
+      last_output: '',
+      exit_code: null,
+    })
+    const adminToken = sessionStorage.getItem('vv_admin_token') || ''
+    fetch('/api/admin/run/categories', { method: 'POST', headers: { 'X-Admin-Token': adminToken } })
+      .then(async (response) => {
+        let data = null
+        try {
+          data = await response.json()
+        } catch {
+          data = null
+        }
+
+        if (!response.ok) {
+          throw new Error(data?.detail || data?.message || 'Не удалось запустить определение категорий.')
+        }
+
+        setCategorizingStatus((prev) => ({
+          ...(prev || {}),
+          running: true,
+          exit_code: null,
+          last_output: data?.message || '',
+        }))
+      })
+      .catch((err) => {
+        setCategorizingRunning(false)
+        setCategorizingDone(false)
+        setCategorizingStatus({
+          running: false,
+          last_run: null,
+          last_output: err.message,
+          exit_code: 1,
+        })
+        setToastMessage({ text: err.message, type: 'error' })
+        setTimeout(() => setToastMessage(null), 4000)
+      })
   }
 
   // Poll categories scraper status while running
   useEffect(() => {
     if (!categorizingRunning) return
-    const interval = setInterval(() => {
+    const pollStatus = () => {
       fetch('/api/admin/run/categories/status')
-        .then(r => r.json())
+        .then(async (response) => {
+          const data = await response.json()
+          if (!response.ok) {
+            throw new Error(data?.detail || 'Не удалось получить статус определения категорий.')
+          }
+          return data
+        })
         .then(data => {
+          setCategorizingStatus(data)
           if (!data.running) {
             setCategorizingRunning(false)
-            setCategorizingDone(true)
-            setSelectedCategory('all')
-            loadProducts(false)
+            if (data.exit_code === 0) {
+              setCategorizingDone(true)
+              setSelectedCategory('all')
+              loadProducts(false)
+            } else {
+              setCategorizingDone(false)
+              setToastMessage({ text: 'Не удалось определить категории.', type: 'error' })
+              setTimeout(() => setToastMessage(null), 4000)
+            }
           }
         })
-        .catch(() => setCategorizingRunning(false))
+        .catch((err) => {
+          setCategorizingRunning(false)
+          setCategorizingDone(false)
+          setCategorizingStatus({
+            running: false,
+            last_run: null,
+            last_output: err.message,
+            exit_code: 1,
+          })
+        })
+    }
+
+    pollStatus()
+    const interval = setInterval(() => {
+      pollStatus()
     }, 3000)
     return () => clearInterval(interval)
   }, [categorizingRunning]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const enrichedProducts = useMemo(
+    () => mergeResolvedWeights(products, resolvedWeights),
+    [products, resolvedWeights],
+  )
 
   // Apply both category and type filters + sorting (memoized for performance)
   const filteredProducts = useMemo(() => {
@@ -508,7 +620,8 @@ function App() {
       .filter(([, active]) => active)
       .map(([k]) => k)
 
-    const filtered = products.filter(p => {
+    const filtered = enrichedProducts.filter(p => {
+      if (soldOutIds.has(p.id)) return false
       const categoryMatch = selectedCategory === 'all' || p.category === selectedCategory
       const typeMatch = activeTypes.includes(p.type)
       const favMatch = !showFavoritesOnly || favorites.has(p.id)
@@ -519,19 +632,84 @@ function App() {
     const onlyYellow = activeTypes.length === 1 && activeTypes[0] === 'yellow'
     if (onlyYellow) {
       filtered.sort((a, b) => {
-        const discA = a.oldPrice > 0 ? ((a.oldPrice - a.currentPrice) / a.oldPrice) : 0
-        const discB = b.oldPrice > 0 ? ((b.oldPrice - b.currentPrice) / b.oldPrice) : 0
+        const oldA = parseInt(a.oldPrice) || 0
+        const curA = parseInt(a.currentPrice) || 0
+        const oldB = parseInt(b.oldPrice) || 0
+        const curB = parseInt(b.currentPrice) || 0
+        const discA = oldA > 0 ? ((oldA - curA) / oldA) : 0
+        const discB = oldB > 0 ? ((oldB - curB) / oldB) : 0
         return discB - discA
       })
     }
 
     return filtered
-  }, [products, typeFilters, selectedCategory, showFavoritesOnly, favorites])
+  }, [enrichedProducts, typeFilters, selectedCategory, showFavoritesOnly, favorites, soldOutIds])
+
+  useEffect(() => {
+    const productsNeedingWeight = filteredProducts
+      .filter(shouldFetchMissingWeight)
+      .filter(product => !resolvedWeights[product.id] && !pendingWeightIdsRef.current.has(product.id))
+      .slice(0, 8)
+
+    if (productsNeedingWeight.length === 0) return
+
+    let cancelled = false
+    for (const product of productsNeedingWeight) {
+      pendingWeightIdsRef.current.add(product.id)
+    }
+
+    Promise.allSettled(
+      productsNeedingWeight.map(async (product) => {
+        const res = await fetch(`/api/product/${product.id}/details`)
+        if (!res.ok) {
+          throw new Error(`Failed to load weight for ${product.id}`)
+        }
+        const data = await res.json()
+        return {
+          id: product.id,
+          weight: String(data?.weight || '').trim(),
+        }
+      }),
+    )
+      .then((results) => {
+        if (cancelled) return
+
+        setResolvedWeights((prev) => {
+          let changed = false
+          const next = { ...prev }
+
+          for (const result of results) {
+            if (result.status !== 'fulfilled') continue
+            if (!result.value.weight) continue
+            if (next[result.value.id]) continue
+
+            next[result.value.id] = result.value.weight
+            changed = true
+          }
+
+          return changed ? next : prev
+        })
+      })
+      .finally(() => {
+        for (const product of productsNeedingWeight) {
+          pendingWeightIdsRef.current.delete(product.id)
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [filteredProducts, resolvedWeights])
+
+  const categoryRunView = useMemo(
+    () => buildCategoryRunView(categorizingStatus),
+    [categorizingStatus],
+  )
 
   // Build dynamic categories from products (after type filtering)
   const categories = useMemo(() => {
     const activeTypes = Object.entries(typeFilters).filter(([, active]) => active).map(([k]) => k)
-    const productsAfterTypeFilter = products.filter(p => activeTypes.includes(p.type))
+    const productsAfterTypeFilter = enrichedProducts.filter(p => activeTypes.includes(p.type))
     const noveltyCount = productsAfterTypeFilter.filter(p => p.category === 'Новинки').length
     // Sort all categories except 'Новинки' (pinned to position 1)
     const uniqueCategories = [...new Set(
@@ -545,13 +723,13 @@ function App() {
       chips.splice(1, 0, { id: 'Новинки', label: `🆕 Новинки (${noveltyCount})` })
     }
     return chips
-  }, [products, typeFilters])
+  }, [enrichedProducts, typeFilters])
 
   // Calculate counts for header
-  const totalCount = products.length
-  const countGreen = products.filter(p => p.type === 'green').length
-  const countRed = products.filter(p => p.type === 'red').length
-  const countYellow = products.filter(p => p.type === 'yellow').length
+  const totalCount = enrichedProducts.length
+  const countGreen = enrichedProducts.filter(p => p.type === 'green').length
+  const countRed = enrichedProducts.filter(p => p.type === 'red').length
+  const countYellow = enrichedProducts.filter(p => p.type === 'yellow').length
 
   // Dynamic header based on active filters
   const activeTypes = Object.entries(typeFilters).filter(([, active]) => active).map(([type]) => type)
@@ -658,7 +836,7 @@ function App() {
           <a
             href="/admin"
             target="_blank"
-            rel="noreferrer"
+            rel="noopener noreferrer"
             className="header-pill header-pill-action"
           >
             {'\ud83d\udee0\ufe0f'} Админ
@@ -701,6 +879,17 @@ function App() {
           </motion.div>
         )}
 
+        {/* Green products missing warning */}
+        {greenMissing && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="mt-2 px-4 py-2 rounded-xl bg-green-500/10 border border-green-500/30 text-green-400 text-center text-xs"
+          >
+            🟢 Зелёные ценники недоступны — требуется авторизация тех. аккаунта
+          </motion.div>
+        )}
+
         {/* Client-side time check — if data is older than 15 min */}
         {!dataStale && updatedAt && (Date.now() - new Date(updatedAt).getTime() > 15 * 60 * 1000) && (
           <div className="stale-info-bar">
@@ -733,12 +922,12 @@ function App() {
                   onKeyDown={e => {
                     if (e.key === 'Enter' && tokenInputValue) {
                       const t = tokenInputValue
-                      localStorage.setItem('vv_admin_token', t)
+                      sessionStorage.setItem('vv_admin_token', t)
                       setShowTokenInput(false)
                       setTokenInputValue('')
                       setScraperRunning(true)
                       fetch('/api/admin/run/green', { method: 'POST', headers: { 'X-Admin-Token': t } })
-                        .then(r => r.status === 403 ? (localStorage.removeItem('vv_admin_token'), null) : r.json())
+                        .then(r => r.status === 403 ? (sessionStorage.removeItem('vv_admin_token'), null) : r.json())
                         .then(data => { if (data) { setScraperRunning(false); setScraperDone(true) } })
                         .catch(() => setScraperRunning(false))
                     }
@@ -752,12 +941,12 @@ function App() {
                   onClick={() => {
                     if (!tokenInputValue) return
                     const t = tokenInputValue
-                    localStorage.setItem('vv_admin_token', t)
+                    sessionStorage.setItem('vv_admin_token', t)
                     setShowTokenInput(false)
                     setTokenInputValue('')
                     setScraperRunning(true)
                     fetch('/api/admin/run/green', { method: 'POST', headers: { 'X-Admin-Token': t } })
-                      .then(r => r.status === 403 ? (localStorage.removeItem('vv_admin_token'), null) : r.json())
+                      .then(r => r.status === 403 ? (sessionStorage.removeItem('vv_admin_token'), null) : r.json())
                       .then(data => { if (data) { setScraperRunning(false); setScraperDone(true) } })
                       .catch(() => setScraperRunning(false))
                   }}
@@ -774,14 +963,14 @@ function App() {
                 whileTap={{ scale: 0.95 }}
                 disabled={scraperRunning}
                 onClick={() => {
-                  const storedToken = localStorage.getItem('vv_admin_token')
+                  const storedToken = sessionStorage.getItem('vv_admin_token')
                   if (storedToken) {
                     // Token already stored — fire immediately
                     setScraperRunning(true)
                     fetch('/api/admin/run/green', { method: 'POST', headers: { 'X-Admin-Token': storedToken } })
                       .then(r => {
                         if (r.status === 403) {
-                          localStorage.removeItem('vv_admin_token')
+                          sessionStorage.removeItem('vv_admin_token')
                           setScraperRunning(false)
                           setShowTokenInput(true)
                           return null
@@ -828,7 +1017,7 @@ function App() {
           onClick={() => setShowFavoritesOnly(f => !f)}
           className={`text-xs px-3 py-1.5 rounded-full transition-all type-chip ${showFavoritesOnly ? 'type-chip-fav active' : 'bg-gray-700/30 text-gray-500 border border-gray-600/30 opacity-60'}`}
         >
-          ❤️{favorites.size > 0 ? ` ${products.filter(p => favorites.has(p.id)).length}` : ''}
+          ❤️{favorites.size > 0 ? ` ${enrichedProducts.filter(p => favorites.has(p.id)).length}` : ''}
         </button>
 
         {[
@@ -915,14 +1104,29 @@ function App() {
               ✅ Готово — категории обновляются
             </div>
           ) : (
-            <motion.button
-              whileTap={{ scale: 0.95 }}
-              disabled={categorizingRunning}
-              onClick={triggerCategoryScraper}
-              className={`header-pill header-pill-action ${categorizingRunning ? 'opacity-60 cursor-wait' : ''}`}
-            >
-              {categorizingRunning ? '⏳ Определяем...' : '🔄 Определить категории'}
-            </motion.button>
+            <>
+              <motion.button
+                whileTap={{ scale: 0.95 }}
+                disabled={categorizingRunning}
+                onClick={triggerCategoryScraper}
+                className={`header-pill header-pill-action ${categorizingRunning ? 'opacity-60 cursor-wait' : ''}`}
+              >
+                {categorizingRunning ? '⏳ Определяем...' : '🔄 Определить категории'}
+              </motion.button>
+              {categoryRunView.summary && (
+                <div className={`mt-2 text-xs ${categoryRunView.isError ? 'text-red-400' : 'opacity-70'}`}>
+                  {categoryRunView.summary}
+                </div>
+              )}
+              {categoryRunView.lines.length > 0 && (
+                <div className={`mt-2 mx-auto max-w-2xl rounded-xl border px-3 py-2 text-left text-[11px] whitespace-pre-wrap ${categoryRunView.isError
+                  ? 'border-red-500/30 bg-red-500/10 text-red-300'
+                  : 'border-yellow-500/20 bg-black/10 opacity-80'
+                  }`}>
+                  {categoryRunView.lines.join('\n')}
+                </div>
+              )}
+            </>
           )}
         </motion.div>
       )}
@@ -945,7 +1149,7 @@ function App() {
 
       {/* Product Grid */}
       <div className={`product-grid ${viewMode === 'list' ? 'list-view' : ''}`}>
-        <AnimatePresence mode="popLayout">
+        <AnimatePresence>
           {filteredProducts.map((product, index) => (
             <ProductCard
               key={product.id}
@@ -954,6 +1158,7 @@ function App() {
               isFavorite={favorites.has(product.id)}
               onToggleFavorite={handleToggleFavorite}
               onAddToCart={handleAddToCart}
+              onOpenDetail={setSelectedProduct}
               cartState={cartStates[product.id] || null}
               favoritesLoading={favoritesLoading}
               viewMode={viewMode}
@@ -982,14 +1187,24 @@ function App() {
         userId={userId}
       />
 
+      {/* Product Detail Drawer */}
+      {selectedProduct && (
+        <ProductDetail
+          product={selectedProduct}
+          onClose={() => setSelectedProduct(null)}
+          onAddToCart={handleAddToCart}
+          cartState={cartStates[selectedProduct.id] || null}
+        />
+      )}
+
       {/* Floating Toast Notification */}
       <AnimatePresence>
         {toastMessage && (
           <motion.div
-            initial={{ opacity: 0, y: 50 }}
+            initial={{ opacity: 0, y: -30 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 50 }}
-            className={`fixed bottom-24 left-1/2 -translate-x-1/2 px-4 py-2.5 rounded-xl shadow-[0_0_20px_rgba(0,0,0,0.3)] z-50 text-sm font-medium whitespace-nowrap border ${toastMessage.type === 'error' ? 'bg-[#2a1313] text-red-400 border-red-500/30' : 'bg-[#132a18] text-green-400 border-green-500/30'
+            exit={{ opacity: 0, y: -30 }}
+            className={`fixed top-16 left-1/2 -translate-x-1/2 px-4 py-2.5 rounded-xl shadow-[0_0_20px_rgba(0,0,0,0.3)] z-[200] text-sm font-medium whitespace-nowrap border ${toastMessage.type === 'error' ? 'bg-[#2a1313] text-red-400 border-red-500/30' : 'bg-[#132a18] text-green-400 border-green-500/30'
               }`}
           >
             {toastMessage.text}

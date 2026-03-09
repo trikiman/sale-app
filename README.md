@@ -15,6 +15,10 @@ See **[docs/memory](./docs/memory/README.md)** for:
 -   [Current Task](./docs/memory/CURRENT_TASK.md)
 -   [Knowledge Base](./docs/memory/KNOWLEDGE_BASE.md)
 
+## Current Status
+- Green scraper automation is currently blocked on a browser-profile-state mismatch. The live VkusVill cart can show green items that the automatic scraper still fails to reproduce from `data/cookies.json` or `data/tech_profile` alone.
+- See [Current Task](./docs/memory/CURRENT_TASK.md) for the March 8, 2026 handoff details and exact next debugging step.
+
 ## Setup
 1.  Install dependencies: `pip install -r requirements.txt`
 2.  Configure `config.py`.

@@ -39,7 +39,7 @@ export default function Login({ userId, onLoginSuccess }) {
       } else {
         setError(data.detail || 'Не удалось отправить SMS')
       }
-    } catch { setError('Нет связи с сервером') }
+    } catch (e) { setError(e.message || 'Нет связи с сервером') }
     finally { setLoading(false) }
   }
 
@@ -56,7 +56,7 @@ export default function Login({ userId, onLoginSuccess }) {
       const data = await res.json()
       if (res.ok && data.success) onLoginSuccess(phone)
       else { setError(data.detail || 'Неверный PIN'); setPin('') }
-    } catch { setError('Нет связи с сервером') }
+    } catch (e) { setError(e.message || 'Нет связи с сервером') }
     finally { setLoading(false) }
   }
 
@@ -86,7 +86,7 @@ export default function Login({ userId, onLoginSuccess }) {
           onLoginSuccess(phone)
         }
       } else { setError(data.detail || 'Неверный код'); setCode('') }
-    } catch { setError('Нет связи с сервером') }
+    } catch (e) { setError(e.message || 'Нет связи с сервером') }
     finally { setLoading(false) }
   }
 
@@ -111,7 +111,7 @@ export default function Login({ userId, onLoginSuccess }) {
       const data = await res.json()
       if (res.ok && data.success) onLoginSuccess(verifiedPhone)
       else setError(data.detail || 'Не удалось установить PIN')
-    } catch { setError('Нет связи с сервером') }
+    } catch (e) { setError(e.message || 'Нет связи с сервером') }
     finally { setLoading(false) }
   }
 
@@ -139,7 +139,7 @@ export default function Login({ userId, onLoginSuccess }) {
       case 'phone':
         return (
           <motion.form key="phone" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} onSubmit={handlePhoneSubmit} className="login-form">
-            <input type="tel" placeholder="+7 900 123 45 67" value={phone} onChange={(e) => setPhone(e.target.value)} className="login-input" disabled={loading} autoFocus />
+            <input type="tel" placeholder="+7 900 123 45 67" value={phone} onChange={(e) => setPhone(e.target.value.replace(/[^\d+\s()-]/g, ''))} className="login-input" disabled={loading} autoFocus />
             <div className="login-option-row">
               <label className="login-toggle">
                 <input type="checkbox" checked={forceSms} onChange={(e) => setForceSms(e.target.checked)} disabled={loading} />
@@ -149,7 +149,7 @@ export default function Login({ userId, onLoginSuccess }) {
               <button type="button" className="login-info-btn" onClick={() => setShowInfo(!showInfo)} aria-label="Подробнее">ⓘ</button>
             </div>
             {showInfo && <div className="login-info-tooltip">Включите, если хотите войти заново через SMS. Старые данные будут удалены и создан новый PIN.</div>}
-            <button type="submit" disabled={loading || !phone} className="login-btn">
+            <button type="submit" disabled={loading || phone.replace(/\D/g, '').length < 10} className="login-btn">
               {loading ? <><Spinner /> Проверяем…</> : 'Получить код'}
             </button>
           </motion.form>

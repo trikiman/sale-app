@@ -1,297 +1,650 @@
 <!DOCTYPE html>
 <html lang="ru">
+
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>VkusVill Admin</title>
-<style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: #0f172a; color: #e2e8f0; font-family: system-ui, sans-serif; padding: 16px; }
-  .wrap { max-width: 900px; margin: 0 auto; }
-  h1 { font-size: 1.5rem; font-weight: 700; margin-bottom: 16px; }
-  h2 { font-size: 0.875rem; font-weight: 700; color: #94a3b8; margin-bottom: 12px; }
-  .card { background: #1e293b; border: 1px solid #334155; border-radius: 12px; padding: 16px; margin-bottom: 12px; }
-  .row  { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-  .col4 { display: grid; grid-template-columns: repeat(4,1fr); gap: 10px; }
-  .col2 { display: grid; grid-template-columns: repeat(2,1fr); gap: 10px; }
-  @media(max-width:600px){ .col4{grid-template-columns:repeat(2,1fr);} }
-  .stat-card { background:#1e293b; border:1px solid #334155; border-radius:12px;
-               padding:14px; text-align:center; }
-  .stat-num { font-size:2rem; font-weight:700; }
-  .stat-lbl { font-size:11px; color:#64748b; margin-top:4px; }
-  .green { color:#4ade80; } .red { color:#f87171; } .yellow { color:#fbbf24; }
-  /* Buttons */
-  .btn { padding: 8px 16px; border-radius: 8px; font-weight: 600; cursor: pointer;
-         border: none; font-size: 0.875rem; transition: opacity .15s; display: inline-flex; align-items: center; gap: 5px; }
-  .btn:hover { opacity: 0.82; } .btn:disabled { opacity: 0.4; cursor: not-allowed; }
-  .btn-blue   { background: #2563eb; color: #fff; }
-  .btn-green  { background: #16a34a; color: #fff; }
-  .btn-red    { background: #dc2626; color: #fff; }
-  .btn-yellow { background: #ca8a04; color: #fff; }
-  .btn-purple { background: #7c3aed; color: #fff; }
-  .btn-gray   { background: #475569; color: #fff; }
-  .btn-sm     { padding: 4px 10px; font-size: 11px; }
-  /* Input */
-  input[type=password], input[type=text] {
-    flex: 1; background: #0f172a; border: 1px solid #475569; color: #e2e8f0;
-    border-radius: 8px; padding: 8px 12px; font-size: 0.875rem; outline: none; }
-  input:focus { border-color: #3b82f6; }
-  /* Badges */
-  .badge { padding: 2px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; display: inline-block; }
-  .badge-on  { background: #166534; color: #86efac; }
-  .badge-off { background: #1e293b; color: #64748b; border: 1px solid #334155; }
-  /* Log */
-  #log { font-family: monospace; font-size: 12px; background: #0f172a;
-         border: 1px solid #334155; border-radius: 8px; padding: 12px;
-         height: 300px; overflow-y: auto; white-space: pre-wrap; color: #94a3b8; }
-  /* Status row */
-  .status-row { display:flex; align-items:center; gap:10px; padding:8px;
-                border-radius:8px; background:rgba(15,23,42,.6); margin-bottom:6px; }
-  .status-name { width:60px; font-size:11px; font-weight:700; color:#cbd5e1; flex-shrink:0; }
-  .status-time { flex:1; font-size:11px; color:#475569; }
-  /* Misc */
-  .text-muted { color:#64748b; font-size:12px; }
-  .mt2 { margin-top: 8px; }
-  .hidden { display: none; }
-  .running { animation: pulse 1.5s infinite; }
-  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
-  #auth-error { color:#f87171; font-size:0.875rem; margin-top:8px; }
-</style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VkusVill Admin</title>
+  <style>
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background: #0f172a;
+      color: #e2e8f0;
+      font-family: system-ui, sans-serif;
+      padding: 16px;
+    }
+
+    .wrap {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 16px;
+    }
+
+    h2 {
+      font-size: 0.875rem;
+      font-weight: 700;
+      color: #94a3b8;
+      margin-bottom: 12px;
+    }
+
+    .card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 12px;
+    }
+
+    .row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .col4 {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+
+    .col2 {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+    }
+
+    @media(max-width:600px) {
+      .col4 {
+        grid-template-columns: repeat(2, 1fr);
+      }
+    }
+
+    .stat-card {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 14px;
+      text-align: center;
+    }
+
+    .stat-num {
+      font-size: 2rem;
+      font-weight: 700;
+    }
+
+    .stat-lbl {
+      font-size: 11px;
+      color: #64748b;
+      margin-top: 4px;
+    }
+
+    .green {
+      color: #4ade80;
+    }
+
+    .red {
+      color: #f87171;
+    }
+
+    .yellow {
+      color: #fbbf24;
+    }
+
+    /* Buttons */
+    .btn {
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      border: none;
+      font-size: 0.875rem;
+      transition: opacity .15s;
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    .btn:hover {
+      opacity: 0.82;
+    }
+
+    .btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    .btn-blue {
+      background: #2563eb;
+      color: #fff;
+    }
+
+    .btn-green {
+      background: #16a34a;
+      color: #fff;
+    }
+
+    .btn-red {
+      background: #dc2626;
+      color: #fff;
+    }
+
+    .btn-yellow {
+      background: #ca8a04;
+      color: #fff;
+    }
+
+    .btn-purple {
+      background: #7c3aed;
+      color: #fff;
+    }
+
+    .btn-gray {
+      background: #475569;
+      color: #fff;
+    }
+
+    .btn-sm {
+      padding: 4px 10px;
+      font-size: 11px;
+    }
+
+    /* Input */
+    input[type=password],
+    input[type=text] {
+      flex: 1;
+      background: #0f172a;
+      border: 1px solid #475569;
+      color: #e2e8f0;
+      border-radius: 8px;
+      padding: 8px 12px;
+      font-size: 0.875rem;
+      outline: none;
+    }
+
+    input:focus {
+      border-color: #3b82f6;
+    }
+
+    /* Badges */
+    .badge {
+      padding: 2px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      display: inline-block;
+    }
+
+    .badge-on {
+      background: #166534;
+      color: #86efac;
+    }
+
+    .badge-off {
+      background: #1e293b;
+      color: #64748b;
+      border: 1px solid #334155;
+    }
+
+    /* Log */
+    #log {
+      font-family: monospace;
+      font-size: 12px;
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 12px;
+      height: 300px;
+      overflow-y: auto;
+      white-space: pre-wrap;
+      color: #94a3b8;
+    }
+
+    /* Status row */
+    .status-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px;
+      border-radius: 8px;
+      background: rgba(15, 23, 42, .6);
+      margin-bottom: 6px;
+    }
+
+    .status-name {
+      width: 60px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #cbd5e1;
+      flex-shrink: 0;
+    }
+
+    .status-time {
+      flex: 1;
+      font-size: 11px;
+      color: #475569;
+    }
+
+    /* Misc */
+    .text-muted {
+      color: #64748b;
+      font-size: 12px;
+    }
+
+    .mt2 {
+      margin-top: 8px;
+    }
+
+    .hidden {
+      display: none;
+    }
+
+    .running {
+      animation: pulse 1.5s infinite;
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 1
+      }
+
+      50% {
+        opacity: .4
+      }
+    }
+
+    #auth-error {
+      color: #f87171;
+      font-size: 0.875rem;
+      margin-top: 8px;
+    }
+  </style>
 </head>
+
 <body>
-<div class="wrap">
+  <div class="wrap">
 
-<!-- Auth -->
-<div id="auth-section">
-  <h1>🛠️ VkusVill Admin Panel</h1>
-  <div class="card">
-    <div class="row">
-      <input type="password" id="token-input" placeholder="Admin token (по умолчанию: 122662Rus)">
-      <button class="btn btn-blue" onclick="saveToken()">🔑 Войти</button>
-    </div>
-    <p id="auth-error" class="hidden">❌ Неверный токен</p>
-  </div>
-</div>
-
-<!-- Dashboard -->
-<div id="dashboard" class="hidden">
-
-  <div class="row" style="justify-content:space-between; margin-bottom:12px">
-    <h1>🛠️ VkusVill Admin</h1>
-    <div class="row">
-      <span id="last-refresh" class="text-muted"></span>
-      <button class="btn btn-gray btn-sm" onclick="logout()">Выйти</button>
-    </div>
-  </div>
-
-  <!-- Stats -->
-  <div class="col4">
-    <div class="stat-card">
-      <div class="stat-num" id="cnt-total">—</div>
-      <div class="stat-lbl">📦 Всего</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-num green" id="cnt-green">—</div>
-      <div class="stat-lbl">🟢 Зелёные</div>
-      <div class="stat-lbl">Сайт: <span id="cnt-live">—</span></div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-num red" id="cnt-red">—</div>
-      <div class="stat-lbl">🔴 Красные</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-num yellow" id="cnt-yellow">—</div>
-      <div class="stat-lbl">🟡 Жёлтые</div>
-    </div>
-  </div>
-
-  <div class="card text-muted" id="updated-at" style="text-align:center; margin-top:10px">
-    Последнее обновление: —
-  </div>
-
-  <!-- Actions -->
-  <div class="card">
-    <h2>⚡ Запуск скраперов</h2>
-    <div class="row">
-      <button class="btn btn-green"  id="btn-green"  onclick="runScraper('green')">🟢 Зелёный</button>
-      <button class="btn btn-red"    id="btn-red"    onclick="runScraper('red')">🔴 Красный</button>
-      <button class="btn btn-yellow" id="btn-yellow" onclick="runScraper('yellow')">🟡 Жёлтый</button>
-      <button class="btn btn-blue"   id="btn-all"    onclick="runScraper('all')">🔄 Все сразу</button>
-      <button class="btn btn-gray"   id="btn-merge"  onclick="runScraper('merge')">🔀 Merge</button>
-      <button class="btn btn-purple" id="btn-login"  onclick="runScraper('login')">🔑 Ре-логин</button>
-    </div>
-  </div>
-
-  <!-- Status -->
-  <div class="card">
-    <h2>📊 Статус скраперов</h2>
-    <div id="scraper-status-list"></div>
-  </div>
-
-  <!-- Logs -->
-  <div class="card">
-    <div class="row" style="justify-content:space-between; margin-bottom:10px">
-      <h2 style="margin:0">📋 Логи (последние 100 строк)</h2>
-      <div class="row">
-        <button class="btn btn-gray btn-sm" onclick="loadLogs()">🔄 Обновить</button>
-        <button class="btn btn-gray btn-sm" onclick="clearLog()">🗑 Очистить</button>
+    <!-- Auth -->
+    <div id="auth-section">
+      <h1>🛠️ VkusVill Admin Panel</h1>
+      <div class="card">
+        <div class="row">
+          <input type="password" id="token-input" placeholder="Admin token">
+          <button class="btn btn-blue" onclick="saveToken()">🔑 Войти</button>
+        </div>
+        <p id="auth-error" class="hidden">❌ Неверный токен</p>
       </div>
     </div>
-    <div id="log">Нажмите «Обновить» чтобы загрузить логи...</div>
-  </div>
 
-</div><!-- /dashboard -->
-</div><!-- /wrap -->
+    <!-- Dashboard -->
+    <div id="dashboard" class="hidden">
 
-<script>
-var token = sessionStorage.getItem('vv_admin_token') || '';
-var autoRefreshInterval = null;
+      <div class="row" style="justify-content:space-between; margin-bottom:12px">
+        <h1>🛠️ VkusVill Admin</h1>
+        <div class="row">
+          <span id="last-refresh" class="text-muted"></span>
+          <button class="btn btn-gray btn-sm" onclick="logout()">Выйти</button>
+        </div>
+      </div>
 
-window.onload = function() {
-  document.getElementById('token-input').value = token;
-  if (token) { tryAuth(); }
-};
+      <!-- Stats -->
+      <div class="col4">
+        <div class="stat-card">
+          <div class="stat-num" id="cnt-total">—</div>
+          <div class="stat-lbl">📦 Всего</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num green" id="cnt-green">—</div>
+          <div class="stat-lbl">🟢 Зелёные</div>
+          <div class="stat-lbl">Сайт: <span id="cnt-live">—</span></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num red" id="cnt-red">—</div>
+          <div class="stat-lbl">🔴 Красные</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num yellow" id="cnt-yellow">—</div>
+          <div class="stat-lbl">🟡 Жёлтые</div>
+        </div>
+      </div>
 
-function saveToken() {
-  token = document.getElementById('token-input').value.trim();
-  sessionStorage.setItem('vv_admin_token', token);
-  tryAuth();
-}
+      <div class="card text-muted" id="updated-at" style="text-align:center; margin-top:10px">
+        Последнее обновление: —
+      </div>
 
-function tryAuth() {
-  fetch('/admin/status', { headers: { 'X-Admin-Token': token } })
-    .then(function(r) {
-      if (r.status === 403) { throw new Error('forbidden'); }
-      return r.json();
-    })
-    .then(function(data) {
-      document.getElementById('auth-error').classList.add('hidden');
-      document.getElementById('auth-section').classList.add('hidden');
-      document.getElementById('dashboard').classList.remove('hidden');
-      applyStatus(data);
-      startAutoRefresh();
-      loadLogs();
-    })
-    .catch(function() {
-      document.getElementById('auth-error').classList.remove('hidden');
+      <!-- Actions -->
+      <div class="card">
+        <h2>⚡ Запуск скраперов</h2>
+        <div class="row">
+          <button class="btn btn-green" id="btn-green" onclick="runScraper('green')">🟢 Зелёный</button>
+          <button class="btn btn-red" id="btn-red" onclick="runScraper('red')">🔴 Красный</button>
+          <button class="btn btn-yellow" id="btn-yellow" onclick="runScraper('yellow')">🟡 Жёлтый</button>
+          <button class="btn btn-blue" id="btn-all" onclick="runScraper('all')">🔄 Все сразу</button>
+          <button class="btn btn-gray" id="btn-merge" onclick="runScraper('merge')">🔀 Merge</button>
+        </div>
+      </div>
+
+      <!-- Cookie Health Warning -->
+      <div id="cookie-warning" class="card hidden" style="border-color:#ca8a04; background:#1a1500">
+        <div id="cookie-warning-text" style="color:#fbbf24; font-size:13px; font-weight:600"></div>
+      </div>
+
+      <!-- Tech Account Login -->
+      <div class="card">
+        <h2>🔑 Техническая авторизация (cookies.json)</h2>
+        <div id="tech-login-step1">
+          <div class="row">
+            <input type="text" id="tech-phone" placeholder="Телефон (9XXXXXXXXX)">
+            <button class="btn btn-purple" id="btn-tech-login" onclick="techLogin()">📱 Отправить SMS</button>
+          </div>
+        </div>
+        <div id="tech-login-step2" class="hidden">
+          <div class="row">
+            <input type="text" id="tech-code" placeholder="Код из SMS">
+            <button class="btn btn-green" id="btn-tech-verify" onclick="techVerify()">✅ Подтвердить</button>
+            <button class="btn btn-gray btn-sm" onclick="techReset()">Отмена</button>
+          </div>
+        </div>
+        <p id="tech-login-msg" class="text-muted mt2"></p>
+      </div>
+
+      <!-- Status -->
+      <div class="card">
+        <h2>📊 Статус скраперов</h2>
+        <div id="scraper-status-list"></div>
+      </div>
+
+      <!-- Logs -->
+      <div class="card">
+        <div class="row" style="justify-content:space-between; margin-bottom:10px">
+          <h2 style="margin:0">📋 Логи (последние 100 строк)</h2>
+          <div class="row">
+            <button class="btn btn-gray btn-sm" onclick="loadLogs()">🔄 Обновить</button>
+            <button class="btn btn-gray btn-sm" onclick="clearLog()">🗑 Очистить</button>
+          </div>
+        </div>
+        <div id="log">Нажмите «Обновить» чтобы загрузить логи...</div>
+      </div>
+
+    </div><!-- /dashboard -->
+  </div><!-- /wrap -->
+
+  <script>
+    var token = sessionStorage.getItem('vv_admin_token') || '';
+    var autoRefreshInterval = null;
+
+    window.onload = function () {
+      document.getElementById('token-input').value = token;
+      if (token) { tryAuth(); }
+    };
+
+    function saveToken() {
+      token = document.getElementById('token-input').value.trim();
+      sessionStorage.setItem('vv_admin_token', token);
+      tryAuth();
+    }
+
+    function tryAuth() {
+      fetch('/admin/status', { headers: { 'X-Admin-Token': token } })
+        .then(function (r) {
+          if (r.status === 403) { throw new Error('forbidden'); }
+          return r.json();
+        })
+        .then(function (data) {
+          document.getElementById('auth-error').classList.add('hidden');
+          document.getElementById('auth-section').classList.add('hidden');
+          document.getElementById('dashboard').classList.remove('hidden');
+          applyStatus(data);
+          startAutoRefresh();
+          loadLogs();
+        })
+        .catch(function (err) {
+          var errEl = document.getElementById('auth-error');
+          if (err.message === 'forbidden') {
+            errEl.textContent = '❌ Неверный токен';
+          } else {
+            errEl.textContent = '❌ Бэкенд недоступен — запустите сервер (uvicorn main:app)';
+          }
+          errEl.classList.remove('hidden');
+          document.getElementById('dashboard').classList.add('hidden');
+          document.getElementById('auth-section').classList.remove('hidden');
+        });
+    }
+
+    function logout() {
+      token = '';
+      sessionStorage.removeItem('vv_admin_token');
+      stopAutoRefresh();
       document.getElementById('dashboard').classList.add('hidden');
       document.getElementById('auth-section').classList.remove('hidden');
-    });
-}
-
-function logout() {
-  token = '';
-  sessionStorage.removeItem('vv_admin_token');
-  stopAutoRefresh();
-  document.getElementById('dashboard').classList.add('hidden');
-  document.getElementById('auth-section').classList.remove('hidden');
-}
-
-function applyStatus(data) {
-  var d = data.data || {};
-  document.getElementById('cnt-total').textContent  = (d.total  !== undefined) ? d.total  : '—';
-  document.getElementById('cnt-green').textContent  = (d.green  !== undefined) ? d.green  : '—';
-  document.getElementById('cnt-red').textContent    = (d.red    !== undefined) ? d.red    : '—';
-  document.getElementById('cnt-yellow').textContent = (d.yellow !== undefined) ? d.yellow : '—';
-  document.getElementById('cnt-live').textContent   = d.greenLiveCount || '—';
-  document.getElementById('updated-at').textContent = d.updatedAt
-    ? 'Последнее обновление: ' + d.updatedAt
-    : 'Данных нет';
-  document.getElementById('last-refresh').textContent = 'Обновлено: ' + new Date().toLocaleTimeString('ru-RU');
-
-  var list = document.getElementById('scraper-status-list');
-  list.innerHTML = '';
-  var scrapers = data.scrapers || {};
-  var names = Object.keys(scrapers);
-  for (var i = 0; i < names.length; i++) {
-    var name = names[i];
-    var s = scrapers[name];
-    var isRunning = s.running;
-    var exitIcon = (s.exit_code === 0) ? 'OK' : (s.exit_code === null ? '—' : 'ERR');
-    var badgeHtml = isRunning
-      ? '<span class="badge badge-on running">РАБОТАЕТ</span>'
-      : '<span class="badge badge-off">' + exitIcon + '</span>';
-    var stopHtml = isRunning
-      ? '<button class="btn btn-red btn-sm" onclick="killInfo()">Стоп</button>'
-      : '';
-    var lastRun = s.last_run ? 'Запуск: ' + s.last_run : 'Не запускался';
-    var row = document.createElement('div');
-    row.className = 'status-row';
-    row.innerHTML = '<div class="status-name">' + name.toUpperCase() + '</div>'
-      + badgeHtml
-      + '<div class="status-time">' + lastRun + '</div>'
-      + stopHtml;
-    list.appendChild(row);
-  }
-
-  var btnNames = ['green', 'red', 'yellow', 'all', 'merge', 'login'];
-  for (var j = 0; j < btnNames.length; j++) {
-    var btn = document.getElementById('btn-' + btnNames[j]);
-    if (btn && scrapers[btnNames[j]]) {
-      btn.disabled = scrapers[btnNames[j]].running;
     }
-  }
-}
 
-function runScraper(name) {
-  var btn = document.getElementById('btn-' + name);
-  if (btn) { btn.disabled = true; }
-  fetch('/admin/run/' + name, { method: 'POST', headers: { 'X-Admin-Token': token } })
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
-      appendLog('[ADMIN] ' + JSON.stringify(data));
-      setTimeout(refreshStatus, 1000);
-    })
-    .catch(function(e) {
-      appendLog('[ADMIN] Error: ' + e);
-      if (btn) { btn.disabled = false; }
-    });
-}
+    function applyStatus(data) {
+      var d = data.data || {};
+      document.getElementById('cnt-total').textContent = (d.total !== undefined) ? d.total : '—';
+      document.getElementById('cnt-green').textContent = (d.green !== undefined) ? d.green : '—';
+      document.getElementById('cnt-red').textContent = (d.red !== undefined) ? d.red : '—';
+      document.getElementById('cnt-yellow').textContent = (d.yellow !== undefined) ? d.yellow : '—';
+      document.getElementById('cnt-live').textContent = d.greenLiveCount || '—';
+      document.getElementById('updated-at').textContent = d.updatedAt
+        ? 'Последнее обновление: ' + d.updatedAt
+        : 'Данных нет';
+      document.getElementById('last-refresh').textContent = 'Обновлено: ' + new Date().toLocaleTimeString('ru-RU');
 
-function killInfo() {
-  alert('Дождитесь завершения текущего запуска или перезапустите бэкенд.');
-}
+      updateCookieWarning(data);
 
-function refreshStatus() {
-  fetch('/admin/status', { headers: { 'X-Admin-Token': token } })
-    .then(function(r) { return r.json(); })
-    .then(function(data) { applyStatus(data); })
-    .catch(function() {});
-}
+      var list = document.getElementById('scraper-status-list');
+      list.innerHTML = '';
+      var scrapers = data.scrapers || {};
+      var names = Object.keys(scrapers);
+      for (var i = 0; i < names.length; i++) {
+        var name = names[i];
+        var s = scrapers[name];
+        var isRunning = s.running;
+        var exitIcon = (s.exit_code === 0) ? 'OK' : (s.exit_code === null ? '—' : 'ERR');
+        var badgeHtml = isRunning
+          ? '<span class="badge badge-on running">РАБОТАЕТ</span>'
+          : '<span class="badge badge-off">' + exitIcon + '</span>';
+        var stopHtml = isRunning
+          ? '<button class="btn btn-red btn-sm" onclick="killInfo()">Стоп</button>'
+          : '';
+        var lastRun = s.last_run ? 'Запуск: ' + s.last_run : 'Не запускался';
+        var nameSpan = document.createElement('div');
+        nameSpan.className = 'status-name';
+        nameSpan.textContent = name.toUpperCase();
+        var badgeSpan = document.createElement('span');
+        badgeSpan.className = isRunning ? 'badge badge-on running' : 'badge badge-off';
+        badgeSpan.textContent = isRunning ? 'РАБОТАЕТ' : exitIcon;
+        var timeSpan = document.createElement('div');
+        timeSpan.className = 'status-time';
+        timeSpan.textContent = lastRun;
+        var row = document.createElement('div');
+        row.className = 'status-row';
+        row.appendChild(nameSpan);
+        row.appendChild(badgeSpan);
+        row.appendChild(timeSpan);
+        list.appendChild(row);
+      }
 
-function loadLogs() {
-  fetch('/admin/logs?n=100', { headers: { 'X-Admin-Token': token } })
-    .then(function(r) { return r.json(); })
-    .then(function(data) {
+      var btnNames = ['green', 'red', 'yellow', 'all', 'merge', 'login'];
+      for (var j = 0; j < btnNames.length; j++) {
+        var btn = document.getElementById('btn-' + btnNames[j]);
+        if (btn && scrapers[btnNames[j]]) {
+          btn.disabled = scrapers[btnNames[j]].running;
+        }
+      }
+    }
+
+    function runScraper(name) {
+      var btn = document.getElementById('btn-' + name);
+      if (btn) { btn.disabled = true; }
+      fetch('/api/admin/run/' + name, { method: 'POST', headers: { 'X-Admin-Token': token } })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          appendLog('[ADMIN] ' + JSON.stringify(data));
+          setTimeout(refreshStatus, 1000);
+        })
+        .catch(function (e) {
+          appendLog('[ADMIN] Error: ' + e);
+          if (btn) { btn.disabled = false; }
+        });
+    }
+
+    function killInfo() {
+      appendLog('[INFO] Дождитесь завершения текущего запуска или перезапустите бэкенд.');
+    }
+
+    function refreshStatus() {
+      fetch('/admin/status', { headers: { 'X-Admin-Token': token } })
+        .then(function (r) {
+          if (!r.ok) throw new Error('Status fetch failed: ' + r.status);
+          return r.json();
+        })
+        .then(function (data) { applyStatus(data); })
+        .catch(function (e) {
+          document.getElementById('last-refresh').textContent = '⚠ Авторефреш: ' + e.message;
+        });
+    }
+
+    function loadLogs() {
+      fetch('/admin/logs?n=100', { headers: { 'X-Admin-Token': token } })
+        .then(function (r) {
+          if (!r.ok) throw new Error(r.status);
+          return r.json();
+        })
+        .then(function (data) {
+          var logEl = document.getElementById('log');
+          logEl.textContent = data.lines.join('\n') || '(Логов пока нет)';
+          logEl.scrollTop = logEl.scrollHeight;
+        })
+        .catch(function (e) {
+          document.getElementById('log').textContent = '⚠️ Ошибка загрузки логов: ' + e.message;
+        });
+    }
+
+    function clearLog() {
+      document.getElementById('log').textContent = '(очищено)';
+    }
+
+    function appendLog(line) {
       var logEl = document.getElementById('log');
-      logEl.textContent = data.lines.join('\n') || '(Логов пока нет)';
+      if (logEl.textContent === 'Нажмите «Обновить» чтобы загрузить логи...'
+        || logEl.textContent === '(очищено)') {
+        logEl.textContent = '';
+      }
+      logEl.textContent += line + '\n';
       logEl.scrollTop = logEl.scrollHeight;
-    })
-    .catch(function() {});
-}
+    }
 
-function clearLog() {
-  document.getElementById('log').textContent = '(очищено)';
-}
+    function updateCookieWarning(data) {
+      var tc = data.techCookies || {};
+      var warn = document.getElementById('cookie-warning');
+      var text = document.getElementById('cookie-warning-text');
+      var msgs = [];
+      if (!tc.exists) msgs.push('⚠️ Файл cookies.json не найден — зелёный скрапер не работает');
+      else if (tc.expired) msgs.push('⚠️ Куки устарели (' + tc.age_days + ' дней) — нужна ре-авторизация');
+      else if (tc.age_days > 30) msgs.push('ℹ️ Куки: ' + tc.age_days + ' дней — скоро истекут');
+      if (tc.green_missing) msgs.push('🔴 Файл green_products.json не найден — зелёные ценники недоступны');
+      if (msgs.length > 0) {
+        text.textContent = msgs.join(' | ');
+        warn.classList.remove('hidden');
+      } else {
+        warn.classList.add('hidden');
+      }
+    }
 
-function appendLog(line) {
-  var logEl = document.getElementById('log');
-  if (logEl.textContent === 'Нажмите «Обновить» чтобы загрузить логи...'
-      || logEl.textContent === '(очищено)') {
-    logEl.textContent = '';
-  }
-  logEl.textContent += line + '\n';
-  logEl.scrollTop = logEl.scrollHeight;
-}
+    function techLogin() {
+      var phone = document.getElementById('tech-phone').value.trim();
+      if (!phone) return;
+      var btn = document.getElementById('btn-tech-login');
+      btn.disabled = true;
+      document.getElementById('tech-login-msg').textContent = 'Отправляем SMS...';
+      fetch('/api/admin/tech-login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
+        body: JSON.stringify({ phone: phone })
+      })
+        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+        .then(function (res) {
+          btn.disabled = false;
+          if (res.ok && res.data.success) {
+            document.getElementById('tech-login-step1').classList.add('hidden');
+            document.getElementById('tech-login-step2').classList.remove('hidden');
+            document.getElementById('tech-login-msg').textContent = res.data.message;
+            document.getElementById('tech-code').focus();
+          } else {
+            document.getElementById('tech-login-msg').textContent = '❌ ' + (res.data.detail || res.data.message || 'Ошибка');
+          }
+        })
+        .catch(function (e) {
+          btn.disabled = false;
+          document.getElementById('tech-login-msg').textContent = '❌ Сетевая ошибка';
+        });
+    }
 
-function startAutoRefresh() {
-  stopAutoRefresh();
-  autoRefreshInterval = setInterval(refreshStatus, 5000);
-}
+    function techVerify() {
+      var code = document.getElementById('tech-code').value.trim();
+      if (!code) return;
+      var btn = document.getElementById('btn-tech-verify');
+      btn.disabled = true;
+      document.getElementById('tech-login-msg').textContent = 'Проверяем код...';
+      fetch('/api/admin/tech-verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Admin-Token': token },
+        body: JSON.stringify({ code: code })
+      })
+        .then(function (r) { return r.json().then(function (d) { return { ok: r.ok, data: d }; }); })
+        .then(function (res) {
+          btn.disabled = false;
+          if (res.ok && res.data.success) {
+            document.getElementById('tech-login-msg').textContent = '✅ ' + res.data.message;
+            document.getElementById('tech-login-msg').style.color = '#4ade80';
+            techReset();
+            refreshStatus();
+          } else {
+            document.getElementById('tech-login-msg').textContent = '❌ ' + (res.data.detail || res.data.message || 'Ошибка');
+          }
+        })
+        .catch(function (e) {
+          btn.disabled = false;
+          document.getElementById('tech-login-msg').textContent = '❌ Сетевая ошибка';
+        });
+    }
 
-function stopAutoRefresh() {
-  if (autoRefreshInterval) { clearInterval(autoRefreshInterval); autoRefreshInterval = null; }
-}
-</script>
+    function techReset() {
+      document.getElementById('tech-login-step1').classList.remove('hidden');
+      document.getElementById('tech-login-step2').classList.add('hidden');
+      document.getElementById('tech-code').value = '';
+    }
+
+    function startAutoRefresh() {
+      stopAutoRefresh();
+      autoRefreshInterval = setInterval(refreshStatus, 5000);
+      // Pause when tab is not visible
+      document.addEventListener('visibilitychange', function () {
+        if (document.hidden) { stopAutoRefresh(); }
+        else if (!autoRefreshInterval) { startAutoRefresh(); }
+      });
+    }
+
+    function stopAutoRefresh() {
+      if (autoRefreshInterval) { clearInterval(autoRefreshInterval); autoRefreshInterval = null; }
+    }
+  </script>
 </body>
+
 </html>

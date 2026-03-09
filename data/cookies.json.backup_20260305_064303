@@ -1,0 +1,259 @@
+[
+  {
+    "domain": "vkusvill.ru",
+    "expiry": 1779163173,
+    "httpOnly": false,
+    "name": "BXVV_ordr_bnnr_d_v3",
+    "path": "/",
+    "sameSite": "Lax",
+    "secure": false,
+    "value": "2"
+  },
+  {
+    "domain": ".vkusvill.ru",
+    "expiry": 1802923162,
+    "httpOnly": false,
+    "name": "_vv_card",
+    "path": "/",
+    "sameSite": "Lax",
+    "secure": false,
+    "value": "Q865080"
+  },
+  {
+    "domain": ".vkusvill.ru",
+    "expiry": 1802491158,
+    "httpOnly": false,
+    "name": "UF_USER_AUTH",
+    "path": "/",
+    "sameSite": "Lax",
+    "secure": false,
+    "value": "Y"
+  },
+  {
+    "domain": "vkusvill.ru",
+    "httpOnly": true,
+    "name": "__Host-PHPSESSID",
+    "path": "/",
+    "sameSite": "Lax",
+    "secure": true,
+    "value": "9vev0r824MdUnSlUVyeGGt6ycGwztERv"
+  },
+  {
+    "domain": "vkusvill.ru",
+    "expiry": 1802923153,
+    "httpOnly": true,
+    "name": "BXVV_UTK",
+    "path": "/",
+    "sameSite": "Lax",
+    "secure": true,
+    "value": "STRyS0hISjJrNHZDT0h4d2tWSCtsTHMwWk5BWHBMOTNHKyswVWdhWjFZVW5zcE1RRFpFL0J2WW5NTllPcGN4MzE3YWJmRGo0RU53R2lUM3d2SVc3THpkQTRJTzNCM2RkNUlpRFdnb04vajhCYUFXSXQ3ZmIrQ0FZRFJ5aDcvYnhiSS82RTBLRzNSaGRHVnFUTlEzWjRSTEtYczkxQ2s1UDhqVFgzVWJsZnV6Z1lpRmNCRlB1clBXc2JLeWRlb2gvcmliVnYrNzkzQkpYYUZucFBHYnovcnFkdkxYOS9kQmF1ajk1ZTFYbUt5SE5qNThQMjk3WTZwYjREYU0yQ2FHT2kyWEpCN2dveTVOL2tDMi9FZkpDZzBGaThON1FpZ2pxVzFRWEFkTytUbW5GRVk0T0svdFJzNnJyZk40Y1FwTXJPQmZBMnloNXJvNEtWWGowcENIVUlwRjJHQjdFU1FsbzUrUHpYSEpkMHlrPQ%3D%3D"
+  },
+  {
+    "domain": ".vkusvill.ru",
+    "httpOnly": false,
+    "name": "SERVERID",
+    "path": "/",
+    "sameSite": "Lax",
+    "secure": false,
+    "value": "bitrix02"
+  },
+  {
+    "domain": "vkusvill.ru",
+    "expiry": 1802491153,
+    "httpOnly": true,
+    "name": "BXVV_UIDD",
+    "path": "/",
+    "sameSite": "Lax",
+    "secure": false,
+    "value": "vz2d36tc0prjwsa59yo3a0kjudu0tciw"
+  },
+  {
+    "domain": "vkusvill.ru",
+    "expiry": 1802491153,
+    "httpOnly": true,
+    "name": "BXVV_UIDL",
+    "path": "/",
+    "sameSite": "Lax",
+    "secure": true,
+    "value": "TVlEcUdXTHUxRWVJV2J3Q043cFAvUT09"
+  },
+  {
+    "domain": ".vkusvill.ru",
+    "expiry": 1771559958,
+    "httpOnly": false,
+    "name": "DeliverySelectLast",
+    "path": "/",
+    "sameSite": "Lax",
+    "secure": false,
+    "value": "d"
+  },
+  {
+    "domain": "vkusvill.ru",
+    "expiry": 1802491153,
+    "httpOnly": true,
+    "name": "BXVV_UIDH",
+    "path": "/",
+    "sameSite": "Lax",
+    "secure": true,
+    "value": "BIsBqpV0GDl0LVOgY6HKUJOkAAs5fBM8"
+  },
+  {
+    "domain": ".vkusvill.ru",
+    "expiry": 1800158367,
+    "httpOnly": false,
+    "name": "tmr_lvid",
+    "path": "/",
+    "sameSite": "Lax",
+    "secure": false,
+    "value": "b6cf5913e793e0e42175f2111f0529d9"
+  },
+  {
+    "domain": "vkusvill.ru",
+    "expiry": 1802491153,
+    "httpOnly": true,
+    "name": "UTKK",
+    "path": "/",
+    "sameSite": "Lax",
+    "secure": true,
+    "value": "vA42ld4x5mcUR6kJdB6fh5xC"
+  },
+  {
+    "domain": "vkusvill.ru",
+    "httpOnly": false,
+    "name": "BXVV_SOUND_LOGIN_PLAYED",
+    "path": "/",
+    "sameSite": "Lax",
+    "secure": false,
+    "value": "Y"
+  },
+  {
+    "domain": ".vkusvill.ru",
+    "expiry": 1800158367,
+    "httpOnly": false,
+    "name": "tmr_lvidTS",
+    "path": "/",
+    "sameSite": "Lax",
+    "secure": false,
+    "value": "1771385557906"
+  },
+  {
+    "domain": ".vkusvill.ru",
+    "expiry": 1805946809,
+    "httpOnly": false,
+    "name": "WE_USE_COOKIE",
+    "path": "/",
+    "sameSite": "Lax",
+    "secure": false,
+    "value": "Y"
+  },
+  {
+    "domain": "vkusvill.ru",
+    "expiry": 1771990358,
+    "httpOnly": false,
+    "name": "domain_sid",
+    "path": "/",
+    "sameSite": "Lax",
+    "secure": false,
+    "value": "_rLTumuOrFsLvipXz0Ewq%3A1771385558990"
+  },
+  {
+    "domain": ".vkusvill.ru",
+    "expiry": 1802921557,
+    "httpOnly": false,
+    "name": "_ym_uid",
+    "path": "/",
+    "sameSite": "None",
+    "secure": true,
+    "value": "1771385558614067304"
+  },
+  {
+    "domain": "vkusvill.ru",
+    "expiry": 1771473573,
+    "httpOnly": false,
+    "name": "tmr_detect",
+    "path": "/",
+    "sameSite": "Lax",
+    "secure": false,
+    "value": "0%7C1771387173285"
+  },
+  {
+    "domain": ".vkusvill.ru",
+    "expiry": 1802491158,
+    "httpOnly": false,
+    "name": "_ymab_param",
+    "path": "/",
+    "sameSite": "Lax",
+    "secure": false,
+    "value": "lIVODUIx75OK04mW3RYzRdj_OCWPK9nnfpcfu_NGyRDEq8PcgGF2FACkvPQtJbEkh0_tWSrLlgkCx_EYzD3aXu7scyQ"
+  },
+  {
+    "domain": ".vkusvill.ru",
+    "expiry": 1802921557,
+    "httpOnly": false,
+    "name": "_ym_d",
+    "path": "/",
+    "sameSite": "None",
+    "secure": true,
+    "value": "1771385558"
+  },
+  {
+    "domain": ".vkusvill.ru",
+    "expiry": 1771388073,
+    "httpOnly": true,
+    "name": "qrator_msid2",
+    "path": "/",
+    "sameSite": "Lax",
+    "secure": false,
+    "value": "v2.0.1771387069.443.527304cbQQ0CWGrl|PjIqKaa2i5KrQthe|qe0cTHjMHb/RfjzkuIZifQp/zjUNHHL4eL+W+UZSuG2nqmzf1i/krexSA92/OUizNp7VVafXorlT08vn84aNIw==-bTSMRRysGLsSc/qeim4R70hoOZM="
+  },
+  {
+    "domain": "vkusvill.ru",
+    "expiry": 1802923155,
+    "httpOnly": true,
+    "name": "uguid",
+    "path": "/",
+    "sameSite": "Lax",
+    "secure": true,
+    "value": "019c6ee6-e55c-7479-8f33-be343d6bd838"
+  },
+  {
+    "domain": ".vkusvill.ru",
+    "expiry": 1771457557,
+    "httpOnly": false,
+    "name": "_ym_isad",
+    "path": "/",
+    "sameSite": "None",
+    "secure": true,
+    "value": "2"
+  },
+  {
+    "domain": ".vkusvill.ru",
+    "expiry": 1771430358,
+    "httpOnly": false,
+    "name": "address_tooltip_showed",
+    "path": "/",
+    "sameSite": "Lax",
+    "secure": false,
+    "value": "1"
+  },
+  {
+    "domain": "vkusvill.ru",
+    "expiry": 1802491153,
+    "httpOnly": true,
+    "name": "UTKD",
+    "path": "/",
+    "sameSite": "Lax",
+    "secure": true,
+    "value": "ijj0D8bALoYM83Cnj7nC0BRH1WN2lWbs"
+  },
+  {
+    "domain": ".vkusvill.ru",
+    "expiry": 1802489548,
+    "httpOnly": false,
+    "name": "UF_USER_BUY_SITE",
+    "path": "/",
+    "sameSite": "Lax",
+    "secure": false,
+    "value": "N"
+  }
+]

@@ -20,6 +20,9 @@ import logging
 logger = logging.getLogger(__name__)
 
 BASKET_ADD_URL = "https://vkusvill.ru/ajax/delivery_order/basket_add.php"
+BASKET_UPDATE_URL = "https://vkusvill.ru/ajax/delivery_order/basket_update.php"
+BASKET_RECALC_URL = "https://vkusvill.ru/ajax/delivery_order/basket_recalc.php"
+BASKET_CLEAR_URL = "https://vkusvill.ru/ajax/delivery_order/basket_clear.php"
 VKUSVILL_BASE = "https://vkusvill.ru"
 
 
@@ -120,17 +123,17 @@ class VkusVillCart:
         except requests.RequestException as e:
             logger.warning(f"Failed to extract session params: {e}")
     
-    def _request(self, url: str, data: dict) -> dict:
+    def _request(self, url: str, data: dict, referer: str = '/') -> dict:
         """Make a POST request using raw Cookie header."""
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36',
             'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
             'X-Requested-With': 'XMLHttpRequest',
             'Origin': VKUSVILL_BASE,
-            'Referer': f'{VKUSVILL_BASE}/',
+            'Referer': f'{VKUSVILL_BASE}{referer}',
             'Cookie': self._cookie_str,
         }
-        
+
         r = requests.post(url, data=data, headers=headers, timeout=15)
         return r.json()
     
@@ -248,23 +251,23 @@ class VkusVillCart:
     
     def get_cart(self) -> dict:
         """
-        Fetch the current VkusVill cart state.
-        Uses a dummy request to basket_add.php which safely returns the basket JSON.
+        Fetch the current VkusVill cart state using basket_recalc.php (read-only).
         """
         self._ensure_session()
-        
-        # A minimal payload causes fail but returns basket data
-        data = {'id': 42530}
-        
+
+        data = {'COUPON': '', 'BONUS': ''}
+        if self.sessid:
+            data['sessid'] = self.sessid
+
         try:
-            result = self._request(BASKET_ADD_URL, data)
+            result = self._request(BASKET_RECALC_URL, data, referer='/cart/')
         except Exception as e:
             logger.error(f"Failed to fetch cart: {e}")
             return {'success': False, 'error': str(e)}
-            
+
         basket = result.get('basket', {})
         totals = result.get('totals', {})
-        
+
         return {
             'success': True,
             'items_count': totals.get('Q_ITEMS', 0),
@@ -273,28 +276,58 @@ class VkusVillCart:
             'raw': result
         }
 
-    def remove(self, product_id: int) -> dict:
-        """Remove a product from the VkusVill cart."""
+    def remove(self, product_id: int, basket_key: str = None) -> dict:
+        """Remove a product from the VkusVill cart.
+
+        Uses basket_update.php with type=del and the basket key (e.g. '731_0').
+        If basket_key is not provided, fetches the cart to find it.
+        """
         self._ensure_session()
-        
-        url = "https://vkusvill.ru/ajax/delivery_order/basket_remove.php"
+
+        # Find the basket key if not provided
+        old_q = 1
+        is_green = 0
+        if not basket_key:
+            cart_data = self.get_cart()
+            if not cart_data.get('success'):
+                return {'success': False, 'error': 'Could not fetch cart to find basket key'}
+            basket = cart_data.get('raw', {}).get('basket', {})
+            for key, item in basket.items():
+                if isinstance(item, dict) and str(item.get('PRODUCT_ID', '')) == str(product_id):
+                    basket_key = key
+                    old_q = item.get('Q', 1)
+                    is_green = 1 if item.get('IS_GREEN') else 0
+                    break
+            if not basket_key:
+                logger.warning(f"Product {product_id} not found in cart, nothing to remove")
+                return {'success': True, 'items_count': 0, 'total_price': 0}
+
         data = {
-            'id': product_id,
-            'user_id': self.user_id,
+            'id': basket_key,
+            'productId': product_id,
+            'isGreen': is_green,
+            'q': 0,
+            'q_old': old_q,
+            'koef': 1,
+            'step': 1,
+            'coupon': '',
+            'bonus': '',
+            'type': 'del',
+            'typeBtn': '',
         }
         if self.sessid:
             data['sessid'] = self.sessid
-        
+
         try:
-            result = self._request(url, data)
+            result = self._request(BASKET_UPDATE_URL, data, referer='/cart/')
         except Exception as e:
             logger.error(f"Cart remove failed: {e}")
             return {'success': False, 'error': str(e)}
-        
+
         success = str(result.get('success', '')).upper() in ['Y', 'TRUE', '1']
         totals = result.get('totals', {})
-        
-        logger.info(f"{'✅' if success else '❌'} Remove {product_id}: {result.get('error', 'ok')}")
+
+        logger.info(f"{'✅' if success else '❌'} Remove {product_id} (key={basket_key}): {result.get('error', 'ok')}")
         return {
             'success': success,
             'items_count': totals.get('Q_ITEMS', 0),
@@ -302,26 +335,22 @@ class VkusVillCart:
         }
 
     def clear_all(self) -> dict:
-        """Remove all items from the VkusVill cart."""
+        """Remove all items from the VkusVill cart using basket_clear.php (single call)."""
         self._ensure_session()
-        
-        # First get all items
-        cart = self.get_cart()
-        if not cart.get('success'):
-            return cart
-        
-        raw = cart.get('raw', {})
-        basket = raw.get('basket', {})
-        removed = 0
-        
-        for key, item in basket.items():
-            if isinstance(item, dict) and item.get('PRODUCT_ID'):
-                pid = item['PRODUCT_ID']
-                self.remove(int(pid))
-                removed += 1
-        
-        logger.info(f"🗑 Cleared {removed} items from cart")
-        return {'success': True, 'removed': removed}
+
+        data = {}
+        if self.sessid:
+            data['sessid'] = self.sessid
+
+        try:
+            result = self._request(BASKET_CLEAR_URL, data, referer='/cart/')
+        except Exception as e:
+            logger.error(f"Cart clear failed: {e}")
+            return {'success': False, 'error': str(e)}
+
+        success = str(result.get('success', '')).upper() in ['Y', 'TRUE', '1']
+        logger.info(f"{'🗑' if success else '❌'} Cart clear: {result}")
+        return {'success': success, 'removed': result.get('item_count', 0)}
 
     def close(self):
         """Clear session data."""

@@ -1,13 +1,18 @@
 """
-Yellow prices scraper - standalone script for subagent
+Yellow prices scraper - standalone script
+Scrapes "Скидка по вашей карте" from VkusVill offers page.
+Uses nodriver (CDP) instead of undetected_chromedriver for Chrome 145+ compatibility.
 """
-import undetected_chromedriver as uc
-from selenium.webdriver.common.by import By
-import time
+import asyncio
 import json
 import os
 import sys
-from utils import normalize_category, parse_stock, clean_price, deduplicate_products, synthesize_discount, save_products_safe, ChromeLock
+import socket
+import subprocess
+import tempfile
+import shutil
+
+from utils import normalize_category, parse_stock, clean_price, deduplicate_products, synthesize_discount, save_products_safe, check_vkusvill_available, normalize_stock_unit
 
 # Fix Windows console encoding
 if sys.platform == 'win32':
@@ -19,252 +24,252 @@ YELLOW_URL = "https://vkusvill.ru/offers/?F%5B212%5D%5B%5D=278&F%5BDEF_3%5D=1&sf
 COOKIES_PATH = os.path.join(BASE_DIR, "data", "cookies.json")
 
 
-def load_cookies(driver):
-    """Load VkusVill session cookies from cookies.json into Chrome."""
-    if not os.path.exists(COOKIES_PATH):
-        print(f"  [YELLOW] No cookies.json found at {COOKIES_PATH}")
-        print(f"  [YELLOW] Run 'python login.py' to save your VkusVill session.")
-        return False
+def _find_free_port():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('127.0.0.1', 0))
+        return s.getsockname()[1]
 
+
+def _find_chrome():
+    candidates = [
+        r'C:\Program Files\Google\Chrome\Application\chrome.exe',
+        r'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe',
+    ]
+    for p in candidates:
+        if os.path.exists(p):
+            return p
+    found = shutil.which('chrome') or shutil.which('google-chrome')
+    if found:
+        return found
+    raise FileNotFoundError("Chrome not found. Install Google Chrome.")
+
+
+async def _launch_browser():
+    import nodriver as uc
+    port = _find_free_port()
+    tmp_profile = tempfile.mkdtemp(prefix='uc_yellow_')
+    chrome_path = _find_chrome()
+    args = [
+        chrome_path,
+        f'--remote-debugging-port={port}',
+        f'--user-data-dir={tmp_profile}',
+        '--no-first-run',
+        '--no-default-browser-check',
+        '--disable-features=LocalNetworkAccessChecks',
+        '--lang=ru-RU',
+        '--start-maximized',
+    ]
+    print(f"  [YELLOW] Launching Chrome on port {port}...")
+    proc = subprocess.Popen(args)
+    await asyncio.sleep(3)
+    browser = await uc.Browser.create(host='127.0.0.1', port=port)
+    browser._process_pid = proc.pid
+    return browser, proc, tmp_profile
+
+
+async def _load_cookies(page):
+    if not os.path.exists(COOKIES_PATH):
+        print(f"  [YELLOW] No cookies.json found. Run tech-login from admin panel.")
+        return False
     with open(COOKIES_PATH, 'r', encoding='utf-8') as f:
         cookies = json.load(f)
-
-    # Must navigate to the domain first before adding cookies
-    driver.get("https://vkusvill.ru")
-    time.sleep(2)
-
-    added = 0
-    for cookie in cookies:
-        try:
-            clean = {k: v for k, v in cookie.items()
-                     if k in ('name', 'value', 'domain', 'path', 'secure', 'httpOnly', 'expiry')}
-            if clean.get('domain', '').startswith('.'):
-                clean['domain'] = clean['domain'][1:]
-            driver.add_cookie(clean)
-            added += 1
-        except Exception:
-            pass
-
-    print(f"  [YELLOW] Loaded {added}/{len(cookies)} cookies from cookies.json")
-    return added > 0
-
-
-def init_driver():
-    """Initialize Chrome without a persistent profile (cookie-based auth)."""
-    options = uc.ChromeOptions()
-    options.add_argument('--lang=ru-RU')
-    options.add_argument('--no-sandbox')
-    options.add_argument('--start-maximized')
-    options.add_argument('--disable-features=LocalNetworkAccessChecks')
-
-    with ChromeLock():
-        try:
-            driver = uc.Chrome(options=options, headless=False, version_main=145)
-            return driver
-        except OSError as e:
-            if "WinError 183" in str(e):
-                print(f"⚠️ [YELLOW] WinError 183 despite lock, retrying once...")
-                time.sleep(2)
-                driver = uc.Chrome(options=options, headless=False, version_main=145)
-                return driver
-            raise e
+    from nodriver.cdp import network
+    ss_map = {
+        'Lax': network.CookieSameSite.LAX,
+        'Strict': network.CookieSameSite.STRICT,
+        'None': network.CookieSameSite.NONE,
+    }
+    cdp_cookies = []
+    for c in cookies:
+        cp = network.CookieParam(
+            name=c['name'],
+            value=c['value'],
+            domain=c.get('domain', 'vkusvill.ru'),
+            path=c.get('path', '/'),
+            secure=c.get('secure', False),
+            http_only=c.get('httpOnly', False),
+        )
+        if 'expiry' in c:
+            cp.expires = network.TimeSinceEpoch(c['expiry'])
+        if 'sameSite' in c:
+            cp.same_site = ss_map.get(c['sameSite'])
+        cdp_cookies.append(cp)
+    await page.send(network.set_cookies(cdp_cookies))
+    print(f"  [YELLOW] Loaded {len(cdp_cookies)}/{len(cookies)} cookies via CDP")
+    return len(cdp_cookies) > 0
 
 
-def scrape_yellow_prices():
+def _deserialize(val):
+    if not isinstance(val, dict) or 'type' not in val:
+        return val
+    t = val.get('type')
+    v = val.get('value')
+    if t in ('string', 'number', 'boolean'):
+        return v
+    if t in ('undefined', 'null'):
+        return None
+    if t == 'array':
+        return [_deserialize(item) for item in (v or [])]
+    if t == 'object':
+        if isinstance(v, list):
+            return {pair[0]: _deserialize(pair[1]) for pair in v if isinstance(pair, (list, tuple)) and len(pair) == 2}
+        return v
+    return v
+
+
+async def _js(page, script):
+    raw = await page.evaluate(script)
+    if isinstance(raw, dict) and 'type' in raw:
+        return _deserialize(raw)
+    if isinstance(raw, list) and raw and isinstance(raw[0], dict) and 'type' in raw[0]:
+        return [_deserialize(item) for item in raw]
+    return raw
+
+
+async def scrape_yellow_prices_async():
     print("🔄 [YELLOW] Starting...")
-    driver = None
+    browser = None
+    proc = None
+    tmp_profile = None
     products = []
     scrape_success = False
 
     try:
-        driver = init_driver()
+        browser, proc, tmp_profile = await _launch_browser()
 
-        # Load session cookies
-        cookies_ok = load_cookies(driver)
-        if not cookies_ok:
-            print("⚠️ [YELLOW] No cookies loaded. Run 'python login.py' first.")
+        page = await browser.get('https://vkusvill.ru')
+        await asyncio.sleep(3)
 
-        driver.get(YELLOW_URL)
-        time.sleep(10)  # Wait for initial load
+        await _load_cookies(page)
+
+        page = await browser.get(YELLOW_URL)
+        await asyncio.sleep(10)
 
         # Check if logged in
-        is_logged_in = driver.execute_script("""
-            return !document.body.innerText.includes('Войти') &&
-                   (document.body.innerText.includes('Кабинет') ||
-                    document.body.innerText.includes('Выход'));
-        """)
+        page_text = await _js(page, 'document.body.innerText')
+        is_logged_in = "Войти" not in str(page_text) and ("Кабинет" in str(page_text) or "Выход" in str(page_text))
         if not is_logged_in:
             print("⚠️ [YELLOW] Not logged in! Results may be for wrong location.")
-            print("  [YELLOW] Run 'python login.py' to fix.")
 
-        # Validate that YELLOW filter "Скидка по вашей карте" is active
-        is_active = driver.execute_script("""
-            const buttons = document.querySelectorAll('.VV_Teaser__link, .js-filter-link, [class*="filter"]');
-            for (const btn of buttons) {
-                if (btn.textContent.includes('Скидка по вашей карте') &&
-                    (btn.classList.contains('active') || btn.classList.contains('is-active') ||
-                     getComputedStyle(btn).borderColor.includes('rgb(76, 175, 80)') ||
-                     btn.closest('.active'))) {
-                    return true;
-                }
-            }
-            // Also check if URL filter applied correctly
-            return document.querySelectorAll('.ProductCard').length > 0;
+        is_active = await _js(page, """
+            (() => {
+                return document.querySelectorAll('.ProductCard').length > 0;
+            })()
         """)
-        print(f"  [YELLOW] Filter active: {is_active}")
+        print(f"  [YELLOW] Products visible: {is_active}")
 
-        # Smart pagination: click once, scroll 500px, count in-stock products
-        # Stop when in-stock count stops increasing
+        # Smart pagination: scroll + click "Показать ещё" until no new in-stock products
         prev_in_stock = 0
         no_increase_count = 0
 
-        for batch in range(20):  # Max 20 iterations (safety limit)
-            # Click "Показать ещё" ONCE if visible
-            driver.execute_script("""
-                const btn = Array.from(document.querySelectorAll('button, a')).find(
-                    b => b.innerText.toLowerCase().includes('показать ещ') && b.offsetParent
-                );
-                if (btn) btn.click();
+        for batch in range(20):
+            await _js(page, """
+                (() => {
+                    const btn = Array.from(document.querySelectorAll('button, a')).find(
+                        b => b.innerText.toLowerCase().includes('\u043f\u043e\u043a\u0430\u0437\u0430\u0442\u044c \u0435\u0449') && b.offsetParent
+                    );
+                    if (btn) btn.click();
+                })()
             """)
-            time.sleep(2)
+            await asyncio.sleep(2)
 
-            # Scroll 500px ONCE
-            driver.execute_script("window.scrollBy(0, 500);")
-            time.sleep(1)
+            await _js(page, 'window.scrollBy(0, 500)')
+            await asyncio.sleep(1)
 
-            # Count TOTAL products loaded (not just in-stock) to detect new content
-            total_count = driver.execute_script("""
-                return document.querySelectorAll('.ProductCard').length;
-            """)
-
-            # Also count in-stock for logging
-            in_stock_count = driver.execute_script("""
-                let count = 0;
-                document.querySelectorAll('.ProductCard').forEach(card => {
-                    const text = card.innerText;
-                    // In-stock has "В наличии X шт", out-of-stock has "Не осталось"
-                    if (text.includes('В наличии') && !text.includes('Не осталось')) {
-                        count++;
-                    }
-                });
-                return count;
+            total_count = await _js(page, "document.querySelectorAll('.ProductCard').length")
+            in_stock_count = await _js(page, """
+                (() => {
+                    let count = 0;
+                    document.querySelectorAll('.ProductCard').forEach(card => {
+                        const text = card.innerText;
+                        if (text.includes('\u0412 \u043d\u0430\u043b\u0438\u0447\u0438\u0438') && !text.includes('\u041d\u0435 \u043e\u0441\u0442\u0430\u043b\u043e\u0441\u044c')) count++;
+                    });
+                    return count;
+                })()
             """)
 
             print(f"  [YELLOW] Total: {total_count}, In-stock: {in_stock_count}")
 
-            # Stop if in-stock count didn't increase (no new relevant products)
-            if in_stock_count <= prev_in_stock:
+            if (in_stock_count or 0) <= prev_in_stock:
                 no_increase_count += 1
                 if no_increase_count >= 2:
-                    print(f"  [YELLOW] No new in-stock products - done")
+                    print("  [YELLOW] No new in-stock products - done")
                     break
             else:
                 no_increase_count = 0
 
-            prev_in_stock = in_stock_count
+            prev_in_stock = in_stock_count or 0
 
-        raw_products = driver.execute_script("""
-            const products = [];
-            document.querySelectorAll('.ProductCard').forEach(card => {
-                // ONLY include products with "В наличии X шт" (in-stock)
-                const cardText = card.innerText;
+        raw_products = await _js(page, r"""
+            (() => {
+                const products = [];
+                document.querySelectorAll('.ProductCard').forEach(card => {
+                    const cardText = card.innerText;
+                    if (cardText.includes('\u041d\u0435 \u043e\u0441\u0442\u0430\u043b\u043e\u0441\u044c')) return;
+                    if (!cardText.includes('\u0412 \u043d\u0430\u043b\u0438\u0447\u0438\u0438')) return;
 
-                // Skip if out-of-stock (has "Не осталось")
-                if (cardText.includes('Не осталось')) return;
+                    const titleEl = card.querySelector('.ProductCard__link');
+                    const priceEl = card.querySelector('.js-datalayer-catalog-list-price');
+                    const oldPriceEl = card.querySelector('.js-datalayer-catalog-list-price-old');
+                    const imgEl = card.querySelector('.ProductCard__imageLink img') || card.querySelector('img');
+                    const catEl = card.querySelector('.js-datalayer-catalog-list-category');
 
-                // Must have "В наличии" text to be in-stock
-                if (!cardText.includes('В наличии')) return;
-
-                const titleEl = card.querySelector('.ProductCard__link');
-                // Use data-layer prices (hidden spans with clean numeric values)
-                const priceEl = card.querySelector('.js-datalayer-catalog-list-price');
-                const oldPriceEl = card.querySelector('.js-datalayer-catalog-list-price-old');
-                const imgEl = card.querySelector('.ProductCard__imageLink img') || card.querySelector('img');
-                const catEl = card.querySelector('.js-datalayer-catalog-list-category');
-
-                if (titleEl) {
-                    const url = titleEl.href || '';
-                    const idMatch = url.match(/(\\d+)\\.html/);
-                    const currentPrice = priceEl ? priceEl.innerText.trim() : '0';
-                    const oldPrice = oldPriceEl ? oldPriceEl.innerText.trim() : '0';
-                    const category = catEl ? catEl.innerText.trim() : '';
-
-                    // Image extraction: Prioritize data-src (lazy load) and check multiple sources
-                    let imgSrc = '';
-                    
-                    // 1. Try standard img tag
-                    if (imgEl) {
-                        imgSrc = imgEl.getAttribute('data-src') || imgEl.src || '';
-                    }
-
-                    // 2. Try picture source
-                    if (!imgSrc || imgSrc.includes('data:image')) {
-                        const source = card.querySelector('picture source[srcset]');
-                        if (source) {
-                            const srcset = source.srcset;
-                            if (srcset) imgSrc = srcset.split(' ')[0];
+                    if (titleEl) {
+                        const url = titleEl.href || '';
+                        const idMatch = url.match(/(\d+)\.html/);
+                        let imgSrc = '';
+                        if (imgEl) imgSrc = imgEl.getAttribute('data-src') || imgEl.src || '';
+                        if (!imgSrc || imgSrc.includes('data:image')) {
+                            const source = card.querySelector('picture source[srcset]');
+                            if (source && source.srcset) imgSrc = source.srcset.split(' ')[0];
                         }
-                    }
+                        if (!imgSrc || imgSrc.includes('data:image')) {
+                            const bgEl = card.querySelector('.ProductCard__imageLink, .ProductCard__image');
+                            if (bgEl) {
+                                const bg = window.getComputedStyle(bgEl).backgroundImage;
+                                if (bg && bg !== 'none' && bg.startsWith('url'))
+                                    imgSrc = bg.replace(/^url\(['"]?/, '').replace(/['"]?\)$/, '');
+                            }
+                        }
+                        if (imgSrc && (imgSrc.includes('no-image.svg') || imgSrc.includes('data:image') || imgSrc.includes('spacer.gif')))
+                            imgSrc = '';
 
-                    // 3. Try background image
-                    if (!imgSrc || imgSrc.includes('data:image')) {
-                         const bgEl = card.querySelector('.ProductCard__imageLink, .ProductCard__image');
-                         if (bgEl) {
-                             const bg = window.getComputedStyle(bgEl).backgroundImage;
-                             if (bg && bg !== 'none' && bg.startsWith('url')) {
-                                 imgSrc = bg.replace(/^url\\(['"]?/, '').replace(/['"]?\\)$/, '');
-                             }
-                         }
+                        products.push({
+                            id: idMatch ? idMatch[1] : '',
+                            name: titleEl.innerText.trim(),
+                            url: url,
+                            currentPrice: priceEl ? priceEl.innerText.trim() : '0',
+                            oldPrice: oldPriceEl ? oldPriceEl.innerText.trim() : '0',
+                            image: imgSrc,
+                            stockText: cardText,
+                            unit: '\u0448\u0442',
+                            rawCategory: catEl ? catEl.innerText.trim() : '',
+                            type: 'yellow'
+                        });
                     }
-
-                    // Filter out known placeholders
-                    if (imgSrc.includes('no-image.svg') || imgSrc.includes('data:image') || imgSrc.includes('spacer.gif')) {
-                         imgSrc = '';
-                    }
-
-                    products.push({
-                        id: idMatch ? idMatch[1] : '',
-                        name: titleEl.innerText.trim(),
-                        url: url,
-                        currentPrice: currentPrice,
-                        oldPrice: oldPrice,
-                        image: imgSrc,
-                        stockText: cardText,
-                        unit: 'шт',
-                        rawCategory: category,
-                        type: 'yellow'
-                    });
-                }
-            });
-            return products;
+                });
+                return products;
+            })()
         """)
+        raw_products = raw_products or []
 
-        # Process with utils
-        products = []
         for p in raw_products:
-            # Clean prices
-            p['currentPrice'] = clean_price(p['currentPrice'])
-            p['oldPrice'] = clean_price(p['oldPrice'])
-
-            # Synthesize discount if missing
+            if not isinstance(p, dict):
+                continue
+            p['currentPrice'] = clean_price(p.get('currentPrice', '0'))
+            p['oldPrice'] = clean_price(p.get('oldPrice', '0'))
             p = synthesize_discount(p)
-
-            # Parse stock from full text
             p['stock'] = parse_stock(p.get('stockText', ''))
+            p['unit'] = normalize_stock_unit(p.get('unit'), p['stock'])
             if 'stockText' in p:
                 del p['stockText']
-
-            # Normalize Category (using raw breadcrumb + name)
             raw_cat = p.get('rawCategory', '').split('//')[0].strip()
-            p['category'] = normalize_category(raw_cat, p['name'], p.get('id'))
+            p['category'] = normalize_category(raw_cat, p.get('name', ''), p.get('id'))
             if 'rawCategory' in p:
                 del p['rawCategory']
-
             products.append(p)
 
-        # Deduplicate
         products = deduplicate_products(products)
-
         print(f"✅ [YELLOW] Found {len(products)} products")
         scrape_success = True
 
@@ -273,22 +278,32 @@ def scrape_yellow_prices():
         import traceback
         traceback.print_exc()
     finally:
-        if driver:
+        if browser:
             try:
-                driver.__class__.__del__ = lambda self: None
+                browser.stop()
             except Exception:
                 pass
+        if proc:
             try:
-                driver.quit()
-            except OSError:
+                proc.kill()
+            except Exception:
+                pass
+        if tmp_profile and os.path.isdir(tmp_profile):
+            try:
+                shutil.rmtree(tmp_profile, ignore_errors=True)
+            except Exception:
                 pass
 
-        # Save to temp file
-        # Moved inside finally block so it always runs, using scrape_success to know if it's safe to overwrite
         output_path = os.path.join(DATA_DIR, "yellow_products.json")
         save_products_safe(products, output_path, success=scrape_success)
 
     return products
+
+
+def scrape_yellow_prices():
+    if not check_vkusvill_available():
+        return []
+    return asyncio.run(scrape_yellow_prices_async())
 
 
 if __name__ == "__main__":

@@ -1,362 +1,360 @@
 """
-VkusVill Scraper 2.0 (Green/Red/Yellow Prices)
-Uses persistent Chrome profile and unified JSON output.
+VkusVill Scraper 2.0 (Red/Yellow Prices)
+Uses nodriver (CDP) for Chrome 145+ compatibility.
+Loads session cookies from cookies.json for location-aware results.
 """
-import undetected_chromedriver as uc
-from selenium.webdriver.common.by import By
-import time
+import asyncio
 import json
 import os
 import sys
+import tempfile
+import subprocess
+import socket
+import shutil
 from datetime import datetime
-from utils import normalize_category, parse_stock, clean_price, deduplicate_products, synthesize_discount, ChromeLock
+from utils import normalize_category, parse_stock, clean_price, deduplicate_products, synthesize_discount
 
 # Fix Windows console encoding for emoji support
 if sys.platform == 'win32':
     sys.stdout.reconfigure(encoding='utf-8')
 
-# Configuration
-PROFILE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "chrome_profile_shared")
-RED_BOOK_URL = "https://vkusvill.ru/offers/?F%5B212%5D%5B%5D=284"
-YELLOW_PRICE_URL = "https://vkusvill.ru/offers/?F%5B212%5D%5B%5D=278"
-
-def init_driver(headless=False):
-    """Initialize Chrome with persistent profile"""
-    print("=" * 60)
-    print("Initializing Chrome Driver...")
-    print(f"Profile: {PROFILE_DIR}")
-    print("=" * 60)
-    
-    os.makedirs(PROFILE_DIR, exist_ok=True)
-    options = uc.ChromeOptions()
-    options.add_argument('--lang=ru-RU')
-    options.add_argument('--no-sandbox')
-    options.add_argument('--start-maximized')
-    options.add_argument(f'--user-data-dir={PROFILE_DIR}')
-
-    with ChromeLock():
-        try:
-            return uc.Chrome(options=options, headless=headless)
-        except OSError as e:
-            if "WinError 183" in str(e):
-                print(f"⚠️ WinError 183 despite lock, retrying in 2s...")
-                time.sleep(2)
-                return uc.Chrome(options=options, headless=headless)
-            raise e
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BASE_DIR, "data")
+COOKIES_PATH = os.path.join(DATA_DIR, "cookies.json")
+RED_BOOK_URL = "https://vkusvill.ru/offers/?F%5B212%5D%5B%5D=284&F%5BDEF_3%5D=1&sf4=Y&statepop"
+YELLOW_PRICE_URL = "https://vkusvill.ru/offers/?F%5BDEF_3%5D=1&sf4=Y&statepop"
 
 
-def scrape_catalog_page(driver, url, product_type):
+def _find_free_port():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('127.0.0.1', 0))
+        return s.getsockname()[1]
+
+
+def _find_chrome():
+    candidates = [
+        r'C:\Program Files\Google\Chrome\Application\chrome.exe',
+        r'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe',
+    ]
+    for p in candidates:
+        if os.path.exists(p):
+            return p
+    found = shutil.which('chrome') or shutil.which('google-chrome')
+    if found:
+        return found
+    raise FileNotFoundError("Chrome not found. Install Google Chrome.")
+
+
+def _deserialize(val):
+    """Deserialize nodriver's deep-serialized CDP response to plain Python objects."""
+    if not isinstance(val, dict) or 'type' not in val:
+        return val
+    t = val.get('type')
+    v = val.get('value')
+    if t in ('string', 'number', 'boolean'):
+        return v
+    if t == 'undefined' or t == 'null':
+        return None
+    if t == 'array':
+        return [_deserialize(item) for item in (v or [])]
+    if t == 'object':
+        if isinstance(v, list):
+            return {pair[0]: _deserialize(pair[1]) for pair in v if isinstance(pair, (list, tuple)) and len(pair) == 2}
+        return v
+    return v
+
+
+async def _js(page, script):
+    """Run JS via page.evaluate and deserialize the result."""
+    raw = await page.evaluate(script)
+    if isinstance(raw, dict) and 'type' in raw:
+        return _deserialize(raw)
+    if isinstance(raw, list) and raw and isinstance(raw[0], dict) and 'type' in raw[0]:
+        return [_deserialize(item) for item in raw]
+    return raw
+
+
+async def _launch_browser():
+    import nodriver as uc
+    port = _find_free_port()
+    tmp_profile = tempfile.mkdtemp(prefix='uc_prices_')
+    chrome_path = _find_chrome()
+
+    args = [
+        chrome_path,
+        f'--remote-debugging-port={port}',
+        f'--user-data-dir={tmp_profile}',
+        '--no-first-run',
+        '--no-default-browser-check',
+        '--disable-features=LocalNetworkAccessChecks',
+        '--lang=ru-RU',
+        '--start-maximized',
+    ]
+
+    print(f"  Launching Chrome on port {port}...")
+    proc = subprocess.Popen(args)
+    await asyncio.sleep(3)
+
+    browser = await uc.Browser.create(host='127.0.0.1', port=port)
+    browser._process_pid = proc.pid
+    return browser, proc, tmp_profile
+
+
+async def _load_cookies(page):
+    """Load VkusVill session cookies from cookies.json into browser via CDP."""
+    if not os.path.exists(COOKIES_PATH):
+        print(f"  ⚠️ No cookies.json — location may be wrong. Run tech-login from admin.")
+        return False
+
+    with open(COOKIES_PATH, 'r', encoding='utf-8') as f:
+        cookies = json.load(f)
+
+    from nodriver.cdp import network
+
+    ss_map = {
+        'Lax': network.CookieSameSite.LAX,
+        'Strict': network.CookieSameSite.STRICT,
+        'None': network.CookieSameSite.NONE,
+    }
+
+    cdp_cookies = []
+    for c in cookies:
+        cp = network.CookieParam(
+            name=c['name'],
+            value=c['value'],
+            domain=c.get('domain', 'vkusvill.ru'),
+            path=c.get('path', '/'),
+            secure=c.get('secure', False),
+            http_only=c.get('httpOnly', False),
+        )
+        if 'expiry' in c:
+            cp.expires = network.TimeSinceEpoch(c['expiry'])
+        if 'sameSite' in c:
+            cp.same_site = ss_map.get(c['sameSite'])
+        cdp_cookies.append(cp)
+
+    await page.send(network.set_cookies(cdp_cookies))
+    print(f"  ✅ Loaded {len(cdp_cookies)} cookies via CDP")
+    return True
+
+
+async def scrape_catalog_page(page, browser, url, product_type):
     """Scrape standard catalog pages (Red Book, Yellow Prices)"""
-    print(f"\nScanning {product_type.upper()} page: {url}")
+    print(f"\n{'='*60}")
+    print(f"Scanning {product_type.upper()} page: {url}")
+    print(f"{'='*60}")
     products = []
-    
+
     try:
-        driver.get(url)
-        time.sleep(5)
-        
-        # Scroll to load more
-        for _ in range(3):
-            driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
-            time.sleep(1)
-        
-        products = driver.execute_script(f"""
-            const products = [];
-            const type = "{product_type}";
-            
-            document.querySelectorAll('.ProductCard').forEach(card => {{
-                // Stock check: must have 'Add to cart' button 
-                // and NOT have 'Notify' class/text
-                const btn = card.querySelector('.js-delivery__basket--add');
-                const notify = card.querySelector('.ProductCard__notify');
-                
-                // If button exists and text is 'В корзину' (or similar positive action), it's good.
-                // If button missing or 'Узнать о поступлении', skip.
-                if (!btn || (btn.innerText && btn.innerText.includes('Узнать'))) {{
-                     return;
-                }}
-                if (notify && notify.offsetParent !== null) {{
-                     return; 
-                }}
-                
-                const titleEl = card.querySelector('.ProductCard__link');
-                const priceEl = card.querySelector('.Price.subtitle');
-                const oldPriceEl = card.querySelector('.Price._last');
-                const imgEl = card.querySelector('.ProductCard__imageImg');
+        page = await browser.get(url)
+        await asyncio.sleep(5)
 
-                // Extract real category from data layer element
-                const catEl = card.querySelector('.js-datalayer-catalog-list-category');
-                const category = catEl ? catEl.innerText.trim() : '';
+        # Scroll and load pages until OOS boundary ("Не осталось" / "Привезите ещё")
+        # VkusVill sorts in-stock items first, then OOS after a divider
+        for i in range(50):
+            await _js(page, 'window.scrollTo(0, document.body.scrollHeight)')
+            await asyncio.sleep(1)
 
-                if (titleEl && priceEl) {{
-                    const url = titleEl.href || '';
-                    const idMatch = url.match(/-(\\d+)\\.html/);
+            # Check if we hit the OOS boundary — stop loading
+            hit_oos = await _js(page, """
+                (() => {
+                    const text = document.body.innerText;
+                    return text.includes('Не осталось') || text.includes('Привезите ещё') || text.includes('привезите ещё');
+                })()
+            """)
+            if hit_oos:
+                print(f"  Hit OOS boundary after {i+1} loads — stopping.")
+                break
 
-                    products.push({{
-                        id: idMatch ? idMatch[1] : '',
-                        name: titleEl.innerText.trim(),
-                        url: url,
-                        currentPrice: priceEl.innerText.replace(/[^0-9.,]/g, ''),
-                        oldPrice: oldPriceEl ? oldPriceEl.innerText.replace(/[^0-9.,]/g, '') : '',
-                        image: imgEl ? imgEl.src : '',
-                        stock: 99, // Catalog doesn't show exact stock, assume available
-                        unit: 'шт',
-                        category: category,
-                        type: type
-                    }});
+            # Click "Показать ещё" / load more button if present
+            has_more = await _js(page, """
+                (() => {
+                    const btns = document.querySelectorAll('.Pagination__loadMore, .js-pagination-load-more, button, a');
+                    for (const btn of btns) {
+                        const t = btn.innerText.trim().toLowerCase();
+                        if ((t.includes('показать ещё') || t.includes('показать еще') || t.includes('загрузить ещё')) && btn.offsetParent !== null) {
+                            btn.click();
+                            return true;
+                        }
+                    }
+                    return false;
+                })()
+            """)
+            if not has_more and i >= 2:
+                break
+            if has_more:
+                print(f"  Loading more... (iter {i+1})")
+                await asyncio.sleep(2)
+
+        # Check page loaded
+        title = await _js(page, 'document.title')
+        print(f"  Page title: {title}")
+
+        raw = await _js(page, f"""
+            (() => {{
+                const products = [];
+                const type = "{product_type}";
+
+                const cards = document.querySelectorAll('.ProductCard');
+                for (const card of cards) {{
+                    // Stop at OOS boundary: check if this card or its preceding siblings
+                    // contain the "Не осталось" / "Привезите ещё" divider
+                    let prev = card.previousElementSibling;
+                    while (prev) {{
+                        const t = prev.innerText || '';
+                        if (t.includes('Не осталось') || t.includes('Привезите ещё')) {{
+                            return products; // All remaining cards are OOS
+                        }}
+                        prev = prev.previousElementSibling;
+                    }}
+
+                    // Also check parent section for OOS heading
+                    let parent = card.parentElement;
+                    for (let d = 0; d < 3 && parent; d++) {{
+                        const heading = parent.querySelector('h2, h3, .Catalog__title');
+                        if (heading) {{
+                            const ht = heading.innerText || '';
+                            if (ht.includes('Не осталось') || ht.includes('Привезите ещё')) {{
+                                return products;
+                            }}
+                        }}
+                        parent = parent.parentElement;
+                    }}
+
+                    // Filter: must have "В корзину" button (in-stock)
+                    const btn = card.querySelector('.js-delivery__basket--add');
+                    if (!btn || btn.innerText.trim() !== 'В корзину') {{
+                        continue;
+                    }}
+
+                    const titleEl = card.querySelector('.ProductCard__link');
+                    const priceEl = card.querySelector('.Price.subtitle');
+                    const oldPriceEl = card.querySelector('.Price._last');
+                    const imgEl = card.querySelector('.ProductCard__imageImg');
+                    const catEl = card.querySelector('.js-datalayer-catalog-list-category');
+                    const category = catEl ? catEl.innerText.trim() : '';
+
+                    if (titleEl && priceEl) {{
+                        const url = titleEl.href || '';
+                        const idMatch = url.match(/(?:-)?(\\d+)\\.html/);
+
+                        products.push({{
+                            id: idMatch ? idMatch[1] : '',
+                            name: titleEl.innerText.trim(),
+                            url: url,
+                            currentPrice: priceEl.innerText.replace(/[^0-9.,]/g, ''),
+                            oldPrice: oldPriceEl ? oldPriceEl.innerText.replace(/[^0-9.,]/g, '') : '',
+                            image: imgEl ? imgEl.src : '',
+                            stock: 99,
+                            unit: 'шт',
+                            category: category,
+                            type: type
+                        }});
+                    }}
                 }}
-            }});
-            return products;
+                return products;
+            }})()
         """)
-        
-        # Clean categories and prices using utils
-        for p in products:
+
+        raw = raw or []
+        for p in raw:
+            if not isinstance(p, dict) or 'name' not in p:
+                continue
             p['currentPrice'] = clean_price(p.get('currentPrice'))
             p['oldPrice'] = clean_price(p.get('oldPrice'))
             raw_cat = p.get('category', '').split('//')[0].strip()
-            p['category'] = normalize_category(raw_cat, p['name'], p.get('id'))
-
-            # Ensure discount is synthesized if missing
+            p['category'] = normalize_category(raw_cat, p.get('name', ''), p.get('id'))
             p = synthesize_discount(p)
+            products.append(p)
 
         print(f"✅ Found {len(products)} {product_type} items")
-        return products
-        
+        return products, page
+
     except Exception as e:
         print(f"⚠️ Error scraping {product_type}: {e}")
-        return []
+        import traceback
+        traceback.print_exc()
+        return [], page
 
-def scrape_green_prices(driver, auto_mode=False):
-    """Scrape Green Prices from Cart (preserving original logic)"""
-    print("\n--- Phase 1: Green Prices (Cart) ---")
-    products = []
-    
+
+async def main_async():
+    browser = None
+    proc = None
+    tmp_profile = None
+    red_items = []
+    yellow_items = []
+    scrape_success = False
+
     try:
-        # Navigate to cart
-        driver.get("https://vkusvill.ru/cart/")
-        time.sleep(5)
-        
-        if "403" in driver.title or "Forbidden" in driver.page_source:
-            print("❌ Blocked by VkusVill!")
-            return []
-            
-        page_source = driver.page_source
-        if "Зелёные ценники" not in page_source:
-            print("⚠️ Green prices not found in cart (Not logged in or none available)")
-            return []
-            
-        print("✅ Green prices section found!")
-        
-        # Try to find and click the show all button
-        use_modal = False
-        try:
-            driver.execute_script("window.scrollTo(0, document.body.scrollHeight)")
-            time.sleep(1)
-            driver.execute_script("window.scrollTo(0, 0)")
-            time.sleep(1)
-            
-            clicked = driver.execute_script("""
-                // Try the specific button ID first
-                const showAllBtn = document.getElementById('js-Delivery__Order-green-show-all');
-                if (showAllBtn) {
-                    showAllBtn.scrollIntoView();
-                    showAllBtn.click();
-                    return 'clicked_by_id';
-                }
+        browser, proc, tmp_profile = await _launch_browser()
 
-                // Fallback: find by class in green section
-                const sections = document.querySelectorAll('.VV_TizersSection, .js-vv-tizers-section');
-                for (const section of sections) {
-                    if (section.innerText.includes('Зелёные ценники')) {
-                        const btn = section.querySelector('button.js-prods-modal, .VV_TizersSection__Link, a[href*="green"]');
-                        if (btn) {
-                            btn.click();
-                            return 'clicked_fallback';
-                        }
-                    }
-                }
-                return null;
-            """)
-            
-            if clicked:
-                print(f"✅ Opened modal: {clicked}")
-                time.sleep(3)
-                use_modal = True
-            else:
-                print("ℹ️ No 'show all' button - scraping from cart page directly")
-                
-        except Exception:
-            pass
-        
-        # Extract logic
-        if use_modal:
-            print("Loading all products from modal...")
-            for i in range(20):
-                loaded = driver.execute_script("""
-                    const modal = document.getElementById('js-modal-cart-prods-scroll');
-                    if (modal) modal.scrollTop = modal.scrollHeight;
-                    const btn = document.querySelector('.js-prods-modal-load-more');
-                    if (btn && btn.offsetParent !== null) { btn.click(); return true; }
-                    return false;
-                """)
-                if loaded: time.sleep(1)
-                else: break
-                
-            products = driver.execute_script("""
-                const modal = document.getElementById('js-modal-cart-prods-scroll');
-                if (!modal) return [];
-                return Array.from(modal.querySelectorAll('.ProductCard')).map(card => {
-                    const nameEl = card.querySelector('.ProductCard__link');
-                    // Try new selectors first (same as catalog), then fallback
-                    const priceEl = card.querySelector('.Price.subtitle') || card.querySelector('.Price__value');
-                    const oldPriceEl = card.querySelector('.Price._last') || card.querySelector('.ProductCard__priceStrike');
-                    const imgEl = card.querySelector('.ProductCard__imageImg') || card.querySelector('img');
-                    const catEl = card.querySelector('.js-datalayer-catalog-list-category');
-                    const url = nameEl?.href || '';
-                    const idMatch = url.match(/-(\\d+)\\.html/);
+        # Navigate to domain first for cookie scope
+        page = await browser.get('https://vkusvill.ru')
+        await asyncio.sleep(3)
 
-                    return {
-                        id: idMatch ? idMatch[1] : '',
-                        name: nameEl?.innerText?.trim() || '',
-                        url: url,
-                        currentPrice: priceEl?.innerText?.replace(/[^0-9.,]/g, '') || '0',
-                        oldPrice: oldPriceEl?.innerText?.replace(/[^0-9.,]/g, '') || '0',
-                        image: imgEl?.src || null,
-                        stock: 99, unit: 'шт', type: 'green',
-                        category: catEl?.innerText?.trim() || ''
-                    };
-                }).filter(p => p.name);
-            """)
-        else:
-            print("Extracting products from cart page directly...")
-            time.sleep(2)
-            products = driver.execute_script("""
-                const products = [];
-                document.querySelectorAll('a.HProductCard__Title').forEach(titleEl => {
-                    let parent = titleEl.parentElement;
-                    let isUnavailable = false;
-                    for (let i=0; i<10 && parent; i++) {
-                        if (parent.innerText && parent.innerText.includes('не в наличии')) {
-                            const header = parent.querySelector('h2, h3, .Delivery__Title');
-                            if (header && header.innerText.includes('не в наличии')) { isUnavailable=true; break; }
-                        }
-                        parent = parent.parentElement;
-                    }
-                    if (isUnavailable) return;
+        # Load cookies for location
+        await _load_cookies(page)
 
-                    const name = titleEl.innerText.trim();
-                    const url = titleEl.href || '';
-                    const productId = titleEl.getAttribute('data-id') || '';
-                    
-                    let row = titleEl.parentElement;
-                    for(let i=0; i<5 && row; i++){
-                        if(row.querySelector('img') && row.querySelector('.HProductCard__Avail')) break;
-                        row=row.parentElement;
-                    }
-                    if (!row) row=titleEl.parentElement.parentElement.parentElement;
-                    
-                    const imgEl = row.querySelector('img');
-                    const stockEl = row.querySelector('.HProductCard__Avail');
-                    const stockText = stockEl ? stockEl.innerText : '';
-                    const stockMatch = stockText.match(/В наличии:?\\s*([\\d.,]+)\\s*(кг|шт)/i);
+        # Red Book
+        red_items, page = await scrape_catalog_page(page, browser, RED_BOOK_URL, 'red')
 
-                    // Try to get category from data layer
-                    const catEl = row.querySelector('.js-datalayer-catalog-list-category');
-                    const category = catEl ? catEl.innerText.trim() : '';
+        # Yellow Prices
+        yellow_items, page = await scrape_catalog_page(page, browser, YELLOW_PRICE_URL, 'yellow')
 
-                    const priceEl = row.querySelector('.Price__value, .HProductCard__Price');
-                    let currentPrice = priceEl ? priceEl.innerText.replace(/[^0-9]/g, '') : '0';
-                    const oldPriceEl = row.querySelector('[style*="line-through"]');
-                    let oldPrice = oldPriceEl ? oldPriceEl.innerText.replace(/[^0-9]/g, '') : '0';
+        # Deduplicate
+        red_items = deduplicate_products(red_items)
+        yellow_items = deduplicate_products(yellow_items)
 
-                    if (name && name.length > 2) {
-                        products.push({
-                            id: productId,
-                            name: name, url: url,
-                            currentPrice: currentPrice,
-                            oldPrice: oldPrice,
-                            image: imgEl ? imgEl.src : null,
-                            stock: stockMatch ? parseFloat(stockMatch[1].replace(',', '.')) : 0,
-                            unit: stockMatch ? stockMatch[2] : 'шт',
-                            type: 'green',
-                            category: category
-                        });
-                    }
-                });
-                return products;
-            """)
+        scrape_success = True
 
-        # Filter out stock <= 0 logic is handled in JS (returning 0) and post-filter
-        products = [p for p in products if p.get('stock') is not None and p['stock'] > 0]
-
-        # Clean categories and prices using utils
-        for p in products:
-            p['currentPrice'] = clean_price(p.get('currentPrice'))
-            p['oldPrice'] = clean_price(p.get('oldPrice'))
-
-            # Use helper to synthesize discount for green items
-            p = synthesize_discount(p)
-
-            # Use 'Зелёные ценники' as raw category context for green items if missing
-            raw_cat = p.get('category', '')
-            if not raw_cat:
-                raw_cat = 'Зелёные ценники'
-            else:
-                raw_cat = raw_cat.split('//')[0].strip()
-
-            p['category'] = normalize_category(raw_cat, p['name'], p.get('id'))
-
-        print(f"✅ Found {len(products)} GREEN products")
-        return products
-        
     except Exception as e:
-        print(f"⚠️ Error scraping Green Prices: {e}")
-        return []
+        print(f"❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
+        scrape_success = False
+    finally:
+        # Always save whatever we collected (even partial results)
+        red_path = os.path.join(DATA_DIR, "red_products.json")
+        yellow_path = os.path.join(DATA_DIR, "yellow_products.json")
 
-def main():
-    driver = init_driver(headless=False) # Keep headless=False for now to handle login/bot checks
-    all_products = []
-    
-    try:
-        # 1. Green Prices
-        green_items = scrape_green_prices(driver)
-        all_products.extend(green_items)
-        
-        # 2. Red Book
-        red_items = scrape_catalog_page(driver, RED_BOOK_URL, 'red')
-        all_products.extend(red_items)
-        
-        # 3. Yellow Prices
-        yellow_items = scrape_catalog_page(driver, YELLOW_PRICE_URL, 'yellow')
-        all_products.extend(yellow_items)
+        if scrape_success or red_items:
+            with open(red_path, 'w', encoding='utf-8') as f:
+                json.dump({"products": red_items}, f, ensure_ascii=False, indent=2)
+            print(f"\n✅ Saved {len(red_items)} red products -> {red_path}")
 
-        # Deduplicate products
-        all_products = deduplicate_products(all_products)
+        if scrape_success or yellow_items:
+            with open(yellow_path, 'w', encoding='utf-8') as f:
+                json.dump({"products": yellow_items}, f, ensure_ascii=False, indent=2)
+            print(f"✅ Saved {len(yellow_items)} yellow products -> {yellow_path}")
 
-        # Save unified data
-        output_data = {
-            "updatedAt": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "products": all_products
-        }
-        
-        os.makedirs("data", exist_ok=True)
-        with open("data/proposals.json", "w", encoding="utf-8") as f:
-            json.dump(output_data, f, ensure_ascii=False, indent=2)
-            
-        # Also save to miniapp
-        miniapp_data_path = os.path.join(os.path.dirname(__file__), "miniapp", "public", "data.json")
-        if os.path.exists(os.path.dirname(miniapp_data_path)):
-            with open(miniapp_data_path, "w", encoding="utf-8") as f:
-                json.dump(output_data, f, ensure_ascii=False, indent=2)
-        
-        print("\n" + "="*60)
-        print(f"✅ SAVED TOTAL: {len(all_products)} products")
-        print(f"  💚 Green: {len(green_items)}")
+        print("\n" + "=" * 60)
+        print(f"{'✅' if scrape_success else '⚠️'} TOTAL: {len(red_items) + len(yellow_items)} products")
         print(f"  🔴 Red: {len(red_items)}")
         print(f"  🟡 Yellow: {len(yellow_items)}")
-        print("="*60)
-        
-    finally:
-        driver.quit()
+        print("=" * 60)
+
+        if browser:
+            try:
+                browser.stop()
+            except Exception:
+                pass
+        if proc:
+            try:
+                proc.terminate()
+            except Exception:
+                pass
+        # Clean up temp Chrome profile directory
+        if tmp_profile and os.path.isdir(tmp_profile):
+            try:
+                shutil.rmtree(tmp_profile, ignore_errors=True)
+            except Exception:
+                pass
+
+
+def main():
+    """Sync wrapper for backward compatibility."""
+    asyncio.run(main_async())
+
 
 if __name__ == "__main__":
     main()

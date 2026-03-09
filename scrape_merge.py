@@ -6,7 +6,7 @@ import json
 import os
 import sys
 from datetime import datetime
-from utils import deduplicate_products, normalize_category
+from utils import deduplicate_products, normalize_category, extract_weight, normalize_stock_unit
 
 # Fix Windows console encoding
 if sys.platform == 'win32':
@@ -70,10 +70,13 @@ def merge_products():
     # Count by type
     all_products = deduplicate_products(all_products)
 
-    # Normalize categories for all products (especially Green which often has "Зелёные ценники")
+    # Normalize categories and extract weight from name
     for p in all_products:
         raw_cat = p.get('category', '')
         p['category'] = normalize_category(raw_cat, p.get('name', ''), p.get('id'))
+        if not p.get('weight'):
+            p['weight'] = extract_weight(p.get('name', ''))
+        p['unit'] = normalize_stock_unit(p.get('unit'), p.get('stock'))
 
     green_count = len([p for p in all_products if p['type'] == 'green'])
     red_count = len([p for p in all_products if p['type'] == 'red'])
@@ -87,10 +90,21 @@ def merge_products():
     else:
         data_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
+    # Check if green products file is missing or has 0 products
+    green_path = os.path.join(DATA_DIR, "green_products.json")
+    if not os.path.exists(green_path):
+        green_missing = True
+    else:
+        with open(green_path, 'r', encoding='utf-8') as _gf:
+            _gdata = json.load(_gf)
+        _gproducts = _gdata.get('products', _gdata) if isinstance(_gdata, dict) else _gdata
+        green_missing = len(_gproducts) == 0
+
     # Save results
     output = {
         "updatedAt": data_time,
         "greenLiveCount": green_live_count,
+        "greenMissing": green_missing,
         "dataStale": len(stale_files) > 0,
         "staleInfo": stale_files if stale_files else None,
         "products": all_products

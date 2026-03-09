@@ -2,9 +2,9 @@
 FastAPI Backend for VkusVill Mini App
 Serves product data, handles favorites, and provides admin panel
 """
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Header, Query
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Header, Query, Body, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import List, Optional
@@ -15,12 +15,9 @@ from datetime import datetime
 import json
 import os
 import sys
-from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
 
 # Windows: asyncio.create_subprocess_exec() requires ProactorEventLoop.
-# uvicorn --reload spawns a worker subprocess with SelectorEventLoop (Windows default)
-# which doesn't implement _make_subprocess_transport → NotImplementedError.
-# Setting the policy at module level ensures the correct loop is used everywhere.
+# uvicorn --reload forces SelectorEventLoop which can't spawn subprocesses.
 if sys.platform == 'win32':
     import asyncio as _asyncio
     _asyncio.set_event_loop_policy(_asyncio.WindowsProactorEventLoopPolicy())
@@ -55,10 +52,13 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Load admin token from config / env
+# Load admin token from config / env
 try:
     from config import ADMIN_TOKEN
 except Exception:
-    ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "122662Rus")
+    ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")
+if not ADMIN_TOKEN:
+    logger.warning("ADMIN_TOKEN not set! Admin endpoints will reject all requests.")
 
 app = FastAPI(title="VkusVill Mini App API", version="1.0.0")
 
@@ -68,11 +68,12 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:5173",
         "http://localhost:8000",
+        "https://web.telegram.org",
         os.environ.get("WEB_APP_ORIGIN", "https://t.me"),
     ],
     allow_credentials=True,
     allow_methods=["*"],
-    allow_headers=["*"],
+    allow_headers=["Content-Type", "X-Admin-Token", "Authorization"],
 )
 
 # Initialize database
@@ -83,6 +84,9 @@ BASE_PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_PROJECT_DIR, "data")
 PROPOSALS_PATH = os.path.join(DATA_DIR, "proposals.json")
 MINIAPP_DIST = os.path.join(BASE_PROJECT_DIR, "miniapp", "dist")
+TECH_PROFILE_DIR = os.path.join(DATA_DIR, "tech_profile")
+VKUSVILL_BACKOFF_SECONDS = 60
+_vkusvill_backoff_until = 0.0
 
 # Mount assets directory if it exists
 assets_dir = os.path.join(MINIAPP_DIST, "assets")
@@ -100,7 +104,7 @@ scraper_status: dict = {
     "categories": {"running": False, "last_run": None, "exit_code": None, "last_output": ""},
 }
 
-log_buffer: deque = deque(maxlen=300)
+log_buffer: deque = deque(maxlen=1000)
 _scraper_processes: dict = {}
 
 # Per-name locks — prevent two simultaneous requests launching the same scraper twice
@@ -108,10 +112,16 @@ _run_locks: dict = {
     name: threading.Lock()
     for name in ["green", "red", "yellow", "merge", "login", "categories"]
 }
+_phone_map_lock = threading.Lock()  # R2-9: File lock for user_phone_map.json
 
 # Per-user login sessions: {user_id: {"driver": uc.Chrome, "created_at": float}}
 _login_sessions: dict = {}
 _LOGIN_TTL_SECONDS = 600  # 10 minutes max for login flow
+
+# R2-3: In-memory login rate limiter: {phone_10: [timestamps]}
+_login_attempts: dict = {}
+_LOGIN_RATE_LIMIT = 3  # max attempts per phone
+_LOGIN_RATE_WINDOW = 600  # within 10 minutes
 
 
 def _run_script(name: str, script_path: str):
@@ -128,7 +138,7 @@ def _run_script(name: str, script_path: str):
         scraper_status[name]["last_run"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         scraper_status[name]["last_output"] = ""
 
-    lines: list = []
+    lines: list = []  # capped at 5000 lines to prevent memory issues
 
     def worker():
         try:
@@ -140,6 +150,7 @@ def _run_script(name: str, script_path: str):
                 text=True,
                 encoding="utf-8",
                 errors="replace",
+                env={**os.environ, "PYTHONPATH": BASE_PROJECT_DIR},  # R2-17
             )
             _scraper_processes[name] = proc
             for line in proc.stdout:
@@ -157,12 +168,74 @@ def _run_script(name: str, script_path: str):
             scraper_status[name]["running"] = False
             scraper_status[name]["last_output"] = "\n".join(lines[-40:])
             _scraper_processes.pop(name, None)
+            # Cap lines to prevent unbounded memory growth
+            if len(lines) > 5000:
+                lines[:] = lines[-1000:]
 
     threading.Thread(target=worker, daemon=True).start()
 
 
+def _copy_tech_profile(src_dir: str, dst_dir: str = TECH_PROFILE_DIR):
+    if not src_dir or not os.path.isdir(src_dir):
+        return False
+
+    import shutil
+
+    if os.path.exists(dst_dir):
+        shutil.rmtree(dst_dir, ignore_errors=True)
+    shutil.copytree(src_dir, dst_dir)
+    return True
+
+
+def _cleanup_debug_screenshots():
+    """R2-4: Remove login debug screenshots older than 1 hour."""
+    try:
+        max_age = 3600  # 1 hour
+        now = _time.time()
+        for fname in os.listdir(DATA_DIR):
+            if fname.startswith("login_") and fname.endswith(".png"):
+                fpath = os.path.join(DATA_DIR, fname)
+                if now - os.path.getmtime(fpath) > max_age:
+                    try:
+                        os.remove(fpath)
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+
+
+def _cleanup_temp_profile_dirs():
+    """R2-5: Remove orphaned Chrome temp profile directories."""
+    import tempfile, shutil
+    try:
+        tmp_dir = tempfile.gettempdir()
+        now = _time.time()
+        for entry in os.listdir(tmp_dir):
+            if entry.startswith("uc_"):
+                full = os.path.join(tmp_dir, entry)
+                if os.path.isdir(full) and now - os.path.getmtime(full) > 3600:
+                    try:
+                        shutil.rmtree(full, ignore_errors=True)
+                    except Exception:
+                        pass
+    except Exception:
+        pass
+
+
+def _periodic_cleanup():
+    """R2-23/44: Background timer to clean stale login sessions and temp files."""
+    while True:
+        _time.sleep(300)  # Every 5 minutes
+        _evict_stale_login_sessions()
+        _cleanup_debug_screenshots()
+        _cleanup_temp_profile_dirs()
+
+# Start periodic cleanup on import
+threading.Thread(target=_periodic_cleanup, daemon=True).start()
+
 def _require_token(token: Optional[str]):
     if not ADMIN_TOKEN or not token or token != ADMIN_TOKEN:
+        logger.warning("Admin auth failed: token mismatch")
         raise HTTPException(status_code=403, detail="Invalid admin token")
 
 
@@ -184,6 +257,7 @@ class Product(BaseModel):
 class ProductsResponse(BaseModel):
     updatedAt: str
     greenLiveCount: Optional[int] = 0
+    greenMissing: Optional[bool] = False
     dataStale: Optional[bool] = False
     staleInfo: Optional[List[str]] = None
     products: List[Product]
@@ -202,8 +276,8 @@ class FavoriteResponse(BaseModel):
 class CartAddRequest(BaseModel):
     user_id: str
     product_id: int
-    is_green: int
-    price_type: int
+    is_green: int = 0
+    price_type: int = 1
 
 
 # ─── Public Endpoints ─────────────────────────────────────────────────────────
@@ -222,14 +296,183 @@ def favicon():
         return FileResponse(vite_svg)
     return HTMLResponse(status_code=404)
 
+
+def _load_product_record(product_id: str) -> Optional[dict]:
+    proposals_path = os.path.join(DATA_DIR, "proposals.json")
+    try:
+        with open(proposals_path, encoding='utf-8') as f:
+            data = json.load(f)
+    except Exception:
+        return None
+
+    for product in data.get('products', []):
+        if str(product.get('id')) == str(product_id):
+            return product
+    return None
+
+
+def _fallback_product_details(product_id: str, product: Optional[dict], reason: str = "") -> dict:
+    image = ""
+    weight = ""
+    if product:
+        image = str(product.get("image") or "").strip()
+        weight = str(product.get("weight") or "").strip()
+
+    images = [image] if image else []
+    return {
+        "id": product_id,
+        "weight": weight,
+        "description": "",
+        "shelf_life": "",
+        "storage": "",
+        "composition": "",
+        "nutrition": "",
+        "images": images,
+        "source_unavailable": True,
+        "source_error": reason,
+    }
+
+
+def _fallback_cart_items(reason: str = "") -> dict:
+    return {
+        "items_count": 0,
+        "total_price": 0,
+        "items": [],
+        "source_unavailable": True,
+        "source_error": reason,
+    }
+
+
+def _mark_vkusvill_backoff():
+    global _vkusvill_backoff_until
+    _vkusvill_backoff_until = _time.time() + VKUSVILL_BACKOFF_SECONDS
+
+
+def _vkusvill_backoff_active() -> bool:
+    return _time.time() < _vkusvill_backoff_until
+
+@app.get("/api/product/{product_id}/details")
+def product_details(product_id: str):
+    """Fetch full product details from VkusVill product page (on-demand)."""
+    import requests as _req
+    import re
+
+    product = _load_product_record(product_id)
+    url = product.get('url', '') if product else ''
+
+    if not url:
+        raise HTTPException(status_code=404, detail="Product not found")
+
+    if _vkusvill_backoff_active():
+        return _fallback_product_details(product_id, product, "VkusVill temporarily unreachable")
+
+    try:
+        r = _req.get(url, headers={
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        }, timeout=15)
+        if r.status_code != 200:
+            if r.status_code >= 500:
+                _mark_vkusvill_backoff()
+            logger.warning(f"Product details fallback for {product_id}: VkusVill returned {r.status_code}")
+            return _fallback_product_details(product_id, product, f"VkusVill returned {r.status_code}")
+        html = r.text
+    except _req.RequestException as e:
+        _mark_vkusvill_backoff()
+        logger.warning(f"Product details fallback for {product_id}: {e}")
+        return _fallback_product_details(product_id, product, str(e))
+
+    def strip_tags(s):
+        return re.sub(r'<[^>]+>', ' ', s or '').replace('&nbsp;', ' ').replace('&amp;', '&').strip()
+    def clean(s):
+        return re.sub(r'\s+', ' ', strip_tags(s)).strip()
+
+    # Weight
+    m = re.search(r'ProductCard__weight[^>]*>([^<]+)', html)
+    weight = m.group(1).strip() if m else ''
+
+    # Description
+    m = re.search(r'VV23_DetailProdPageInfoDescItem__Desc[^>]*>([\s\S]{10,2000}?)</div>', html)
+    description = clean(m.group(1)) if m else ''
+
+    # Shelf life
+    m = re.search(r'Годен\s*</[^>]+>\s*<[^>]+>([^<]+)', html)
+    shelf_life = m.group(1).strip() if m else ''
+
+    # Storage
+    m = re.search(r'Условия хранения\s*</[^>]+>\s*<[^>]+>([^<]{5,150})', html)
+    storage = clean(m.group(1)) if m else ''
+
+    # Accordion sections (Состав, Питание и энергетическая ценность, etc.)
+    sections = {}
+    for title, body in re.findall(
+        r'Accordion__Title[^>]*>([\s\S]{1,120}?)</[a-z]+>[\s\S]{0,400}?Accordion__BodyInner[^>]*>([\s\S]{10,1500}?)</div>\s*</div>\s*</div>\s*</div>',
+        html
+    ):
+        t = clean(title)
+        b = clean(body)
+        if t and b:
+            sections[t] = b
+
+    composition = sections.get('Состав', '')
+    nutrition = sections.get('Пищевая и энергетическая ценность', '') or sections.get('Питание', '')
+
+    # Full-size gallery images (deduplicated, no cache-buster params)
+    imgs = list(dict.fromkeys(
+        i.split('?')[0]
+        for i in re.findall(r'https://img\.vkusvill\.ru/pim/images/site/site/[^\s"\'?]+', html)
+    ))
+
+    return {
+        "id": product_id,
+        "weight": weight,
+        "description": description,
+        "shelf_life": shelf_life,
+        "storage": storage,
+        "composition": composition,
+        "nutrition": nutrition,
+        "images": imgs,
+    }
+
+
+@app.post("/api/log")
+def client_log(request: Request, payload: dict = Body(default={})):
+    """Receive client-side error logs from the miniapp."""
+    ua = payload.get("ua", "")[:120]
+    msg = payload.get("msg", "")[:500]
+    level = payload.get("level", "info")[:10]
+    logger.info(f"[CLIENT-{level.upper()}] {msg} | UA: {ua}")
+    return {"ok": True}
+
 @app.get("/api/products", response_model=ProductsResponse)
 def get_products():
-    """Get all products from proposals.json"""
+    """Get all products from proposals.json, with live staleness check."""
     try:
         if not os.path.exists(PROPOSALS_PATH):
             raise HTTPException(status_code=404, detail="Products data not found")
-        with open(PROPOSALS_PATH, "r", encoding="utf-8") as f:
-            data = json.load(f)
+        # R2-38: Catch partial reads from concurrent writes
+        for attempt in range(2):
+            try:
+                with open(PROPOSALS_PATH, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                break
+            except json.JSONDecodeError:
+                if attempt == 0:
+                    import time; time.sleep(0.5)  # Retry once after brief pause
+                else:
+                    raise HTTPException(status_code=500, detail="Invalid JSON data")
+        # Live staleness: check source file ages at request time (not baked merge-time value)
+        STALE_MINUTES = 10
+        stale_files = []
+        for color in ('green', 'red', 'yellow'):
+            src = os.path.join(DATA_DIR, f"{color}_products.json")
+            if os.path.exists(src):
+                age_min = (_time.time() - os.path.getmtime(src)) / 60
+                if age_min > STALE_MINUTES:
+                    stale_files.append(f"{color} ({age_min:.0f}m)")
+        data["dataStale"] = len(stale_files) > 0
+        data["staleInfo"] = stale_files if stale_files else None
+        # Live greenMissing check
+        data["greenMissing"] = not os.path.exists(os.path.join(DATA_DIR, "green_products.json"))
         return data
     except json.JSONDecodeError:
         raise HTTPException(status_code=500, detail="Invalid JSON data")
@@ -244,13 +487,18 @@ async def stream_updates():
         if os.path.exists(PROPOSALS_PATH):
             last_mtime = os.path.getmtime(PROPOSALS_PATH)
             
-        while True:
-            await asyncio.sleep(2)  # Check every 2 seconds
-            if os.path.exists(PROPOSALS_PATH):
-                current_mtime = os.path.getmtime(PROPOSALS_PATH)
-                if current_mtime > last_mtime:
-                    last_mtime = current_mtime
-                    yield "event: update\ndata: {}\n\n"
+        try:
+            while True:
+                await asyncio.sleep(2)  # Check every 2 seconds
+                if os.path.exists(PROPOSALS_PATH):
+                    current_mtime = os.path.getmtime(PROPOSALS_PATH)
+                    if current_mtime > last_mtime:
+                        last_mtime = current_mtime
+                        yield "event: update\ndata: {}\n\n"
+        except asyncio.CancelledError:
+            pass  # Client disconnected, clean exit
+        except GeneratorExit:
+            pass  # Client disconnected, clean exit
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
@@ -339,7 +587,7 @@ def _save_pin_data(phone_10: str, pin: str, user_id: str):
     """Save PIN data for a phone."""
     p = os.path.join(_phone_auth_dir(phone_10), "pin.json")
     data = {
-        "pin_hash": hashlib.sha256(pin.encode()).hexdigest(),
+        "pin_hash": hashlib.sha256((pin + phone_10).encode()).hexdigest(),  # R2-6: Salted with phone
         "user_id": user_id,
         "created_at": _time.time(),
         "attempts": 0,
@@ -358,16 +606,17 @@ def _phone_has_valid_cookies(phone_10: str) -> bool:
 def _save_user_phone_mapping(user_id: str, phone_10: str):
     """Map user_id → phone so cart can find cookies."""
     p = os.path.join(DATA_DIR, "auth", "user_phone_map.json")
-    mapping = {}
-    if os.path.exists(p):
-        try:
-            with open(p, 'r', encoding='utf-8') as f:
-                mapping = json.load(f)
-        except Exception:
-            pass
-    mapping[str(user_id)] = phone_10
-    with open(p, 'w', encoding='utf-8') as f:
-        json.dump(mapping, f, indent=2)
+    with _phone_map_lock:
+        mapping = {}
+        if os.path.exists(p):
+            try:
+                with open(p, 'r', encoding='utf-8') as f:
+                    mapping = json.load(f)
+            except Exception:
+                pass
+        mapping[str(user_id)] = phone_10
+        with open(p, 'w', encoding='utf-8') as f:
+            json.dump(mapping, f, indent=2)
 
 def _get_phone_for_user(user_id: str) -> str | None:
     """Get phone for a user_id from the mapping."""
@@ -403,7 +652,8 @@ def auth_status(user_id: str):
     phone = _get_phone_for_user(user_id)
     if not phone or not _phone_has_valid_cookies(phone):
         return {"authenticated": False}
-    return {"authenticated": True, "phone": phone}
+    masked = f"***-***-{phone[-4:-2]}-{phone[-2:]}" if len(phone) >= 4 else "***"
+    return {"authenticated": True, "phone": masked}
 
 
 class AuthPhoneRequest(BaseModel):
@@ -433,6 +683,14 @@ class AuthLogoutRequest(BaseModel):
     user_id: str
 
 
+class TechLoginRequest(BaseModel):
+    phone: str
+
+
+class TechCodeRequest(BaseModel):
+    code: str
+
+
 async def safe_evaluate(tab, js_code):
     """Helper to catch JS errors in tab.evaluate() which nodriver otherwise swallows."""
     import nodriver as uc
@@ -448,7 +706,6 @@ async def safe_evaluate(tab, js_code):
 
 def _evict_stale_login_sessions():
     """Remove login sessions older than TTL."""
-    import time as _time
     now = _time.time()
     stale = [k for k, v in _login_sessions.items() if now - v.get("created_at", 0) > _LOGIN_TTL_SECONDS]
     for k in stale:
@@ -456,6 +713,11 @@ def _evict_stale_login_sessions():
         if entry and entry.get("browser"):
             try:
                 entry["browser"].stop()
+            except Exception:
+                pass
+        if entry and entry.get("proc"):
+            try:
+                entry["proc"].kill()
             except Exception:
                 pass
 
@@ -468,30 +730,37 @@ async def auth_login(req: AuthPhoneRequest):
     import time as _time
     import sys
 
-    # Windows subprocess fix: Uvicorn worker threads might use SelectorEventLoop 
-    # which crashes nodriver when it tries to spawn Chrome.
-    if sys.platform == 'win32':
-        try:
-            asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
-        except Exception:
-            pass
+    # R2-4: Cleanup old debug screenshots (older than 1 hour)
+    _cleanup_debug_screenshots()
 
     # Patch nodriver Config to include LocalNetworkAccessChecks in --disable-features
-    # (nodriver builds its own --disable-features, overriding any browser_args)
-    _orig_config_call = uc.Config.__call__
-    def _patched_call(self):
-        args = _orig_config_call(self)
-        return [
-            (a + ',LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations'
-             if a.startswith('--disable-features=') else a)
-            for a in args
-        ]
-    uc.Config.__call__ = _patched_call
+    # R2-45: Guard patch to apply only once
+    if not getattr(uc.Config, '_saleapp_patched', False):
+        _orig_config_call = uc.Config.__call__
+        def _patched_call(self):
+            args = _orig_config_call(self)
+            return [
+                (a + ',LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations'
+                 if a.startswith('--disable-features=') else a)
+                for a in args
+            ]
+        uc.Config.__call__ = _patched_call
+        uc.Config._saleapp_patched = True
+
 
     user_id = req.user_id
     phone_raw = _normalize_phone(req.phone)
     if not phone_raw:
         raise HTTPException(status_code=400, detail="Некорректный формат телефона. Примеры: 9166076650, +79166076650, 89166076650")
+
+    # R2-3: Rate limit login attempts per phone
+    now = _time.time()
+    attempts = _login_attempts.get(phone_raw, [])
+    attempts = [t for t in attempts if now - t < _LOGIN_RATE_WINDOW]
+    if len(attempts) >= _LOGIN_RATE_LIMIT:
+        raise HTTPException(status_code=429, detail=f"Слишком много попыток входа. Подождите {int(_LOGIN_RATE_WINDOW / 60)} минут.")
+    attempts.append(now)
+    _login_attempts[phone_raw] = attempts
 
     # Check if this phone already has valid cookies (or .bak from logout) + PIN (skip browser!)
     _cookies_path = _phone_cookies_path(phone_raw)
@@ -510,23 +779,69 @@ async def auth_login(req: AuthPhoneRequest):
             old_entry["browser"].stop()
         except Exception:
             pass
+    if old_entry and old_entry.get("proc"):
+        try:
+            old_entry["proc"].kill()
+        except Exception:
+            pass
 
     _evict_stale_login_sessions()
 
     browser = None
     try:
-        browser = await uc.start(
-            browser_args=[
-                '--window-position=-2400,-2400',
-                '--window-size=1280,720',
-                '--disable-gpu',
-                '--disable-blink-features=AutomationControlled',
-                '--disable-infobars',
-                '--no-sandbox',
-                '--lang=ru-RU,ru',
-            ],
-            sandbox=False,
+        # Windows SelectorEventLoop fix: launch Chrome via subprocess.Popen
+        # then connect nodriver to it, bypassing asyncio.create_subprocess_exec
+        import tempfile, subprocess as _subp, socket as _socket
+
+        def _find_free_port():
+            with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as s:
+                s.bind(('127.0.0.1', 0))
+                return s.getsockname()[1]
+
+        _debug_port = _find_free_port()
+        _user_data_dir = tempfile.mkdtemp(prefix='uc_')
+        _chrome_path = None
+        # Find Chrome executable
+        for p in [
+            r'C:\Program Files\Google\Chrome\Application\chrome.exe',
+            r'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe',
+            os.path.expandvars(r'%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe'),
+        ]:
+            if os.path.exists(p):
+                _chrome_path = p
+                break
+
+        if not _chrome_path:
+            raise RuntimeError("Chrome not found")
+
+        _chrome_args = [
+            _chrome_path,
+            f'--remote-debugging-port={_debug_port}',
+            f'--user-data-dir={_user_data_dir}',
+            '--window-position=-2400,-2400',
+            '--window-size=1280,720',
+            '--disable-gpu',
+            '--disable-blink-features=AutomationControlled',
+            '--disable-infobars',
+            '--no-sandbox',
+            '--lang=ru-RU,ru',
+            '--no-first-run',
+            '--no-default-browser-check',
+            '--disable-features=IsolateOrigins,site-per-process,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations',
+            'about:blank',
+        ]
+        _chrome_proc = _subp.Popen(
+            _chrome_args,
+            creationflags=_subp.CREATE_NO_WINDOW if sys.platform == 'win32' else 0,
         )
+        await asyncio.sleep(3)  # Wait for Chrome to start
+
+        # Connect nodriver to the already-running Chrome (skips create_subprocess_exec)
+        browser = await uc.Browser.create(
+            host='127.0.0.1',
+            port=_debug_port,
+        )
+        browser._process_pid = _chrome_proc.pid
 
         tab = await browser.get('https://vkusvill.ru/personal/')
         await asyncio.sleep(5)  # More time for initial load
@@ -670,7 +985,15 @@ async def auth_login(req: AuthPhoneRequest):
             await tab.save_screenshot(os.path.join(DATA_DIR, f"login_{user_id}_4_sms_ok.png"))
         except: pass
 
-        _login_sessions[user_id] = {"browser": browser, "tab": tab, "phone": phone_raw, "force_sms": req.force_sms, "created_at": _time.time()}
+        _login_sessions[user_id] = {
+            "browser": browser,
+            "tab": tab,
+            "phone": phone_raw,
+            "force_sms": req.force_sms,
+            "created_at": _time.time(),
+            "proc": _chrome_proc,
+            "profile_dir": _user_data_dir,
+        }
         return {"success": True, "need_pin": False, "message": "SMS отправлено. Введите код из SMS."}
 
     except HTTPException:
@@ -703,36 +1026,62 @@ async def auth_verify(req: AuthCodeRequest):
         if not code.isdigit() or not (4 <= len(code) <= 8):
             raise HTTPException(status_code=400, detail="Некорректный код")
 
-        # Fill SMS code using native send_keys
+        # Fill SMS code using CDP key events (same method as phone — VkusVill validates via JS events)
+        import nodriver as uc
         sms_input = await tab.find('input[name="SMS"]', best_match=True)
         if sms_input:
-            await sms_input.click()
-            await sms_input.send_keys(code)
+            await sms_input.mouse_click()
+            await asyncio.sleep(0.3)
+            for digit in code:
+                await tab.send(uc.cdp.input_.dispatch_key_event(
+                    type_='keyDown', key=digit, text=digit,
+                    code=f'Digit{digit}',
+                    windows_virtual_key_code=ord(digit),
+                    native_virtual_key_code=ord(digit),
+                ))
+                await asyncio.sleep(0.05)
+                await tab.send(uc.cdp.input_.dispatch_key_event(
+                    type_='keyUp', key=digit,
+                    code=f'Digit{digit}',
+                    windows_virtual_key_code=ord(digit),
+                    native_virtual_key_code=ord(digit),
+                ))
+                await asyncio.sleep(0.15)
+            await asyncio.sleep(0.5)
         else:
             raise HTTPException(status_code=500, detail="SMS input not found")
-        await asyncio.sleep(0.3)
 
-        # Click "Войти"
-        login_btn = await tab.find('button', best_match=True)
+        # Click submit button (may say "Войти" or "Подтвердить")
+        submit_clicked = False
         btns = await tab.select_all('button')
         for b in btns:
-            if hasattr(b, 'text') and 'Войти' in (b.text or ''):
-                login_btn = b
+            txt = (b.text or '').strip() if hasattr(b, 'text') else ''
+            if any(kw in txt for kw in ['Войти', 'Подтвердить', 'Далее']):
+                await b.mouse_click()
+                submit_clicked = True
+                logger.info(f"Clicked submit button: '{txt}'")
                 break
-        
-        if login_btn:
-            await login_btn.click()
-        else:
-            raise HTTPException(status_code=500, detail="Login button not found")
-        await asyncio.sleep(8)  # Wait for VkusVill to process login
+        if not submit_clicked:
+            # Try JS click on any visible submit button
+            await tab.evaluate('document.querySelector("button[type=submit], .js-VkIdButton, .LoginForm__btn")?.click()')
+            logger.info("Fallback: JS click on submit button")
+        await asyncio.sleep(10)  # Wait for VkusVill to process login
 
-        # Navigate to /personal/ first to confirm auth (sets UF_USER_AUTH=Y)
+        # Navigate to /personal/ to confirm auth (sets UF_USER_AUTH=Y)
         await tab.get('https://vkusvill.ru/personal/')
         await asyncio.sleep(5)
 
         # Navigate to cart to bind delivery address cookies
         await tab.get('https://vkusvill.ru/cart/')
         await asyncio.sleep(5)
+
+        # If UF_USER_AUTH still N, try refreshing /personal/ once more (VkusVill can be slow)
+        cdp_cookies_check = await browser.cookies.get_all()
+        auth_check = {c.name: c.value for c in cdp_cookies_check}
+        if auth_check.get("UF_USER_AUTH") != "Y":
+            logger.info("UF_USER_AUTH not Y yet, retrying /personal/...")
+            await tab.get('https://vkusvill.ru/personal/')
+            await asyncio.sleep(8)
 
         # Get ALL cookies via CDP (includes httpOnly — not accessible via document.cookie)
         cdp_cookies = await browser.cookies.get_all()
@@ -749,6 +1098,15 @@ async def auth_verify(req: AuthCodeRequest):
             for c in cdp_cookies
         ]
 
+        # Verify login actually succeeded before saving cookies
+        # UF_USER_AUTH=Y is the definitive proof of authentication
+        cookie_map = {c["name"]: c["value"] for c in cookies_list}
+        is_authenticated = cookie_map.get("UF_USER_AUTH") == "Y"
+
+        if not is_authenticated:
+            logger.warning(f"Login failed for {entry.get('phone', user_id)}: UF_USER_AUTH={cookie_map.get('UF_USER_AUTH', 'missing')} — NOT saving cookies")
+            return {"success": False, "message": "Не удалось подтвердить вход. VkusVill не принял код — попробуйте ещё раз."}
+
         # Save cookies by PHONE (not user_id)
         phone_10 = entry.get("phone", "")
         if phone_10:
@@ -762,19 +1120,22 @@ async def auth_verify(req: AuthCodeRequest):
             with open(cookies_path, 'w', encoding='utf-8') as f:
                 json.dump(cookies_list, f, indent=2)
             _save_user_phone_mapping(user_id, phone_10)
-            logger.info(f"Saved {len(cookies_list)} cookies for phone {phone_10}")
+            logger.info(f"Saved {len(cookies_list)} cookies for phone {phone_10} (UF_USER_AUTH=Y)")
         else:
             # Fallback: save by user_id (legacy)
             cookies_path = get_user_cookies_path(int(user_id) if user_id.isdigit() else user_id)
             os.makedirs(os.path.dirname(cookies_path), exist_ok=True)
             with open(cookies_path, 'w', encoding='utf-8') as f:
                 json.dump(cookies_list, f, indent=2)
-            logger.info(f"Saved {len(cookies_list)} cookies for user {user_id}")
+            logger.info(f"Saved {len(cookies_list)} cookies for user {user_id} (UF_USER_AUTH=Y)")
 
-        cookie_names = {c["name"] for c in cookies_list}
-        if any(n in cookie_names for n in ('__Host-PHPSESSID', 'BXVV_SALE_UID', 'PHPSESSID')):
-            return {"success": True, "need_set_pin": bool(phone_10), "phone": phone_10, "message": "Авторизация успешна. Установите PIN."}
-        return {"success": False, "message": "Не удалось подтвердить вход. Попробуйте ещё раз."}
+        return {
+            "success": True,
+            "need_set_pin": bool(phone_10),
+            "phone": phone_10,
+            "message": "Авторизация успешна. Установите PIN.",
+            "profile_dir": entry.get("profile_dir"),
+        }
 
     except HTTPException:
         raise
@@ -786,7 +1147,12 @@ async def auth_verify(req: AuthCodeRequest):
             browser.stop()
         except Exception:
             pass
-        _login_sessions.pop(user_id, None)
+        _entry = _login_sessions.pop(user_id, None)
+        if _entry and _entry.get("proc"):
+            try:
+                _entry["proc"].kill()
+            except Exception:
+                pass
 
 
 # ─── Cart Endpoints ───────────────────────────────────────────────────────────
@@ -809,9 +1175,11 @@ def auth_verify_pin(req: AuthPinRequest):
         remaining = int(pin_data["locked_until"] - _time.time())
         raise HTTPException(status_code=429, detail=f"Слишком много попыток. Подождите {remaining} сек.")
 
-    # Verify PIN
-    pin_hash = hashlib.sha256(req.pin.encode()).hexdigest()
-    if pin_hash != pin_data["pin_hash"]:
+    # Verify PIN — R2-6: Try salted hash first, then unsalted for backward compat
+    salted_hash = hashlib.sha256((req.pin + phone).encode()).hexdigest()
+    unsalted_hash = hashlib.sha256(req.pin.encode()).hexdigest()
+    pin_matches = (salted_hash == pin_data["pin_hash"] or unsalted_hash == pin_data["pin_hash"])
+    if not pin_matches:
         # Increment attempts
         pin_data["attempts"] = pin_data.get("attempts", 0) + 1
         remaining = 3 - pin_data["attempts"]
@@ -868,7 +1236,9 @@ def auth_set_pin(req: AuthSetPinRequest):
 
 @app.post("/api/auth/logout")
 def auth_logout(req: AuthLogoutRequest):
-    """Logout: rename cookies to .bak (preserve for PIN re-login)."""
+    """Logout: rename cookies to .bak (preserving for PIN re-login).
+    NOTE (R2-10): .bak file allows quick re-auth via PIN without new SMS.
+    If you need true session revocation, delete the .bak file too."""
     phone = _get_phone_for_user(req.user_id)
     if phone:
         cp = _phone_cookies_path(phone)
@@ -935,6 +1305,9 @@ def cart_items_endpoint(user_id: str):
     if not os.path.exists(cookies_path):
         raise HTTPException(status_code=401, detail="Не авторизованы")
 
+    if _vkusvill_backoff_active():
+        return _fallback_cart_items("VkusVill temporarily unreachable")
+
     try:
         cart = VkusVillCart(cookies_path=cookies_path)
         try:
@@ -943,7 +1316,13 @@ def cart_items_endpoint(user_id: str):
             cart.close()
 
         if not data.get("success"):
-            raise HTTPException(status_code=502, detail=data.get("error", "Cart fetch failed"))
+            error = str(data.get("error", "Cart fetch failed"))
+            lowered = error.lower()
+            if "timeout" in lowered or "timed out" in lowered or "max retries exceeded" in lowered or "failed to fetch cart" in lowered:
+                _mark_vkusvill_backoff()
+                logger.warning(f"Cart items fallback for {user_id}: {error}")
+                return _fallback_cart_items(error)
+            raise HTTPException(status_code=502, detail=error)
 
         # VkusVill sometimes returns {} for empty basket, or a dict of items instead of list
         raw_items = data.get('items', [])
@@ -978,8 +1357,13 @@ def cart_items_endpoint(user_id: str):
         raise HTTPException(status_code=500, detail="Ошибка загрузки корзины")
 
 
+class CartRemoveRequest(BaseModel):
+    user_id: str
+    product_id: int
+
+
 @app.post("/api/cart/remove")
-def cart_remove_endpoint(req: CartAddRequest):
+def cart_remove_endpoint(req: CartRemoveRequest):
     """Remove a product from the user's VkusVill cart."""
     phone = _get_phone_for_user(str(req.user_id))
     if phone:
@@ -1001,10 +1385,14 @@ def cart_remove_endpoint(req: CartAddRequest):
         raise HTTPException(status_code=500, detail="Ошибка удаления из корзины")
 
 
+class CartClearRequest(BaseModel):
+    user_id: str
+
+
 @app.post("/api/cart/clear")
-def cart_clear_endpoint(req: dict):
+def cart_clear_endpoint(req: CartClearRequest):
     """Clear all items from the user's VkusVill cart."""
-    user_id = str(req.get("user_id", ""))
+    user_id = req.user_id
     phone = _get_phone_for_user(user_id)
     if phone:
         cookies_path = _phone_cookies_path(phone)
@@ -1045,16 +1433,82 @@ def admin_get_status(token: Optional[str] = Header(None, alias="X-Admin-Token"))
             counts["greenLiveCount"] = data.get("greenLiveCount", 0)
         except Exception:
             pass
-    return {"scrapers": scraper_status, "data": counts}
+    # Technical cookie health
+    tech_cookies_path = os.path.join(DATA_DIR, "cookies.json")
+    cookie_health = {"exists": False, "age_days": None, "expired": False}
+    if os.path.exists(tech_cookies_path):
+        cookie_health["exists"] = True
+        age_days = (_time.time() - os.path.getmtime(tech_cookies_path)) / 86400
+        cookie_health["age_days"] = round(age_days, 1)
+        cookie_health["expired"] = age_days > 60
+    cookie_health["green_missing"] = not os.path.exists(os.path.join(DATA_DIR, "green_products.json"))
+
+    return {"scrapers": scraper_status, "data": counts, "techCookies": cookie_health}
 
 
-@app.post("/admin/run/{scraper}")
+@app.post("/api/admin/tech-login")
+async def admin_tech_login(req: TechLoginRequest, token: Optional[str] = Header(None, alias="X-Admin-Token")):
+    """Start tech account login via nodriver (admin-only). Saves to data/cookies.json.
+    Reuses the existing auth_login flow with a synthetic user_id='__tech__'.
+    """
+    _require_token(token)
+
+    phone_raw = _normalize_phone(req.phone)
+    if not phone_raw:
+        raise HTTPException(status_code=400, detail="Некорректный формат телефона")
+
+    # Reuse the existing auth_login endpoint logic which already handles
+    # Windows event loop, nodriver patching, rate limits, etc.
+    fake_req = AuthPhoneRequest(user_id="__tech__", phone=phone_raw, force_sms=True)
+    result = await auth_login(fake_req)
+    return {"success": result.get("success", False), "message": result.get("message", "")}
+
+
+@app.post("/api/admin/tech-verify")
+async def admin_tech_verify(req: TechCodeRequest, token: Optional[str] = Header(None, alias="X-Admin-Token")):
+    """Submit SMS code for tech account, save cookies to data/cookies.json.
+    Reuses auth_verify with user_id='__tech__', then copies cookies to data/cookies.json.
+    """
+    _require_token(token)
+
+    # Reuse existing auth_verify which handles nodriver code submission
+    fake_req = AuthCodeRequest(user_id="__tech__", code=req.code)
+    result = await auth_verify(fake_req)
+
+    if result.get("success"):
+        # auth_verify saved cookies to data/auth/{phone}/cookies.json
+        # Copy them to data/cookies.json for the green scraper
+        phone = result.get("phone") or _login_sessions.get("__tech__", {}).get("phone", "")
+        if phone:
+            src = _phone_cookies_path(phone)
+            dst = os.path.join(DATA_DIR, "cookies.json")
+            if os.path.exists(src):
+                import shutil
+                shutil.copy2(src, dst)
+                logger.info(f"Tech verify: copied {src} -> {dst}")
+        profile_dir = result.get("profile_dir")
+        if profile_dir:
+            try:
+                if _copy_tech_profile(profile_dir):
+                    logger.info(f"Tech verify: copied profile {profile_dir} -> {TECH_PROFILE_DIR}")
+            except Exception as exc:
+                logger.warning(f"Tech verify: failed to copy profile from {profile_dir}: {exc}")
+        return {"success": True, "message": "Техническая авторизация успешна. Куки обновлены."}
+
+    return {"success": False, "message": result.get("message", "Не удалось подтвердить вход")}
+
+
+@app.post("/api/admin/run/{scraper}")
 def admin_run_scraper(
     scraper: str,
     background_tasks: BackgroundTasks,
     token: Optional[str] = Header(None, alias="X-Admin-Token"),
 ):
     """Run a specific scraper: green | red | yellow | merge | login | all"""
+    # Keep categories public even though this generic route is declared first.
+    if scraper == "categories":
+        return admin_run_categories(token=token)
+
     _require_token(token)
 
     script_map = {
@@ -1063,7 +1517,6 @@ def admin_run_scraper(
         "yellow":     os.path.join(BASE_PROJECT_DIR, "scrape_yellow.py"),
         "merge":      os.path.join(BASE_PROJECT_DIR, "scrape_merge.py"),
         "login":      os.path.join(BASE_PROJECT_DIR, "login.py"),
-        "categories": os.path.join(BASE_PROJECT_DIR, "scrape_categories.py"),
     }
 
     if scraper == "all":
@@ -1080,19 +1533,29 @@ def admin_run_scraper(
     def worker_with_merge():
         # First run the requested script
         _run_script(scraper, script_map[scraper])
-        # After it finishes, run the merge script so proposals.json updates
-        _run_script("merge", script_map["merge"])
+        while scraper_status[scraper]["running"]:
+            _time.sleep(0.2)
+
+        if scraper_status[scraper].get("exit_code") == 0:
+            # Only merge after a successful scraper run.
+            _run_script("merge", script_map["merge"])
+        else:
+            log_buffer.append(
+                f"[{scraper}] Skipping auto-merge because scraper finished with exit {scraper_status[scraper].get('exit_code')}"
+            )
 
     background_tasks.add_task(worker_with_merge)
     return {"started": scraper, "message": f"{scraper} scraper started in background (auto-merge on completion)"}
 
 
 @app.post("/api/admin/run/categories")
-def admin_run_categories():
+def admin_run_categories(
+    token: Optional[str] = Header(None, alias="X-Admin-Token"),
+):
     """Run category scraper + auto-merge in sequence (background).
     Populates category_db.json then rebuilds proposals.json with new categories.
-    No auth required — anyone can trigger categorization.
     """
+    _require_token(token)
     lock = _run_locks["categories"]
     with lock:
         if scraper_status["categories"]["running"]:
@@ -1117,9 +1580,12 @@ def admin_run_categories():
                 line = line.rstrip()
                 lines.append(line)
                 log_buffer.append(f"[categories] {line}")
+                scraper_status["categories"]["last_output"] = "\n".join(lines[-40:])
             proc.wait()
             scraper_status["categories"]["exit_code"] = proc.returncode
             log_buffer.append(f"[categories] Finished (exit {proc.returncode}), auto-merging...")
+            lines.append(f"[categories] Finished (exit {proc.returncode}), auto-merging...")
+            scraper_status["categories"]["last_output"] = "\n".join(lines[-40:])
 
             # Phase 2: re-merge so proposals.json picks up new categories
             proc2 = subprocess.Popen(
@@ -1131,11 +1597,17 @@ def admin_run_categories():
                 line = line.rstrip()
                 lines.append(line)
                 log_buffer.append(f"[categories/merge] {line}")
+                scraper_status["categories"]["last_output"] = "\n".join(lines[-40:])
             proc2.wait()
+            scraper_status["categories"]["exit_code"] = proc2.returncode if proc.returncode == 0 else proc.returncode
             log_buffer.append(f"[categories] Auto-merge done (exit {proc2.returncode})")
+            lines.append(f"[categories] Auto-merge done (exit {proc2.returncode})")
+            scraper_status["categories"]["last_output"] = "\n".join(lines[-40:])
         except Exception as exc:
             log_buffer.append(f"[categories] Exception: {exc}")
             scraper_status["categories"]["exit_code"] = -1
+            lines.append(f"[categories] Exception: {exc}")
+            scraper_status["categories"]["last_output"] = "\n".join(lines[-40:])
         finally:
             scraper_status["categories"]["running"] = False
             scraper_status["categories"]["last_output"] = "\n".join(lines[-40:])
@@ -1172,10 +1644,14 @@ def admin_panel_page():
     HTML lives in backend/admin.html — pure CSS/ES5, no CDN dependencies.
     """
     if os.path.exists(ADMIN_HTML_PATH):
-        return FileResponse(ADMIN_HTML_PATH, media_type="text/html; charset=utf-8")
+        return FileResponse(
+            ADMIN_HTML_PATH,
+            media_type="text/html; charset=utf-8",
+            headers={"Cache-Control": "no-cache, no-store, must-revalidate"},
+        )
     return HTMLResponse("<h2>admin.html not found next to main.py</h2>", status_code=500)
 
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8000, loop="asyncio")

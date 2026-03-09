@@ -8,6 +8,7 @@ export default function CartPanel({ isOpen, onClose, userId }) {
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState(null)
     const [busyIds, setBusyIds] = useState(new Set())
+    const [clearing, setClearing] = useState(false)
     const cacheRef = useRef(null) // { items, totalPrice, itemsCount, ts }
 
     const fetchCart = useCallback((showSpinner = true) => {
@@ -37,6 +38,8 @@ export default function CartPanel({ isOpen, onClose, userId }) {
 
     useEffect(() => {
         if (isOpen && userId) {
+            // R2-28: Lock body scroll when cart is open
+            document.body.classList.add('cart-open')
             // If cache is fresh (<30s), show it and refresh in background
             if (cacheRef.current && (Date.now() - cacheRef.current.ts) < 30000) {
                 setItems(cacheRef.current.items)
@@ -46,7 +49,10 @@ export default function CartPanel({ isOpen, onClose, userId }) {
             } else {
                 fetchCart(true)
             }
+        } else {
+            document.body.classList.remove('cart-open')
         }
+        return () => document.body.classList.remove('cart-open')
     }, [isOpen, userId, fetchCart])
 
     const markBusy = (id, busy) => {
@@ -66,7 +72,7 @@ export default function CartPanel({ isOpen, onClose, userId }) {
                 body: JSON.stringify({ user_id: userId, product_id: productId })
             })
             if (res.ok) fetchCart(false)
-        } catch (e) { /* ignore */ }
+        } catch (e) { setError('Ошибка при удалении') }
         markBusy(productId, false)
     }
 
@@ -80,13 +86,22 @@ export default function CartPanel({ isOpen, onClose, userId }) {
                 body: JSON.stringify({ user_id: userId, product_id: productId })
             })
             if (res.ok) fetchCart(false)
-        } catch (e) { /* ignore */ }
+        } catch (e) { setError('Ошибка сети') }
         markBusy(productId, false)
     }
 
     const handleClearAll = async () => {
-        if (!confirm('Очистить всю корзину?')) return
-        setLoading(true)
+        if (window.Telegram?.WebApp?.showConfirm) {
+            const ok = await new Promise(r => window.Telegram.WebApp.showConfirm('Очистить всю корзину?', r))
+            if (!ok) return
+        } else if (typeof window.confirm === 'function') {
+            try {
+                if (!window.confirm('Очистить всю корзину?')) return
+            } catch {
+                // confirm() blocked (e.g., in Telegram WebApp) — proceed without confirmation
+            }
+        }
+        setClearing(true)
         try {
             await fetch('/api/cart/clear', {
                 method: 'POST',
@@ -95,7 +110,11 @@ export default function CartPanel({ isOpen, onClose, userId }) {
             })
             cacheRef.current = null
             fetchCart(false)
-        } catch (e) { setError('Ошибка очистки') }
+        } catch (e) {
+            setError('Ошибка очистки')
+        } finally {
+            setClearing(false)
+        }
     }
 
     const outOfStock = items.filter(i => !i.can_buy)
@@ -127,8 +146,8 @@ export default function CartPanel({ isOpen, onClose, userId }) {
                             </h3>
                             <div className="cart-panel-header-actions">
                                 {items.length > 0 && (
-                                    <button className="cart-clear-btn" onClick={handleClearAll} title="Очистить всю корзину">
-                                        🗑 Очистить
+                                    <button className="cart-clear-btn" onClick={handleClearAll} disabled={clearing} title="Очистить всю корзину">
+                                        {clearing ? '⏳ Очищаем…' : '🗑 Очистить'}
                                     </button>
                                 )}
                                 <button className="cart-panel-close" onClick={onClose}>✕</button>
@@ -170,8 +189,8 @@ export default function CartPanel({ isOpen, onClose, userId }) {
                                             <div key={item.id || i} className={`cart-item ${!item.can_buy ? 'cart-item-oos' : ''}`}>
                                                 {item.image && (
                                                     <img
-                                                        src={item.image.startsWith('http') ? item.image : `https://vkusvill.ru${item.image}`}
-                                                        alt=""
+                                                        src={item.image.startsWith('http') || item.image.startsWith('//') ? item.image : `https://vkusvill.ru${item.image}`}
+                                                        alt={item.name || 'Товар'}
                                                         className="cart-item-img"
                                                         onError={e => { e.target.style.display = 'none' }}
                                                     />
@@ -223,7 +242,8 @@ export default function CartPanel({ isOpen, onClose, userId }) {
                         {items.length > 0 && (
                             <div className="cart-panel-footer">
                                 <span>Итого: <strong>{totalPrice}₽</strong></span>
-                                <a href="https://vkusvill.ru/cart/" target="_blank" rel="noopener noreferrer" className="cart-panel-checkout">
+                                <a href="https://vkusvill.ru/cart/" target="_blank" rel="noopener noreferrer" className="cart-panel-checkout"
+                                    title="Откроется сайт ВкусВилл — убедитесь, что вы авторизованы">
                                     Оформить →
                                 </a>
                             </div>

@@ -1,0 +1,39 @@
+﻿python : Traceback (most recent call last):
+At line:1 char:1
++ python scrape_green.py 2>&1 | Out-File -Encoding utf8 e:\Projects\sal ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (most recent call last)::String) [], 
+Rem    oteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  File "E:\Projects\saleapp\scrape_green.py", line 937, in scrape_green_prices_async
+    browser, proc, tmp_profile, using_temp_profile = await _launch_browser()
+                                                     ^^^^^^^^^^^^^^^^^^^^^^^
+  File "E:\Projects\saleapp\scrape_green.py", line 191, in _launch_browser
+    browser = await uc.Browser.create(host='127.0.0.1', port=port)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\site-packages\nodriver\co
+re\browser.py", line 95, in create
+    await instance.start()
+  File "C:\Users\rust-\AppData\Local\Programs\Python\Python312\Lib\site-packages\nodriver\co
+re\browser.py", line 439, in start
+    raise Exception(
+Exception: 
+                ---------------------
+                Failed to connect to browser
+                ---------------------
+                One of the causes could be when you are running as root.
+                In that case you need to pass no_sandbox=True 
+                
+  [CHECK] VkusVill OK (200)
+≡ƒöä [GREEN] Starting...
+  [GREEN] Launching Chrome on port 65419...
+Γ¥î [GREEN] Error: 
+                ---------------------
+                Failed to connect to browser
+                ---------------------
+                One of the causes could be when you are running as root.
+                In that case you need to pass no_sandbox=True 
+                
+ΓÜá∩╕Å Scraper failed or was blocked ΓÇö keeping existing E:\Projects\saleapp\data\green_products.json to allow staleness detection.
+successfully removed temp profile C:\Users\rust-\AppData\Local\Temp\uc_lw8b6m9g

@@ -3,10 +3,85 @@ import os
 import json
 import time
 import sys
+import requests as _requests
 
 # Path to category database
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CATEGORY_DB_PATH = os.path.join(BASE_DIR, "data", "category_db.json")
+
+
+_WEIGHT_RE = re.compile(
+    r'[,\s]\s*(\d[\d.,]*)\s*(г|гр|кг|мл|л)\b',
+    re.IGNORECASE | re.UNICODE
+)
+
+def extract_weight(name: str) -> str:
+    """Extract package weight/volume from product name.
+    E.g. 'Морс детский, 250 мл' -> '250 мл', 'Ямс, 500 гр' -> '500 г'
+    Returns empty string if not found.
+    """
+    m = _WEIGHT_RE.search(name or '')
+    if not m:
+        return ''
+    val = m.group(1).replace(',', '.').rstrip('.')
+    unit = m.group(2).lower()
+    if unit == 'гр':
+        unit = 'г'
+    return f"{val} {unit}"
+
+
+def normalize_stock_unit(unit, stock):
+    """Normalize selling unit when stock shape clearly indicates weight-based sale."""
+    raw = str(unit or '').strip().lower()
+    if raw == 'kg':
+        return 'кг'
+    if raw == 'ml':
+        return 'мл'
+    if raw == 'l':
+        return 'л'
+    if raw == 'гр':
+        return 'г'
+    if raw == 'pcs':
+        raw = 'шт'
+    if not raw:
+        raw = 'шт'
+
+    try:
+        stock_num = float(stock)
+    except (TypeError, ValueError):
+        return raw
+
+    if raw == 'шт' and stock_num > 0 and not stock_num.is_integer():
+        return 'кг'
+    return raw
+
+
+def check_vkusvill_available(strict: bool = False) -> bool:
+    """Check if VkusVill is reachable before scraping.
+
+    By default this probe is advisory because browser-driven scrapers can still
+    work even when a plain Python requests call times out on this machine.
+    """
+    try:
+        r = _requests.get(
+            'https://vkusvill.ru/',
+            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'},
+            timeout=10,
+            allow_redirects=True,
+        )
+        if r.status_code == 200:
+            print(f'  [CHECK] VkusVill OK (200)')
+            return True
+        print(f'  [CHECK] VkusVill returned {r.status_code} — possible IP ban or downtime. Aborting scrape.')
+        return False
+    except Exception as e:
+        if strict:
+            print(f'  [CHECK] VkusVill unreachable: {e} - Aborting scrape.')
+            return False
+        print(f'  [CHECK] VkusVill probe failed: {e} - continuing with browser scraper.')
+        return True
+        print(f'  [CHECK] VkusVill unreachable: {e} — Aborting scrape.')
+        return False
 
 class ChromeLock:
     """
@@ -73,17 +148,23 @@ class ChromeLock:
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.release()
 
-# Cache for category database
+# Cache for category database (with TTL to pick up scraper updates)
 _category_db_cache = None
+_category_db_mtime = 0
 
 def load_category_db():
-    """Load the category database from disk (cached)"""
-    global _category_db_cache
-    if _category_db_cache is None:
+    """Load the category database from disk (cached, refreshes if file changed)"""
+    global _category_db_cache, _category_db_mtime
+    try:
+        current_mtime = os.path.getmtime(CATEGORY_DB_PATH) if os.path.exists(CATEGORY_DB_PATH) else 0
+    except OSError:
+        current_mtime = 0
+    if _category_db_cache is None or current_mtime != _category_db_mtime:
         if os.path.exists(CATEGORY_DB_PATH):
             try:
                 with open(CATEGORY_DB_PATH, 'r', encoding='utf-8') as f:
                     _category_db_cache = json.load(f)
+                _category_db_mtime = current_mtime
             except Exception:
                 _category_db_cache = {"products": {}}
         else:
@@ -196,7 +277,13 @@ def normalize_category(raw_cat, product_name, product_id=None):
             # Return the raw category as-is (VkusVill's actual category)
             return raw_cat
     
-    # Tier 3: Not in DB and no meaningful raw category → 'Новинки' (triggers category scraper prompt)
+    # Tier 3: Keyword fallback for unknown items
+    if product_name:
+        kw_result = keyword_fallback(product_name)
+        if kw_result and kw_result != 'Другое':
+            return kw_result
+
+    # Tier 4: Not in DB, no meaningful raw category, no keyword match → 'Новинки'
     return 'Новинки'
 
 def parse_stock(text):
@@ -237,15 +324,17 @@ def parse_stock(text):
     return 0
 
 def clean_price(price_str):
-    """Returns clean integer string from price (e.g., '120 ₽' -> '120', '120.50' -> '120')"""
+    """Returns clean integer string from price (e.g., '1 399 ₽/кг' -> '1399', '120.50' -> '120')"""
     if not price_str:
         return '0'
-    # Handle decimal separators - replace comma with dot, then extract number
-    s = str(price_str).replace(',', '.')
-    # Extract numeric value (including decimal)
+    s = str(price_str)
+    # Remove non-breaking spaces and HTML entities used as thousands separators
+    s = s.replace('&nbsp;', '').replace('\u00a0', '')
+    # Collapse spaces between digits (thousands separator: "1 399" -> "1399")
+    s = re.sub(r'(\d)\s+(\d)', r'\1\2', s)
+    s = s.replace(',', '.')
     match = re.search(r'(\d+(?:\.\d+)?)', s)
     if match:
-        # Return integer part only (floor the value)
         return str(int(float(match.group(1))))
     return '0'
 
@@ -266,7 +355,7 @@ def synthesize_discount(product):
             curr = float(curr_price)
             if curr > 0:
                 # Green tags are typically 40% off, so current = old * 0.6
-                product['oldPrice'] = str(int(curr / 0.6))
+                product['oldPrice'] = str(int(round(curr / 0.6)))
         except (ValueError, TypeError):
             pass
     return product

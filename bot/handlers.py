@@ -464,24 +464,23 @@ async def handle_remove_category(update: Update, context: ContextTypes.DEFAULT_T
 async def handle_cart_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle 'Add to Cart' button press via VkusVillCart API"""
     query = update.callback_query
-    await query.answer("Запрос отправляется...")
-    
+    # Don't answer yet — answer once with the final result (Telegram allows only 1 answer)
+
     parts = query.data.split('_')
     if len(parts) >= 5:
         product_id = int(parts[2])
         is_green = int(parts[3])
         price_type = int(parts[4])
         user_id = update.effective_user.id
-        
+
         # Resolve paths dynamically
         import os
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         cookies_path = os.path.join(base_dir, "data", "user_cookies", f"{user_id}.json")
 
+        cart = None
         try:
             from cart.vkusvill_api import VkusVillCart
-            import logging
-            logger = logging.getLogger(__name__)
 
             if not os.path.exists(cookies_path):
                 await query.answer("❌ Вы не авторизованы! Войдите через веб-приложение.", show_alert=True)
@@ -489,7 +488,7 @@ async def handle_cart_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             cart = VkusVillCart(cookies_path=cookies_path)
             result = cart.add(product_id=product_id, price_type=price_type, is_green=is_green)
-            
+
             if result.get('success'):
                 msg = f"✅ Добавлено!\n\nКорзина: {result.get('cart_items', '?')} шт. на {result.get('cart_total', '?')} руб."
                 await query.answer(msg, show_alert=True)
@@ -497,13 +496,13 @@ async def handle_cart_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 error = result.get('error', 'Неизвестная ошибка')
                 msg = f"❌ Ошибка: {error}"
                 await query.answer(msg, show_alert=True)
-                
-            cart.close()
-            
+
         except Exception as e:
-            import logging
-            logging.getLogger(__name__).error(f"Cart add error: {e}")
+            logger.error(f"Cart add error: {e}")
             await query.answer("❌ Ошибка при обращении к API", show_alert=True)
+        finally:
+            if cart:
+                cart.close()
     else:
         await query.answer("❌ Ошибка в данных кнопки", show_alert=True)
 
