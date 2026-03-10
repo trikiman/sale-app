@@ -1,5 +1,53 @@
 # Roadmap
 
+def _parse_subcategories(html: str, category_url: str) -> list[dict]:
+    """Parse subcategory links from a category page.
+    Returns list of {name, url} for each subcategory.
+    Subcategory URLs are one level deeper than the category URL,
+    e.g. /goods/gotovaya-eda/salaty/ under /goods/gotovaya-eda/
+    """
+    soup = BeautifulSoup(html, 'lxml')
+    subcats = []
+    seen_urls = set()
+    # Normalize the category base path (strip trailing slash for comparison)
+    base_path = category_url.rstrip('/').replace('https://vkusvill.ru', '')
+
+    # Look for links that are direct children of the category
+    for link in soup.select('a[href]'):
+        href = link.get('href', '')
+        # Normalize to absolute path
+        if href.startswith('/'):
+            full_path = href.rstrip('/')
+        elif href.startswith('https://vkusvill.ru'):
+            full_path = href.replace('https://vkusvill.ru', '').rstrip('/')
+        else:
+            continue
+
+        # Must be a direct sub-path of the category
+        # e.g. /goods/gotovaya-eda/salaty but NOT /goods/gotovaya-eda
+        # and NOT /goods/gotovaya-eda/salaty/something
+        if not full_path.startswith(base_path + '/'):
+            continue
+        remainder = full_path[len(base_path) + 1:]
+        if not remainder or '/' in remainder:
+            continue
+        # Skip pagination, filter, and product URLs
+        if remainder.isdigit() or '?' in remainder or '.html' in remainder:
+            continue
+        # Skip known non-subcategory paths
+        if remainder in ('novinki', 'all', 'best'):
+            continue
+
+        subcat_url = f'https://vkusvill.ru{full_path}/'
+        if subcat_url in seen_urls:
+            continue
+        seen_urls.add(subcat_url)
+
+        name = link.get_text(strip=True)
+        if name and len(name) < 80:
+            subcats.append({'name': name, 'url': subcat_url})
+
+    return subcats
 ## Milestone 1: Automated Scrapers ✅
 - [x] Yellow/Red price tag scraping (`scrape_red.py`, `scrape_yellow.py`)
 - [x] Green price scraping (`scrape_green.py`)

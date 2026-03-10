@@ -55,11 +55,8 @@ tmp_*.txt
 # Database
 *.db
 
-# Scraper output (changes every 5 min, don't track)
-data/green_products.json
-data/red_products.json
-data/yellow_products.json
-data/proposals.json
+# Data directory (scraped output, tech profile, etc.)
+data/
 miniapp/public/data.json
 
 # Claude Workspace

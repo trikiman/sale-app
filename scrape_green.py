@@ -510,10 +510,13 @@ def _green_inline_scope_expr() -> str:
             }
 
             document.querySelectorAll('section, div, article').forEach((node) => {
-                const text = (node.textContent || '').replace(/\\u00a0/g, ' ');
-                const isGreenSection = text.includes('\\u0417\\u0435\\u043b\\u0451\\u043d\\u044b\\u0435 \\u0446\\u0435\\u043d\\u043d\\u0438\\u043a\\u0438')
-                    || text.includes('\\u0417\\u0435\\u043b\\u0435\\u043d\\u044b\\u0435 \\u0446\\u0435\\u043d\\u043d\\u0438\\u043a\\u0438');
-                if (isGreenSection && node.querySelector('.ProductCard')) {
+                const text = (node.textContent || '').replace(/\u00a0/g, ' ');
+                const isGreenSection = text.includes('\u0417\u0435\u043b\u0451\u043d\u044b\u0435 \u0446\u0435\u043d\u043d\u0438\u043a\u0438')
+                    || text.includes('\u0417\u0435\u043b\u0435\u043d\u044b\u0435 \u0446\u0435\u043d\u043d\u0438\u043a\u0438');
+                // Guard: reject nodes that also contain the "Добавьте в заказ" section
+                // to avoid confusing regular product recommendations with green prices
+                const hasNonGreen = text.includes('\u0414\u043e\u0431\u0430\u0432\u044c\u0442\u0435 \u0432 \u0437\u0430\u043a\u0430\u0437');
+                if (isGreenSection && !hasNonGreen && node.querySelector('.ProductCard')) {
                     pushCandidate(node);
                 }
             });
@@ -663,7 +666,7 @@ async def _add_green_cards_to_cart(page, card_source: str, total_cards: int):
         results_summary[result] = results_summary.get(result, 0) + 1
         if result == 'added':
             added_count += 1
-        await asyncio.sleep(0.3)
+        await asyncio.sleep(1.0)  # 1s delay between cart adds (human-like, avoid bot ban)
 
     return results_summary, added_count
 
@@ -1154,7 +1157,7 @@ async def scrape_green_prices_async():
         print("  [GREEN] Step 3: Looking for green section...")
         await _js(page, 'window.scrollTo(0, document.body.scrollHeight)')
         await asyncio.sleep(2)
-        await _js(page, 'window.scrollTo(0, 1400)')
+        await _js(page, 'window.scrollTo(0, 2000)')  # Green section is ~2000px down
         await asyncio.sleep(2)
 
         # Debug: check what's on the page
@@ -1348,7 +1351,7 @@ async def scrape_green_prices_async():
                             """)
                             if str(result) == 'added':
                                 added += 1
-                            await asyncio.sleep(0.4)
+                            await asyncio.sleep(1.0)  # 1s delay — simulate human clicking
 
                             # Dismiss any popup that blocks the modal
                             await _js(page, """
