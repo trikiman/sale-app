@@ -3,6 +3,17 @@ import { motion, AnimatePresence } from 'framer-motion'
 
 const Spinner = () => <span className="login-spinner" />
 
+// BUG-B fix: Pydantic 422 errors return detail as an array of objects,
+// not a string. Rendering an array/object as React child → error #31 → blank screen.
+function extractErrorMsg(data, fallback = 'Ошибка') {
+  const d = data?.detail
+  if (!d) return fallback
+  if (typeof d === 'string') return d
+  if (Array.isArray(d)) return d.map(e => e?.msg || JSON.stringify(e)).join('; ')
+  if (typeof d === 'object') return d.msg || JSON.stringify(d)
+  return String(d)
+}
+
 export default function Login({ userId, onLoginSuccess }) {
   const [step, setStep] = useState('phone')
   const [phone, setPhone] = useState(() => localStorage.getItem('vv_last_phone') || '')
@@ -24,20 +35,22 @@ export default function Login({ userId, onLoginSuccess }) {
   // ── Phone Step ──
   const handlePhoneSubmit = async (e) => {
     e.preventDefault()
-    if (!phone) return
+    // Strip to pure digits for the API (prevents Pydantic 422 on non-string/format issues)
+    const cleanPhone = phone.replace(/\D/g, '')
+    if (!cleanPhone || cleanPhone.length < 10) return
     setLoading(true); setError(null)
     try {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: userId, phone, force_sms: forceSms })
+        body: JSON.stringify({ user_id: String(userId), phone: cleanPhone, force_sms: forceSms })
       })
       const data = await res.json()
       if (res.ok && data.success) {
-        localStorage.setItem('vv_last_phone', phone)
+        localStorage.setItem('vv_last_phone', cleanPhone)
         setStep(data.need_pin ? 'pin' : 'code')
       } else {
-        setError(data.detail || 'Не удалось отправить SMS')
+        setError(extractErrorMsg(data, 'Не удалось отправить SMS'))
       }
     } catch (e) { setError(e.message || 'Нет связи с сервером') }
     finally { setLoading(false) }
@@ -55,7 +68,7 @@ export default function Login({ userId, onLoginSuccess }) {
       })
       const data = await res.json()
       if (res.ok && data.success) onLoginSuccess(phone)
-      else { setError(data.detail || 'Неверный PIN'); setPin('') }
+      else { setError(extractErrorMsg(data, 'Неверный PIN')); setPin('') }
     } catch (e) { setError(e.message || 'Нет связи с сервером') }
     finally { setLoading(false) }
   }
@@ -85,7 +98,7 @@ export default function Login({ userId, onLoginSuccess }) {
         } else {
           onLoginSuccess(phone)
         }
-      } else { setError(data.detail || 'Неверный код'); setCode('') }
+      } else { setError(extractErrorMsg(data, 'Неверный код')); setCode('') }
     } catch (e) { setError(e.message || 'Нет связи с сервером') }
     finally { setLoading(false) }
   }
@@ -110,7 +123,7 @@ export default function Login({ userId, onLoginSuccess }) {
       })
       const data = await res.json()
       if (res.ok && data.success) onLoginSuccess(verifiedPhone)
-      else setError(data.detail || 'Не удалось установить PIN')
+      else setError(extractErrorMsg(data, 'Не удалось установить PIN'))
     } catch (e) { setError(e.message || 'Нет связи с сервером') }
     finally { setLoading(false) }
   }
@@ -177,7 +190,7 @@ export default function Login({ userId, onLoginSuccess }) {
             <button type="submit" disabled={loading || code.length < 4} className="login-btn">
               {loading ? <><Spinner /> Проверяем…</> : 'Подтвердить'}
             </button>
-            <button type="button" onClick={() => { setStep('phone'); setCode(''); setError(null) }} className="login-back-btn" disabled={loading}>Изменить номер</button>
+            <button type="button" onClick={() => { setStep('phone'); setCode(''); setForceSms(false); setError(null) }} className="login-back-btn" disabled={loading}>Изменить номер</button>
           </motion.form>
         )
 
@@ -185,6 +198,9 @@ export default function Login({ userId, onLoginSuccess }) {
         return (
           <motion.form key={`setpin-${setPinStep}`} initial={{ opacity: 0, x: setPinStep === 1 ? -20 : 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: setPinStep === 1 ? 20 : -20 }} onSubmit={handleSetPin} className="login-form">
             <div className="login-hint">{setPinStep === 1 ? 'Придумайте 4-значный PIN' : 'Повторите PIN'}</div>
+            <div className="login-pin-info">
+              🔐 PIN нужен чтобы входить без SMS в следующий раз. Без него вам придётся каждый раз запрашивать код.
+            </div>
 
             {setPinStep === 1 ? (
               <input type="password" inputMode="numeric" placeholder="Новый PIN" value={newPin} onChange={(e) => handleNewPinChange(e.target.value)} maxLength={4} className="login-input login-input-code" disabled={loading} autoFocus />
@@ -197,12 +213,11 @@ export default function Login({ userId, onLoginSuccess }) {
                 {loading ? <><Spinner /> Сохраняем…</> : 'Установить PIN'}
               </button>
             )}
-            <button type="button" onClick={() => {
-              if (setPinStep === 2) { setSetPinStep(1); setConfirmPin(''); setNewPin(''); setError(null) }
-              else onLoginSuccess(verifiedPhone)
-            }} className="login-back-btn" disabled={loading}>
-              {setPinStep === 2 ? 'Назад' : 'Пропустить'}
-            </button>
+            {setPinStep === 2 && (
+              <button type="button" onClick={() => { setSetPinStep(1); setConfirmPin(''); setNewPin(''); setError(null) }} className="login-back-btn" disabled={loading}>
+                Назад
+              </button>
+            )}
           </motion.form>
         )
     }

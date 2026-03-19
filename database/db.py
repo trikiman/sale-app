@@ -3,6 +3,7 @@ Database operations for VkusVill Sale Monitor
 Uses SQLite for simplicity and portability
 """
 import os
+import secrets
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional, Set
@@ -113,6 +114,17 @@ class Database:
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_notification_history_user_product 
                 ON notification_history(user_id, product_id)
+            """)
+            
+            # Link tokens table (for Telegram account linking)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS link_tokens (
+                    token TEXT PRIMARY KEY,
+                    guest_id TEXT NOT NULL,
+                    telegram_id INTEGER,
+                    created_at TEXT NOT NULL,
+                    used INTEGER DEFAULT 0
+                )
             """)
     
     # User operations
@@ -304,6 +316,97 @@ class Database:
                 INSERT INTO notification_history (user_id, product_id, sent_at)
                 VALUES (?, ?, ?)
             """, (user_id, product_id, now))
+    
+    # Account linking operations
+    
+    def store_link_token(self, guest_id: str) -> str:
+        """Generate and store a link token for a guest user. Invalidates old tokens."""
+        token = secrets.token_urlsafe(16)
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            now = datetime.now(timezone.utc).isoformat()
+            # Invalidate old tokens for this guest
+            cursor.execute("DELETE FROM link_tokens WHERE guest_id = ?", (guest_id,))
+            cursor.execute("""
+                INSERT INTO link_tokens (token, guest_id, created_at)
+                VALUES (?, ?, ?)
+            """, (token, guest_id, now))
+        return token
+    
+    def get_guest_for_token(self, token: str) -> Optional[str]:
+        """Look up guest_id for a link token. Returns None if expired (1hr) or used."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cutoff = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+            cursor.execute("""
+                SELECT guest_id FROM link_tokens 
+                WHERE token = ? AND used = 0 AND created_at > ?
+            """, (token, cutoff))
+            row = cursor.fetchone()
+            return row[0] if row else None
+    
+    def migrate_user_data(self, from_id, to_id: int) -> dict:
+        """Migrate all favorites/data from one user ID to another. Returns counts."""
+        counts = {'products': 0, 'categories': 0, 'notifications': 0}
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Migrate favorite products (skip duplicates)
+            cursor.execute("""
+                SELECT product_id, product_name, added_at 
+                FROM favorite_products WHERE user_id = ?
+            """, (from_id,))
+            for row in cursor.fetchall():
+                try:
+                    cursor.execute("""
+                        INSERT INTO favorite_products (user_id, product_id, product_name, added_at)
+                        VALUES (?, ?, ?, ?)
+                    """, (to_id, row[0], row[1], row[2]))
+                    counts['products'] += 1
+                except sqlite3.IntegrityError:
+                    pass  # Already exists for target user
+            
+            # Migrate favorite categories (skip duplicates)
+            cursor.execute("""
+                SELECT category_key, category_name, added_at 
+                FROM favorite_categories WHERE user_id = ?
+            """, (from_id,))
+            for row in cursor.fetchall():
+                try:
+                    cursor.execute("""
+                        INSERT INTO favorite_categories (user_id, category_key, category_name, added_at)
+                        VALUES (?, ?, ?, ?)
+                    """, (to_id, row[0], row[1], row[2]))
+                    counts['categories'] += 1
+                except sqlite3.IntegrityError:
+                    pass
+            
+            # Clean up old guest data
+            cursor.execute("DELETE FROM favorite_products WHERE user_id = ?", (from_id,))
+            cursor.execute("DELETE FROM favorite_categories WHERE user_id = ?", (from_id,))
+            cursor.execute("DELETE FROM notification_history WHERE user_id = ?", (from_id,))
+        
+        return counts
+    
+    def delete_link_token(self, token: str, telegram_id: int):
+        """Mark a link token as used and store the linked Telegram ID."""
+        with self.get_connection() as conn:
+            conn.execute(
+                "UPDATE link_tokens SET used = 1, telegram_id = ? WHERE token = ?",
+                (telegram_id, token)
+            )
+    
+    def get_linked_telegram_id(self, guest_id: str) -> Optional[int]:
+        """Check if a guest ID has been linked to a Telegram ID."""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT telegram_id FROM link_tokens
+                WHERE guest_id = ? AND used = 1 AND telegram_id IS NOT NULL
+                ORDER BY created_at DESC LIMIT 1
+            """, (guest_id,))
+            row = cursor.fetchone()
+            return row[0] if row else None
     
     def cleanup_old_data(self, days: int = 7):
         """Clean up old seen products and notification history"""

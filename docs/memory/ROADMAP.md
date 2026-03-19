@@ -1,53 +1,5 @@
 # Roadmap
 
-def _parse_subcategories(html: str, category_url: str) -> list[dict]:
-    """Parse subcategory links from a category page.
-    Returns list of {name, url} for each subcategory.
-    Subcategory URLs are one level deeper than the category URL,
-    e.g. /goods/gotovaya-eda/salaty/ under /goods/gotovaya-eda/
-    """
-    soup = BeautifulSoup(html, 'lxml')
-    subcats = []
-    seen_urls = set()
-    # Normalize the category base path (strip trailing slash for comparison)
-    base_path = category_url.rstrip('/').replace('https://vkusvill.ru', '')
-
-    # Look for links that are direct children of the category
-    for link in soup.select('a[href]'):
-        href = link.get('href', '')
-        # Normalize to absolute path
-        if href.startswith('/'):
-            full_path = href.rstrip('/')
-        elif href.startswith('https://vkusvill.ru'):
-            full_path = href.replace('https://vkusvill.ru', '').rstrip('/')
-        else:
-            continue
-
-        # Must be a direct sub-path of the category
-        # e.g. /goods/gotovaya-eda/salaty but NOT /goods/gotovaya-eda
-        # and NOT /goods/gotovaya-eda/salaty/something
-        if not full_path.startswith(base_path + '/'):
-            continue
-        remainder = full_path[len(base_path) + 1:]
-        if not remainder or '/' in remainder:
-            continue
-        # Skip pagination, filter, and product URLs
-        if remainder.isdigit() or '?' in remainder or '.html' in remainder:
-            continue
-        # Skip known non-subcategory paths
-        if remainder in ('novinki', 'all', 'best'):
-            continue
-
-        subcat_url = f'https://vkusvill.ru{full_path}/'
-        if subcat_url in seen_urls:
-            continue
-        seen_urls.add(subcat_url)
-
-        name = link.get_text(strip=True)
-        if name and len(name) < 80:
-            subcats.append({'name': name, 'url': subcat_url})
-
-    return subcats
 ## Milestone 1: Automated Scrapers ✅
 - [x] Yellow/Red price tag scraping (`scrape_red.py`, `scrape_yellow.py`)
 - [x] Green price scraping (`scrape_green.py`)
@@ -79,7 +31,7 @@ def _parse_subcategories(html: str, category_url: str) -> list[dict]:
 - [x] `save_products_safe()` redesigned with `success` parameter
 - [x] `dataStale` + `staleInfo` propagated to frontend via FastAPI
 - [x] Yellow "⚠️ Данные устарели" warning banner
-- [x] `updatedAt` shows oldest source file time (not merge time)
+- [x] `updatedAt` shows newest source file time (not merge time)
 - [x] Vite proxy fix (removed `rewrite` rule stripping `/api/`)
 
 ## Milestone 3.6: Security & Code Quality Sweep ✅
@@ -116,6 +68,15 @@ def _parse_subcategories(html: str, category_url: str) -> list[dict]:
 - [x] Manual trigger: `POST /api/admin/run/categories` + status polling endpoint
 - [x] Frontend "Новинки" chip + "Определить категории" button with spinner/done states
 - [x] Auto-merge after category scraper completes (rebuilds `proposals.json`)
+
+## Milestone 3.9: Scraper Reliability & Rate Limits (Sprint 13) ✅
+- [x] VkusVill rate limit investigation (700+ requests probed — concurrent connections cause bans, not rate)
+- [x] `scrape_categories.py` `MAX_CONCURRENT` 10→3 (prevent IP ban)
+- [x] `scheduler_service.py` rewritten: sequential scraper execution (prevents Chrome conflicts)
+- [x] Combined logging: all output → `scheduler.log` with `[GREEN]`/`[RED]`/`[YELLOW]` prefixes
+- [x] File-mtime success detection (catches scrapers that exit 0 on failure)
+- [x] `scrape_red.py` / `scrape_yellow.py` — `sys.exit(1)` on failure
+- [x] Auto-create `logs/backend/` directory (notifier crash fix)
 
 ## Milestone 4: Deployment (AWS)
 - [ ] Docker containerization

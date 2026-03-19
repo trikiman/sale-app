@@ -227,15 +227,24 @@ function App() {
   const [selectedCategory, setSelectedCategory] = useState('all')
   const [loading, setLoading] = useState(true)
   const [favoritesLoading, setFavoritesLoading] = useState(true)
-  const [isAuthenticated, setIsAuthenticated] = useState(false)
-  const [userPhone, setUserPhone] = useState(null)
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    return localStorage.getItem('vv_authenticated') === '1'
+  })
+  const [userPhone, setUserPhone] = useState(() => {
+    return localStorage.getItem('vv_user_phone') || null
+  })
   const [showLogin, setShowLogin] = useState(false)
+  const [showLoginPrompt, setShowLoginPrompt] = useState(false)
   const [error, setError] = useState(null)
   const [toastMessage, setToastMessage] = useState(null)
   const [updatedAt, setUpdatedAt] = useState(null)
   const updatedAtRef = useRef(null)
   const [favorites, setFavorites] = useState(new Set())
   const [userId] = useState(() => {
+    // Check if we previously linked a Telegram account
+    const linkedId = localStorage.getItem('linked_telegram_id')
+    if (linkedId) return Number(linkedId)
+
     // Get user ID from Telegram if available
     const telegramId = window.Telegram?.WebApp?.initDataUnsafe?.user?.id
     if (telegramId) return telegramId
@@ -266,21 +275,81 @@ function App() {
   const [categorizingDone, setCategorizingDone] = useState(false)
   const [categorizingStatus, setCategorizingStatus] = useState(null)
 
+  // Telegram account linking
+  const isGuest = typeof userId === 'string' && userId.startsWith('guest_')
+  const [linkUrl, setLinkUrl] = useState(null)
+  const [linkDismissed, setLinkDismissed] = useState(() => localStorage.getItem('link_dismissed') === '1')
+
   // Apply theme
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
     localStorage.setItem('vv_theme', theme)
   }, [theme])
 
+  // Persist auth state
+  useEffect(() => {
+    localStorage.setItem('vv_authenticated', isAuthenticated ? '1' : '0')
+    if (userPhone) localStorage.setItem('vv_user_phone', userPhone)
+    else localStorage.removeItem('vv_user_phone')
+  }, [isAuthenticated, userPhone])
+
   // Persist view mode
   useEffect(() => {
     localStorage.setItem('vv_view_mode', viewMode)
   }, [viewMode])
 
+  // Generate Telegram link for guest users
+  useEffect(() => {
+    if (!isGuest || linkDismissed) return
+    fetch('/api/link/generate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ guest_id: userId })
+    })
+      .then(r => r.json())
+      .then(data => {
+        if (data.link) setLinkUrl(data.link)
+      })
+      .catch(() => { })
+
+    // Poll for link status every 5 seconds
+    const interval = setInterval(() => {
+      fetch(`/api/link/status/${userId}`)
+        .then(r => r.json())
+        .then(async (data) => {
+          if (data.linked && data.telegram_id) {
+            // BUG-A fix: Transfer auth mapping from guest → linked telegram ID
+            // BEFORE removing the guest ID and reloading, so the session persists.
+            try {
+              await fetch('/api/auth/transfer-mapping', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  from_user_id: userId,
+                  to_user_id: String(data.telegram_id)
+                })
+              })
+            } catch (e) { /* best-effort — login still works without it */ }
+            // Account linked! Store the real ID
+            localStorage.setItem('linked_telegram_id', String(data.telegram_id))
+            localStorage.removeItem('guest_user_id')
+            setLinkUrl(null)
+            clearInterval(interval)
+            // Reload to use the new ID
+            window.location.reload()
+          }
+        })
+        .catch(() => { })
+    }, 5000)
+    return () => clearInterval(interval)
+  }, [isGuest, linkDismissed, userId])
+
   useEffect(() => {
     // Load favorites
     setFavoritesLoading(true)
-    fetch(`/api/favorites/${userId}`)
+    fetch(`/api/favorites/${userId}`, {
+      headers: { 'X-Telegram-User-Id': String(userId) }
+    })
       .then(res => res.json())
       .then(data => {
         if (data.favorites) {
@@ -300,7 +369,9 @@ function App() {
         setIsAuthenticated(data.authenticated)
         if (data.phone) setUserPhone(data.phone)
         if (data.authenticated) {
-          fetch(`/api/cart/items/${userId}`)
+          fetch(`/api/cart/items/${userId}`, {
+            headers: { 'X-Telegram-User-Id': String(userId) }
+          })
             .then(r => r.json())
             .then(cart => { if (cart.items_count != null) setCartCount(cart.items_count) })
             .catch(() => { })
@@ -332,7 +403,8 @@ function App() {
       if (wasInFavorites) {
         // Remove
         const res = await fetch(`/api/favorites/${userId}/${product.id}`, {
-          method: 'DELETE'
+          method: 'DELETE',
+          headers: { 'X-Telegram-User-Id': String(userId) }
         })
         if (!res.ok && res.status !== 404) throw new Error('API failed')
       } else {
@@ -340,7 +412,8 @@ function App() {
         const res = await fetch(`/api/favorites/${userId}`, {
           method: 'POST',
           headers: {
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'X-Telegram-User-Id': String(userId)
           },
           body: JSON.stringify({
             product_id: product.id,
@@ -461,7 +534,7 @@ function App() {
 
   const handleAddToCart = async (product) => {
     if (!isAuthenticated) {
-      setShowLogin(true)
+      setShowLoginPrompt(true)
       return
     }
 
@@ -474,7 +547,10 @@ function App() {
 
       const res = await fetch('/api/cart/add', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Telegram-User-Id': String(userId)
+        },
         body: JSON.stringify({
           user_id: userId,
           product_id: parseInt(pid, 10),
@@ -779,6 +855,36 @@ function App() {
     )
   }
 
+  // Login prompt overlay (shows when unauthenticated user tries to add to cart)
+  const loginPromptOverlay = showLoginPrompt && (
+    <div className="login-prompt-overlay" onClick={() => setShowLoginPrompt(false)}>
+      <motion.div
+        className="login-prompt-card"
+        initial={{ opacity: 0, scale: 0.9, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="login-prompt-icon">🛒</div>
+        <h3 className="login-prompt-title">Нужна авторизация</h3>
+        <p className="login-prompt-text">
+          Чтобы добавить товар в корзину ВкусВилл, нужно войти в аккаунт.
+        </p>
+        <button
+          className="login-prompt-btn login-prompt-btn-primary"
+          onClick={() => { setShowLoginPrompt(false); setShowLogin(true) }}
+        >
+          Войти
+        </button>
+        <button
+          className="login-prompt-btn login-prompt-btn-secondary"
+          onClick={() => setShowLoginPrompt(false)}
+        >
+          Не сейчас
+        </button>
+      </motion.div>
+    </div>
+  )
+
   return (
     <div className="min-h-screen p-4 app-container">
       {/* Header */}
@@ -788,6 +894,72 @@ function App() {
         className="text-center mb-6"
       >
         <h1 className="text-2xl font-bold mb-2">{headerEmoji} {headerTitle}</h1>
+
+        {/* Telegram link banner for guest users */}
+        {isGuest && linkUrl && !linkDismissed && (
+          <div style={{
+            background: 'rgba(42, 171, 238, 0.1)',
+            border: '1px solid rgba(42, 171, 238, 0.3)',
+            borderRadius: '12px',
+            padding: '10px 14px',
+            marginBottom: '12px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '10px',
+          }}>
+            <span style={{ fontSize: '22px', flexShrink: 0 }}>🔔</span>
+            <div style={{ flex: 1, textAlign: 'left', minWidth: 0 }}>
+              <div style={{ fontWeight: 600, color: '#2AABEE', fontSize: '13px' }}>
+                Привяжи Telegram
+              </div>
+              <div style={{ color: 'var(--tg-theme-hint-color)', fontSize: '11px', marginTop: '1px' }}>
+                Уведомления о скидках на избранное
+              </div>
+            </div>
+            <button
+              onClick={(e) => {
+                if (!isAuthenticated) {
+                  e.preventDefault()
+                  setShowLoginPrompt(true)
+                  return
+                }
+                window.open(linkUrl, '_blank', 'noopener,noreferrer')
+              }}
+              style={{
+                background: '#2AABEE',
+                color: '#fff',
+                padding: '6px 14px',
+                borderRadius: '8px',
+                fontWeight: 600,
+                fontSize: '12px',
+                border: 'none',
+                cursor: 'pointer',
+                whiteSpace: 'nowrap',
+                flexShrink: 0
+              }}
+            >
+              Привязать
+            </button>
+            <button
+              onClick={() => {
+                setLinkDismissed(true)
+                localStorage.setItem('link_dismissed', '1')
+              }}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--tg-theme-hint-color)',
+                fontSize: '16px',
+                cursor: 'pointer',
+                padding: '2px',
+                flexShrink: 0
+              }}
+              aria-label="Закрыть"
+            >
+              ✕
+            </button>
+          </div>
+        )}
 
         {/* Controls row: Auth + Theme + Admin */}
         <div className="flex items-center justify-center gap-2 mb-3 flex-wrap">
@@ -799,11 +971,13 @@ function App() {
                     await fetch('/api/auth/logout', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ user_id: userId })
+                      body: JSON.stringify({ user_id: String(userId) })
                     })
                   } catch (e) { }
                   setIsAuthenticated(false)
                   setUserPhone(null)
+                  localStorage.removeItem('vv_authenticated')
+                  localStorage.removeItem('vv_user_phone')
                 }}
                 className="header-pill header-pill-success"
                 title="Нажмите чтобы выйти"
@@ -1196,6 +1370,9 @@ function App() {
           cartState={cartStates[selectedProduct.id] || null}
         />
       )}
+
+      {/* Login prompt overlay */}
+      {loginPromptOverlay}
 
       {/* Floating Toast Notification */}
       <AnimatePresence>

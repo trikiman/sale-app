@@ -86,7 +86,7 @@ When user clicks "🛒 В корзину" (Telegram or Web):
 - **Bot**: `python-telegram-bot`
 - **Database**: SQLite (`salebot.db`) via SQLAlchemy
 - **Price Scrapers**: `nodriver` (CDP-native) + async JS evaluation (green/red/yellow) — all migrated as of 2026-03-05
-- **Category Scraper**: `aiohttp` + `asyncio` + `BeautifulSoup` (no browser needed — pure HTTP)
+- **Category Scraper**: `aiohttp` + `asyncio` + `BeautifulSoup` (no browser needed — pure HTTP, `MAX_CONCURRENT=3` to avoid IP ban)
 - **Cart API**: `cart/vkusvill_api.py` (raw Cookie header, `requests`)
 - **Login**: `nodriver` (CDP-native) for web app login (`backend/main.py`)
 - **Backend**: FastAPI
@@ -129,12 +129,37 @@ When user clicks "🛒 В корзину" (Telegram or Web):
 - `MAX_Q` — max stock quantity (0 means OOS, None means use 99)
 - `CAN_BUY` — `'Y'` if purchasable, `'N'` if OOS
 - `UNIT` — unit string (г/кг/мл/шт etc.)
-- `IS_GREEN` — `1` if green discount item
+- `IS_GREEN` — `1` if green discount item **⚠️ VkusVill sometimes does NOT set this flag for products that ARE green on the site. Always cross-reference with DOM-scraped green section.**
+- `STORE_MAX_Q` — fallback stock quantity (if `MAX_Q` is missing)
 
 ### soldOutIds persistence
 - `App.jsx` stores sold-out product IDs in `localStorage('soldOutIds')` as JSON array
 - Initialized from localStorage on page load
 - Updated on any cart 400 error (removes item from product list)
+
+## Chrome Process Management (Added 2026-03-15 — Sprint 12, Updated Sprint 13)
+
+### detail_service.py Chrome Leak Fix
+- `ensure_browser()` now calls `browser.stop()` + `os.kill(pid)` before nulling the reference when Chrome dies
+- Previously set `browser = None` without cleanup → old process stayed alive as zombie
+
+### Scheduler Chrome Management (Rewritten Sprint 13)
+- **Sequential execution**: All 3 scrapers run one-at-a-time (was parallel — Chrome instances competed → `Failed to connect to browser` crashes)
+- `_kill_orphan_chromes()` runs before cycle AND between each scraper
+- File-mtime-based success detection: checks if data file was actually modified (catches scrapers that exit 0 on failure)
+- All scraper output logged to `scheduler.log` with `[GREEN]`/`[RED]`/`[YELLOW]` tag prefixes
+
+### VkusVill Rate Limits (Discovered Sprint 13)
+- VkusVill does **NOT** limit per-minute sequential request rate (300+ req/min tested OK)
+- Bans are triggered by **concurrent connections** (10 simultaneous connections → IP block)
+- `scrape_categories.py` `MAX_CONCURRENT` reduced from 10 to 3
+- Price scrapers (Chrome-based) run sequentially, so this only applies to the category scraper
+
+### Stock Lookup: Full Basket Map (Step 6b-2)
+- `scrape_green.py` Step 6b now does a SECOND pass after IS_GREEN-filtered lookup
+- Uses `build_basket_stock_map()` which returns stock for ALL basket items (no IS_GREEN filter)
+- For DOM-scraped green products still missing stockText, looks up by product ID from the full map
+- Also saves to `green_stock_cache.json` for fallback on future cycles
 
 ## Cleanup Needed
 - `config.py`: Remove `SHARED_USER_COOKIES` (unused after shared login revert)

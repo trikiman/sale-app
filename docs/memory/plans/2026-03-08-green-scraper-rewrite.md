@@ -1,32 +1,48 @@
 # Green Scraper Rewrite Plan
 
-> Created: 2026-03-08
+> Created: 2026-03-08  
+> Last updated: 2026-03-19
 
 ## Problem
 
 The current green scraper produces mismatched data vs. the live VkusVill cart page.  
 The existing flow is overly complex (~700 lines in `scrape_green_prices_async`) with multiple fallback paths that often conflict.
 
-## New Logic (User-Defined)
+## New Logic (User-Defined, updated 2026-03-19)
 
 ```
 1. Go to /cart/
 2. Turn on "Больше товаров" switch
-3. Search for the "Зелёные ценники" section
-   3.1 If there's a button "X товаров" or "показать все" → click it
-       3.1.1 In popup: scroll down, click "В корзину" on each item
-             until item disappears OR button under no longer says "в корзину"
-       3.1.2 Reload page
-   3.2 If inline items (no popup): add all items one-by-one
-        3.2.0 until item disappears OR button under no longer says "в корзину"
-            3.2.1 Reload page
-4. In reloaded cart: scroll down through cart items
-   - Items with GREEN label → scrape (name, price, old price, stock, image, url)
-   - Items with GRAY label → skip entirely
-   - Stop scrolling when hitting "нет в наличии" or stock 0
-5. If ALL items are "нет в наличии" → green price is gone (return empty)
-6. Close Chrome
+2.5. SEED ITEM: If cart is empty, add one item from "Добавьте в заказ" section
+     - Without this, first add-to-cart triggers page force-reload, killing modal
+     - Wait for reload, navigate back to /cart/
+3. Close delivery modal if it pops up
+4. Scrape green items from #js-Delivery__Order-green-state-not-empty section
+   - All items in this section are green by definition
+   - Extract: id (data-id attr), name (URL slug), price, oldPrice, image, url
+   - This MUST happen BEFORE add-to-cart (items disappear after add+reload)
+5. Check button #js-Delivery__Order-green-show-all:
+   5.1 Button VISIBLE → click → modal opens
+       5.1.1 Scroll modal + load more to get ALL items
+       5.1.2 Scrape products FROM MODAL (modal has all items, section Swiper only ~12)
+       5.1.3 Add all to cart
+       5.1.4 Close modal
+   5.2 Button HIDDEN (_hidden class, <5 items) → add inline items
+   5.3 Button NOT IN DOM → no new green items to add
+6. Reload page
+7. Cart scraping step uses pre-scraped data from step 4 + modal (ALWAYS runs)
+   - Green section is EMPTY after reload (items moved to regular cart)
+   - Items from this run OR from previous runs are counted
+8. If ALL items are "нет в наличии" → green price is gone (return empty)
+9. Close Chrome
+
+📸 Screenshots saved at each step to logs/screenshots/green/
 ```
+
+> **Key insight**: After adding green items to cart + page reload, the `#js-Delivery__Order-green-state-not-empty` section becomes empty because items move to the regular cart. Therefore, scraping MUST happen before any cart modifications.
+
+> Note: basket API (`basket_recalc.php`) is unreliable (times out).
+> DOM cart scraping from the green section is the primary source of green items.
 
 ## What Exists Already
 
@@ -34,57 +50,60 @@ The existing flow is overly complex (~700 lines in `scrape_green_prices_async`) 
 |----------|--------|--------|
 | `_launch_browser()` | Works | ✅ Keep |
 | `_load_cookies()` | Works | ✅ Keep |
-| `_inspect_green_section()` | Works but complex | 🔄 Simplify |
-| `_add_green_cards_to_cart()` | Works for inline cards | 🔄 Adapt for modal too |
-| `_extract_green_cart_items()` | Works | 🔄 Add green/gray label filter |
+| `_inspect_green_section()` | Works, now called from main flow (BUG 7 fix) | ✅ Keep |
+| `_add_green_cards_to_cart()` | Works for inline + modal (BUG 4 fix) | ✅ Keep |
 | `_scrape_cart_stock_map()` | Works | ✅ Keep |
 | `_merge_green_cart_data()` | Works | ✅ Keep |
-| `_fetch_green_from_basket()` | Basket API fallback | ✅ Keep as fallback |
-| Toggle "Больше товаров" | Already implemented (L1030-1113) | ✅ Keep |
-| Modal scroll + load more | Already implemented (L1231-1279) | ✅ Keep |
+| `_fetch_green_from_basket()` | Single definition (BUG 1: removed dead duplicate) | ✅ Keep |
+| Toggle "Больше товаров" | Already implemented | ✅ Keep |
+| Modal scroll + load more | Already implemented | ✅ Keep |
 
-## Proposed Changes
+## Bug Fixes Applied
 
-### [MODIFY] [scrape_green.py](file:///e:/Projects/saleapp/scrape_green.py)
+### Round 1 (2026-03-10)
 
-#### 1. New simplified `_scrape_green_v2()` function (~200 lines)
+| Bug | Description | Status |
+|-----|-------------|--------|
+| BUG 1 | Dead duplicate `_fetch_green_from_basket()` removed | ✅ Fixed |
+| BUG 2 | `raw_products` NameError on empty green | ✅ Fixed |
+| BUG 3 | Hardcoded `True` in suspicious check | ✅ Fixed |
+| BUG 4 | Modal cart-add unscoped → uses `_add_green_cards_to_cart` | ✅ Fixed |
+| BUG 5 | Unicode escapes → Cyrillic in raw string | ✅ Fixed |
+| BUG 7 | `live_count` always 0 → calls `_inspect_green_section` | ✅ Fixed |
+| BUG 8 | Empty-state detection (green-state-empty ID, "сейчас нет") | ✅ Fixed + Verified |
+| BUG 11 | Chrome zombie: `proc.wait()` + `proc.kill()` | ✅ Fixed + Verified |
+| BUG 14 | Redundant `_fetch_basket_snapshot()` removed (18 lines) | ✅ Fixed |
+| BUG 15 | Atomic write via `save_products_safe` | ✅ Fixed |
+| BUG 17 | Basket API retry 3x with backoff (3s/6s) | ✅ Fixed + Verified |
+| BUG 18 | Full Chrome User-Agent in API requests | ✅ Fixed |
+| BUG 20 | `check_vkusvill_available()` in async func | ✅ Fixed |
+| — | Scroll 1400→2000px | ✅ Fixed |
+| — | Cart-add delay 0.3/0.4→1.0s | ✅ Fixed |
+| — | "Добавьте в заказ" section confusion guard | ✅ Fixed |
+| — | Chrome startup wait 3→5s | ✅ Fixed |
+| — | Page reload after cart modifications | ✅ Fixed |
+| — | Mojibake 'шт' on L772 | ✅ Fixed |
 
-Replace/rewrite `scrape_green_prices_async()` with a cleaner flow:
+### Round 2 — Green Section Scraping (2026-03-11 → 2026-03-13)
 
-```python
-async def scrape_green_prices_async():
-    # 1. Launch browser, load cookies, navigate to /cart/
-    # 2. Enable "Больше товаров" toggle (reuse existing code)
-    # 3. Find green section
-    # 4. Click "X товаров"/"показать все" if button exists
-    #    4a. If modal opened: scroll + add all items via "В корзину"
-    #    4b. If no modal: add inline items via "В корзину"
-    # 5. Reload page
-    # 6. Scrape cart items WITH GREEN LABEL ONLY
-    #    - Scroll cart list down
-    #    - Stop at "нет в наличии" items
-    #    - Skip gray-labeled items
-    # 7. Process & save
-```
+| Issue | Description | Status |
+|-------|-------------|--------|
+| Modal close | Delivery modal blocks green section — added multi-selector close + Escape key fallback | ✅ Fixed |
+| Button detection | `offsetParent` unreliable behind modal → `classList.contains('_hidden')` | ✅ Fixed |
+| 3-state button | VISIBLE/HIDDEN/NOT_IN_DOM detection | ✅ Fixed + Verified |
+| Wrong scraping order | Scraped green section AFTER reload (empty!) → moved to BEFORE add-to-cart | ✅ Fixed |
+| Name extraction | Greedy span/div fallback picked up prices → URL-based parsing | ✅ Fixed |
+| Missing product ID | No `id` field in scraped data → 500 API error → extract from `data-id` attr/URL | ✅ Fixed |
+| Diagnostic cleanup | Removed all temp DIAG/DEBUG blocks | ✅ Done |
 
-#### 2. New `_add_all_green_items_in_modal(page)` function
+### Round 3 — Cart Detection & Parsing (2026-03-19)
 
-Combines existing modal scroll + add logic. Scrolls through popup, clicks "В корзину" on each card. Stops when:
-- Card disappears after click
-- Button text changes from "В корзину"  
-- No more cards
-
-#### 3. Update `_extract_green_cart_items(page)` 
-
-Add green/gray label detection:
-- Look for green price label (the green badge from user's screenshot)
-- Skip items with gray labels
-- Capture stock count ("В наличии X шт")
-- Stop processing when hitting "нет в наличии"
-
-#### 4. Remove dead code
-
-Remove unreachable branches and overly complex fallback chains that cause data conflicts.
+| Issue | Description | Status |
+|-------|-------------|--------|
+| Wrong cart selector | `.VV23_CartProduct` class doesn't exist → changed to `.js-delivery-basket-item` | ✅ Fixed |
+| Nodriver parsing | JS objects returned as `[['key', {type, value}]]` → fixed Python parsing to dict | ✅ Fixed |
+| `save_products_safe()` | Was printing `len(dict)` (= key count) instead of product list length | ✅ Fixed |
+| Seed item detection | Cart-empty check now uses 3 signals: empty text, cart item count, clear button | ✅ Fixed |
 
 ## Card Layout Fix (CSS)
 
@@ -103,3 +122,4 @@ Already applied: `.card-vertical` → `display: flex; flex-direction: column` an
 2. Check logs for the new simplified flow steps
 3. Compare green item count on our site vs VkusVill /cart/ page
 4. Verify card buttons are aligned when titles vary in length
+5. Compare scraped items with manual research on VkusVill

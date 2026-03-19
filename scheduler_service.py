@@ -1,30 +1,67 @@
+"""
+Scheduler service — runs scrapers sequentially then merge.
+Runs every 5 minutes.
+
+BUG FIXES Applied:
+- BUG-1: Run scrapers SEQUENTIALLY (not parallel) to avoid Chrome conflicts
+- BUG-2: Detect scraper failures even when exit code is 0 (check file mtime)
+- BUG-4: All output goes to scheduler.log with [SCRAPER_NAME] prefixes
+"""
 import time
 import subprocess
 import sys
 import os
 from datetime import datetime
 
+# Fix Windows console encoding for emoji in scraper output
+if sys.platform == 'win32':
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+
 # Configuration
-INTERVAL_MINUTES = 5
+INTERVAL_MINUTES = 3
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_DIR = os.path.join(BASE_DIR, "data")
 LOG_DIR = os.path.join(BASE_DIR, "logs")
 os.makedirs(LOG_DIR, exist_ok=True)
+os.makedirs(os.path.join(LOG_DIR, "backend"), exist_ok=True)  # BUG-3: notifier log dir
+
+LOG_FILE = os.path.join(LOG_DIR, "scheduler.log")
 
 
 def log(message):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     line = f"[{timestamp}] {message}"
     print(line, flush=True)
-    with open(os.path.join(LOG_DIR, "scheduler.log"), "a", encoding="utf-8") as f:
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(line + "\n")
 
 
-def run_script(script_name):
-    """Run a scraper and capture + display its output. Returns exit code."""
+def _log_script_output(script_name, output_text, tag=None):
+    """Write script output lines into scheduler.log with [TAG] prefix."""
+    tag = tag or script_name.replace("scrape_", "").replace(".py", "").upper()
+    if not output_text:
+        return
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        for line in output_text.strip().splitlines():
+            entry = f"    [{tag}] {line}\n"
+            try:
+                print(f"  [{tag}] {line}", flush=True)
+            except UnicodeEncodeError:
+                # Console codepage can't handle emoji — print ascii-safe version
+                safe = line.encode('ascii', errors='replace').decode('ascii')
+                print(f"  [{tag}] {safe}", flush=True)
+            f.write(entry)
+
+
+def run_script(script_name, tag=None):
+    """Run a script, log ALL output into scheduler.log. Returns exit code."""
     script_path = os.path.join(BASE_DIR, script_name)
-    log_path = os.path.join(LOG_DIR, script_name.replace(".py", ".log"))
+    tag = tag or script_name.replace("scrape_", "").replace(".py", "").upper()
     log(f"Starting {script_name}...")
     try:
+        env = os.environ.copy()
+        env['PYTHONIOENCODING'] = 'utf-8'
         result = subprocess.run(
             [sys.executable, script_path],
             capture_output=True,
@@ -32,23 +69,15 @@ def run_script(script_name):
             encoding="utf-8",
             errors="replace",
             cwd=BASE_DIR,
+            env=env,
         )
-        # Write to individual log file
-        with open(log_path, "w", encoding="utf-8") as lf:
-            lf.write(result.stdout or "")
-            if result.stderr:
-                lf.write("\n--- STDERR ---\n")
-                lf.write(result.stderr)
+        # Log ALL output into scheduler.log with tag prefix
+        _log_script_output(script_name, result.stdout, tag)
+        if result.stderr:
+            _log_script_output(script_name, result.stderr, f"{tag}-ERR")
 
-        # Print last few lines to terminal for visibility
-        lines = (result.stdout or "").strip().splitlines()
-        if lines:
-            for line in lines[-5:]:  # last 5 lines
-                print(f"  [{script_name}] {line}", flush=True)
         if result.returncode != 0:
             log(f"ERROR {script_name} exited {result.returncode}")
-            if result.stderr:
-                print(f"  [{script_name}] STDERR: {result.stderr[:500]}", flush=True)
         else:
             log(f"OK {script_name} finished (exit 0)")
         return result.returncode
@@ -57,67 +86,92 @@ def run_script(script_name):
         return -1
 
 
+def _kill_orphan_chromes():
+    """Kill Chrome processes from previous scraper runs (temp profiles starting with uc_).
+    Prevents zombie Chrome accumulation over hours of scraping."""
+    if sys.platform != 'win32':
+        return
+    try:
+        result = subprocess.run(
+            ['tasklist', '/FI', 'IMAGENAME eq chrome.exe', '/FO', 'CSV', '/V'],
+            capture_output=True, text=True, timeout=10
+        )
+        killed = 0
+        for line in result.stdout.splitlines():
+            if 'uc_' in line:
+                parts = line.strip().split(',')
+                try:
+                    pid = int(parts[1].strip('"'))
+                    os.kill(pid, 9)
+                    killed += 1
+                except (ValueError, OSError, IndexError):
+                    pass
+        if killed:
+            log(f"Killed {killed} orphan Chrome processes")
+    except Exception:
+        pass
+
+
+def _check_file_updated(path, before_ts):
+    """Check if a file was modified after before_ts. Returns True if updated."""
+    if not os.path.exists(path):
+        return False
+    return os.path.getmtime(path) > before_ts
+
+
 def run_full_cycle():
+    _kill_orphan_chromes()
+    log("=" * 60)
     log("=== Starting Scrape Cycle ===")
+    log("=" * 60)
 
-    scrapers = ["scrape_green.py", "scrape_red.py", "scrape_yellow.py"]
+    # Run all 3 scrapers sequentially — each gets its own Chrome port
+    scrapers = [
+        ("scrape_red.py", "RED", "red_products.json"),
+        ("scrape_yellow.py", "YELLOW", "yellow_products.json"),
+        ("scrape_green.py", "GREEN", "green_products.json"),  # last = freshest
+    ]
 
-    # Start all scrapers in parallel (Popen = non-blocking)
-    processes = []
-    for script in scrapers:
-        script_path = os.path.join(BASE_DIR, script)
-        log_path = os.path.join(LOG_DIR, script.replace(".py", ".log"))
-        log(f"Launching {script} (parallel)...")
-        try:
-            p = subprocess.Popen(
-                [sys.executable, script_path],
-                stdout=open(log_path, "w", encoding="utf-8"),
-                stderr=subprocess.STDOUT,
-                cwd=BASE_DIR,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-            )
-            processes.append((script, p, log_path))
-        except Exception as e:
-            log(f"Failed to start {script}: {e}")
+    scraper_results = {}
+    for script, tag, data_file in scrapers:
+        data_path = os.path.join(DATA_DIR, data_file)
+        before_ts = os.path.getmtime(data_path) if os.path.exists(data_path) else 0
 
-    # Wait for all scrapers to finish, with 10-minute timeout per scraper
-    # (prevents infinite hang when Chrome startup blocks indefinitely)
-    SCRAPER_TIMEOUT = 10 * 60  # 10 minutes
-    for script, p, log_path in processes:
-        try:
-            p.wait(timeout=SCRAPER_TIMEOUT)
-            code = p.returncode
-            status = "OK" if code == 0 else f"ERROR (exit {code})"
-        except Exception:
-            # Timeout or other error — kill the hung process
-            try:
-                p.kill()
-            except Exception:
-                pass
-            code = -1
-            status = f"TIMEOUT (killed after {SCRAPER_TIMEOUT//60}min)"
-        log(f"{status}: {script}")
-        # Show last 5 lines of output
-        try:
-            with open(log_path, encoding="utf-8", errors="replace") as lf:
-                lines = lf.read().strip().splitlines()
-            if lines:
-                for line in lines[-5:]:
-                    print(f"  [{script}] {line}", flush=True)
-        except Exception:
-            pass
+        code = run_script(script, tag)
+
+        file_updated = _check_file_updated(data_path, before_ts)
+
+        if code != 0:
+            status = f"ERROR (exit {code})"
+        elif not file_updated:
+            status = "WARNING (exit 0 but data NOT updated)"
+        else:
+            status = "OK (data updated)"
+
+        scraper_results[tag] = status
+        log(f"  {tag}: {status}")
+
+    _kill_orphan_chromes()
 
     # Run merge after all scrapers complete
     log("Running merge...")
-    run_script("scrape_merge.py")
-    log("=== Cycle Completed ===")
+    run_script("scrape_merge.py", "MERGE")
+
+    # Send Telegram notifications for favorites that are now on sale
+    log("Running favorite notifications...")
+    run_script(os.path.join("backend", "notifier.py"), "NOTIF")
+
+    # Summary
+    log("-" * 60)
+    log("Cycle Summary:")
+    for tag, status in scraper_results.items():
+        log(f"  {tag}: {status}")
+    log("=" * 60)
 
 
 def main():
     log(f"Scheduler service started. Interval: {INTERVAL_MINUTES} minutes.")
-    log(f"Logs in: {LOG_DIR}")
+    log(f"Logs: {LOG_FILE}")
 
     while True:
         try:

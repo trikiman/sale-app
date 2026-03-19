@@ -53,8 +53,8 @@ body {
 }
 
 .product-grid.list-view {
-  grid-template-columns: 1fr;
-  max-width: 600px;
+  grid-template-columns: repeat(2, 1fr);
+  max-width: 100%;
   margin: 0 auto;
 }
 
@@ -734,6 +734,108 @@ body {
   background: rgba(239, 68, 68, 0.08);
   color: #dc2626;
   border-color: rgba(239, 68, 68, 0.2);
+}
+
+/* PIN info explanation box */
+.login-pin-info {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--tg-theme-hint-color);
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.15);
+  border-radius: 10px;
+  padding: 10px 14px;
+  text-align: left;
+}
+
+/* Login prompt overlay (ask before redirect) */
+.login-prompt-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+  z-index: 150;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.login-prompt-card {
+  background: var(--tg-theme-secondary-bg-color, #16213e);
+  border: 1px solid var(--card-border);
+  border-radius: 20px;
+  padding: 32px 24px;
+  max-width: 360px;
+  width: 100%;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+}
+
+.login-prompt-icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+}
+
+.login-prompt-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0 0 8px;
+  color: var(--tg-theme-text-color);
+}
+
+.login-prompt-text {
+  font-size: 14px;
+  color: var(--tg-theme-hint-color);
+  margin: 0 0 20px;
+  line-height: 1.5;
+}
+
+.login-prompt-btn {
+  width: 100%;
+  padding: 14px;
+  font-size: 15px;
+  font-weight: 600;
+  border: none;
+  border-radius: 14px;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.1s;
+}
+
+.login-prompt-btn:active {
+  transform: scale(0.98);
+}
+
+.login-prompt-btn-primary {
+  background: var(--tg-theme-button-color, #4dabf7);
+  color: var(--tg-theme-button-text-color, #fff);
+  margin-bottom: 10px;
+}
+
+.login-prompt-btn-primary:hover {
+  opacity: 0.9;
+}
+
+.login-prompt-btn-secondary {
+  background: transparent;
+  color: var(--tg-theme-hint-color);
+}
+
+.login-prompt-btn-secondary:hover {
+  color: var(--tg-theme-text-color);
+}
+
+/* Light theme login prompt */
+[data-theme="light"] .login-prompt-card {
+  background: #fff;
+  border-color: rgba(0, 0, 0, 0.1);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.15);
+}
+
+[data-theme="light"] .login-pin-info {
+  background: rgba(59, 130, 246, 0.06);
+  border-color: rgba(59, 130, 246, 0.12);
+  color: #475569;
 }
 
 .min-h-screen {
@@ -1899,6 +2001,54 @@ body.cart-open {
 
 [data-theme="light"] .detail-section {
   border-color: rgba(0, 0, 0, 0.08);
+}
+
+/* Light theme — detail drawer */
+[data-theme="light"] .detail-drawer {
+  background: #ffffff;
+  color: #1a1a2e;
+}
+
+[data-theme="light"] .detail-handle {
+  background: rgba(0, 0, 0, 0.15);
+}
+
+[data-theme="light"] .detail-close {
+  color: #666;
+}
+
+[data-theme="light"] .detail-close:hover {
+  color: #333;
+}
+
+[data-theme="light"] .detail-price {
+  color: #16a34a;
+}
+
+[data-theme="light"] .detail-weight {
+  background: rgba(0, 0, 0, 0.06);
+  color: #666;
+}
+
+[data-theme="light"] .detail-thumb {
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="light"] .detail-thumb.active {
+  border-color: #2563eb;
+}
+
+/* Light theme — toast notification */
+[data-theme="light"] .fixed[class*="bg-[#132a18]"] {
+  background: #ecfdf5;
+  color: #16a34a;
+  border-color: rgba(34, 197, 94, 0.3);
+}
+
+[data-theme="light"] .fixed[class*="bg-[#2a1313]"] {
+  background: #fef2f2;
+  color: #dc2626;
+  border-color: rgba(239, 68, 68, 0.3);
 }
 
 .detail-section-title {

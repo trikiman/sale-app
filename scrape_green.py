@@ -11,8 +11,8 @@ import sys
 import time
 import tempfile
 import subprocess
-import socket
 import shutil
+from chrome_stealth import launch_stealth_browser, cleanup_browser, find_chrome
 
 from utils import normalize_category, parse_stock, clean_price, deduplicate_products, synthesize_discount, save_products_safe, check_vkusvill_available, normalize_stock_unit
 
@@ -25,6 +25,22 @@ DATA_DIR = os.path.join(BASE_DIR, "data")
 GREEN_URL = "https://vkusvill.ru/cart/"
 COOKIES_PATH = os.path.join(BASE_DIR, "data", "cookies.json")
 TECH_PROFILE_DIR = os.path.join(DATA_DIR, "tech_profile")
+SCREENSHOT_DIR = os.path.join(BASE_DIR, "logs", "screenshots", "green")
+
+
+async def _step_screenshot(page, step_name: str):
+    """Save a timestamped screenshot for debugging scraper steps.
+    Files: logs/screenshots/green/HHMMSS_step_name.png
+    """
+    try:
+        os.makedirs(SCREENSHOT_DIR, exist_ok=True)
+        ts = time.strftime('%H%M%S')
+        safe_name = step_name.replace(' ', '_').replace('/', '_')[:40]
+        path = os.path.join(SCREENSHOT_DIR, f"{ts}_{safe_name}.png")
+        await page.save_screenshot(path)
+        print(f"  [GREEN] 📸 {step_name}")
+    except Exception as e:
+        print(f"  [GREEN] 📸 screenshot failed ({step_name}): {e}")
 
 
 def _normalize_unit(unit_raw):
@@ -52,25 +68,9 @@ def _format_quantity(value):
     return f"{num:.3f}".rstrip('0').rstrip('.')
 
 
-def _find_free_port():
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(('127.0.0.1', 0))
-        return s.getsockname()[1]
-
-
+# _find_free_port and _find_chrome moved to chrome_stealth.py
 def _find_chrome():
-    """Find Chrome executable on Windows."""
-    candidates = [
-        r'C:\Program Files\Google\Chrome\Application\chrome.exe',
-        r'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe',
-    ]
-    for p in candidates:
-        if os.path.exists(p):
-            return p
-    found = shutil.which('chrome') or shutil.which('google-chrome')
-    if found:
-        return found
-    raise FileNotFoundError("Chrome not found. Install Google Chrome.")
+    return find_chrome()
 
 
 def resolve_green_browser_profile_dir(preferred_dir: str = TECH_PROFILE_DIR):
@@ -166,31 +166,11 @@ def filter_available_green_cart_products(products: list) -> list:
 
 
 async def _launch_browser():
-    """Launch Chrome via subprocess + connect via nodriver CDP."""
-    import nodriver as uc
-
-    port = _find_free_port()
-    tmp_profile, is_temp_profile = resolve_green_browser_profile_dir()
-    chrome_path = _find_chrome()
-
-    args = [
-        chrome_path,
-        f'--remote-debugging-port={port}',
-        f'--user-data-dir={tmp_profile}',
-        '--no-first-run',
-        '--no-default-browser-check',
-        '--disable-features=LocalNetworkAccessChecks',
-        '--lang=ru-RU',
-        '--start-maximized',
-    ]
-
-    print(f"  [GREEN] Launching Chrome on port {port}...")
-    proc = subprocess.Popen(args)
-    await asyncio.sleep(3)
-
-    browser = await uc.Browser.create(host='127.0.0.1', port=port)
-    browser._process_pid = proc.pid
-    return browser, proc, tmp_profile, is_temp_profile
+    """Launch stealth Chrome via shared chrome_stealth module."""
+    browser, proc, tmp_profile, _is_temp = await launch_stealth_browser(
+        tag="GREEN", offscreen=True
+    )
+    return browser, proc, tmp_profile
 
 
 async def _load_cookies(page):
@@ -239,30 +219,36 @@ def _fetch_basket_snapshot() -> dict:
     with open(COOKIES_PATH, 'r', encoding='utf-8') as f:
         raw = json.load(f)
 
-    cookie_str = '; '.join(f"{c['name']}={c['value']}" for c in raw)
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
         'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
         'X-Requested-With': 'XMLHttpRequest',
         'Origin': 'https://vkusvill.ru',
         'Referer': 'https://vkusvill.ru/cart/',
-        'Cookie': cookie_str,
     }
+    cookies = {c['name']: c['value'] for c in raw}
 
-    try:
-        r = _requests.post(
-            'https://vkusvill.ru/ajax/delivery_order/basket_recalc.php',
-            data={'COUPON': '', 'BONUS': ''},
-            headers=headers,
-            timeout=15,
-        )
-        data = r.json()
-    except Exception as e:
-        print(f"  [GREEN] basket_recalc fetch failed: {e}")
-        return {}
+    # Use httpx with SOCKS5 proxy — requests+PySocks is unreliable (timeouts)
+    # Reduced timeout and retries to avoid long hangs that trigger IP bans
+    import httpx
+    for attempt in range(1):
+        try:
+            with httpx.Client(proxy='socks5h://127.0.0.1:10811', timeout=15) as client:
+                r = client.post(
+                    'https://vkusvill.ru/ajax/delivery_order/basket_recalc.php',
+                    data={'COUPON': '', 'BONUS': ''},
+                    headers=headers,
+                    cookies=cookies,
+                )
+            data = r.json()
+            basket = data.get('basket', {})
+            return basket if isinstance(basket, dict) else {}
+        except Exception as e:
+            print(f"  [GREEN] basket_recalc httpx attempt {attempt+1} failed: {e}")
 
-    basket = data.get('basket', {})
-    return basket if isinstance(basket, dict) else {}
+    print("  [GREEN] basket_recalc: httpx fallback failed")
+    return {}
+
 
 
 def build_basket_stock_map(basket: dict) -> dict:
@@ -310,71 +296,8 @@ def _stock_text_from_map(stock_data: dict) -> str:
     return f"В наличии: {quantity} {stock_data.get('unit', 'шт')}"
 
 
-def _fetch_green_from_basket() -> list:
-    """Read green-priced items directly from basket_recalc.php using Python requests.
-    Basket items with IS_GREEN=1 are green prices already in the technical account's cart.
-    These are hidden from the "Зелёные ценники" recommendation section by VkusVill.
-    """
-    if not os.path.exists(COOKIES_PATH):
-        return []
-    with open(COOKIES_PATH, 'r', encoding='utf-8') as f:
-        raw = json.load(f)
-    cookie_str = '; '.join(f"{c['name']}={c['value']}" for c in raw)
-    headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
-        'X-Requested-With': 'XMLHttpRequest',
-        'Origin': 'https://vkusvill.ru',
-        'Referer': 'https://vkusvill.ru/cart/',
-        'Cookie': cookie_str,
-    }
-    try:
-        r = _requests.post(
-            'https://vkusvill.ru/ajax/delivery_order/basket_recalc.php',
-            data={'COUPON': '', 'BONUS': ''}, headers=headers, timeout=15
-        )
-        data = r.json()
-    except Exception as e:
-        print(f"  [GREEN] basket_recalc fetch failed: {e}")
-        return []
-
-    basket = data.get('basket', {})
-    products = []
-    for item in basket.values():
-        if not isinstance(item, dict):
-            continue
-        if not (item.get('IS_GREEN') == '1' or item.get('IS_GREEN') is True
-                or item.get('IS_GREEN') == 1):
-            continue
-        if item.get('CAN_BUY') != 'Y':
-            continue
-        pid = str(item.get('PRODUCT_ID', ''))
-        url = item.get('URL') or item.get('DETAIL_PAGE_URL', '')
-        if url and not url.startswith('http'):
-            url = f"https://vkusvill.ru{url}"
-        img = item.get('IMG') or item.get('PICTURE') or item.get('PREVIEW_PICTURE') or ''
-        if img and not img.startswith('http'):
-            img = f"https://vkusvill.ru{img}"
-        unit_raw = str(item.get('UNIT', item.get('UNITS', 'шт'))).lower()
-        unit = 'кг' if 'кг' in unit_raw or 'kg' in unit_raw else 'шт'
-        max_q = item.get('MAX_Q')
-        stock_val = max_q if max_q is not None else (item.get('STORE_MAX_Q') or 99)
-        can_buy = item.get('CAN_BUY') == 'Y'
-        products.append({
-            'id': pid,
-            'name': item.get('NAME', ''),
-            'url': url,
-            'currentPrice': str(item.get('PRICE', '0')),
-            'oldPrice': str(item.get('BASE_PRICE') or item.get('PRICE_OLD') or item.get('OLD_PRICE') or '0'),
-            'image': img,
-            'stockText': f"В наличии: {stock_val}",
-            'unit': unit,
-            'category': 'Зелёные ценники',
-            'type': 'green',
-            'can_buy': can_buy,
-        })
-    print(f"  [GREEN] basket_recalc: {len(products)} green items (IS_GREEN=1) out of {len(basket)} total")
-    return products
+# NOTE: _fetch_green_from_basket() defined once below (line ~820+).
+# Dead duplicate was removed here (BUG 1 fix).
 
 
 def _deserialize(val):
@@ -484,7 +407,7 @@ async def _inspect_green_section(page) -> tuple[bool, bool, int]:
 
 
 def _green_inline_scope_expr() -> str:
-    return """
+    return r"""
         (() => {
             const isVisible = (el) => !!(el && el.offsetParent !== null && !el.classList.contains('_hidden'));
             const directGreenSection = document.getElementById('js-Delivery__Order-green-state-not-empty');
@@ -511,11 +434,10 @@ def _green_inline_scope_expr() -> str:
 
             document.querySelectorAll('section, div, article').forEach((node) => {
                 const text = (node.textContent || '').replace(/\u00a0/g, ' ');
-                const isGreenSection = text.includes('\u0417\u0435\u043b\u0451\u043d\u044b\u0435 \u0446\u0435\u043d\u043d\u0438\u043a\u0438')
-                    || text.includes('\u0417\u0435\u043b\u0435\u043d\u044b\u0435 \u0446\u0435\u043d\u043d\u0438\u043a\u0438');
-                // Guard: reject nodes that also contain the "Добавьте в заказ" section
-                // to avoid confusing regular product recommendations with green prices
-                const hasNonGreen = text.includes('\u0414\u043e\u0431\u0430\u0432\u044c\u0442\u0435 \u0432 \u0437\u0430\u043a\u0430\u0437');
+                const isGreenSection = text.includes('Зелёные ценники')
+                    || text.includes('Зеленые ценники');
+                // Guard: reject nodes that also contain "Добавьте в заказ"
+                const hasNonGreen = text.includes('Добавьте в заказ');
                 if (isGreenSection && !hasNonGreen && node.querySelector('.ProductCard')) {
                     pushCandidate(node);
                 }
@@ -587,7 +509,7 @@ def _green_product_cards_script(card_source: str) -> str:
                 seen.add(dedupeKey);
 
                 const priceEl = card.querySelector('.ProductCard__price--current, .Price__value, .ProductCard__price');
-                const oldPriceEl = card.querySelector('.ProductCard__price--old, .ProductCard__OldPrice');
+                const oldPriceEl = card.querySelector('.js-datalayer-catalog-list-price-old, .ProductCard__price--old, .ProductCard__OldPrice');
                 const imgEl = card.querySelector('.ProductCard__image img, .ProductCard__imageLink img, img');
                 const text = card.innerText || '';
 
@@ -645,20 +567,28 @@ async def _add_green_cards_to_cart(page, card_source: str, total_cards: int):
     results_summary = {'no_scope': 0, 'no_card': 0, 'already_in_cart': 0, 'added': 0, 'no_button': 0}
 
     for idx in range(total_cards):
+        # Find the FIRST card that still has a clickable add button.
+        # Two possible behaviors after adding an item:
+        #   1. Item DISAPPEARS from DOM → remaining items shift up (this account)
+        #   2. Item STAYS but button changes to quantity control → skip it
+        # Using cards[idx] was wrong because it skipped items after DOM shifts.
+        # Instead, we scan all cards and click the first one with an add button.
         result = await _js(page, f"""
             (() => {{
                 const scope = {scope_expr};
                 const isVisible = (el) => !!(el && el.offsetParent !== null && !el.classList.contains('_hidden'));
                 if (!scope) return 'no_scope';
                 const cards = scope.querySelectorAll('.ProductCard');
-                const card = cards[{idx}];
-                if (!card) return 'no_card';
-                const btn = card.querySelector('.js-delivery__basket--add, .CartButton__content--add, .CartButton__content, .ProductCard__add, .ProductCard__addToCart, button');
-                if (btn && isVisible(btn)) {{
-                    btn.click();
-                    return 'added';
+                if (cards.length === 0) return 'no_card';
+                for (let i = 0; i < cards.length; i++) {{
+                    const card = cards[i];
+                    if (card.querySelector('.ProductCard__quantityControl')) continue;
+                    const btn = card.querySelector('.js-delivery__basket--add, .CartButton__content--add, .CartButton__content, .ProductCard__add, .ProductCard__addToCart, button');
+                    if (btn && isVisible(btn)) {{
+                        btn.click();
+                        return 'added';
+                    }}
                 }}
-                if (card.querySelector('.ProductCard__quantityControl')) return 'already_in_cart';
                 return 'no_button';
             }})()
         """)
@@ -666,7 +596,7 @@ async def _add_green_cards_to_cart(page, card_source: str, total_cards: int):
         results_summary[result] = results_summary.get(result, 0) + 1
         if result == 'added':
             added_count += 1
-        await asyncio.sleep(1.0)  # 1s delay between cart adds (human-like, avoid bot ban)
+        await asyncio.sleep(1.5)  # 1.5s delay: wait for disappear animation + avoid bot ban
 
     return results_summary, added_count
 
@@ -832,7 +762,7 @@ def _merge_green_cart_data(raw_products: list, stock_map: dict) -> list:
         if pid and pid in stock_map:
             stock_data = stock_map[pid]
             p['stockText'] = _stock_text_from_map(stock_data) or p.get('stockText', '')
-            p['unit'] = stock_data.get('unit', p.get('unit', 'ÑˆÑ‚'))
+            p['unit'] = stock_data.get('unit', p.get('unit', 'шт'))
 
             cur_price = str(p.get('currentPrice', '0'))
             old_price = str(p.get('oldPrice', '0'))
@@ -885,6 +815,13 @@ def _fetch_green_from_basket() -> list:
     basket = _fetch_basket_snapshot()
     if not basket:
         return []
+    return _extract_green_from_basket_dict(basket)
+
+
+def _extract_green_from_basket_dict(basket: dict) -> list:
+    """Extract green-priced items from a basket dict (shared by requests + CDP path)."""
+    if not isinstance(basket, dict):
+        return []
 
     stock_map = build_basket_stock_map(basket)
     products = []
@@ -925,6 +862,85 @@ def _fetch_green_from_basket() -> list:
     return products
 
 
+async def _fetch_basket_via_cdp(page) -> dict:
+    """Fetch basket_recalc from INSIDE Chrome via sync XHR — bypasses Python requests network issues.
+    Uses synchronous XMLHttpRequest because nodriver's evaluate() can't await promises."""
+    print("  [GREEN] Trying basket_recalc via CDP (in-browser XHR)...")
+
+    # Ensure page is on vkusvill.ru — XHR with relative URL fails on chrome-error:// pages
+    try:
+        current_url = await _js(page, 'window.location.href')
+        if not current_url or 'vkusvill.ru' not in str(current_url):
+            print(f"  [GREEN] Page not on vkusvill.ru (at: {str(current_url)[:60]}), navigating...")
+            await page.get('https://vkusvill.ru/cart/')
+            import asyncio
+            await asyncio.sleep(3)
+    except Exception as e:
+        print(f"  [GREEN] Navigation check failed: {e}")
+
+    result = await _js(page, r"""
+        (() => {
+            try {
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', 'https://vkusvill.ru/ajax/delivery_order/basket_recalc.php', false);
+                xhr.setRequestHeader('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8');
+                xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+                xhr.send('COUPON=&BONUS=');
+                if (xhr.status !== 200) return {error: 'HTTP ' + xhr.status};
+                const data = JSON.parse(xhr.responseText);
+                // Return just the basket keys+values as JSON string
+                // to avoid nodriver deep-serialization issues
+                return JSON.stringify(data);
+            } catch (e) {
+                return JSON.stringify({error: e.message || String(e)});
+            }
+        })()
+    """)
+
+    if not result:
+        print("  [GREEN] CDP basket fetch: empty result")
+        return {}
+
+    # nodriver returns the JSON string directly
+    try:
+        if isinstance(result, str):
+            data = json.loads(result)
+        elif isinstance(result, dict):
+            data = result
+        else:
+            print(f"  [GREEN] CDP basket fetch: unexpected type {type(result).__name__}")
+            return {}
+    except (json.JSONDecodeError, TypeError) as e:
+        print(f"  [GREEN] CDP basket JSON parse error: {e}")
+        return {}
+    if data.get('error'):  # Only fail on non-empty error (VkusVill returns error:'' on success)
+        print(f"  [GREEN] CDP basket fetch error: {repr(data['error'])}")
+        return {}
+
+    basket = data.get('basket', {})
+    if isinstance(basket, dict):
+        print(f"  [GREEN] CDP basket fetch: got {len(basket)} items")
+        return basket
+    return {}
+
+
+async def _fetch_green_from_basket_async(page) -> tuple:
+    """Try CDP first (Chrome is already connected), fall back to Python httpx.
+    Returns (green_products, full_stock_map) — stock_map has ALL basket items by product ID."""
+    # Try CDP first — Chrome is already open and connected to vkusvill.ru
+    basket = await _fetch_basket_via_cdp(page)
+    if basket:
+        return _extract_green_from_basket_dict(basket), build_basket_stock_map(basket)
+
+    # Fallback: Python httpx with SOCKS proxy
+    print("  [GREEN] CDP fetch failed, trying Python httpx...")
+    snapshot = _fetch_basket_snapshot()
+    if snapshot:
+        return _extract_green_from_basket_dict(snapshot), build_basket_stock_map(snapshot)
+
+    return [], {}
+
+
 async def scrape_green_prices_async():
     """
     Green scraper — simplified flow:
@@ -946,17 +962,22 @@ async def scrape_green_prices_async():
     6. Close Chrome
     """
     print("🔄 [GREEN] Starting...")
+
+    # BUG 20 fix: check availability in async function too
+    if not check_vkusvill_available():
+        print("❌ [GREEN] VkusVill not available")
+        return [], False
+
     browser = None
     proc = None
     tmp_profile = None
-    using_temp_profile = True
     products = []
     live_count = 0
     scrape_success = False
 
     try:
         # ── STEP 1: Launch browser, load cookies, go to /cart/ ──
-        browser, proc, tmp_profile, using_temp_profile = await _launch_browser()
+        browser, proc, tmp_profile = await _launch_browser()
 
         page = await browser.get('https://vkusvill.ru')
         await asyncio.sleep(3)
@@ -1139,13 +1160,21 @@ async def scrape_green_prices_async():
                     """)
                     await asyncio.sleep(3)
 
-            # Close delivery modal
+            # Close delivery modal (try multiple selectors + Escape key fallback)
             await _js(page, """
                 (() => {
-                    const closeBtn = document.querySelector('.Modal__close, .js-modal-close, .VV_ModalClose');
-                    if (closeBtn) closeBtn.click();
+                    const selectors = '.Modal__close, .js-modal-close, .VV_ModalClose, [class*="Modal"] [class*="close"], [class*="Modal"] [class*="Close"], .VV23_RWayModal button[class*="close"]';
+                    const closeBtn = document.querySelector(selectors);
+                    if (closeBtn) { closeBtn.click(); return 'clicked'; }
+                    // Fallback: click overlay
+                    const overlay = document.querySelector('.Modal__overlay, [class*="overlay"], [class*="Overlay"]');
+                    if (overlay) { overlay.click(); return 'overlay'; }
+                    return 'not_found';
                 })()
             """)
+            await asyncio.sleep(1)
+            # Escape key fallback to close any remaining modal
+            await _js(page, "document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', code: 'Escape', bubbles: true}))")
             await asyncio.sleep(1)
 
             if toggle_state != 'on':
@@ -1153,268 +1182,563 @@ async def scrape_green_prices_async():
                 page = await browser.get(GREEN_URL)
                 await asyncio.sleep(8)
 
-        # ── STEP 3: Find "Зелёные ценники" section ──
-        print("  [GREEN] Step 3: Looking for green section...")
-        await _js(page, 'window.scrollTo(0, document.body.scrollHeight)')
-        await asyncio.sleep(2)
-        await _js(page, 'window.scrollTo(0, 2000)')  # Green section is ~2000px down
-        await asyncio.sleep(2)
-
-        # Debug: check what's on the page
-        try:
-            debug_path = os.path.join(DATA_DIR, "debug_green_page.png")
-            await page.save_screenshot(debug_path)
-            print(f"  [GREEN] Debug screenshot saved: {debug_path}")
-        except Exception as e:
-            print(f"  [GREEN] Screenshot failed: {e}")
-
-        # Quick debug: return flat array [hasGreenSection, hasGreenText, cartItemCount, greenIdList]
-        green_debug = await _js(page, r"""
+        # ── STEP 2.5: Seed item — if cart is empty, page force-reloads on first
+        # add-to-cart, which kills the green modal. Add one cheap item first. ──
+        cart_check = await _js(page, r"""
             (() => {
-                const section = document.getElementById('js-Delivery__Order-green-state-not-empty');
                 const bodyText = document.body.innerText || '';
-                const hasText = bodyText.includes('Зелёные ценники') || bodyText.includes('Зеленые ценники');
-                const cartItems = document.querySelectorAll('.HProductCard, .BasketItem, .VV_CartItem').length;
-                const greenIds = Array.from(document.querySelectorAll('[id*="green"], [id*="Green"]')).map(el => el.id);
-                return [!!section, hasText, cartItems, greenIds.join(',')];
+                // Signal 1: empty cart text
+                if (bodyText.includes('Корзина ждёт') || bodyText.includes('Корзина пуста')) {
+                    return {empty: true, reason: 'empty_text'};
+                }
+                // Signal 2: count actual cart items using the correct selector
+                // .js-delivery-basket-item = real cart items (NOT green section, NOT recommendations)
+                const cartItems = document.querySelectorAll('.js-delivery-basket-item, .Delivery__Order__BasketItem');
+                if (cartItems.length > 0) {
+                    return {empty: false, reason: 'cart_items_' + cartItems.length};
+                }
+                // Signal 3: no "Очистить корзину" button = likely no items
+                const clearBtn = [...document.querySelectorAll('*')].find(el => 
+                    (el.textContent || '').trim().includes('Очистить корзину') && 
+                    (el.textContent || '').trim().length < 30
+                );
+                if (clearBtn) {
+                    // Clear button exists but no items detected — page may still be loading
+                    return {empty: false, reason: 'clear_btn_exists_but_0_items'};
+                }
+                return {empty: true, reason: 'no_items_no_clear'};
             })()
-        """) or []
-        if isinstance(green_debug, list) and len(green_debug) >= 4:
-            print(f"    Section element exists: {green_debug[0]}")
-            print(f"    'Зелёные ценники' text on page: {green_debug[1]}")
-            print(f"    Cart items on page: {green_debug[2]}")
-            print(f"    Green IDs found: {green_debug[3]}")
-        else:
-            print(f"    Debug returned: {green_debug}")
-
-        # Check if green section exists — return FLAT ARRAY [found, buttonText, inlineCards]
-        green_info = await _js(page, r"""
-            (() => {
-                const section = document.getElementById('js-Delivery__Order-green-state-not-empty');
-                if (!section) return [false, '', 0];
-
-                // Look for "X товаров" / "показать все" button near the section
-                let buttonText = '';
-                let container = section;
-                for (let depth = 0; depth < 4; depth++) {
-                    const links = container.querySelectorAll('a, button, [class*="Link"]');
-                    for (const link of links) {
-                        const text = (link.innerText || '').trim();
-                        if ((text.includes('Показать все') || text.includes('показать все') ||
-                             /^\d+\s*товар/i.test(text)) && link.offsetParent !== null) {
-                            buttonText = text;
-                            break;
+        """)
+        print(f"  [GREEN] Cart check: {cart_check}")
+        # nodriver returns JS objects as list of [key, {type, value}] pairs
+        # Convert to Python dict
+        if isinstance(cart_check, list):
+            parsed = {}
+            for item in cart_check:
+                if isinstance(item, (list, tuple)) and len(item) == 2:
+                    key = item[0]
+                    val = item[1]
+                    if isinstance(val, dict) and 'value' in val:
+                        parsed[key] = val['value']
+                    else:
+                        parsed[key] = val
+            cart_check = parsed
+        cart_empty = isinstance(cart_check, dict) and cart_check.get('empty', False)
+        print(f"  [GREEN] Cart empty: {cart_empty} (parsed: {cart_check})")
+        if cart_empty:
+            print("  [GREEN] Step 2.5: Cart is empty — adding seed item...")
+            await _step_screenshot(page, "cart_empty_before_seed")
+            seed_added = await _js(page, r"""
+                (() => {
+                    // Find "Добавьте в заказ" section and click first "В корзину" button
+                    const sections = document.querySelectorAll('.VV23_CartPage_Section, [class*="Recommend"], [class*="recommend"]');
+                    for (const section of sections) {
+                        const title = section.querySelector('h2, h3, [class*="title"], [class*="Title"]');
+                        if (title && (title.textContent || '').includes('Добавьте в заказ')) {
+                            const btn = section.querySelector('.js-delivery__basket--add, .CartButton__content, button[class*="cart"], button[class*="Cart"]');
+                            if (btn && btn.offsetParent !== null) {
+                                btn.click();
+                                return 'added_from_recommend';
+                            }
                         }
                     }
-                    if (buttonText) break;
-                    container = container.parentElement;
-                    if (!container) break;
-                }
+                    // Fallback: just click the first "В корзину" button on the page
+                    // that's NOT in the green section
+                    const greenSection = document.getElementById('js-Delivery__Order-green-state-not-empty');
+                    const allBtns = document.querySelectorAll('.js-delivery__basket--add, .CartButton__content--add');
+                    for (const btn of allBtns) {
+                        if (greenSection && greenSection.contains(btn)) continue;
+                        if (btn.offsetParent !== null) {
+                            btn.click();
+                            return 'added_fallback';
+                        }
+                    }
+                    return 'no_button_found';
+                })()
+            """)
+            print(f"  [GREEN] Seed item: {seed_added}")
+            if seed_added and seed_added != 'no_button_found':
+                # Wait for page to reload after first cart addition
+                await asyncio.sleep(5)
+                await _step_screenshot(page, "after_seed_reload")
+                # Navigate back to cart page (page may have reloaded)
+                page = await browser.get(GREEN_URL)
+                await asyncio.sleep(8)
+                await _step_screenshot(page, "after_seed_navigate")
+                print("  [GREEN] Seed item added — cart is now non-empty")
+            else:
+                print("  [GREEN] Could not add seed item — cart may still be empty")
+        else:
+            print("  [GREEN] Cart already has items — skipping seed")
 
-                // Count inline product cards
-                const inlineCards = section.querySelectorAll('.ProductCard').length;
-                return [true, buttonText, inlineCards];
+        # ── STEP 3: Find "Зелёные ценники" section ──
+        print("  [GREEN] Step 3: Looking for green section...")
+        # Scroll green section into viewport — VkusVill lazy-loads cards via
+        # Intersection Observer. Cards show as gray placeholders until visible
+        # for ~3 seconds. scrollIntoView is more reliable than fixed pixel scroll.
+        await _js(page, """
+            (() => {
+                const gs = document.getElementById('js-Delivery__Order-green-state-not-empty');
+                if (gs) {
+                    gs.scrollIntoView({behavior: 'instant', block: 'center'});
+                } else {
+                    // Fallback: scroll down to trigger any lazy sections
+                    window.scrollTo(0, document.body.scrollHeight);
+                }
+            })()
+        """)
+        await asyncio.sleep(4)  # Wait 4s for lazy-loaded cards to render
+
+        # BUG 7 fix: get actual live_count from page inspection
+        _, _, live_count = await _inspect_green_section(page)
+        print(f"  [GREEN] Inspected: live_count={live_count}")
+
+        await _step_screenshot(page, "page_loaded_green_section")
+
+        # ── STEP 4 (pre): Scrape green items from green section NOW ──
+        # After add-to-cart + reload, items move out of green section
+        print("  [GREEN] Step 4: Scraping green items from green section...")
+
+        # BUG-067: Paginate the Swiper to force ALL lazy-loaded slides to render
+        # The Swiper only renders ~5 visible slides; we need all of them
+        paginated_total = await _js(page, r"""
+            (async () => {
+                const section = document.getElementById('js-Delivery__Order-green-state-not-empty');
+                if (!section) return 0;
+                const swiperEl = section.querySelector('.swiper-container, .swiper');
+                if (!swiperEl || !swiperEl.swiper) return -1;
+                const s = swiperEl.swiper;
+                const total = s.slides ? s.slides.length : 0;
+                if (total <= 0) return 0;
+                // Slide through all positions to force lazy rendering
+                for (let i = 0; i < total; i += 3) {
+                    s.slideTo(Math.min(i, total - 1), 0);
+                    await new Promise(r => setTimeout(r, 300));
+                }
+                // Return to start
+                s.slideTo(0, 0);
+                return total;
+            })()
+        """) or 0
+        if paginated_total and paginated_total > 0:
+            print(f"  [GREEN] Swiper paginated: {paginated_total} slides force-loaded")
+            await asyncio.sleep(2)  # Wait for lazy slides to fully render
+        elif paginated_total == -1:
+            print("  [GREEN] Swiper not found — using scroll fallback")
+        else:
+            print("  [GREEN] Green section empty or no slides")
+
+        # Scroll green section into view (ensures any remaining lazy content loads)
+        await _js(page, """
+            (() => {
+                const gs = document.getElementById('js-Delivery__Order-green-state-not-empty');
+                if (gs) gs.scrollIntoView({behavior: 'instant', block: 'center'});
+            })()
+        """)
+        await asyncio.sleep(2)
+
+        raw_products = await _js(page, r"""
+            (() => {
+                const products = [];
+                const greenSection = document.getElementById('js-Delivery__Order-green-state-not-empty');
+                if (!greenSection) return products;
+                const cards = greenSection.querySelectorAll('.ProductCard, .HProductCard');
+                cards.forEach(card => {
+                    // Name: use .ProductCard__link innerText (same as red scraper)
+                    const titleEl = card.querySelector('.ProductCard__link');
+                    if (!titleEl) return;
+                    const name = titleEl.innerText.trim();
+                    if (!name) return;
+
+                    // Price - check all children for price-like text
+                    let currentPrice = '';
+                    const priceSelectors = [
+                        '.HProductCard__Price', '.ProductCard__price', '.Price__value',
+                        '[class*="price"]', '[class*="Price"]'
+                    ];
+                    for (const sel of priceSelectors) {
+                        const el = card.querySelector(sel);
+                        if (el) {
+                            currentPrice = (el.innerText || '').trim();
+                            if (currentPrice) break;
+                        }
+                    }
+
+                    const oldPriceEl = card.querySelector(
+                        '.js-datalayer-catalog-list-price-old, [class*="OldPrice"], [class*="oldPrice"], [class*="old-price"], [class*="old_price"], del, s'
+                    );
+                    const oldPrice = oldPriceEl ? (oldPriceEl.innerText || '').trim() : '';
+
+                    const imgEl = card.querySelector('img');
+                    const image = imgEl ? (imgEl.src || '') : '';
+
+                    const linkEl = card.querySelector('a[href*="/goods/"]') || card.querySelector('a');
+                    const url = linkEl ? linkEl.href : '';
+
+                    // Extract product ID from data-id attribute or URL
+                    let productId = '';
+                    const dataIdEl = card.querySelector('[data-id]');
+                    if (dataIdEl) {
+                        productId = dataIdEl.getAttribute('data-id') || '';
+                    }
+                    if (!productId && url) {
+                        const idMatch = url.match(/-(\d+)\.html/);
+                        if (idMatch) productId = idMatch[1];
+                    }
+
+                    products.push({ id: productId, name, currentPrice, oldPrice, stockText: '', image, url });
+                });
+                return products;
             })()
         """) or []
-        if not isinstance(green_info, list) or len(green_info) < 3:
-            green_info = [False, '', 0]
-
-        section_found = bool(green_info[0])
-        show_all_button = str(green_info[1] or '')
-        inline_count = int(green_info[2] or 0)
-
-        if not section_found:
-            print("⚠️ [GREEN] Green section not found on page!")
-            # Try basket API fallback
-            raw_products = _fetch_green_from_basket()
-            if raw_products:
-                print(f"  [GREEN] Fallback: got {len(raw_products)} items from basket API.")
-            else:
-                existing = _load_existing_green_product_count()
-                if existing > 0:
-                    print("⚠️ [GREEN] Preserving existing snapshot.")
-                    return [], False
-                print("  [GREEN] No green items anywhere.")
-                raw_products = []
-        else:
-            print(f"  [GREEN] Green section found! Button: '{show_all_button}', inline cards: {inline_count}")
-
+        if not isinstance(raw_products, list):
             raw_products = []
+        print(f"  [GREEN] Green section: found {len(raw_products)} green items")
 
-            if show_all_button:
-                # ── STEP 3.1: Click "показать все" / "X товаров" to open modal ──
-                print(f"  [GREEN] Step 3.1: Clicking '{show_all_button}'...")
-                # Scroll to green section first
-                await _js(page, r"""
+        # ── STEP 4 (button): Check green button #js-Delivery__Order-green-show-all ──
+        # 3 states: VISIBLE → modal, HIDDEN → inline, NOT IN DOM → no new items
+        green_button = await _js(page, r"""
+            (() => {
+                const btn = document.getElementById('js-Delivery__Order-green-show-all');
+                if (!btn) return 'not_in_dom';
+                if (btn.classList.contains('_hidden')) {
+                    // Button hidden (_hidden class) — items exist but <5
+                    const section = document.getElementById('js-Delivery__Order-green-state-not-empty');
+                    const inlineCards = section ? section.querySelectorAll('.ProductCard').length : 0;
+                    return 'hidden:' + inlineCards;
+                }
+                return 'visible';
+            })()
+        """) or 'not_in_dom'
+        green_button = str(green_button)
+        print(f"  [GREEN] Button state: {green_button}")
+
+        if green_button == 'visible':
+            # ── STEP 3.1: Button visible → click → modal → scrape + add all ──
+            print("  [GREEN] Step 3.1: Button visible — clicking to open modal...")
+            await _step_screenshot(page, "before_modal_click")
+            await _js(page, r"""
+                (() => {
+                    const section = document.getElementById('js-Delivery__Order-green-state-not-empty');
+                    if (section) section.scrollIntoView({behavior: 'instant', block: 'center'});
+                })()
+            """)
+            await asyncio.sleep(1)
+
+            clicked = await _js(page, r"""
+                (() => {
+                    const btn = document.getElementById('js-Delivery__Order-green-show-all');
+                    if (btn && !btn.classList.contains('_hidden') && btn.offsetParent !== null) {
+                        btn.click();
+                        return true;
+                    }
+                    return false;
+                })()
+            """)
+            print(f"  [GREEN] Button clicked: {clicked}")
+            await asyncio.sleep(3)
+
+            # Check if modal opened
+            modal_ready = await _js(page, """
+                (() => {
+                    const modal = document.getElementById('js-modal-cart-prods-scroll');
+                    return modal && modal.offsetParent !== null;
+                })()
+            """)
+            print(f"  [GREEN] Modal opened: {modal_ready}")
+
+            if modal_ready:
+                await _step_screenshot(page, "modal_opened")
+
+                # ── STEP 3.1.1: Scroll modal to load ALL items ──
+                print("  [GREEN] Step 3.1.1: Loading all modal items...")
+                prev_count = 0
+                no_change = 0
+                for i in range(50):
+                    state = await _js(page, r"""
+                        (() => {
+                            const modal = document.getElementById('js-modal-cart-prods-scroll');
+                            if (!modal) return [0, false];
+                            modal.scrollTop = modal.scrollHeight;
+                            // Try multiple selectors for "load more" button
+                            const selectors = ['.js-prods-modal-load-more', '.ProductCard__more', 
+                                               '.ModalProds__more', '[class*="load-more"]', '[class*="show-more"]'];
+                            let clicked = false;
+                            for (const sel of selectors) {
+                                const btn = document.querySelector(sel);
+                                if (btn && btn.offsetParent !== null) { btn.click(); clicked = true; break; }
+                            }
+                            return [modal.querySelectorAll('.ProductCard').length, clicked];
+                        })()
+                    """) or [0, False]
+                    if not isinstance(state, list) or len(state) < 2:
+                        state = [0, False]
+                    count = int(state[0] or 0)
+                    clicked_more = bool(state[1])
+                    print(f"    iter {i+1}: cards={count}, loaded_more={clicked_more}")
+                    await asyncio.sleep(2.5 if clicked_more else 1.5)
+                    if count == prev_count and not clicked_more:
+                        no_change += 1
+                        if no_change >= 3:
+                            break
+                    else:
+                        no_change = 0
+                    prev_count = count
+
+                total_in_modal = prev_count
+                print(f"  [GREEN] Modal loaded: {total_in_modal} cards")
+                await _step_screenshot(page, "modal_all_loaded")
+
+                # ── STEP 3.1.2: Scrape products from modal BEFORE adding to cart ──
+                # The modal shows ALL green items (not just ~12 from Swiper)
+                print("  [GREEN] Step 3.1.2: Scraping products from modal...")
+                modal_products = await _js(page, r"""
                     (() => {
-                        const section = document.getElementById('js-Delivery__Order-green-state-not-empty');
-                        if (section) section.scrollIntoView({behavior: 'instant', block: 'center'});
-                    })()
-                """)
-                await asyncio.sleep(1)
-
-                clicked = await _js(page, r"""
-                    (() => {
-                        const isVisible = (el) => !!(el && el.offsetParent !== null);
-                        const section = document.getElementById('js-Delivery__Order-green-state-not-empty');
-                        if (!section) return false;
-
-                        let container = section;
-                        for (let depth = 0; depth < 4; depth++) {
-                            const links = container.querySelectorAll('a, button, [class*="Link"]');
-                            for (const link of links) {
-                                const text = (link.innerText || '').trim();
-                                if ((text.includes('Показать все') || text.includes('показать все') ||
-                                     /^\d+\s*товар/i.test(text)) && isVisible(link)) {
-                                    link.click();
-                                    return true;
+                        const products = [];
+                        const modal = document.getElementById('js-modal-cart-prods-scroll');
+                        if (!modal) return products;
+                        const cards = modal.querySelectorAll('.ProductCard');
+                        cards.forEach(card => {
+                            // Try multiple selectors - VkusVill modal uses different card layout
+                            const nameSelectors = [
+                                '.ProductCard__link', '.ProductCard__title', '.ProductCard__name',
+                                'a[href*="/goods/"]', 'a[href*="/product/"]',
+                                '[class*="name"]', '[class*="title"]', '[class*="Name"]', '[class*="Title"]'
+                            ];
+                            let name = '';
+                            let linkEl = null;
+                            for (const sel of nameSelectors) {
+                                const el = card.querySelector(sel);
+                                if (el) {
+                                    const t = (el.innerText || el.textContent || '').trim();
+                                    if (t && t.length > 2 && !/^\d/.test(t) && !t.includes('корзин')) {
+                                        name = t;
+                                        if (el.tagName === 'A') linkEl = el;
+                                        break;
+                                    }
                                 }
                             }
-                            container = container.parentElement;
-                            if (!container) break;
-                        }
-                        return false;
-                    })()
-                """)
-                print(f"  [GREEN] Button clicked: {clicked}")
-                await asyncio.sleep(3)
-
-                # Check if modal opened
-                modal_ready = await _js(page, """
-                    (() => {
-                        const modal = document.getElementById('js-modal-cart-prods-scroll');
-                        return modal && modal.offsetParent !== null;
-                    })()
-                """)
-                print(f"  [GREEN] Modal opened: {modal_ready}")
-
-                if modal_ready:
-                    # ── STEP 3.1.1: Scroll modal + click "В корзину" on each card ──
-                    print("  [GREEN] Step 3.1.1: Adding items from modal...")
-
-                    # First scroll modal to load all items
-                    prev_count = 0
-                    no_change = 0
-                    for i in range(50):
-                        state = await _js(page, r"""
-                            (() => {
-                                const modal = document.getElementById('js-modal-cart-prods-scroll');
-                                if (!modal) return [0, false];
-                                modal.scrollTop = modal.scrollHeight;
-                                const btn = document.querySelector('.js-prods-modal-load-more');
-                                let clicked = false;
-                                if (btn && btn.offsetParent !== null) { btn.click(); clicked = true; }
-                                return [modal.querySelectorAll('.ProductCard').length, clicked];
-                            })()
-                        """) or [0, False]
-                        if not isinstance(state, list) or len(state) < 2:
-                            state = [0, False]
-                        count = int(state[0] or 0)
-                        clicked_more = bool(state[1])
-                        print(f"    iter {i+1}: cards={count}, loaded_more={clicked_more}")
-                        await asyncio.sleep(2.5 if clicked_more else 1.5)
-                        if count == prev_count and not clicked_more:
-                            no_change += 1
-                            if no_change >= 3:
-                                break
-                        else:
-                            no_change = 0
-                        prev_count = count
-
-                    total_in_modal = prev_count
-                    print(f"  [GREEN] Modal loaded: {total_in_modal} cards")
-
-                    # ── ADD ALL MODAL ITEMS TO CART ──
-                    # Click "В корзину" on each card (best effort — DOM selectors may vary)
-                    if total_in_modal > 0:
-                        print(f"  [GREEN] Adding {total_in_modal} items to cart...")
-                        added = 0
-                        for idx in range(total_in_modal):
-                            result = await _js(page, f"""
-                                (() => {{
-                                    const modal = document.getElementById('js-modal-cart-prods-scroll');
-                                    if (!modal) return 'no_modal';
-                                    const cards = modal.querySelectorAll('.ProductCard, .ProductCards__item');
-                                    const card = cards[{idx}];
-                                    if (!card) return 'card_gone';
-                                    const btns = card.querySelectorAll('button');
-                                    for (const btn of btns) {{
-                                        if (btn.disabled) continue;
-                                        const text = (btn.innerText || '').toLowerCase().trim();
-                                        if (text.includes('в корзину')) {{
-                                            btn.click();
-                                            return 'added';
-                                        }}
-                                    }}
-                                    return 'no_button';
-                                }})()
-                            """)
-                            if str(result) == 'added':
-                                added += 1
-                            await asyncio.sleep(1.0)  # 1s delay — simulate human clicking
-
-                            # Dismiss any popup that blocks the modal
-                            await _js(page, """
-                                (() => {
-                                    const modals = document.querySelectorAll('[class*="Modal"]');
-                                    for (const m of modals) {
-                                        if (m.id === 'js-modal-cart-prods-scroll') continue;
-                                        const text = m.innerText || '';
-                                        if (text.includes('Уже работаем') || text.includes('похожие товары')) {
-                                            const close = m.querySelector('[class*="close"], [class*="Close"]');
-                                            if (close) close.click();
-                                        }
+                            if (!name) {
+                                // Last resort: find any <a> with text
+                                const links = card.querySelectorAll('a');
+                                for (const a of links) {
+                                    const t = (a.innerText || '').trim();
+                                    if (t && t.length > 2 && !/^\d/.test(t) && !t.includes('корзин')) {
+                                        name = t;
+                                        linkEl = a;
+                                        break;
                                     }
-                                })()
-                            """)
+                                }
+                            }
+                            if (!name) return;
 
-                        print(f"  [GREEN] Added {added}/{total_in_modal} items to cart")
+                            let currentPrice = '';
+                            const priceSelectors = [
+                                '.HProductCard__Price', '.ProductCard__price', '.Price__value',
+                                '[class*="price"]', '[class*="Price"]'
+                            ];
+                            for (const sel of priceSelectors) {
+                                const el = card.querySelector(sel);
+                                if (el) {
+                                    currentPrice = (el.innerText || '').trim();
+                                    if (currentPrice) break;
+                                }
+                            }
 
-                    # Close modal
-                    await _js(page, """
-                        (() => {
-                            const closeBtn = document.querySelector('.Modal__close, .js-modal-close');
-                            if (closeBtn) closeBtn.click();
-                        })()
-                    """)
-                    await asyncio.sleep(2)
+                            const oldPriceEl = card.querySelector(
+                                '.js-datalayer-catalog-list-price-old, [class*="OldPrice"], [class*="oldPrice"], [class*="old-price"], del, s'
+                            );
+                            const oldPrice = oldPriceEl ? (oldPriceEl.innerText || '').trim() : '';
 
+                            const imgEl = card.querySelector('img');
+                            const image = imgEl ? (imgEl.src || '') : '';
+
+                            if (!linkEl) linkEl = card.querySelector('a[href*="/goods/"]') || card.querySelector('a');
+                            const url = linkEl ? linkEl.href : '';
+
+                            let productId = '';
+                            const dataIdEl = card.querySelector('[data-id]');
+                            if (dataIdEl) productId = dataIdEl.getAttribute('data-id') || '';
+                            if (!productId && url) {
+                                const idMatch = url.match(/-(\d+)\.html/);
+                                if (idMatch) productId = idMatch[1];
+                            }
+
+                            products.push({ id: productId, name, currentPrice, oldPrice, stockText: '', image, url });
+                        });
+                        return products;
+                    })()
+                """) or []
+                if not isinstance(modal_products, list):
+                    modal_products = []
+                print(f"  [GREEN] Modal scraped: {len(modal_products)} products")
+
+                # Merge modal products into raw_products (modal has items the section Swiper missed)
+                existing_ids = {str(p.get('id')): True for p in raw_products if p.get('id')}
+                modal_new = 0
+                for mp in modal_products:
+                    mp_id = str(mp.get('id', ''))
+                    if mp_id and mp_id not in existing_ids:
+                        raw_products.append(mp)
+                        existing_ids[mp_id] = True
+                        modal_new += 1
+                    elif not mp_id:
+                        # No ID — check by name
+                        existing_names = {p.get('name', '').strip().lower() for p in raw_products}
+                        if mp.get('name', '').strip().lower() not in existing_names:
+                            raw_products.append(mp)
+                            modal_new += 1
+                if modal_new > 0:
+                    print(f"  [GREEN] Modal added {modal_new} NEW products (total: {len(raw_products)})")
+
+                # ── STEP 3.1.3: Add all to cart ──
+                if total_in_modal > 0:
+                    print(f"  [GREEN] Step 3.1.3: Adding {total_in_modal} items to cart...")
+                    results_summary, added = await _add_green_cards_to_cart(page, 'modal', total_in_modal)
+                    print(f"  [GREEN] Modal add-to-cart: {results_summary}")
+                    print(f"  [GREEN] Added {added}/{total_in_modal} items to cart")
+                    await _step_screenshot(page, "after_add_to_cart")
+
+                await _close_green_modal(page)
+                await asyncio.sleep(2)
+            else:
+                print("  [GREEN] Modal didn't open")
+                await _step_screenshot(page, "modal_failed")
+
+        elif green_button.startswith('hidden:'):
+            # ── STEP 3.2: Button hidden → add inline items ──
+            inline_count = int(green_button.split(':')[1] or 0)
+            print(f"  [GREEN] Step 3.2: Button hidden — {inline_count} inline items")
+            if inline_count > 0:
+                print(f"  [GREEN] Adding {inline_count} inline green items to cart...")
+                results_summary, added = await _add_green_cards_to_cart(page, 'inline', inline_count)
+                print(f"  [GREEN] Inline add-to-cart: {results_summary}")
+                print(f"  [GREEN] Added {added}/{inline_count} items to cart")
+            else:
+                print("  [GREEN] No inline cards found")
+
+        else:
+            # ── STEP 3.3: Button not in DOM ──
+            # Button missing doesn't mean no items — green cards may be inline
+            # on the page with "В корзину" buttons even without the "show all" button.
+            if len(raw_products) > 0:
+                print(f"  [GREEN] Step 3.3: Button not in DOM but {len(raw_products)} green items found — adding inline...")
+                # Scroll green section into view + wait for lazy-loaded cards to render
+                await _js(page, """
+                    (() => {
+                        const gs = document.getElementById('js-Delivery__Order-green-state-not-empty');
+                        if (gs) gs.scrollIntoView({behavior: 'instant', block: 'center'});
+                    })()
+                """)
+                await asyncio.sleep(3)  # Wait for lazy cards to load
+                results_summary, added = await _add_green_cards_to_cart(page, 'inline', len(raw_products))
+                print(f"  [GREEN] Inline add-to-cart: {results_summary}")
+                print(f"  [GREEN] Added {added}/{len(raw_products)} items to cart")
+            else:
+                print("  [GREEN] Step 3.3: Button not in DOM — no green items to add")
+
+        # ── STEP 5: Reload page ──
+        print("  [GREEN] Reloading page...")
+        page = await browser.get(GREEN_URL)
+        await asyncio.sleep(8)
+        await _step_screenshot(page, "after_reload")
+
+        # ── STEP 6: raw_products already scraped before cart actions ──
+        # (green section is empty after reload because items moved to cart)
+        section_found = green_button != 'not_in_dom'
+        print(f"  [GREEN] Step 6: Using {len(raw_products)} items scraped from green section (pre-add)")
+
+        # BUG-067: Supplement DOM-scraped items with basket_recalc data
+        # The DOM may still miss items that weren't rendered despite Swiper pagination
+        print("  [GREEN] Step 6b: Fetching green items from basket_recalc (supplement)...")
+        basket_green, full_stock_map = await _fetch_green_from_basket_async(page)
+
+        # Step 6b-1: Merge IS_GREEN=1 items from basket (discover new green products)
+        if basket_green:
+            existing_ids = {str(p.get('id')): p for p in raw_products if p.get('id')}
+            added_from_basket = 0
+            updated_from_basket = 0
+            for bg in basket_green:
+                bg_id = str(bg.get('id', ''))
+                if not bg_id:
+                    continue
+                if bg_id not in existing_ids:
+                    raw_products.append(bg)
+                    existing_ids[bg_id] = bg
+                    added_from_basket += 1
                 else:
-                    print("  [GREEN] Modal didn't open")
+                    # Update existing product with basket stock data (authoritative for stock/unit/price)
+                    existing = existing_ids[bg_id]
+                    if bg.get('stockText'):
+                        existing['stockText'] = bg['stockText']
+                    if bg.get('unit'):
+                        existing['unit'] = bg['unit']
+                    if bg.get('currentPrice') and bg['currentPrice'] not in ['0', '', 'None']:
+                        existing['currentPrice'] = bg['currentPrice']
+                    if bg.get('oldPrice') and bg['oldPrice'] not in ['0', '', 'None']:
+                        existing['oldPrice'] = bg['oldPrice']
+                    updated_from_basket += 1
+            if added_from_basket > 0 or updated_from_basket > 0:
+                print(f"  [GREEN] basket_recalc: added {added_from_basket} new, updated {updated_from_basket} existing (total: {len(raw_products)})")
+        else:
+            print("  [GREEN] basket_recalc returned no green items")
 
-            else:
-                print("  [GREEN] No 'Показать все' button — using inline items")
+        # Step 6b-2: For DOM-scraped products still missing stock, look up from FULL basket by product ID
+        # Root cause fix: VkusVill sometimes doesn't set IS_GREEN=1 even for green products,
+        # but the product IS in the basket with valid MAX_Q stock data
+        if full_stock_map:
+            stock_filled = 0
+            for p in raw_products:
+                pid = str(p.get('id', ''))
+                if not pid:
+                    continue
+                # Only fill if product has no stockText yet (DOM didn't provide it)
+                has_stock = p.get('stockText', '').strip()
+                if not has_stock and pid in full_stock_map:
+                    sd = full_stock_map[pid]
+                    sv = sd.get('value')
+                    unit = sd.get('unit', 'шт')
+                    if sv is not None:
+                        p['stockText'] = f"{sv} {unit}"
+                        if not p.get('unit') or p['unit'] == 'шт':
+                            p['unit'] = unit
+                        # Also update prices if we have them
+                        if sd.get('price') and sd['price'] not in ['0', '', 'None']:
+                            p['currentPrice'] = sd['price']
+                        if sd.get('oldPrice') and sd['oldPrice'] not in ['0', '', 'None']:
+                            p['oldPrice'] = sd['oldPrice']
+                        stock_filled += 1
+            if stock_filled:
+                print(f"  [GREEN] Filled stock for {stock_filled} DOM-scraped products from full basket map")
 
-            # ── STEP 4: Get green products from basket API ──
-            # The basket API is the RELIABLE source — it knows exactly which items
-            # are green (IS_GREEN=1) with accurate prices and stock data
-            print("  [GREEN] Step 4: Fetching green products from basket API...")
-            raw_products = _fetch_green_from_basket() or []
-            if raw_products:
-                print(f"  [GREEN] Basket API: {len(raw_products)} green products")
-            else:
-                print("  [GREEN] ⚠️ Basket API returned 0 green products")
-            # Enrich with stock data from basket_recalc
-            basket_snapshot = _fetch_basket_snapshot()
-            basket_stock_map = build_basket_stock_map(basket_snapshot)
-            if basket_stock_map:
-                print(f"  [GREEN] Got stock data for {len(basket_stock_map)} items from basket API")
+        # Save stock cache for fallback in future cycles
+        if basket_green or full_stock_map:
+            try:
+                stock_cache = {}
+                # From green-filtered items
+                for bg in basket_green:
+                    bg_id = str(bg.get('id', ''))
+                    if bg_id and bg.get('stockText'):
+                        from utils import parse_stock as _ps
+                        _sv = _ps(bg['stockText'])
+                        if _sv != 99:
+                            stock_cache[bg_id] = {'stock': _sv, 'unit': bg.get('unit', 'шт')}
+                # From full stock map for DOM-scraped products
                 for p in raw_products:
-                    pid = p.get('id', '')
-                    if pid and pid in basket_stock_map:
-                        stock_data = basket_stock_map[pid]
-                        p['stockText'] = _stock_text_from_map(stock_data) or p.get('stockText', '')
-                        p['unit'] = stock_data.get('unit', p.get('unit', 'шт'))
-                        cart_price = stock_data.get('price')
-                        cart_old = stock_data.get('oldPrice')
-                        cur = str(p.get('currentPrice', '0'))
-                        if cart_price and cur in ['0', '1', '', 'None']:
-                            p['currentPrice'] = cart_price
-                        old = str(p.get('oldPrice', '0'))
-                        if cart_old and old in ['0', '1', '', 'None']:
-                            p['oldPrice'] = cart_old
+                    pid = str(p.get('id', ''))
+                    if pid and pid not in stock_cache and pid in full_stock_map:
+                        sd = full_stock_map[pid]
+                        sv = sd.get('value')
+                        if sv is not None and sv != 99:
+                            stock_cache[pid] = {'stock': sv, 'unit': sd.get('unit', 'шт')}
+                if stock_cache:
+                    cache_path = os.path.join(DATA_DIR, 'green_stock_cache.json')
+                    with open(cache_path, 'w', encoding='utf-8') as f:
+                        json.dump(stock_cache, f, ensure_ascii=False)
+                    print(f"  [GREEN] Saved {len(stock_cache)} stock values to cache")
+            except Exception as e:
+                print(f"  [GREEN] Failed to save stock cache: {e}")
 
-        # ── STEP 5: Check if all unavailable (green price is gone) ──
         if raw_products:
             available = [p for p in raw_products
                          if 'нет в наличии' not in p.get('stockText', '').lower()
@@ -1425,12 +1749,25 @@ async def scrape_green_prices_async():
 
         # Suspicious result checks
         existing_count = _load_existing_green_product_count()
-        if is_suspicious_empty_green_result(True, live_count, len(raw_products), existing_count):
+        if is_suspicious_empty_green_result(section_found, live_count, len(raw_products), existing_count):
             print("⚠️ [GREEN] Empty result suspicious — preserving existing snapshot.")
             return [], False
         if is_suspicious_single_green_result(live_count, len(raw_products), existing_count):
             print("⚠️ [GREEN] Single-item result suspicious — preserving existing snapshot.")
             return [], False
+
+        # Load stock cache as fallback for when basket_recalc fails
+        # (green_stock_cache.json is updated only when basket_recalc succeeds with real stock)
+        prev_stock_map = {}
+        try:
+            cache_path = os.path.join(DATA_DIR, 'green_stock_cache.json')
+            if os.path.exists(cache_path):
+                with open(cache_path, 'r', encoding='utf-8') as f:
+                    prev_stock_map = json.load(f)
+                if prev_stock_map:
+                    print(f"  [GREEN] Loaded {len(prev_stock_map)} cached stock values as fallback")
+        except Exception:
+            pass
 
         # Process products
         products = []
@@ -1443,6 +1780,15 @@ async def scrape_green_prices_async():
             p = synthesize_discount(p)
             p['stock'] = parse_stock(p.get('stockText', ''))
             p['unit'] = normalize_stock_unit(p.get('unit'), p['stock'])
+
+            # Fallback: if stock=99 (placeholder), use previous known-good stock
+            if p['stock'] == 99:
+                pid = str(p.get('id', ''))
+                if pid in prev_stock_map:
+                    p['stock'] = prev_stock_map[pid]['stock']
+                    p['unit'] = prev_stock_map[pid]['unit']
+                    print(f"  [GREEN] Fallback stock for {p.get('name','')[:25]}: {p['stock']} {p['unit']}")
+
             if 'stockText' in p:
                 del p['stockText']
             p['category'] = normalize_category('Зелёные ценники', p.get('name', ''), p.get('id'))
@@ -1467,9 +1813,12 @@ async def scrape_green_prices_async():
         if proc:
             try:
                 proc.terminate()
+                proc.wait(timeout=5)  # BUG 11 fix: wait for process to actually die
+            except subprocess.TimeoutExpired:
+                proc.kill()  # Force kill if still running
             except Exception:
                 pass
-        if using_temp_profile and tmp_profile and os.path.isdir(tmp_profile):
+        if tmp_profile and os.path.isdir(tmp_profile):
             try:
                 shutil.rmtree(tmp_profile, ignore_errors=True)
             except Exception:
@@ -1485,8 +1834,7 @@ async def scrape_green_prices_async():
             }
             try:
                 os.makedirs(os.path.dirname(output_path), exist_ok=True)
-                with open(output_path, 'w', encoding='utf-8') as f:
-                    json.dump(output_data, f, ensure_ascii=False, indent=2)
+                save_products_safe(output_data, output_path)  # BUG 15: atomic write
                 print(f"✅ Saved {len(products)} products (live_count={live_count}) -> {output_path}")
             except Exception as e:
                 print(f"❌ Error saving {output_path}: {e}")

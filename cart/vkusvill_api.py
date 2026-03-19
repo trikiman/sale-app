@@ -1,6 +1,6 @@
 """
 VkusVill Cart API — добавление товаров в корзину через HTTP API.
-Без Chrome/Selenium — чистый requests.
+Без Chrome/Selenium — чистый httpx с SOCKS5 proxy.
 
 Usage:
     from cart.vkusvill_api import VkusVillCart
@@ -11,9 +11,10 @@ Usage:
 IMPORTANT: Cookie files must include sessid and user_id fields
 alongside cookie data. The login flow must export these.
 """
-import requests
-import json
+import httpx
 import os
+import json
+
 import re
 import logging
 
@@ -24,6 +25,7 @@ BASKET_UPDATE_URL = "https://vkusvill.ru/ajax/delivery_order/basket_update.php"
 BASKET_RECALC_URL = "https://vkusvill.ru/ajax/delivery_order/basket_recalc.php"
 BASKET_CLEAR_URL = "https://vkusvill.ru/ajax/delivery_order/basket_clear.php"
 VKUSVILL_BASE = "https://vkusvill.ru"
+SOCKS_PROXY = os.environ.get("SOCKS_PROXY", "socks5h://127.0.0.1:10811")
 
 
 class VkusVillCart:
@@ -95,36 +97,37 @@ class VkusVillCart:
         sessid and user_id matching the session from the cookies.
         """
         try:
-            r = requests.get(VKUSVILL_BASE, headers={
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36',
-                'Cookie': self._cookie_str,
-            }, timeout=15)
+            with httpx.Client(proxy=SOCKS_PROXY, timeout=15) as client:
+                r = client.get(VKUSVILL_BASE, headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36',
+                    'Cookie': self._cookie_str,
+                })
             
-            if r.status_code != 200:
-                logger.warning(f"Warmup GET returned status {r.status_code}")
-                return
+                if r.status_code != 200:
+                    logger.warning(f"Warmup GET returned status {r.status_code}")
+                    return
             
-            # Extract sessid
-            if not self.sessid:
-                match = re.search(r"name=['\"]sessid['\"].*?value=['\"]([^'\"]+)['\"]", r.text)
-                if match:
-                    self.sessid = match.group(1)
-                    logger.info(f"Extracted sessid from page: {self.sessid[:8]}...")
+                # Extract sessid
+                if not self.sessid:
+                    match = re.search(r"name=['\"]sessid['\"].*?value=['\"]([^'\"]+)['\"]", r.text)
+                    if match:
+                        self.sessid = match.group(1)
+                        logger.info(f"Extracted sessid from page: {self.sessid[:8]}...")
             
-            # Extract user_id
-            if not self.user_id:
-                uid_match = re.search(r'id=["\']lk-user-id["\'].*?value=["\'](\d+)["\']', r.text)
-                if not uid_match:
-                    uid_match = re.search(r'"USER_ID"\s*:\s*"(\d+)"', r.text)
-                if uid_match:
-                    self.user_id = int(uid_match.group(1))
-                    logger.info(f"Extracted user_id from page: {self.user_id}")
+                # Extract user_id
+                if not self.user_id:
+                    uid_match = re.search(r'id=["\']lk-user-id["\'].*?value=["\'](\d+)["\']', r.text)
+                    if not uid_match:
+                        uid_match = re.search(r'"USER_ID"\s*:\s*"(\d+)"', r.text)
+                    if uid_match:
+                        self.user_id = int(uid_match.group(1))
+                        logger.info(f"Extracted user_id from page: {self.user_id}")
                     
-        except requests.RequestException as e:
+        except httpx.HTTPError as e:
             logger.warning(f"Failed to extract session params: {e}")
     
     def _request(self, url: str, data: dict, referer: str = '/') -> dict:
-        """Make a POST request using raw Cookie header."""
+        """Make a POST request using raw Cookie header via SOCKS5 proxy."""
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36',
             'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
@@ -134,24 +137,29 @@ class VkusVillCart:
             'Cookie': self._cookie_str,
         }
 
-        r = requests.post(url, data=data, headers=headers, timeout=15)
-        return r.json()
+        with httpx.Client(proxy=SOCKS_PROXY, timeout=15) as client:
+            r = client.post(url, data=data, headers=headers)
+        try:
+            return r.json()
+        except json.JSONDecodeError:
+            logger.error(f"Non-JSON response from {url}: {r.text[:200]}")
+            raise
     
     def is_logged_in(self) -> bool:
         """Check if the current session is logged in to VkusVill."""
         self._ensure_session()
         try:
-            r = requests.get(
-                f"{VKUSVILL_BASE}/personal/",
-                headers={
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                    'Cookie': self._cookie_str,
-                },
-                timeout=15,
-                allow_redirects=False
-            )
+            with httpx.Client(proxy=SOCKS_PROXY, timeout=15) as client:
+                r = client.get(
+                    f"{VKUSVILL_BASE}/personal/",
+                    headers={
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                        'Cookie': self._cookie_str,
+                    },
+                    follow_redirects=False
+                )
             return r.status_code == 200
-        except requests.RequestException:
+        except httpx.HTTPError:
             return False
     
     def add(
@@ -203,7 +211,7 @@ class VkusVillCart:
             
             try:
                 last_result = self._request(BASKET_ADD_URL, data)
-            except requests.RequestException as e:
+            except httpx.HTTPError as e:
                 logger.error(f"Cart API request failed: {e}")
                 return {'success': False, 'error': str(e)}
             except json.JSONDecodeError:

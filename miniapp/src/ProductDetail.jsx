@@ -11,11 +11,14 @@ export default function ProductDetail({ product, onClose, onAddToCart, cartState
     setLoading(true)
     setDetails(null)
     setImgIndex(0)
-    fetch(`/api/product/${product.id}/details`)
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 30000)
+    fetch(`/api/product/${product.id}/details`, { signal: controller.signal })
       .then(r => r.json())
       .then(d => setDetails(d))
       .catch(() => setDetails({ _error: true }))
-      .finally(() => setLoading(false))
+      .finally(() => { clearTimeout(timeout); setLoading(false) })
+    return () => { clearTimeout(timeout); controller.abort() }
   }, [product?.id])
 
   if (!product) return null
@@ -59,7 +62,14 @@ export default function ProductDetail({ product, onClose, onAddToCart, cartState
                 src={images[imgIndex]}
                 alt={product.name}
                 className="detail-main-img"
-                onError={e => { e.target.style.display = 'none' }}
+                onError={e => {
+                  if (!e.target.dataset.fallbackAttempted && product.image && e.target.src !== product.image) {
+                    e.target.dataset.fallbackAttempted = 'true';
+                    e.target.src = product.image;
+                  } else {
+                    e.target.style.display = 'none';
+                  }
+                }}
               />
               {images.length > 1 && (
                 <div className="detail-thumbs">
@@ -115,6 +125,10 @@ export default function ProductDetail({ product, onClose, onAddToCart, cartState
             <div className="detail-loading" style={{ textAlign: 'center', padding: '24px 0' }}>
               <div className="cart-btn-spinner" style={{ width: 24, height: 24, margin: '0 auto 8px' }} />
               Загружаем детали…
+            </div>
+          ) : details?._error ? (
+            <div style={{ textAlign: 'center', padding: '16px 0', opacity: 0.6, fontSize: '13px' }}>
+              Не удалось загрузить детали
             </div>
           ) : (
             <div className="detail-sections">

@@ -70,6 +70,16 @@ price_type: 222         # 1=Regular, 222=Red/Sale/Green
 3. **Address binding**: Selecting address in the browser UI binds it server-side. No known API endpoint to set address programmatically.
 4. **VkusVill anti-bot on login click**: `undetected_chromedriver` was fingerprinted. All auth and scrapers now use `nodriver` (CDP-native). Chrome launched via `subprocess.Popen` + `nodriver.Browser.create(host, port)`.
 
+## Network & Proxy (confirmed 2026-03-16)
+- **vkusvill.ru is directly reachable** from the server (`httpx.get()` → 200, 384KB)
+- **Cart API also directly reachable**: `basket_recalc.php` → 200 without proxy
+- **SOCKS5 proxy on :10811**: Works but is NOT required for connectivity
+- **`socks5://` vs `socks5h://`**: Both work identically when DNS resolves locally (which it does)
+- **March 7 timeouts were temporary**: `backend_test.log` `ConnectTimeoutError` entries were transient
+- `cart/vkusvill_api.py` — `httpx` + `socks5h://` proxy (migrated from `requests` 2026-03-16)
+- `backend/main.py` product details — `httpx.AsyncClient` + `socks5://` proxy
+- `scrape_green.py` — `httpx.Client` + `socks5h://` proxy
+
 ## Chrome on Windows 11 Notes
 - Chrome v145.0.7632.117 installed
 - **All scrapers use `nodriver`** — `undetected_chromedriver` is no longer used anywhere

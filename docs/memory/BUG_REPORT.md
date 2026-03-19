@@ -31,9 +31,9 @@
 - **Problem**: Even after a fresh admin tech-login rewrites `data/cookies.json` and copies a persistent `data/tech_profile`, the automatic green scraper still does not reproduce the live browser's cart green block. In the scraper browser, `#js-Delivery__Order-green-state-not-empty` often contains only `.ProductCard._lazyView` placeholders. The page's own lazy request (`POST /ajax/index_page_lazy_load.php` with `code=cart_green_labels`, `version=LIKE_MP`) returns `count_prods_total=0`, while MCP/live Chrome still shows real green items.
 - **Impact**: `scrape_green.py -> scrape_merge.py` is not trustworthy. A fresh scrape can save bogus green products or use a wrong modal path, and the app may only match live after manual intervention.
 
-**[LOGIC] greenMissing flag logic flaw (BUG-066)**
-- **File**: [backend/scrape_merge.py](file:///e:/Projects/saleapp/backend/scrape_merge.py) (line 91)
-- **Problem**: The `greenMissing` flag only checks `not os.path.exists(...)`. If the file exists but has an empty products list due to scraper failure or empty cart, `greenMissing` remains false. Documented in `livedatamismatch.md`.
+**[LOGIC] greenMissing flag logic flaw (BUG-066)** — **Fixed ✅ 2026-03-14**
+- **Files**: [backend/main.py](file:///e:/Projects/saleapp/backend/main.py) (line 476), [scrape_merge.py](file:///e:/Projects/saleapp/scrape_merge.py) (line 91)
+- **Fix**: `main.py` now checks both file existence AND empty products list (matching `scrape_merge.py` logic). Previously only checked `os.path.exists()`.
 
 **[LOGIC] Missing `/api/auth/logout` Backend Endpoint** — **False Positive ✅ 2026-03-05**
 - **File**: `backend/main.py` line 928
@@ -667,16 +667,40 @@ When a scraper crashed (e.g. `NoSuchWindowException`) OR legitimately found 0 it
 ---
 
 **Remaining Open Bugs:**
-1. **BUG-038** (High) — IDOR on favorites endpoints (needs `initData` validation)
-2. **BUG-039** (High) — IDOR on cart endpoints (needs `initData` validation)
-3. **BUG-046** (Medium) — Scraper run-all merge race condition
-4. **BUG-053** (Medium) — Category scraper last-wins overwrites
-5. **BUG-056** (Medium) — Fuzzy category matching false positives in bot
-*(BUG-045 Chrome proc leak — resolved by BUG-059 fix)*
+1. **BUG-068** (High) — **STOCK=99 — last remaining product**: Product 100370 "Хлеб Тостовый" still gets `stock: 99`. Step 6b-2 full-basket-map lookup didn't trigger — likely DOM set some `stockText` that passes the `not has_stock` check but still parses to 99. Fix: change condition to also catch `parse_stock(has_stock) == 99`.
+2. **BUG-067** (High) — **GREEN COUNT MISMATCH**: VkusVill site shows ~30 green items but scraper only finds ~12. Partially resolved — latest cycle found 11 items.
+3. **BUG-038** (High) — IDOR on favorites endpoints (needs `initData` validation)
+4. **BUG-039** (High) — IDOR on cart endpoints (needs `initData` validation)
+5. **BUG-046** (Medium) — Scraper run-all merge race condition
+6. **BUG-053** (Medium) — Category scraper last-wins overwrites
+7. **BUG-056** (Medium) — Fuzzy category matching false positives in bot
+*(BUG-045 Chrome proc leak — resolved by BUG-059 + BUG-069 fixes)*
 
 ---
 
----
+*Last verified: 2026-03-16 — Sprint 12 (stock=99 root cause fix, Chrome leak fix)*
+
+## ✅ Fixed/Partial Bugs (2026-03-15/16 — Sprint 12)
+
+### BUG-068: Stock=99 Placeholder Instead of Real Stock (Multiple Root Causes)
+**Status:** Partially Fixed ⚠️ | **Severity:** High | **Date:** 2026-03-15/16
+**File:** `scrape_green.py`
+**Symptom:** Green products always showed `stock: 99` instead of real stock.
+**Root Causes (5 found):**
+1. `_fetch_basket_snapshot()` no SOCKS proxy → VkusVill unreachable
+2. Step 6b merge didn't update existing products' stockText
+3. CDP XHR used relative URL on `chrome-error://` page
+4. **Main**: `IS_GREEN=1` filter discards products VkusVill doesn't flag as green
+5. No fallback cache
+**Fixes:** httpx+proxy, merge-update logic, absolute URL, Step 6b-2 full-basket-map lookup, green_stock_cache.json
+**Result:** 10/11 products fixed. 1 remaining — see BUG-068 open entry.
+
+### BUG-069: Chrome Process Leak (detail_service.py)
+**Status:** Fixed ✅ | **Severity:** High | **Date:** 2026-03-15
+**Files:** `backend/detail_service.py`, `scheduler_service.py`
+**Symptom:** After 4-5 hours, 4+ blank Chrome windows accumulated.
+**Root Cause:** `detail_service.py` `ensure_browser()` — when Chrome dies, set `browser = None` without `browser.stop()`.
+**Fixes:** (1) Call `browser.stop()` + `os.kill(pid)` before null. (2) Added `_kill_orphan_chromes()` to scheduler — kills chrome.exe with `uc_` temp profiles before each cycle.
 
 ## ✅ Fixed Bugs (2026-03-07 — Sprint 8)
 
@@ -704,3 +728,42 @@ When a scraper crashed (e.g. `NoSuchWindowException`) OR legitimately found 0 it
 ---
 
 *Last verified: 2026-03-07 — Sprint 8 (green scraper, price fix, Safari crash fix, product detail drawer)*
+
+---
+
+### Sprint 13 — Scraper Reliability Bugs (2026-03-17) — ALL FIXED ✅
+
+#### BUG-070: Parallel Chrome Conflict in Scheduler ✅
+**Severity:** Critical
+**Symptom:** All 3 scrapers launched simultaneously by `scheduler_service.py` → Chrome/nodriver instances competed → `Failed to connect to browser` error → green/red/yellow all failed in the same cycle.
+**Root Cause:** `scheduler_service.py` used `subprocess.Popen` to launch all scrapers in parallel (`for script in scrapers: Popen(...)`). All 3 use nodriver which launches Chrome — multiple Chrome instances starting simultaneously caused port/profile conflicts.
+**Fix:** Rewrote `scheduler_service.py` to run scrapers **sequentially** with `_kill_orphan_chromes()` between each scraper. Added 2s sleep between scrapers.
+**Files:** `scheduler_service.py`
+
+#### BUG-071: Red/Yellow Scrapers Exit 0 on Failure ✅
+**Severity:** High
+**Symptom:** Scheduler reported `OK: scrape_red.py` and `OK: scrape_yellow.py` even when both had Chrome Tracebacks. Data files never updated.
+**Root Cause:** Both scrapers catch all exceptions in a try/except block and don't call `sys.exit(1)`. The `__main__` block just calls the function without checking the return value.
+**Fix:** Added `sys.exit(1)` to `__main__` blocks when function returns empty. Also added file-mtime-based success detection in scheduler as defense-in-depth.
+**Files:** `scrape_red.py`, `scrape_yellow.py`, `scheduler_service.py`
+
+#### BUG-072: Notifier Crash — Missing Log Directory ✅
+**Severity:** Medium
+**Symptom:** `EXCEPTION launching backend\notifier.py: [Errno 2] No such file or directory: 'E:\Projects\saleapp\logs\backend\notifier.log'`
+**Root Cause:** `run_script()` creates log path from script name: `backend\notifier.py` → `logs\backend\notifier.log`. The `logs/backend/` subdirectory didn't exist.
+**Fix:** `scheduler_service.py` now does `os.makedirs(os.path.join(LOG_DIR, "backend"), exist_ok=True)` on startup.
+**Files:** `scheduler_service.py`
+
+#### BUG-073: Scattered Logs — Hard to Debug ✅
+**Severity:** Low
+**Symptom:** Scraper output split across `scheduler.log`, `scrape_green.log`, `scrape_red.log`, `scrape_yellow.log`. Debugging required checking 4+ files.
+**Root Cause:** Old scheduler used `subprocess.Popen` with per-scraper log file handles. Main scheduler.log only had "Launching..." and "OK/ERROR" status lines.
+**Fix:** New scheduler pipes all subprocess output into `scheduler.log` with `[GREEN]`/`[RED]`/`[YELLOW]`/`[MERGE]`/`[NOTIF]` tag prefixes.
+**Files:** `scheduler_service.py`
+
+#### BUG-074: Category Scraper IP Ban (MAX_CONCURRENT=10) ✅
+**Severity:** Critical
+**Symptom:** IP banned from VkusVill after running `scrape_categories.py`. All scrapers failed until IP change.
+**Root Cause:** `MAX_CONCURRENT=10` with `asyncio.Semaphore(10)` — 10 simultaneous HTTP connections to VkusVill triggered their anti-abuse system. VkusVill does NOT limit per-minute sequential rate (300+ req/min tested OK with 700+ requests), but bans on concurrent connections.
+**Fix:** `MAX_CONCURRENT` reduced from 10 to 3. Delays shortened since sequential rate is not an issue (0.2s pre-request, 0.3s between pages).
+**Files:** `scrape_categories.py`

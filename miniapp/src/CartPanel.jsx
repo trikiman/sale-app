@@ -15,7 +15,9 @@ export default function CartPanel({ isOpen, onClose, userId }) {
         if (!userId) return
         if (showSpinner) setLoading(true)
         setError(null)
-        fetch(`/api/cart/items/${userId}`)
+        fetch(`/api/cart/items/${userId}`, {
+            headers: { 'X-Telegram-User-Id': String(userId) }
+        })
             .then(res => {
                 if (!res.ok) throw new Error(res.status === 401 ? 'Не авторизованы' : 'Ошибка загрузки')
                 return res.json()
@@ -68,12 +70,15 @@ export default function CartPanel({ isOpen, onClose, userId }) {
         try {
             const res = await fetch('/api/cart/remove', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Telegram-User-Id': String(userId)
+                },
                 body: JSON.stringify({ user_id: userId, product_id: productId })
             })
-            if (res.ok) fetchCart(false)
+            if (res.ok) await fetchCart(false)
         } catch (e) { setError('Ошибка при удалении') }
-        markBusy(productId, false)
+        finally { markBusy(productId, false) }
     }
 
     const handleQuantity = async (productId, delta) => {
@@ -82,7 +87,10 @@ export default function CartPanel({ isOpen, onClose, userId }) {
             const endpoint = delta > 0 ? '/api/cart/add' : '/api/cart/remove'
             const res = await fetch(endpoint, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Telegram-User-Id': String(userId)
+                },
                 body: JSON.stringify({ user_id: userId, product_id: productId })
             })
             if (res.ok) fetchCart(false)
@@ -103,13 +111,20 @@ export default function CartPanel({ isOpen, onClose, userId }) {
         }
         setClearing(true)
         try {
-            await fetch('/api/cart/clear', {
+            const res = await fetch('/api/cart/clear', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Telegram-User-Id': String(userId)
+                },
                 body: JSON.stringify({ user_id: userId })
             })
-            cacheRef.current = null
-            fetchCart(false)
+            if (res.ok) {
+                cacheRef.current = null
+                fetchCart(false)
+            } else {
+                setError('Ошибка очистки')
+            }
         } catch (e) {
             setError('Ошибка очистки')
         } finally {

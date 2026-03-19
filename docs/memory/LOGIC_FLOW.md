@@ -14,9 +14,9 @@ The application consists of three main components that work in harmony:
 
 ## Part 1: The Scraper (Data Collection)
 
-### Parallel Execution
-The system uses a multi-process architecture to maximize speed. Instead of one long sequential run, it launches three scrapers simultaneously:
-1.  **Green Scraper**: Focuses on personalized 40% discounts by accessing the user's cart and personal sections.
+### Sequential Execution (Changed Sprint 13)
+The system runs three scrapers **sequentially** (one at a time). Originally they ran in parallel, but all 3 use Chrome/nodriver and competing Chrome instances caused `Failed to connect to browser` crashes. Sequential execution is reliable:
+1.  **Green Scraper**: Focuses on personalized 40% discounts by accessing the user's cart page. Scrapes items directly from the `#js-Delivery__Order-green-state-not-empty` DOM section BEFORE adding items to cart (items disappear from this section after add+reload). Uses 3-state button detection (`VISIBLE` → modal, `HIDDEN` → inline, `NOT_IN_DOM` → no new items). After DOM scrape, supplements with `basket_recalc.php` data: Step 6b-1 merges IS_GREEN=1 items, Step 6b-2 looks up stock from the FULL basket map (no IS_GREEN filter) for DOM-scraped products missing stockText. **⚠️ VkusVill sometimes doesn't set IS_GREEN=1 even for green products — the full basket map lookup is essential.**
 2.  **Red Scraper**: Scans the catalog for public direct discounts available to all customers.
 3.  **Yellow Scraper**: Identifies "6 or more" multi-buy deals across the store.
 
@@ -24,32 +24,6 @@ The system uses a multi-process architecture to maximize speed. Instead of one l
 The scraper doesn't just download a list of items; it acts like a real person using a web browser. This is necessary because VkusVill displays different prices based on whether you are logged in and what is in your cart.
 
 ### The "Browser"
-Each parallel scraper uses a real Chrome browser controlled by **`nodriver`** (CDP-native). They use **cookie-based authentication** and, as of 2026-03-08, the green scraper can also reuse a persistent technical Chrome profile from [data/tech_profile](E:/Projects/saleapp/data/tech_profile). If no persistent technical profile exists, it falls back to a temp profile created via `tempfile.mkdtemp()` and cleaned up in `finally`. Chrome process must still be killed via `proc.kill()` after `browser.stop()`.
-
-### Green Scraper Profile-State Discovery (Added 2026-03-08)
-- The green cart block on VkusVill is not reliably reproducible from exported cookies alone.
-- With fresh [data/cookies.json](E:/Projects/saleapp/data/cookies.json) and even a copied [data/tech_profile](E:/Projects/saleapp/data/tech_profile), the scraper browser can still see only `.ProductCard._lazyView` placeholders inside `#js-Delivery__Order-green-state-not-empty`.
-- The page's lazy initializer (`initLazyGreenLabelsSlider`) posts to `/ajax/index_page_lazy_load.php` with `code=cart_green_labels` and `version=LIKE_MP`, but that request returns empty JSON (`count_prods_total=0`) even in the real browser session.
-- Therefore the live green items currently observed in MCP are coming from browser/profile state present in the real Chrome session, not from a simple replayable lazy-load endpoint.
-
-`undetected_chromedriver` is fully removed as of 2026-03-05 (BUG-060).
-
----
-
-## Part 2: The Data Flow (Storage)
-
-### The Merge Process
-After the parallel scrapers complete their tasks, a dedicated **Merge Step** takes over. This step is responsible for:
-1.  **Consolidation**: Reading the individual outputs from the Green, Red, and Yellow scrapers.
-2.  **Deduplication**: Ensuring that if an item appears in multiple categories, it is handled correctly.
-3.  **Standardization**: Converting all data into a single, unified format that the MiniApp understands.
-
-### Performance Reporting
-Upon completion, the system generates a summary in the logs:
-*   **Total Counts**: The final number of unique deals available.
-*   **Colored Summary**: A breakdown of the number of items found for each price type (Green/Red/Yellow).
-
-### The "File Database" (`proposals.json`)
 Instead of a complex database server, the app uses a simple file called `proposals.json` located in the `data/` folder. This file is the "source of truth" for the entire system.
 
 ### Staleness Detection
@@ -175,7 +149,7 @@ The price scrapers (green/red/yellow) get category info from the user's personal
 ### Architecture
 - **Pure HTTP** — no browser needed. Uses `aiohttp` + `asyncio` (not Selenium/nodriver).
 - **28 categories** defined in `CATEGORIES` list (e.g. "Готовая еда", "Молочные продукты", "Напитки")
-- **All categories scraped in parallel** via `asyncio.gather()`, with `asyncio.Semaphore(10)` limiting concurrent HTTP requests
+- **All categories scraped in parallel** via `asyncio.gather()`, with `asyncio.Semaphore(3)` limiting concurrent HTTP requests (reduced from 10 in Sprint 13 — VkusVill bans on concurrent connections, not per-minute rate)
 - **Pages within a category are sequential** — pagination requires checking if previous page returned products before requesting the next
 
 ### Data Flow
@@ -204,10 +178,13 @@ The price scrapers (green/red/yellow) get category info from the user's personal
 
 ## Part 5: Automation (The Pulse)
 
-### The Heartbeat (Scheduler)
-The system runs continuously via `scheduler_service.py`. It triggers all three scrapers in parallel, waits for completion (with a 10-minute timeout per scraper), then runs the merge step:
+### The Heartbeat (Scheduler — Rewritten Sprint 13)
+The system runs continuously via `scheduler_service.py`. It triggers all three scrapers **sequentially** (one at a time), then runs the merge step:
 *   **Cycle interval**: Every 5 minutes
-*   **Scraper timeout**: 10 minutes (kills hung Chrome processes)
+*   **Execution**: Sequential (green → red → yellow → merge → notifications)
+*   **Zombie Chrome cleanup**: `_kill_orphan_chromes()` runs before cycle AND between each scraper
+*   **Success detection**: Checks file mtime after each scraper — detects silent failures where scraper exits 0 but data file wasn't updated
+*   **Combined logging**: All output goes to `logs/scheduler.log` with `[GREEN]`/`[RED]`/`[YELLOW]`/`[MERGE]`/`[NOTIF]` tag prefixes
 
 ### Self-Healing
-If the internet goes down or the browser crashes, the system is designed to simply close everything and start fresh on the next scheduled run. This "self-healing" approach ensures the data stays up-to-date without manual intervention.
+If the internet goes down or the browser crashes, the scraper preserves the old data file (`scrape_success=False`) and moves to the next scraper. The zombie Chrome killer catches any orphaned processes between runs. The file-mtime detection ensures the merge step correctly flags stale data even if a scraper silently fails.

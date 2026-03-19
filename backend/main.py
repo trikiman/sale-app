@@ -2,9 +2,16 @@
 FastAPI Backend for VkusVill Mini App
 Serves product data, handles favorites, and provides admin panel
 """
+# CRITICAL: Set ProactorEventLoop BEFORE any async code.
+# uvicorn --reload spawns child processes that need this policy to
+# spawn Chrome subprocess via nodriver. Must be in main.py, NOT just run.py.
+import sys as _sys
+if _sys.platform == 'win32':
+    import asyncio as _asyncio
+    _asyncio.set_event_loop_policy(_asyncio.WindowsProactorEventLoopPolicy())
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Header, Query, Body, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import List, Optional
@@ -128,7 +135,10 @@ def _run_script(name: str, script_path: str):
     """Run a Python script in a background thread, capturing output.
     Uses a per-name lock so the check+set of 'running' is atomic.
     """
-    lock = _run_locks.get(name, threading.Lock())
+    lock = _run_locks.get(name)
+    if lock is None:
+        logger.warning(f"No lock registered for scraper '{name}', skipping")
+        return
     with lock:
         if scraper_status[name]["running"]:
             log_buffer.append(f"[{name}] Already running, skipping.")
@@ -239,6 +249,15 @@ def _require_token(token: Optional[str]):
         raise HTTPException(status_code=403, detail="Invalid admin token")
 
 
+def _validate_user_header(request: Request, expected_user_id: str):
+    """BUG-038/039: Lightweight IDOR protection.
+    Requires X-Telegram-User-Id header to match the user_id in URL/body.
+    Prevents casual IDOR where attacker guesses another user's Telegram ID."""
+    header_uid = request.headers.get("x-telegram-user-id", "")
+    if not header_uid or str(header_uid) != str(expected_user_id):
+        raise HTTPException(status_code=403, detail="User ID mismatch")
+
+
 # ─── Pydantic Models ──────────────────────────────────────────────────────────
 
 class Product(BaseModel):
@@ -286,7 +305,14 @@ class CartAddRequest(BaseModel):
 def root():
     index_path = os.path.join(MINIAPP_DIST, "index.html")
     if os.path.exists(index_path):
-        return FileResponse(index_path)
+        return FileResponse(
+            index_path,
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0"
+            }
+        )
     return {"status": "ok", "message": "VkusVill Mini App API (Frontend not built yet)"}
 
 @app.get("/favicon.ico", include_in_schema=False)
@@ -352,10 +378,10 @@ def _vkusvill_backoff_active() -> bool:
     return _time.time() < _vkusvill_backoff_until
 
 @app.get("/api/product/{product_id}/details")
-def product_details(product_id: str):
+async def product_details(product_id: str):
     """Fetch full product details from VkusVill product page (on-demand)."""
-    import requests as _req
     import re
+    from backend import detail_service
 
     product = _load_product_record(product_id)
     url = product.get('url', '') if product else ''
@@ -363,23 +389,40 @@ def product_details(product_id: str):
     if not url:
         raise HTTPException(status_code=404, detail="Product not found")
 
-    if _vkusvill_backoff_active():
-        return _fallback_product_details(product_id, product, "VkusVill temporarily unreachable")
+    # Check cache first — instant return
+    cached = detail_service.read_cache(product_id)
+    if cached:
+        return cached
 
+    # Fetch HTML via direct HTTP (fast: ~2-3s) — VkusVill pages are server-rendered
+    html = None
     try:
-        r = _req.get(url, headers={
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }, timeout=15)
-        if r.status_code != 200:
-            if r.status_code >= 500:
-                _mark_vkusvill_backoff()
-            logger.warning(f"Product details fallback for {product_id}: VkusVill returned {r.status_code}")
-            return _fallback_product_details(product_id, product, f"VkusVill returned {r.status_code}")
-        html = r.text
-    except _req.RequestException as e:
-        _mark_vkusvill_backoff()
-        logger.warning(f"Product details fallback for {product_id}: {e}")
-        return _fallback_product_details(product_id, product, str(e))
+        import httpx
+        async with httpx.AsyncClient(
+            proxy="socks5://127.0.0.1:10811",
+            timeout=10,
+            follow_redirects=True,
+        ) as client:
+            resp = await client.get(url, headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Accept": "text/html",
+            })
+            if resp.status_code == 200 and len(resp.text) > 500:
+                html = resp.text
+                logger.info(f"Product {product_id}: fetched {len(html)} bytes via HTTP in {resp.elapsed.total_seconds():.1f}s")
+    except Exception as e:
+        logger.warning(f"Product {product_id}: HTTP fetch failed ({e}), trying Chrome fallback")
+
+    # Fallback to Chrome worker if HTTP failed
+    if not html:
+        try:
+            html = await detail_service.fetch_product_html(url)
+        except Exception as e:
+            logger.warning(f"Product details Chrome fetch failed for {product_id}: {e}")
+            return _fallback_product_details(product_id, product, str(e))
+
+    if not html or len(html) < 500:
+        return _fallback_product_details(product_id, product, "Empty HTML response")
 
     def strip_tags(s):
         return re.sub(r'<[^>]+>', ' ', s or '').replace('&nbsp;', ' ').replace('&amp;', '&').strip()
@@ -416,13 +459,29 @@ def product_details(product_id: str):
     composition = sections.get('Состав', '')
     nutrition = sections.get('Пищевая и энергетическая ценность', '') or sections.get('Питание', '')
 
-    # Full-size gallery images (deduplicated, no cache-buster params)
-    imgs = list(dict.fromkeys(
-        i.split('?')[0]
-        for i in re.findall(r'https://img\.vkusvill\.ru/pim/images/site/site/[^\s"\'?]+', html)
-    ))
+    # Full-size gallery images — extract unique images from HTML, keep EXACT URLs
+    # Do NOT construct URLs (e.g. force site_BigWebP) because many UUIDs don't exist
+    # in that format (confirmed: 2/3 tested UUIDs return 404 on site_BigWebP)
+    all_img_urls = re.findall(
+        r'https://img\.vkusvill\.ru/pim/images/[^\s"\'?]+',
+        html
+    )
+    seen_uuids = set()
+    imgs = []
+    for img_url in all_img_urls:
+        m = re.search(r'([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.\w+)', img_url)
+        if not m:
+            continue
+        uuid_file = m.group(1)
+        uuid_part = uuid_file.split('.')[0]
+        if uuid_part in seen_uuids:
+            continue
+        seen_uuids.add(uuid_part)
+        # Keep the original URL as-is (strip query params only)
+        clean_url = img_url.split('?')[0]
+        imgs.append(clean_url)
 
-    return {
+    result = {
         "id": product_id,
         "weight": weight,
         "description": description,
@@ -433,10 +492,58 @@ def product_details(product_id: str):
         "images": imgs,
     }
 
+    # Cache for next time
+    detail_service.write_cache(product_id, result)
+
+    return result
+
+
+@app.get("/api/img")
+async def proxy_image(url: str = ""):
+    """Proxy VkusVill images to bypass CDN hotlink/ORB blocking."""
+    import httpx
+    from urllib.parse import urlparse
+    if not url:
+        raise HTTPException(status_code=400, detail="Missing url parameter")
+    parsed = urlparse(url)
+    if parsed.scheme != "https" or parsed.hostname != "img.vkusvill.ru":
+        raise HTTPException(status_code=400, detail="Invalid image URL")
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(url, headers={
+                "Referer": "https://vkusvill.ru/",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            })
+            if resp.status_code != 200:
+                raise HTTPException(status_code=resp.status_code, detail="Image fetch failed")
+            ct = resp.headers.get("content-type", "image/webp")
+            return Response(
+                content=resp.content,
+                media_type=ct,
+                headers={"Cache-Control": "public, max-age=86400"},
+            )
+    except httpx.TimeoutException:
+        raise HTTPException(status_code=504, detail="Image fetch timeout")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=str(e))
+
+
+# BUG-S02: Basic client log rate limiter
+_client_log_counts: dict = {}  # ip -> (count, window_start)
+_CLIENT_LOG_LIMIT = 30  # max logs per minute per IP
 
 @app.post("/api/log")
 def client_log(request: Request, payload: dict = Body(default={})):
     """Receive client-side error logs from the miniapp."""
+    client_ip = request.client.host if request.client else "unknown"
+    now = _time.time()
+    entry = _client_log_counts.get(client_ip, (0, now))
+    if now - entry[1] > 60:
+        _client_log_counts[client_ip] = (1, now)
+    else:
+        if entry[0] >= _CLIENT_LOG_LIMIT:
+            return {"ok": False, "throttled": True}
+        _client_log_counts[client_ip] = (entry[0] + 1, entry[1])
     ua = payload.get("ua", "")[:120]
     msg = payload.get("msg", "")[:500]
     level = payload.get("level", "info")[:10]
@@ -471,8 +578,18 @@ def get_products():
                     stale_files.append(f"{color} ({age_min:.0f}m)")
         data["dataStale"] = len(stale_files) > 0
         data["staleInfo"] = stale_files if stale_files else None
-        # Live greenMissing check
-        data["greenMissing"] = not os.path.exists(os.path.join(DATA_DIR, "green_products.json"))
+        # Live greenMissing check (BUG-066: also check empty products, not just file existence)
+        green_path = os.path.join(DATA_DIR, "green_products.json")
+        if not os.path.exists(green_path):
+            data["greenMissing"] = True
+        else:
+            try:
+                with open(green_path, "r", encoding="utf-8") as _gf:
+                    _gdata = json.load(_gf)
+                _gprods = _gdata.get("products", _gdata) if isinstance(_gdata, dict) else _gdata
+                data["greenMissing"] = len(_gprods) == 0
+            except Exception:
+                data["greenMissing"] = True
         return data
     except json.JSONDecodeError:
         raise HTTPException(status_code=500, detail="Invalid JSON data")
@@ -484,17 +601,24 @@ async def stream_updates():
     import asyncio
     async def event_generator():
         last_mtime = 0
+        ping_counter = 0
         if os.path.exists(PROPOSALS_PATH):
             last_mtime = os.path.getmtime(PROPOSALS_PATH)
             
         try:
             while True:
                 await asyncio.sleep(2)  # Check every 2 seconds
+                ping_counter += 1
                 if os.path.exists(PROPOSALS_PATH):
                     current_mtime = os.path.getmtime(PROPOSALS_PATH)
                     if current_mtime > last_mtime:
                         last_mtime = current_mtime
                         yield "event: update\ndata: {}\n\n"
+                        ping_counter = 0
+                # BUG-L10: Send keepalive every ~30s to prevent proxy/ALB timeout
+                if ping_counter >= 15:
+                    yield ": keepalive\n\n"
+                    ping_counter = 0
         except asyncio.CancelledError:
             pass  # Client disconnected, clean exit
         except GeneratorExit:
@@ -504,7 +628,8 @@ async def stream_updates():
 
 
 @app.get("/api/favorites/{user_id}")
-def get_favorites(user_id: str):
+def get_favorites(user_id: str, request: Request):
+    _validate_user_header(request, user_id)
     favorites = db.get_user_favorite_products(user_id)
     return {
         "user_id": user_id,
@@ -513,7 +638,8 @@ def get_favorites(user_id: str):
 
 
 @app.post("/api/favorites/{user_id}", response_model=FavoriteResponse)
-def toggle_favorite(user_id: str, request: FavoriteRequest):
+def toggle_favorite(user_id: str, request: FavoriteRequest, raw_request: Request):
+    _validate_user_header(raw_request, user_id)
     # Only upsert for numeric Telegram IDs, not guest string IDs
     if user_id.isdigit():
         db.upsert_user(int(user_id))
@@ -528,9 +654,33 @@ def toggle_favorite(user_id: str, request: FavoriteRequest):
 
 
 @app.delete("/api/favorites/{user_id}/{product_id}")
-def remove_favorite(user_id: str, product_id: str):
+def remove_favorite(user_id: str, product_id: str, request: Request):
+    _validate_user_header(request, user_id)
     success = db.remove_favorite_product(user_id, product_id)
     return {"success": success, "product_id": product_id}
+
+
+# ── Telegram Account Linking ──────────────────────────────────────
+
+BOT_USERNAME = "green_price_monitor_bot"
+
+class LinkRequest(BaseModel):
+    guest_id: str
+
+@app.post("/api/link/generate")
+def generate_link(req: LinkRequest):
+    """Generate a Telegram deep link token for account linking."""
+    if not req.guest_id or not req.guest_id.startswith("guest_"):
+        raise HTTPException(400, "Invalid guest ID")
+    token = db.store_link_token(req.guest_id)
+    link = f"https://t.me/{BOT_USERNAME}?start=link_{token}"
+    return {"token": token, "link": link}
+
+@app.get("/api/link/status/{guest_id}")
+def link_status(guest_id: str):
+    """Check if a guest account has been linked to Telegram."""
+    telegram_id = db.get_linked_telegram_id(guest_id)
+    return {"linked": telegram_id is not None, "telegram_id": telegram_id}
 
 
 @app.post("/api/sync")
@@ -541,7 +691,7 @@ def sync_products():
         with open(PROPOSALS_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
         products = data.get("products", [])
-        new_count = sum(1 for p in products if db.mark_product_seen(p["id"]))
+        new_count = sum(1 for p in products if p.get("id") and db.mark_product_seen(p["id"]))
         return {"success": True, "total_products": len(products), "new_products": new_count}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
@@ -621,14 +771,15 @@ def _save_user_phone_mapping(user_id: str, phone_10: str):
 def _get_phone_for_user(user_id: str) -> str | None:
     """Get phone for a user_id from the mapping."""
     p = os.path.join(DATA_DIR, "auth", "user_phone_map.json")
-    if not os.path.exists(p):
-        return None
-    try:
-        with open(p, 'r', encoding='utf-8') as f:
-            mapping = json.load(f)
-        return mapping.get(str(user_id))
-    except Exception:
-        return None
+    with _phone_map_lock:  # BUG-L09: prevent TOCTOU race with writer
+        if not os.path.exists(p):
+            return None
+        try:
+            with open(p, 'r', encoding='utf-8') as f:
+                mapping = json.load(f)
+            return mapping.get(str(user_id))
+        except Exception:
+            return None
 
 def _normalize_phone(phone: str) -> str | None:
     """Normalize phone to 10-digit format."""
@@ -653,7 +804,8 @@ def auth_status(user_id: str):
     if not phone or not _phone_has_valid_cookies(phone):
         return {"authenticated": False}
     masked = f"***-***-{phone[-4:-2]}-{phone[-2:]}" if len(phone) >= 4 else "***"
-    return {"authenticated": True, "phone": masked}
+    has_pin = _load_pin_data(phone) is not None  # BUG-L08: report PIN state
+    return {"authenticated": True, "phone": masked, "has_pin": has_pin}
 
 
 class AuthPhoneRequest(BaseModel):
@@ -1234,6 +1386,21 @@ def auth_set_pin(req: AuthSetPinRequest):
     return {"success": True, "message": "PIN установлен"}
 
 
+class TransferMappingRequest(BaseModel):
+    from_user_id: str
+    to_user_id: str
+
+@app.post("/api/auth/transfer-mapping")
+def auth_transfer_mapping(req: TransferMappingRequest):
+    """BUG-A fix: Copy user→phone mapping from guest to linked Telegram ID.
+    Called during account linking so auth persists after page reload."""
+    phone = _get_phone_for_user(req.from_user_id)
+    if phone:
+        _save_user_phone_mapping(req.to_user_id, phone)
+        return {"success": True, "message": "Mapping transferred"}
+    return {"success": False, "message": "No mapping found for source user"}
+
+
 @app.post("/api/auth/logout")
 def auth_logout(req: AuthLogoutRequest):
     """Logout: rename cookies to .bak (preserving for PIN re-login).
@@ -1260,8 +1427,9 @@ def auth_logout(req: AuthLogoutRequest):
 # ─── Cart Endpoints ───────────────────────────────────────────────────────────
 
 @app.post("/api/cart/add")
-def cart_add_endpoint(req: CartAddRequest):
+def cart_add_endpoint(req: CartAddRequest, request: Request):
     """Add a product to the user's VkusVill cart."""
+    _validate_user_header(request, str(req.user_id))
     # Try phone-based cookies first, fallback to legacy user_id cookies
     phone = _get_phone_for_user(str(req.user_id))
     if phone:
@@ -1295,8 +1463,9 @@ def cart_add_endpoint(req: CartAddRequest):
 
 
 @app.get("/api/cart/items/{user_id}")
-def cart_items_endpoint(user_id: str):
+def cart_items_endpoint(user_id: str, request: Request):
     """Get current VkusVill cart items for a user."""
+    _validate_user_header(request, user_id)
     phone = _get_phone_for_user(user_id)
     if phone:
         cookies_path = _phone_cookies_path(phone)
@@ -1363,8 +1532,9 @@ class CartRemoveRequest(BaseModel):
 
 
 @app.post("/api/cart/remove")
-def cart_remove_endpoint(req: CartRemoveRequest):
+def cart_remove_endpoint(req: CartRemoveRequest, request: Request):
     """Remove a product from the user's VkusVill cart."""
+    _validate_user_header(request, str(req.user_id))
     phone = _get_phone_for_user(str(req.user_id))
     if phone:
         cookies_path = _phone_cookies_path(phone)
@@ -1390,8 +1560,9 @@ class CartClearRequest(BaseModel):
 
 
 @app.post("/api/cart/clear")
-def cart_clear_endpoint(req: CartClearRequest):
+def cart_clear_endpoint(req: CartClearRequest, request: Request):
     """Clear all items from the user's VkusVill cart."""
+    _validate_user_header(request, str(req.user_id))
     user_id = req.user_id
     phone = _get_phone_for_user(user_id)
     if phone:
@@ -1555,7 +1726,7 @@ def admin_run_categories(
     """Run category scraper + auto-merge in sequence (background).
     Populates category_db.json then rebuilds proposals.json with new categories.
     """
-    _require_token(token)
+    # No token required — this is a user-facing feature (button on main page)
     lock = _run_locks["categories"]
     with lock:
         if scraper_status["categories"]["running"]:

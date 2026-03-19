@@ -1,4 +1,4 @@
-import requests
+import httpx
 from fastapi.testclient import TestClient
 
 import backend.main as main
@@ -19,7 +19,7 @@ def test_cart_items_returns_fast_fallback_on_upstream_timeout(monkeypatch, tmp_p
 
         def get_cart(self):
             calls["count"] += 1
-            return {"success": False, "error": str(requests.ConnectTimeout("timeout"))}
+            return {"success": False, "error": str(httpx.ConnectTimeout("timeout"))}
 
         def close(self):
             return None
@@ -29,8 +29,8 @@ def test_cart_items_returns_fast_fallback_on_upstream_timeout(monkeypatch, tmp_p
     monkeypatch.setattr(main, "get_user_cookies_path", lambda user_id: str(cookies_path))
     monkeypatch.setattr(main, "VkusVillCart", BoomCart)
 
-    first = client.get("/api/cart/items/123")
-    second = client.get("/api/cart/items/123")
+    first = client.get("/api/cart/items/123", headers={"X-Telegram-User-Id": "123"})
+    second = client.get("/api/cart/items/123", headers={"X-Telegram-User-Id": "123"})
 
     assert first.status_code == 200
     assert second.status_code == 200

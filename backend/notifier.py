@@ -6,16 +6,26 @@ import json
 import os
 import sys
 import asyncio
+import logging
 from datetime import datetime
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# Load .env if available
+try:
+    from dotenv import load_dotenv
+    load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), '.env'))
+except ImportError:
+    pass
+
+logger = logging.getLogger(__name__)
+
 from database.db import Database
 
 # Try to import telegram bot (optional)
 try:
-    from telegram import Bot
+    from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
     TELEGRAM_AVAILABLE = True
 except ImportError:
     TELEGRAM_AVAILABLE = False
@@ -27,12 +37,30 @@ class Notifier:
     
     def __init__(self, bot_token: str = None):
         self.db = Database()
-        self.bot_token = bot_token or os.environ.get('TELEGRAM_BOT_TOKEN')
-        self.bot = Bot(self.bot_token) if TELEGRAM_AVAILABLE and self.bot_token else None
+        self.bot_token = bot_token or os.environ.get('TELEGRAM_TOKEN') or os.environ.get('TELEGRAM_BOT_TOKEN')
+        
+        # Configure proxy for Telegram API (required on networks that block api.telegram.org)
+        self.bot = None
+        if TELEGRAM_AVAILABLE and self.bot_token:
+            proxy_url = os.environ.get('SOCKS5_PROXY', 'socks5://127.0.0.1:10811')
+            try:
+                from telegram.request import HTTPXRequest
+                request = HTTPXRequest(proxy=proxy_url, connect_timeout=10, read_timeout=15)
+                self.bot = Bot(self.bot_token, request=request)
+            except Exception as e:
+                logger.warning(f"Failed to init Bot with proxy ({proxy_url}): {e}")
+                # Fallback: try without proxy
+                try:
+                    self.bot = Bot(self.bot_token)
+                except Exception:
+                    pass
         
         # Data paths
         self.data_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
         self.proposals_path = os.path.join(self.data_dir, "proposals.json")
+        
+        if not self.bot:
+            logger.warning("Telegram bot not initialized — notifications will be dry-run only")
     
     def load_products(self) -> list:
         """Load current products from JSON"""
@@ -88,19 +116,32 @@ class Notifier:
     def format_product_message(self, product: dict) -> str:
         """Format a product for Telegram message"""
         type_emoji = {'green': '🟢', 'red': '🔴', 'yellow': '🟡'}.get(product['type'], '🏷️')
-        discount = round((1 - float(product['currentPrice']) / float(product['oldPrice'])) * 100) if product['oldPrice'] else 0
+        discount = round((1 - float(product['currentPrice']) / float(product['oldPrice'])) * 100) if product.get('oldPrice') else 0
         
         return (
             f"{type_emoji} *{product['name']}*\n"
-            f"💰 {product['currentPrice']}₽ ~~{product['oldPrice']}₽~~ (-{discount}%)\n"
-            f"📦 В наличии: {product['stock']} {product['unit']}\n"
-            f"[Открыть товар]({product['url']})"
+            f"💰 {product['currentPrice']}₽ ~~{product.get('oldPrice','')}₽~~ (-{discount}%)\n"
+            f"📦 В наличии: {product.get('stock','?')} {product.get('unit','шт')}"
         )
     
-    async def send_telegram_message(self, chat_id: int, message: str):
+    def get_product_keyboard(self, product: dict):
+        """Build inline keyboard buttons for a product notification"""
+        buttons = []
+        # Open product URL button
+        url = product.get('url')
+        if url:
+            buttons.append(InlineKeyboardButton("🌐 Открыть", url=url))
+        # Add to cart callback button
+        is_grn = 1 if product.get('type') == 'green' else 0
+        price_type = 222 if is_grn else 1
+        callback_data = f"cart_add_{product['id']}_{is_grn}_{price_type}"
+        buttons.append(InlineKeyboardButton("🛒 В корзину", callback_data=callback_data))
+        return InlineKeyboardMarkup([buttons])
+    
+    async def send_telegram_message(self, chat_id: int, message: str, reply_markup=None):
         """Send a message via Telegram"""
         if not self.bot:
-            print(f"[DRY RUN] Would send to {chat_id}: {message[:100]}...")
+            logger.info(f"[DRY RUN] Would send to {chat_id}: {message[:100]}...")
             return
         
         try:
@@ -108,10 +149,12 @@ class Notifier:
                 chat_id=chat_id,
                 text=message,
                 parse_mode='Markdown',
-                disable_web_page_preview=True
+                disable_web_page_preview=True,
+                reply_markup=reply_markup
             )
+            logger.info(f"✅ Sent notification to {chat_id}")
         except Exception as e:
-            print(f"Failed to send message to {chat_id}: {e}")
+            logger.error(f"Failed to send message to {chat_id}: {e}")
     
     async def notify_new_products(self, admin_chat_id: int = None):
         """Notify admin about new products"""
@@ -150,29 +193,37 @@ class Notifier:
         alerts = self.get_favorite_alerts()
         
         if not alerts:
-            print("No favorite alerts to send.")
+            logger.info("No favorite alerts to send.")
             return 0
         
         total_sent = 0
         
         for user_id, products in alerts.items():
-            message = f"❤️ *Ваши избранные товары в наличии!*\n\n"
-            message += "\n\n".join([self.format_product_message(p) for p in products])
+            # Send header
+            header = f"❤️ *Ваши избранные товары в наличии!* ({len(products)} шт.)"
+            await self.send_telegram_message(user_id, header)
             
-            await self.send_telegram_message(user_id, message)
-            
-            # Record notifications
-            for product in products:
+            # Send each product with inline buttons (limit 10)
+            for product in products[:10]:
+                msg = self.format_product_message(product)
+                keyboard = self.get_product_keyboard(product)
+                await self.send_telegram_message(user_id, msg, reply_markup=keyboard)
                 self.db.record_notification(user_id, product['id'])
+            
+            if len(products) > 10:
+                await self.send_telegram_message(
+                    user_id,
+                    f"...и ещё {len(products) - 10} товаров"
+                )
             
             total_sent += len(products)
         
-        print(f"Sent {total_sent} favorite alerts to {len(alerts)} users.")
+        logger.info(f"Sent {total_sent} favorite alerts to {len(alerts)} users.")
         return total_sent
     
     async def run_notification_cycle(self, admin_chat_id: int = None):
         """Run a full notification cycle"""
-        print(f"[{datetime.now().isoformat()}] Running notification cycle...")
+        logger.info(f"Running notification cycle...")
         
         # Notify admin about new products
         new_count = await self.notify_new_products(admin_chat_id)
@@ -183,7 +234,7 @@ class Notifier:
         # Cleanup old data
         self.db.cleanup_old_data(days=7)
         
-        print(f"Cycle complete: {new_count} new products, {fav_count} favorite alerts")
+        logger.info(f"Cycle complete: {new_count} new products, {fav_count} favorite alerts")
         return new_count, fav_count
 
 
@@ -191,16 +242,29 @@ def main():
     """Main entry point for notification script"""
     import argparse
     
+    logging.basicConfig(
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        level=logging.INFO
+    )
+    
     parser = argparse.ArgumentParser(description='VkusVill Notification System')
     parser.add_argument('--admin', type=int, help='Admin Telegram chat ID for new product alerts')
     parser.add_argument('--dry-run', action='store_true', help='Run without sending actual messages')
     args = parser.parse_args()
     
+    # Auto-load admin chat ID from env if not specified
+    admin_id = args.admin or os.environ.get('ADMIN_CHAT_ID')
+    if admin_id and isinstance(admin_id, str):
+        admin_id = int(admin_id)
+    
     if args.dry_run:
-        print("DRY RUN MODE - No messages will be sent")
+        logger.info("DRY RUN MODE - No messages will be sent")
     
     notifier = Notifier()
-    asyncio.run(notifier.run_notification_cycle(admin_chat_id=args.admin))
+    # python-telegram-bot requires SelectorEventLoop on Windows (ProactorEventLoop causes errors)
+    if sys.platform == 'win32':
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    asyncio.run(notifier.run_notification_cycle(admin_chat_id=admin_id))
 
 
 if __name__ == "__main__":

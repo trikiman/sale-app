@@ -42,6 +42,41 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         first_name=user.first_name
     )
     
+    # Handle deep link for account linking: /start link_TOKEN
+    if context.args and context.args[0].startswith("link_"):
+        token = context.args[0][5:]  # Remove "link_" prefix
+        guest_id = db.get_guest_for_token(token)
+        
+        if not guest_id:
+            await update.message.reply_text(
+                "❌ Ссылка недействительна или истекла.\n"
+                "Попробуйте создать новую на сайте.",
+                parse_mode=ParseMode.HTML
+            )
+            return
+        
+        # Migrate all data from guest to real Telegram user
+        counts = db.migrate_user_data(from_id=guest_id, to_id=user.id)
+        db.delete_link_token(token, telegram_id=user.id)
+        
+        total = counts['products'] + counts['categories']
+        msg = (
+            f"✅ <b>Аккаунт привязан!</b>\n\n"
+            f"Привет, {user.first_name}! 👋\n\n"
+        )
+        if total > 0:
+            msg += (
+                f"📦 Перенесено: {counts['products']} товаров, "
+                f"{counts['categories']} категорий\n\n"
+            )
+        msg += (
+            "🔔 Теперь ты будешь получать уведомления, "
+            "когда избранные товары появятся со скидкой!"
+        )
+        
+        await update.message.reply_text(msg, parse_mode=ParseMode.HTML)
+        return
+    
     welcome_message = f"""
 🛒 <b>Добро пожаловать в VkusVill Sale Monitor!</b>
 

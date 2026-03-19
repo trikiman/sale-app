@@ -59,16 +59,17 @@ def normalize_stock_unit(unit, stock):
 def check_vkusvill_available(strict: bool = False) -> bool:
     """Check if VkusVill is reachable before scraping.
 
+    Uses SOCKS5 proxy (same as scrapers) since the main IP may be banned.
     By default this probe is advisory because browser-driven scrapers can still
-    work even when a plain Python requests call times out on this machine.
+    work even when this call times out.
     """
     try:
-        r = _requests.get(
-            'https://vkusvill.ru/',
-            headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'},
-            timeout=10,
-            allow_redirects=True,
-        )
+        import httpx
+        with httpx.Client(proxy='socks5h://127.0.0.1:10811', timeout=10) as client:
+            r = client.get(
+                'https://vkusvill.ru/',
+                headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'},
+            )
         if r.status_code == 200:
             print(f'  [CHECK] VkusVill OK (200)')
             return True
@@ -80,8 +81,6 @@ def check_vkusvill_available(strict: bool = False) -> bool:
             return False
         print(f'  [CHECK] VkusVill probe failed: {e} - continuing with browser scraper.')
         return True
-        print(f'  [CHECK] VkusVill unreachable: {e} — Aborting scrape.')
-        return False
 
 class ChromeLock:
     """
@@ -415,7 +414,14 @@ def save_products_safe(products, output_path, success=True):
 
         with open(output_path, 'w', encoding='utf-8') as f:
             json.dump(products, f, ensure_ascii=False, indent=2)
-        print(f"✅ Successfully saved {len(products)} products to {output_path}")
+        # Count actual products, not dict keys
+        if isinstance(products, dict) and 'products' in products:
+            count = len(products['products'])
+        elif isinstance(products, list):
+            count = len(products)
+        else:
+            count = len(products)
+        print(f"\u2705 Successfully saved {count} products to {output_path}")
         return True
     except Exception as e:
         print(f"❌ Error saving file {output_path}: {e}")

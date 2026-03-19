@@ -7,10 +7,10 @@ import asyncio
 import json
 import os
 import sys
-import socket
 import subprocess
 import tempfile
 import shutil
+from chrome_stealth import launch_stealth_browser, cleanup_browser
 
 from utils import normalize_category, parse_stock, clean_price, deduplicate_products, synthesize_discount, save_products_safe, check_vkusvill_available, normalize_stock_unit
 
@@ -24,46 +24,14 @@ RED_URL = "https://vkusvill.ru/offers/?F%5B212%5D%5B%5D=284&F%5BDEF_3%5D=1&sf4=Y
 COOKIES_PATH = os.path.join(BASE_DIR, "data", "cookies.json")
 
 
-def _find_free_port():
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(('127.0.0.1', 0))
-        return s.getsockname()[1]
-
-
-def _find_chrome():
-    candidates = [
-        r'C:\Program Files\Google\Chrome\Application\chrome.exe',
-        r'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe',
-    ]
-    for p in candidates:
-        if os.path.exists(p):
-            return p
-    found = shutil.which('chrome') or shutil.which('google-chrome')
-    if found:
-        return found
-    raise FileNotFoundError("Chrome not found. Install Google Chrome.")
+# _find_free_port and _find_chrome moved to chrome_stealth.py
 
 
 async def _launch_browser():
-    import nodriver as uc
-    port = _find_free_port()
-    tmp_profile = tempfile.mkdtemp(prefix='uc_red_')
-    chrome_path = _find_chrome()
-    args = [
-        chrome_path,
-        f'--remote-debugging-port={port}',
-        f'--user-data-dir={tmp_profile}',
-        '--no-first-run',
-        '--no-default-browser-check',
-        '--disable-features=LocalNetworkAccessChecks',
-        '--lang=ru-RU',
-        '--start-maximized',
-    ]
-    print(f"  [RED] Launching Chrome on port {port}...")
-    proc = subprocess.Popen(args)
-    await asyncio.sleep(3)
-    browser = await uc.Browser.create(host='127.0.0.1', port=port)
-    browser._process_pid = proc.pid
+    """Launch stealth Chrome via shared chrome_stealth module."""
+    browser, proc, tmp_profile, _is_temp = await launch_stealth_browser(
+        tag="RED", offscreen=True
+    )
     return browser, proc, tmp_profile
 
 
@@ -271,7 +239,12 @@ async def scrape_red_prices_async():
 
         products = deduplicate_products(products)
         print(f"✅ [RED] Found {len(products)} products")
-        scrape_success = True
+        # Guard: login failure + 0 products = don't overwrite old data
+        if not is_logged_in and len(products) == 0:
+            print("⚠️ [RED] Login failed and 0 products — preserving previous data.")
+            scrape_success = False
+        else:
+            scrape_success = True
 
     except Exception as e:
         print(f"❌ [RED] Error: {e}")
@@ -307,4 +280,7 @@ def scrape_red_prices():
 
 
 if __name__ == "__main__":
-    scrape_red_prices()
+    result = scrape_red_prices()
+    # BUG-2 fix: exit 1 on failure so scheduler detects it
+    if not result:
+        sys.exit(1)

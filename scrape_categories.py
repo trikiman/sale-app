@@ -141,14 +141,22 @@ def save_db(db):
         json.dump(db, f, ensure_ascii=False, indent=2)
 
 
-# Global semaphore limits concurrent requests to be polite
-MAX_CONCURRENT = 10
+# VkusVill blocks based on CONCURRENT CONNECTIONS, not request rate.
+# Tested: 300+ req/min sequential = fine. 10 concurrent = IP ban.
+# Keep concurrency LOW, but delays can be short.
+MAX_CONCURRENT = 3
 
 
 async def fetch_page(session: aiohttp.ClientSession, url: str) -> str | None:
     """Fetch a single page, return HTML or None on error."""
     try:
-        async with session.get(url, timeout=aiohttp.ClientTimeout(total=20)) as resp:
+        # Brief delay to stagger concurrent requests
+        await asyncio.sleep(0.2)
+        async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+            if resp.status == 429:  # Rate limited
+                print(f"   ⚠ Rate limited (429), waiting 30s...")
+                await asyncio.sleep(30)
+                return None
             if resp.status != 200:
                 return None
             return await resp.text()
@@ -181,8 +189,8 @@ async def scrape_category(session: aiohttp.ClientSession, sem: asyncio.Semaphore
         all_products.extend(products)
         print(f"   [{category_name}] page {page_num}: {len(products)} products (total: {len(all_products)})")
 
-        # Small async delay to be polite (much less blocking than sync sleep)
-        await asyncio.sleep(0.15)
+        # Brief delay between pages (concurrency, not rate, is the limiter)
+        await asyncio.sleep(0.3)
 
     print(f"   -> {category_name}: {len(all_products)} total products")
     return category_name, all_products

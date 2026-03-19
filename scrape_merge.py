@@ -85,20 +85,14 @@ def merge_products():
     # Use the NEWEST source file timestamp as updatedAt
     # This reflects the most recent successful scraper run
     if source_timestamps:
-        oldest_ts = max(source_timestamps)
-        data_time = datetime.fromtimestamp(oldest_ts).strftime("%Y-%m-%d %H:%M:%S")
+        newest_ts = max(source_timestamps)  # BUG-L02: renamed from oldest_ts
+        data_time = datetime.fromtimestamp(newest_ts).strftime("%Y-%m-%d %H:%M:%S")
     else:
         data_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
-    # Check if green products file is missing or has 0 products
+    # BUG-E03: Reuse already-computed green_count instead of re-reading file
     green_path = os.path.join(DATA_DIR, "green_products.json")
-    if not os.path.exists(green_path):
-        green_missing = True
-    else:
-        with open(green_path, 'r', encoding='utf-8') as _gf:
-            _gdata = json.load(_gf)
-        _gproducts = _gdata.get('products', _gdata) if isinstance(_gdata, dict) else _gdata
-        green_missing = len(_gproducts) == 0
+    green_missing = not os.path.exists(green_path) or green_count == 0
 
     # Save results
     output = {
