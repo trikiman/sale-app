@@ -1014,6 +1014,13 @@ async def auth_login(req: AuthPhoneRequest):
             browser = await uc.Browser.create(host='127.0.0.1', port=_debug_port)
             browser._process_pid = _chrome_proc.pid
 
+        # Clear VkusVill cookies so /personal/ shows login form, not dashboard
+        # (shared Chrome has scraper cookies that auto-login)
+        try:
+            await browser.connection.send(uc.cdp.network.clear_browser_cookies())
+        except Exception:
+            pass
+
         tab = await browser.get('https://vkusvill.ru/personal/')
         await asyncio.sleep(5)  # More time for initial load
 
