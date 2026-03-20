@@ -291,7 +291,7 @@ def parse_stock(text):
     Returns float for kg items, int for шт items, 99 if valid but no number, or 0 if OOS.
     """
     if not text:
-        return 99
+        return 0
 
     text_lower = text.lower()
 
@@ -318,7 +318,7 @@ def parse_stock(text):
 
     # If it says "In stock" but no number, assume plenty
     if 'в наличии' in text_lower:
-        return 99
+        return 0  # in stock but unknown quantity
 
     return 0
 

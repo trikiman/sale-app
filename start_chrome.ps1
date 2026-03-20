@@ -21,9 +21,15 @@ try {
     # Port not open, need to launch
 }
 
-Write-Host "Starting Chrome on port $Port..."
+# Check if SCRAPER_PROXY env var is set (from proxy_manager.py)
+$ProxyArg = $env:SCRAPER_PROXY
+if ($ProxyArg) {
+    Write-Host "Starting Chrome on port $Port with proxy: $ProxyArg"
+} else {
+    Write-Host "Starting Chrome on port $Port (direct, no proxy)..."
+}
 
-Start-Process -FilePath $ChromePath -ArgumentList @(
+$ChromeArgs = @(
     "--remote-debugging-port=$Port",
     "--user-data-dir=$ProfileDir",
     "--no-first-run",
@@ -32,6 +38,13 @@ Start-Process -FilePath $ChromePath -ArgumentList @(
     "--disable-blink-features=AutomationControlled",
     "--window-size=1280,720"
 )
+
+# Add proxy flag if set
+if ($ProxyArg) {
+    $ChromeArgs += "--proxy-server=$ProxyArg"
+}
+
+Start-Process -FilePath $ChromePath -ArgumentList $ChromeArgs
 
 # Wait for CDP endpoint to become available
 Write-Host "Waiting for Chrome CDP..."

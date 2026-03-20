@@ -643,7 +643,7 @@ async def _scrape_cart_stock_map(page) -> dict:
                 } else if (text.includes('\\u041c\\u0430\\u043b\\u043e') || text.includes('\\u043c\\u0430\\u043b\\u043e')) {
                     stock = 3;
                 } else if (text.includes('\\u043d\\u0430\\u043b\\u0438\\u0447\\u0438\\u0438')) {
-                    stock = 99;
+                    stock = 0;  // "в наличии" without number = unknown qty, don't show fake count
                 }
 
                 let price = null;

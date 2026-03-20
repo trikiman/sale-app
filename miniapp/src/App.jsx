@@ -298,7 +298,34 @@ function App() {
     localStorage.setItem('vv_view_mode', viewMode)
   }, [viewMode])
 
-  // Generate Telegram link for guest users
+  // Check server-side link status on load (handles new device/browser)
+  // If already linked, store telegram_id locally and reload
+  useEffect(() => {
+    if (!isGuest) return
+    fetch(`/api/link/status/${userId}`)
+      .then(r => r.json())
+      .then(async (data) => {
+        if (data.linked && data.telegram_id) {
+          // Already linked on server — restore locally
+          try {
+            await fetch('/api/auth/transfer-mapping', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                from_user_id: userId,
+                to_user_id: String(data.telegram_id)
+              })
+            })
+          } catch (e) { /* best-effort */ }
+          localStorage.setItem('linked_telegram_id', String(data.telegram_id))
+          localStorage.removeItem('guest_user_id')
+          window.location.reload()
+        }
+      })
+      .catch(() => {})
+  }, [isGuest, userId])
+
+  // Generate Telegram link for guest users (only if not already linked)
   useEffect(() => {
     if (!isGuest || linkDismissed) return
     fetch('/api/link/generate', {
@@ -312,14 +339,12 @@ function App() {
       })
       .catch(() => { })
 
-    // Poll for link status every 5 seconds
+    // Poll for link status every 5 seconds (for when user clicks link and comes back)
     const interval = setInterval(() => {
       fetch(`/api/link/status/${userId}`)
         .then(r => r.json())
         .then(async (data) => {
           if (data.linked && data.telegram_id) {
-            // BUG-A fix: Transfer auth mapping from guest → linked telegram ID
-            // BEFORE removing the guest ID and reloading, so the session persists.
             try {
               await fetch('/api/auth/transfer-mapping', {
                 method: 'POST',
@@ -329,13 +354,11 @@ function App() {
                   to_user_id: String(data.telegram_id)
                 })
               })
-            } catch (e) { /* best-effort — login still works without it */ }
-            // Account linked! Store the real ID
+            } catch (e) { /* best-effort */ }
             localStorage.setItem('linked_telegram_id', String(data.telegram_id))
             localStorage.removeItem('guest_user_id')
             setLinkUrl(null)
             clearInterval(interval)
-            // Reload to use the new ID
             window.location.reload()
           }
         })
@@ -895,28 +918,19 @@ function App() {
       >
         <h1 className="text-2xl font-bold mb-2">{headerEmoji} {headerTitle}</h1>
 
-        {/* Telegram link banner for guest users */}
+        {/* Small Telegram link for guest users */}
         {isGuest && linkUrl && !linkDismissed && (
           <div style={{
-            background: 'rgba(42, 171, 238, 0.1)',
-            border: '1px solid rgba(42, 171, 238, 0.3)',
-            borderRadius: '12px',
-            padding: '10px 14px',
-            marginBottom: '12px',
             display: 'flex',
             alignItems: 'center',
-            gap: '10px',
+            justifyContent: 'center',
+            gap: '6px',
+            marginBottom: '8px',
+            fontSize: '12px',
+            color: 'var(--tg-theme-hint-color)',
           }}>
-            <span style={{ fontSize: '22px', flexShrink: 0 }}>🔔</span>
-            <div style={{ flex: 1, textAlign: 'left', minWidth: 0 }}>
-              <div style={{ fontWeight: 600, color: '#2AABEE', fontSize: '13px' }}>
-                Привяжи Telegram
-              </div>
-              <div style={{ color: 'var(--tg-theme-hint-color)', fontSize: '11px', marginTop: '1px' }}>
-                Уведомления о скидках на избранное
-              </div>
-            </div>
-            <button
+            <span>🔔</span>
+            <span
               onClick={(e) => {
                 if (!isAuthenticated) {
                   e.preventDefault()
@@ -926,20 +940,15 @@ function App() {
                 window.open(linkUrl, '_blank', 'noopener,noreferrer')
               }}
               style={{
-                background: '#2AABEE',
-                color: '#fff',
-                padding: '6px 14px',
-                borderRadius: '8px',
-                fontWeight: 600,
-                fontSize: '12px',
-                border: 'none',
+                color: '#2AABEE',
                 cursor: 'pointer',
-                whiteSpace: 'nowrap',
-                flexShrink: 0
+                textDecoration: 'underline',
+                textUnderlineOffset: '2px',
               }}
             >
-              Привязать
-            </button>
+              Привязать Telegram
+            </span>
+            <span style={{ color: 'var(--tg-theme-hint-color)', opacity: 0.6 }}>для уведомлений</span>
             <button
               onClick={() => {
                 setLinkDismissed(true)
@@ -949,10 +958,10 @@ function App() {
                 background: 'none',
                 border: 'none',
                 color: 'var(--tg-theme-hint-color)',
-                fontSize: '16px',
+                fontSize: '14px',
                 cursor: 'pointer',
-                padding: '2px',
-                flexShrink: 0
+                padding: '0 2px',
+                opacity: 0.5
               }}
               aria-label="Закрыть"
             >

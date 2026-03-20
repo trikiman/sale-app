@@ -143,3 +143,76 @@ def cleanup_browser(browser, proc, profile_dir, is_temp, tag="SCRAPER"):
             print(f"successfully removed temp profile {profile_dir}")
         except Exception:
             pass
+
+
+def restart_chrome_with_proxy(proxy: str | None = None, tag="PROXY"):
+    """Kill existing scraper Chrome and relaunch with/without proxy.
+
+    Args:
+        proxy: SOCKS5 proxy string like "socks5://ip:port", or None for direct.
+        tag: Log tag prefix.
+    """
+    import subprocess as sp
+
+    port = SCRAPER_CHROME_PORT
+    profile_dir = os.path.join(tempfile.gettempdir(), f"uc_scraper_{port}")
+
+    # 1. Kill existing Chrome on our CDP port
+    print(f"  [{tag}] Restarting Chrome {'with proxy ' + proxy if proxy else 'direct (no proxy)'}...")
+    if sys.platform == 'win32':
+        # Find and kill Chrome using our profile dir
+        try:
+            sp.run(
+                ['taskkill', '/F', '/IM', 'chrome.exe'],
+                capture_output=True, timeout=10
+            )
+        except Exception:
+            pass
+    else:
+        try:
+            sp.run(['pkill', '-f', f'remote-debugging-port={port}'],
+                   capture_output=True, timeout=5)
+        except Exception:
+            pass
+
+    # Wait for port to free up
+    import time as _time
+    for _ in range(5):
+        if not is_chrome_cdp_ready(port):
+            break
+        _time.sleep(1)
+
+    # 2. Set proxy env var for start_chrome.ps1
+    env = os.environ.copy()
+    if proxy:
+        env['SCRAPER_PROXY'] = proxy
+    elif 'SCRAPER_PROXY' in env:
+        del env['SCRAPER_PROXY']
+
+    # 3. Relaunch Chrome
+    chrome_path = find_chrome()
+    args = [
+        chrome_path,
+        f'--remote-debugging-port={port}',
+        f'--user-data-dir={profile_dir}',
+        '--no-first-run',
+        '--no-default-browser-check',
+        '--disable-features=IsolateOrigins,site-per-process,LocalNetworkAccessChecks',
+        '--disable-blink-features=AutomationControlled',
+        '--window-size=1280,720',
+    ]
+    if proxy:
+        args.append(f'--proxy-server={proxy}')
+
+    sp.Popen(args, stdout=sp.DEVNULL, stderr=sp.DEVNULL, env=env)
+
+    # 4. Wait for CDP to be ready
+    for i in range(15):
+        if is_chrome_cdp_ready(port):
+            print(f"  [{tag}] Chrome ready on port {port} (waited {i}s)")
+            return True
+        _time.sleep(1)
+
+    print(f"  [{tag}] WARNING: Chrome may not have started on port {port}")
+    return False
+
