@@ -951,16 +951,12 @@ async def auth_login(req: AuthPhoneRequest):
             # Create pause file — scheduler will wait when it sees this
             with open(_pause_file, 'w') as f:
                 f.write(str(_time.time()))
-            # Wait for any active scraper to finish (up to 60s)
-            for _ in range(12):
-                active = _subp.run(
-                    ['pgrep', '-f', 'scrape_(red|yellow|green)\\.py'],
-                    capture_output=True
-                )
-                if active.returncode != 0:  # No active scrapers
-                    break
-                await asyncio.sleep(5)
-            await asyncio.sleep(2)  # Extra settle time
+            # Kill any running scrapers so Chrome is free
+            _subp.run(['pkill', '-f', 'scrape_(red|yellow|green)\\.py'],
+                       capture_output=True)
+            # Also kill the scheduler's current subprocess tree
+            _subp.run(['pkill', '-f', 'scrape_merge\\.py'], capture_output=True)
+            await asyncio.sleep(3)  # Let Chrome settle
 
         if sys.platform != 'win32':
             # Linux: reuse existing Chrome on scraper port (saves RAM)
