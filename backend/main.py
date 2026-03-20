@@ -1033,6 +1033,7 @@ async def auth_login(req: AuthPhoneRequest):
 
         # Clear VkusVill cookies (scrapers are paused, Chrome is uncontested)
         try:
+            await browser.connection.send(uc.cdp.network.enable())
             await browser.connection.send(uc.cdp.network.clear_browser_cookies())
             await browser.connection.send(uc.cdp.network.clear_browser_cache())
         except Exception as _e:
