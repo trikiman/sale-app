@@ -963,6 +963,11 @@ async def auth_login(req: AuthPhoneRequest):
                 _chrome_path = p
                 break
 
+        # Linux fallback
+        if not _chrome_path:
+            import shutil as _shutil
+            _chrome_path = _shutil.which('google-chrome') or _shutil.which('chrome') or _shutil.which('chromium-browser')
+
         if not _chrome_path:
             raise RuntimeError("Chrome not found")
 
@@ -980,8 +985,11 @@ async def auth_login(req: AuthPhoneRequest):
             '--no-first-run',
             '--no-default-browser-check',
             '--disable-features=IsolateOrigins,site-per-process,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations',
-            'about:blank',
         ]
+        # Linux: headless mode (no display on server)
+        if sys.platform != 'win32':
+            _chrome_args.extend(['--headless=new', '--disable-dev-shm-usage', '--disable-software-rasterizer'])
+        _chrome_args.append('about:blank')
         _chrome_proc = _subp.Popen(
             _chrome_args,
             creationflags=_subp.CREATE_NO_WINDOW if sys.platform == 'win32' else 0,
