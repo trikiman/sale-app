@@ -1038,10 +1038,14 @@ async def auth_login(req: AuthPhoneRequest):
         try:
             await tab.send(uc.cdp.network.enable())
             await tab.send(uc.cdp.network.clear_browser_cookies())
-            await tab.send(uc.cdp.network.clear_browser_cache())
         except Exception as _e:
             logger.warning(f"Cookie clearing failed: {_e}")
 
+        # Navigate to main page first to get functional cookies back
+        # (VkusVill needs cookies to render, but auth cookies are now gone)
+        tab = await browser.get('https://vkusvill.ru/')
+        await asyncio.sleep(4)
+        # Now go to /personal/ — should show login form since auth cookies are cleared
         tab = await browser.get('https://vkusvill.ru/personal/')
         await asyncio.sleep(5)  # More time for initial load
 
