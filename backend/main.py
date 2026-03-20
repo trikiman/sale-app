@@ -1014,14 +1014,37 @@ async def auth_login(req: AuthPhoneRequest):
             browser = await uc.Browser.create(host='127.0.0.1', port=_debug_port)
             browser._process_pid = _chrome_proc.pid
 
-        # Clear VkusVill cookies so /personal/ shows login form, not dashboard
-        # (shared Chrome has scraper cookies that auto-login)
+        # Create incognito context so login page has no cookies
+        # (main profile has scraper cookies that auto-login to VkusVill)
+        _login_context_id = None
         try:
-            await browser.connection.send(uc.cdp.network.clear_browser_cookies())
-        except Exception:
-            pass
+            _login_context_id = await browser.connection.send(
+                uc.cdp.target.create_browser_context(
+                    dispose_on_detach=True
+                )
+            )
+            # Create a new tab in the incognito context
+            target_id = await browser.connection.send(
+                uc.cdp.target.create_target(
+                    url='https://vkusvill.ru/personal/',
+                    browser_context_id=_login_context_id
+                )
+            )
+            # Get the tab object from the target
+            await asyncio.sleep(2)
+            tab = None
+            for t in browser.tabs:
+                if 'vkusvill' in str(getattr(t, 'url', '') or '').lower():
+                    tab = t
+                    break
+            if not tab:
+                tab = browser.tabs[-1]
+            await tab
+        except Exception as _ctx_err:
+            logger.warning(f"Incognito context failed ({_ctx_err}), falling back to direct navigation")
+            _login_context_id = None
+            tab = await browser.get('https://vkusvill.ru/personal/')
 
-        tab = await browser.get('https://vkusvill.ru/personal/')
         await asyncio.sleep(5)  # More time for initial load
 
         # DEBUG: Initial state
