@@ -942,8 +942,25 @@ async def auth_login(req: AuthPhoneRequest):
     browser = None
     _chrome_proc = None  # Only set on Windows
     _user_data_dir = None
+    _pause_file = os.path.join(DATA_DIR, 'login_pause')
     try:
         import tempfile, subprocess as _subp, socket as _socket
+
+        # On Linux, pause scrapers so Chrome is free for login
+        if sys.platform != 'win32':
+            # Create pause file — scheduler will wait when it sees this
+            with open(_pause_file, 'w') as f:
+                f.write(str(_time.time()))
+            # Wait for any active scraper to finish (up to 60s)
+            for _ in range(12):
+                active = _subp.run(
+                    ['pgrep', '-f', 'scrape_(red|yellow|green)\\.py'],
+                    capture_output=True
+                )
+                if active.returncode != 0:  # No active scrapers
+                    break
+                await asyncio.sleep(5)
+            await asyncio.sleep(2)  # Extra settle time
 
         if sys.platform != 'win32':
             # Linux: reuse existing Chrome on scraper port (saves RAM)
@@ -1014,21 +1031,10 @@ async def auth_login(req: AuthPhoneRequest):
             browser = await uc.Browser.create(host='127.0.0.1', port=_debug_port)
             browser._process_pid = _chrome_proc.pid
 
-        # Clear VkusVill session so /personal/ shows login form, not dashboard
-        # Approach: navigate to vkusvill.ru, clear cookies via JS, then navigate to /personal/
+        # Clear VkusVill cookies (scrapers are paused, Chrome is uncontested)
         try:
-            tab = await browser.get('https://vkusvill.ru/')
-            await asyncio.sleep(2)
-            # Clear all cookies via JavaScript
-            await tab.evaluate("""
-                document.cookie.split(';').forEach(c => {
-                    var name = c.split('=')[0].trim();
-                    document.cookie = name + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=.vkusvill.ru';
-                    document.cookie = name + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=vkusvill.ru';
-                    document.cookie = name + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
-                });
-            """)
-            await asyncio.sleep(1)
+            await browser.connection.send(uc.cdp.network.clear_browser_cookies())
+            await browser.connection.send(uc.cdp.network.clear_browser_cache())
         except Exception as _e:
             logger.warning(f"Cookie clearing failed: {_e}")
 
@@ -1183,9 +1189,14 @@ async def auth_login(req: AuthPhoneRequest):
             "proc": _chrome_proc,
             "profile_dir": _user_data_dir,
         }
+        # Remove pause file so scrapers resume
+        try: os.remove(_pause_file)
+        except OSError: pass
         return {"success": True, "need_pin": False, "message": "SMS отправлено. Введите код из SMS."}
 
     except HTTPException:
+        try: os.remove(_pause_file)
+        except OSError: pass
         raise
     except Exception as e:
         import traceback
@@ -1195,6 +1206,8 @@ async def auth_login(req: AuthPhoneRequest):
                 browser.stop()
             except Exception:
                 pass
+        try: os.remove(_pause_file)
+        except OSError: pass
         raise HTTPException(status_code=500, detail="Ошибка при попытке входа")
 
 

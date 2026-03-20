@@ -22,6 +22,7 @@ if sys.platform == 'win32':
 INTERVAL_MINUTES = 3
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
+PAUSE_FILE = os.path.join(DATA_DIR, "login_pause")
 LOG_DIR = os.path.join(BASE_DIR, "logs")
 os.makedirs(LOG_DIR, exist_ok=True)
 os.makedirs(os.path.join(LOG_DIR, "backend"), exist_ok=True)  # BUG-3: notifier log dir
@@ -336,6 +337,14 @@ def main():
 
     while True:
         try:
+            # Check if login is active — pause scrapers to let Chrome be used for login
+            if os.path.exists(PAUSE_FILE):
+                log("Login in progress — pausing scrapers...")
+                while os.path.exists(PAUSE_FILE):
+                    time.sleep(5)
+                log("Login finished — resuming scrapers.")
+                time.sleep(3)  # Give Chrome a moment to settle
+
             proxy_state = run_full_cycle(proxy_state)
 
             # Circuit breaker: if 3+ consecutive all-fail cycles, wait longer
