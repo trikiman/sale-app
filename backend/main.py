@@ -940,68 +940,79 @@ async def auth_login(req: AuthPhoneRequest):
     _evict_stale_login_sessions()
 
     browser = None
+    _chrome_proc = None  # Only set on Windows
+    _user_data_dir = None
     try:
-        # Windows SelectorEventLoop fix: launch Chrome via subprocess.Popen
-        # then connect nodriver to it, bypassing asyncio.create_subprocess_exec
         import tempfile, subprocess as _subp, socket as _socket
 
-        def _find_free_port():
-            with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as s:
-                s.bind(('127.0.0.1', 0))
-                return s.getsockname()[1]
-
-        _debug_port = _find_free_port()
-        _user_data_dir = tempfile.mkdtemp(prefix='uc_')
-        _chrome_path = None
-        # Find Chrome executable
-        for p in [
-            r'C:\Program Files\Google\Chrome\Application\chrome.exe',
-            r'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe',
-            os.path.expandvars(r'%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe'),
-        ]:
-            if os.path.exists(p):
-                _chrome_path = p
-                break
-
-        # Linux fallback
-        if not _chrome_path:
-            import shutil as _shutil
-            _chrome_path = _shutil.which('google-chrome') or _shutil.which('chrome') or _shutil.which('chromium-browser')
-
-        if not _chrome_path:
-            raise RuntimeError("Chrome not found")
-
-        _chrome_args = [
-            _chrome_path,
-            f'--remote-debugging-port={_debug_port}',
-            f'--user-data-dir={_user_data_dir}',
-            '--window-position=-2400,-2400',
-            '--window-size=1280,720',
-            '--disable-gpu',
-            '--disable-blink-features=AutomationControlled',
-            '--disable-infobars',
-            '--no-sandbox',
-            '--lang=ru-RU,ru',
-            '--no-first-run',
-            '--no-default-browser-check',
-            '--disable-features=IsolateOrigins,site-per-process,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations',
-        ]
-        # Linux: headless mode (no display on server)
         if sys.platform != 'win32':
-            _chrome_args.extend(['--headless=new', '--disable-dev-shm-usage', '--disable-software-rasterizer'])
-        _chrome_args.append('about:blank')
-        _chrome_proc = _subp.Popen(
-            _chrome_args,
-            creationflags=_subp.CREATE_NO_WINDOW if sys.platform == 'win32' else 0,
-        )
-        await asyncio.sleep(3)  # Wait for Chrome to start
+            # Linux: reuse existing Chrome on scraper port (saves RAM)
+            from chrome_stealth import SCRAPER_CHROME_PORT, is_chrome_cdp_ready, find_chrome
+            _debug_port = SCRAPER_CHROME_PORT
+            # Auto-launch Chrome if not running
+            if not is_chrome_cdp_ready(_debug_port):
+                chrome_path = find_chrome()
+                _user_data_dir = os.path.join(tempfile.gettempdir(), f'uc_scraper_{_debug_port}')
+                os.makedirs(_user_data_dir, exist_ok=True)
+                _subp.Popen([
+                    chrome_path,
+                    f'--remote-debugging-port={_debug_port}',
+                    f'--user-data-dir={_user_data_dir}',
+                    '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage',
+                    '--headless=new', '--disable-software-rasterizer',
+                    '--disable-blink-features=AutomationControlled',
+                    '--disable-features=IsolateOrigins,site-per-process',
+                    '--window-size=1280,720', '--lang=ru-RU,ru',
+                    '--no-first-run', '--no-default-browser-check',
+                    'about:blank',
+                ], stdout=_subp.DEVNULL, stderr=_subp.DEVNULL)
+                await asyncio.sleep(3)
+            browser = await uc.Browser.create(host='127.0.0.1', port=_debug_port)
+        else:
+            # Windows: launch a separate Chrome instance
+            def _find_free_port():
+                with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as s:
+                    s.bind(('127.0.0.1', 0))
+                    return s.getsockname()[1]
 
-        # Connect nodriver to the already-running Chrome (skips create_subprocess_exec)
-        browser = await uc.Browser.create(
-            host='127.0.0.1',
-            port=_debug_port,
-        )
-        browser._process_pid = _chrome_proc.pid
+            _debug_port = _find_free_port()
+            _user_data_dir = tempfile.mkdtemp(prefix='uc_')
+            _chrome_path = None
+            for p in [
+                r'C:\Program Files\Google\Chrome\Application\chrome.exe',
+                r'C:\Program Files (x86)\Google\Chrome\Application\chrome.exe',
+                os.path.expandvars(r'%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe'),
+            ]:
+                if os.path.exists(p):
+                    _chrome_path = p
+                    break
+
+            if not _chrome_path:
+                raise RuntimeError("Chrome not found")
+
+            _chrome_args = [
+                _chrome_path,
+                f'--remote-debugging-port={_debug_port}',
+                f'--user-data-dir={_user_data_dir}',
+                '--window-position=-2400,-2400',
+                '--window-size=1280,720',
+                '--disable-gpu',
+                '--disable-blink-features=AutomationControlled',
+                '--disable-infobars',
+                '--no-sandbox',
+                '--lang=ru-RU,ru',
+                '--no-first-run',
+                '--no-default-browser-check',
+                '--disable-features=IsolateOrigins,site-per-process,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations',
+                'about:blank',
+            ]
+            _chrome_proc = _subp.Popen(
+                _chrome_args,
+                creationflags=_subp.CREATE_NO_WINDOW,
+            )
+            await asyncio.sleep(3)
+            browser = await uc.Browser.create(host='127.0.0.1', port=_debug_port)
+            browser._process_pid = _chrome_proc.pid
 
         tab = await browser.get('https://vkusvill.ru/personal/')
         await asyncio.sleep(5)  # More time for initial load
