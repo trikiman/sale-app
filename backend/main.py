@@ -942,54 +942,37 @@ async def auth_login(req: AuthPhoneRequest):
     browser = None
     _chrome_proc = None  # Only set on Windows
     _user_data_dir = None
-    _pause_file = os.path.join(DATA_DIR, 'login_pause')
     try:
         import tempfile, subprocess as _subp, socket as _socket
 
-        # On Linux, pause scrapers so Chrome is free for login
-        if sys.platform != 'win32':
-            # Create pause file — scheduler will wait when it sees this
-            with open(_pause_file, 'w') as f:
-                f.write(str(_time.time()))
-            # Kill any running scrapers so Chrome is free
-            _subp.run(['pkill', '-f', 'scrape_(red|yellow|green)\\.py'],
-                       capture_output=True)
-            # Also kill the scheduler's current subprocess tree
-            _subp.run(['pkill', '-f', 'scrape_merge\\.py'], capture_output=True)
-            await asyncio.sleep(3)  # Let Chrome settle
+        # Launch a SEPARATE temporary Chrome for login (don't touch scraper Chrome)
+        # Fresh profile = no cookies = VkusVill login form shown directly
+        def _find_free_port():
+            with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as s:
+                s.bind(('127.0.0.1', 0))
+                return s.getsockname()[1]
+
+        _debug_port = _find_free_port()
+        _user_data_dir = tempfile.mkdtemp(prefix='uc_login_')
 
         if sys.platform != 'win32':
-            # Linux: reuse existing Chrome on scraper port (saves RAM)
-            from chrome_stealth import SCRAPER_CHROME_PORT, is_chrome_cdp_ready, find_chrome
-            _debug_port = SCRAPER_CHROME_PORT
-            # Auto-launch Chrome if not running
-            if not is_chrome_cdp_ready(_debug_port):
-                chrome_path = find_chrome()
-                _user_data_dir = os.path.join(tempfile.gettempdir(), f'uc_scraper_{_debug_port}')
-                os.makedirs(_user_data_dir, exist_ok=True)
-                _subp.Popen([
-                    chrome_path,
-                    f'--remote-debugging-port={_debug_port}',
-                    f'--user-data-dir={_user_data_dir}',
-                    '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage',
-                    '--headless=new', '--disable-software-rasterizer',
-                    '--disable-blink-features=AutomationControlled',
-                    '--disable-features=IsolateOrigins,site-per-process',
-                    '--window-size=1280,720', '--lang=ru-RU,ru',
-                    '--no-first-run', '--no-default-browser-check',
-                    'about:blank',
-                ], stdout=_subp.DEVNULL, stderr=_subp.DEVNULL)
-                await asyncio.sleep(3)
-            browser = await uc.Browser.create(host='127.0.0.1', port=_debug_port)
+            from chrome_stealth import find_chrome
+            _chrome_path = find_chrome()
+            if not _chrome_path:
+                raise RuntimeError("Chrome not found")
+            _chrome_proc = _subp.Popen([
+                _chrome_path,
+                f'--remote-debugging-port={_debug_port}',
+                f'--user-data-dir={_user_data_dir}',
+                '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage',
+                '--headless=new', '--disable-software-rasterizer',
+                '--disable-blink-features=AutomationControlled',
+                '--disable-features=IsolateOrigins,site-per-process',
+                '--window-size=1280,720', '--lang=ru-RU,ru',
+                '--no-first-run', '--no-default-browser-check',
+                'about:blank',
+            ], stdout=_subp.DEVNULL, stderr=_subp.DEVNULL)
         else:
-            # Windows: launch a separate Chrome instance
-            def _find_free_port():
-                with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as s:
-                    s.bind(('127.0.0.1', 0))
-                    return s.getsockname()[1]
-
-            _debug_port = _find_free_port()
-            _user_data_dir = tempfile.mkdtemp(prefix='uc_')
             _chrome_path = None
             for p in [
                 r'C:\Program Files\Google\Chrome\Application\chrome.exe',
@@ -999,11 +982,9 @@ async def auth_login(req: AuthPhoneRequest):
                 if os.path.exists(p):
                     _chrome_path = p
                     break
-
             if not _chrome_path:
                 raise RuntimeError("Chrome not found")
-
-            _chrome_args = [
+            _chrome_proc = _subp.Popen([
                 _chrome_path,
                 f'--remote-debugging-port={_debug_port}',
                 f'--user-data-dir={_user_data_dir}',
@@ -1018,32 +999,15 @@ async def auth_login(req: AuthPhoneRequest):
                 '--no-default-browser-check',
                 '--disable-features=IsolateOrigins,site-per-process,LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations',
                 'about:blank',
-            ]
-            _chrome_proc = _subp.Popen(
-                _chrome_args,
-                creationflags=_subp.CREATE_NO_WINDOW,
-            )
-            await asyncio.sleep(3)
-            browser = await uc.Browser.create(host='127.0.0.1', port=_debug_port)
-            browser._process_pid = _chrome_proc.pid
+            ], creationflags=_subp.CREATE_NO_WINDOW if sys.platform == 'win32' else 0)
 
-        # Clear VkusVill cookies (scrapers are paused, Chrome is uncontested)
-        # CDP Network commands need a tab-level connection, not browser-level
-        tab = await browser.get('about:blank')
-        await asyncio.sleep(1)
-        try:
-            await tab.send(uc.cdp.network.enable())
-            await tab.send(uc.cdp.network.clear_browser_cookies())
-        except Exception as _e:
-            logger.warning(f"Cookie clearing failed: {_e}")
+        await asyncio.sleep(3)
+        browser = await uc.Browser.create(host='127.0.0.1', port=_debug_port)
+        browser._process_pid = _chrome_proc.pid
 
-        # Navigate to main page first to get functional cookies back
-        # (VkusVill needs cookies to render, but auth cookies are now gone)
-        tab = await browser.get('https://vkusvill.ru/')
-        await asyncio.sleep(4)
-        # Now go to /personal/ — should show login form since auth cookies are cleared
+        # Fresh profile — no cookies needed to clear, go straight to /personal/
         tab = await browser.get('https://vkusvill.ru/personal/')
-        await asyncio.sleep(5)  # More time for initial load
+        await asyncio.sleep(5)  # Wait for page load
 
         # DEBUG: Initial state
         try:
@@ -1193,25 +1157,24 @@ async def auth_login(req: AuthPhoneRequest):
             "proc": _chrome_proc,
             "profile_dir": _user_data_dir,
         }
-        # Remove pause file so scrapers resume
-        try: os.remove(_pause_file)
-        except OSError: pass
         return {"success": True, "need_pin": False, "message": "SMS отправлено. Введите код из SMS."}
 
     except HTTPException:
-        try: os.remove(_pause_file)
-        except OSError: pass
         raise
     except Exception as e:
         import traceback
         logger.error(f"Login error: {type(e).__name__}: {e}\n{traceback.format_exc()}")
+        # Kill the separate login Chrome and clean up temp profile
         if browser:
-            try:
-                browser.stop()
-            except Exception:
-                pass
-        try: os.remove(_pause_file)
-        except OSError: pass
+            try: browser.stop()
+            except Exception: pass
+        if _chrome_proc:
+            try: _chrome_proc.kill()
+            except Exception: pass
+        if _user_data_dir:
+            import shutil
+            try: shutil.rmtree(_user_data_dir, ignore_errors=True)
+            except Exception: pass
         raise HTTPException(status_code=500, detail="Ошибка при попытке входа")
 
 
