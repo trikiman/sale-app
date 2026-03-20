@@ -70,6 +70,7 @@ async def launch_stealth_browser(tag="SCRAPER", profile_dir=None, offscreen=Fals
         profile_dir = tempfile.mkdtemp(prefix='uc_')
 
     # Wait for Chrome CDP to be ready (it should already be running)
+    # On Linux (EC2), auto-launch Chrome if not running
     for attempt in range(10):
         if is_chrome_cdp_ready(port):
             if attempt == 0:
@@ -79,6 +80,26 @@ async def launch_stealth_browser(tag="SCRAPER", profile_dir=None, offscreen=Fals
             break
         if attempt == 0:
             print(f"  [{tag}] Waiting for Chrome on port {port}...")
+            # On Linux, auto-launch Chrome if not running
+            if sys.platform != 'win32':
+                import subprocess as _sp
+                chrome_path = find_chrome()
+                _chrome_profile = os.path.join(tempfile.gettempdir(), f'uc_scraper_{port}')
+                os.makedirs(_chrome_profile, exist_ok=True)
+                _sp.Popen([
+                    chrome_path,
+                    f'--remote-debugging-port={port}',
+                    f'--user-data-dir={_chrome_profile}',
+                    '--no-first-run', '--no-default-browser-check',
+                    '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage',
+                    '--disable-software-rasterizer',
+                    '--headless=new',
+                    '--disable-features=IsolateOrigins,site-per-process',
+                    '--disable-blink-features=AutomationControlled',
+                    '--window-size=1280,720',
+                    'about:blank',
+                ], stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
+                print(f"  [{tag}] Auto-launched Chrome on Linux (port {port})")
         await asyncio.sleep(1)
     else:
         raise RuntimeError(
