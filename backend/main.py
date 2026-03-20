@@ -1014,20 +1014,23 @@ async def auth_login(req: AuthPhoneRequest):
             browser = await uc.Browser.create(host='127.0.0.1', port=_debug_port)
             browser._process_pid = _chrome_proc.pid
 
-        # Delete VkusVill cookies so /personal/ shows login form, not dashboard
-        # (shared Chrome has scraper cookies that auto-login to VkusVill)
+        # Clear VkusVill session so /personal/ shows login form, not dashboard
+        # Approach: navigate to vkusvill.ru, clear cookies via JS, then navigate to /personal/
         try:
-            all_cookies = await browser.connection.send(uc.cdp.network.get_all_cookies())
-            for cookie in all_cookies:
-                if 'vkusvill' in (cookie.domain or ''):
-                    await browser.connection.send(
-                        uc.cdp.network.delete_cookies(
-                            name=cookie.name,
-                            domain=cookie.domain
-                        )
-                    )
+            tab = await browser.get('https://vkusvill.ru/')
+            await asyncio.sleep(2)
+            # Clear all cookies via JavaScript
+            await tab.evaluate("""
+                document.cookie.split(';').forEach(c => {
+                    var name = c.split('=')[0].trim();
+                    document.cookie = name + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=.vkusvill.ru';
+                    document.cookie = name + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/;domain=vkusvill.ru';
+                    document.cookie = name + '=;expires=Thu, 01 Jan 1970 00:00:00 GMT;path=/';
+                });
+            """)
+            await asyncio.sleep(1)
         except Exception as _e:
-            logger.warning(f"Cookie deletion failed: {_e}")
+            logger.warning(f"Cookie clearing failed: {_e}")
 
         tab = await browser.get('https://vkusvill.ru/personal/')
         await asyncio.sleep(5)  # More time for initial load
