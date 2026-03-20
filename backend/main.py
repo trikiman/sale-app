@@ -1032,10 +1032,13 @@ async def auth_login(req: AuthPhoneRequest):
             browser._process_pid = _chrome_proc.pid
 
         # Clear VkusVill cookies (scrapers are paused, Chrome is uncontested)
+        # CDP Network commands need a tab-level connection, not browser-level
+        tab = await browser.get('about:blank')
+        await asyncio.sleep(1)
         try:
-            await browser.connection.send(uc.cdp.network.enable())
-            await browser.connection.send(uc.cdp.network.clear_browser_cookies())
-            await browser.connection.send(uc.cdp.network.clear_browser_cache())
+            await tab.send(uc.cdp.network.enable())
+            await tab.send(uc.cdp.network.clear_browser_cookies())
+            await tab.send(uc.cdp.network.clear_browser_cache())
         except Exception as _e:
             logger.warning(f"Cookie clearing failed: {_e}")
 
