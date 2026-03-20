@@ -43,7 +43,7 @@ import logging
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from database.db import Database
-from scraper.vkusvill import PlaywrightScraper
+# PlaywrightScraper removed — migrated to nodriver
 from cart.vkusvill_api import VkusVillCart
 from bot.auth import get_user_cookies_path, normalize_phone as _bot_normalize_phone
 import config
