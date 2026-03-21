@@ -1357,122 +1357,107 @@ async def auth_captcha(req: AuthCaptchaRequest):
         """)
         logger.info(f"Main page captcha input result: {typed_ok}")
 
-        # If not found on main page, try SmartCaptcha iframes via CDP
+        # If not found on main page, try SmartCaptcha iframes via CDP Target
         if typed_ok != 'OK':
-            logger.info("Captcha input not on main page, searching iframes via CDP...")
+            logger.info("Captcha input not on main page, searching iframes via CDP Target...")
             try:
-                import nodriver.cdp.page as cdp_page
+                import nodriver.cdp.target as cdp_target
                 import nodriver.cdp.runtime as cdp_runtime
                 
-                frame_tree_result = await tab.send(cdp_page.get_frame_tree())
-                # frame_tree_result is a FrameTree object
-                tree = frame_tree_result
-                logger.info(f"Frame tree type: {type(tree)}")
+                # Get all targets (including cross-origin iframes)
+                all_targets = await tab.send(cdp_target.get_targets())
+                logger.info(f"Total CDP targets: {len(all_targets) if all_targets else 0}")
                 
-                # Collect all child frames recursively
-                child_frames = []
-                if hasattr(tree, 'child_frames') and tree.child_frames:
-                    child_frames = tree.child_frames
-                
-                logger.info(f"Child frames: {len(child_frames)}")
-                
-                for child in child_frames:
-                    frame = child.frame if hasattr(child, 'frame') else child
-                    frame_url = getattr(frame, 'url', '') or ''
-                    frame_id = getattr(frame, 'id', '') or getattr(frame, 'id_', '') or ''
-                    logger.info(f"Child frame: id={frame_id}, url={frame_url[:120]}")
+                for t in (all_targets or []):
+                    t_url = getattr(t, 'url', '') or ''
+                    t_type = getattr(t, 'type', '') or ''
+                    t_id = getattr(t, 'target_id', '') or ''
+                    logger.info(f"Target: type={t_type}, id={str(t_id)[:20]}, url={t_url[:120]}")
                     
-                    if 'captcha' in frame_url.lower() or 'smartcaptcha' in frame_url.lower():
+                    # Find the SmartCaptcha "advanced" iframe (contains the actual captcha input)
+                    if 'captcha' in t_url.lower() and 'advanced' in t_url.lower():
+                        logger.info(f"Found SmartCaptcha advanced iframe target: {t_url[:120]}")
                         try:
-                            # Create an isolated world in this frame to run JS
-                            world_id = await tab.send(cdp_page.create_isolated_world(
-                                frame_id=frame_id,
-                                world_name='captcha_helper'
+                            # Attach to this target
+                            session_id = await tab.send(cdp_target.attach_to_target(
+                                target_id=t_id,
+                                flatten=True
                             ))
-                            logger.info(f"Created isolated world {world_id} in frame {frame_id}")
+                            logger.info(f"Attached to captcha iframe, session: {session_id}")
                             
-                            # Evaluate JS to find and fill the input in this iframe
-                            js_code = f"""
+                            # Now we need to send Runtime.evaluate via this session
+                            # Use the browser connection to send commands to this session
+                            js_fill = f"""
                                 (function() {{
                                     var inp = document.querySelector('input');
-                                    if (!inp) return 'NO_INPUT_IN_FRAME';
+                                    if (!inp) return 'NO_INPUT_IN_IFRAME:' + document.body.innerHTML.substring(0, 200);
                                     inp.focus();
                                     inp.value = '';
-                                    var setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-                                    setter.call(inp, '{answer}');
+                                    try {{
+                                        var setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                                        setter.call(inp, '{answer}');
+                                    }} catch(e) {{
+                                        inp.value = '{answer}';
+                                    }}
                                     inp.dispatchEvent(new Event('input', {{ bubbles: true }}));
                                     inp.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                                    return 'OK_FRAME_' + inp.placeholder;
+                                    // Also try clicking submit
+                                    var btn = document.querySelector('button[type="submit"], button');
+                                    if (btn) btn.click();
+                                    return 'OK:placeholder=' + inp.placeholder + ',btn=' + (btn ? 'clicked' : 'none');
                                 }})()
                             """
-                            eval_result = await tab.send(cdp_runtime.evaluate(
-                                expression=js_code,
-                                context_id=world_id
-                            ))
-                            # eval_result is tuple (RemoteObject, ExceptionDetails or None)
-                            if eval_result and len(eval_result) >= 1:
-                                val = eval_result[0].value if hasattr(eval_result[0], 'value') else str(eval_result[0])
-                                logger.info(f"Frame JS result: {val}")
-                                if val and str(val).startswith('OK'):
-                                    typed_ok = 'OK'
-                                    # Also click Submit button inside the iframe
-                                    try:
-                                        submit_js = """
-                                            (function() {
-                                                var btn = document.querySelector('button[type="submit"], button');
-                                                if (btn) { btn.click(); return 'CLICKED'; }
-                                                return 'NO_BTN';
-                                            })()
-                                        """
-                                        btn_result = await tab.send(cdp_runtime.evaluate(
-                                            expression=submit_js,
-                                            context_id=world_id
-                                        ))
-                                        btn_val = btn_result[0].value if btn_result and hasattr(btn_result[0], 'value') else None
-                                        logger.info(f"Frame submit button result: {btn_val}")
-                                    except Exception as be:
-                                        logger.warning(f"Frame submit click failed: {be}")
-                                    break
-                        except Exception as fe:
-                            logger.warning(f"CDP frame interaction failed for {frame_url[:80]}: {fe}")
                             
-                    # Also check nested frames
-                    if hasattr(child, 'child_frames') and child.child_frames:
-                        for nested in child.child_frames:
-                            nframe = nested.frame if hasattr(nested, 'frame') else nested
-                            nurl = getattr(nframe, 'url', '') or ''
-                            nid = getattr(nframe, 'id', '') or getattr(nframe, 'id_', '') or ''
-                            logger.info(f"Nested frame: id={nid}, url={nurl[:120]}")
-                            if 'captcha' in nurl.lower():
-                                try:
-                                    world_id = await tab.send(cdp_page.create_isolated_world(frame_id=nid, world_name='captcha_nested'))
-                                    eval_result = await tab.send(cdp_runtime.evaluate(
-                                        expression=f"""
-                                            (function() {{
-                                                var inp = document.querySelector('input');
-                                                if (!inp) return 'NO_INPUT';
-                                                inp.focus(); inp.value = '';
-                                                var s = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype,'value').set;
-                                                s.call(inp, '{answer}');
-                                                inp.dispatchEvent(new Event('input',{{bubbles:true}}));
-                                                inp.dispatchEvent(new Event('change',{{bubbles:true}}));
-                                                return 'OK';
-                                            }})()
-                                        """,
-                                        context_id=world_id
-                                    ))
-                                    val = eval_result[0].value if eval_result and hasattr(eval_result[0], 'value') else None
-                                    logger.info(f"Nested frame result: {val}")
-                                    if val == 'OK':
+                            # Find the tab/page for this target in browser.targets and evaluate JS
+                            for page in browser.targets:
+                                page_url = getattr(page, 'url', '') or ''
+                                if 'captcha' in page_url.lower() and 'advanced' in page_url.lower():
+                                    logger.info(f"Found captcha page in browser.targets: {page_url[:100]}")
+                                    iframe_result = await safe_evaluate(page, js_fill)
+                                    logger.info(f"Iframe evaluate result: {iframe_result}")
+                                    if iframe_result and str(iframe_result).startswith('OK'):
                                         typed_ok = 'OK'
                                         break
-                                except Exception as ne:
-                                    logger.warning(f"Nested frame failed: {ne}")
+                            
+                            if typed_ok != 'OK':
+                                # Detach and try next approach
+                                try:
+                                    await tab.send(cdp_target.detach_from_target(session_id=session_id))
+                                except: pass
+                                
+                        except Exception as ae:
+                            logger.warning(f"CDP target attach failed: {ae}", exc_info=True)
+                    
+                    # Also try the "backend" iframe target as fallback
+                    elif 'captcha' in t_url.lower() and typed_ok != 'OK':
+                        logger.info(f"Trying captcha backend iframe: {t_url[:120]}")
+                        try:
+                            for page in browser.targets:
+                                page_url = getattr(page, 'url', '') or ''
+                                if 'captcha' in page_url.lower():
+                                    logger.info(f"Trying page: {page_url[:100]}")
+                                    iframe_result = await safe_evaluate(page, f"""
+                                        (function() {{
+                                            var inp = document.querySelector('input');
+                                            if (!inp) return 'NO_INPUT:' + document.querySelectorAll('*').length + ' elements';
+                                            inp.focus();
+                                            inp.value = '{answer}';
+                                            inp.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                            return 'OK';
+                                        }})()
+                                    """)
+                                    logger.info(f"Captcha page result: {iframe_result}")
+                                    if iframe_result and str(iframe_result).startswith('OK'):
+                                        typed_ok = 'OK'
+                                        break
+                        except Exception as pe:
+                            logger.warning(f"Browser targets iteration failed: {pe}")
+                    
                     if typed_ok == 'OK':
                         break
                         
             except Exception as te:
-                logger.error(f"CDP frame tree search failed: {te}", exc_info=True)
+                logger.error(f"CDP target search failed: {te}", exc_info=True)
 
         if typed_ok != 'OK':
             logger.error(f"Could not find captcha input field anywhere. Last result: {typed_ok}")
