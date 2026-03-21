@@ -1482,15 +1482,24 @@ async def auth_captcha(req: AuthCaptchaRequest):
         except: pass
 
         # Check if captcha was wrong (captcha still visible)
+        # Note: captcha is in a cross-origin iframe, so document.body.innerText
+        # won't contain SmartCaptcha text. Check for iframe presence instead.
         try:
             still_captcha = await safe_evaluate(tab, """
                 (function() {
+                    var iframes = document.querySelectorAll('iframe');
+                    for (var i = 0; i < iframes.length; i++) {
+                        if (iframes[i].src && iframes[i].src.indexOf('captcha') > -1) {
+                            var r = iframes[i].getBoundingClientRect();
+                            if (r.width > 100 && r.height > 100) return true;
+                        }
+                    }
                     var t = document.body.innerText;
                     return t.includes('SmartCaptcha') || t.includes('Enter the code from the image') || t.includes('Введите код с картинки');
                 })()
             """)
             if still_captcha:
-                # Captcha still showing — wrong answer. Take new screenshot + crop
+                # Captcha still showing — wrong answer or typing failed. Take new screenshot + crop
                 import base64
                 captcha_path = os.path.join(DATA_DIR, f"login_{user_id}_captcha.png")
                 await tab.save_screenshot(captcha_path)
@@ -1499,10 +1508,12 @@ async def auth_captcha(req: AuthCaptchaRequest):
                     from PIL import Image
                     img = Image.open(captcha_path)
                     img_w, img_h = img.size
-                    margin_x = int(img_w * 0.2)
-                    margin_y = int(img_h * 0.15)
-                    cropped = img.crop((margin_x, margin_y, img_w - margin_x, img_h - margin_y))
-                    cropped = cropped.resize((cropped.width * 2, cropped.height * 2), Image.LANCZOS)
+                    cx, cy = img_w // 2, img_h // 2
+                    crop_half_w = min(int(img_w * 0.22), 300)
+                    crop_half_h = min(int(img_h * 0.35), 220)
+                    cropped = img.crop((max(0, cx - crop_half_w), max(0, cy - crop_half_h),
+                                       min(img_w, cx + crop_half_w), min(img_h, cy + crop_half_h)))
+                    cropped = cropped.resize((cropped.width * 3, cropped.height * 3), Image.LANCZOS)
                     crop_path = os.path.join(DATA_DIR, f"login_{user_id}_captcha_crop.png")
                     cropped.save(crop_path, 'PNG')
                     with open(crop_path, 'rb') as f:
