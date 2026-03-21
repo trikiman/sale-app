@@ -1122,10 +1122,11 @@ async def auth_login(req: AuthPhoneRequest):
                     # Try to crop just the SmartCaptcha popup for readability
                     try:
                         # Get popup bounds from JS — multiple strategies
+                        # Get popup bounds from JS — find the SMALLEST captcha dialog
                         bounds_json = await safe_evaluate(tab, """
                             (function() {
                                 var best = null;
-                                var bestArea = 0;
+                                var bestArea = Infinity;
                                 
                                 // Strategy 1: Find the captcha iframe (Yandex SmartCaptcha)
                                 var iframes = document.querySelectorAll('iframe');
@@ -1134,52 +1135,71 @@ async def auth_login(req: AuthPhoneRequest):
                                     if (src.indexOf('captcha') > -1 || src.indexOf('smartcaptcha') > -1) {
                                         var r = iframes[i].getBoundingClientRect();
                                         if (r.width > 100 && r.height > 100) {
-                                            var area = r.width * r.height;
-                                            if (area > bestArea) { best = r; bestArea = area; }
+                                            // Use the iframe's parent container (the popup dialog)
+                                            var parent = iframes[i].parentElement;
+                                            while (parent && parent !== document.body) {
+                                                var pr = parent.getBoundingClientRect();
+                                                if (pr.width > 200 && pr.width < 700 && pr.height > 150 && pr.height < 600) {
+                                                    best = pr;
+                                                    bestArea = pr.width * pr.height;
+                                                    break;
+                                                }
+                                                parent = parent.parentElement;
+                                            }
+                                            // If no good parent, use the iframe itself
+                                            if (!best) {
+                                                best = r;
+                                                bestArea = r.width * r.height;
+                                            }
                                         }
                                     }
                                 }
                                 
-                                // Strategy 2: Find modal/overlay containers that are visible and centered
-                                var divs = document.querySelectorAll('div');
-                                for (var j = 0; j < divs.length; j++) {
-                                    var d = divs[j];
-                                    var style = window.getComputedStyle(d);
-                                    // Look for fixed/absolute positioned overlays
-                                    if (style.position === 'fixed' || style.position === 'absolute') {
-                                        var z = parseInt(style.zIndex) || 0;
-                                        if (z >= 100 || style.display !== 'none') {
+                                // Strategy 2: Find elements with captcha text, pick the SMALLEST container
+                                var all = document.querySelectorAll('div, section, form');
+                                for (var k = 0; k < all.length; k++) {
+                                    var txt = (all[k].innerText || '').substring(0, 300);
+                                    if (txt.includes('Enter the text') || txt.includes('enter the code') ||
+                                        txt.includes('Submit') || txt.includes('SmartCaptcha') ||
+                                        txt.includes('I am not a robot')) {
+                                        var rc = all[k].getBoundingClientRect();
+                                        // Must be popup-sized (200-700px wide, 150-600px tall)
+                                        if (rc.width > 200 && rc.width < 700 &&
+                                            rc.height > 150 && rc.height < 600) {
+                                            var a = rc.width * rc.height;
+                                            // Pick the SMALLEST matching element
+                                            if (a < bestArea) {
+                                                best = rc;
+                                                bestArea = a;
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                // Strategy 3: Find white/light background popups (the captcha dialog is white)
+                                if (!best) {
+                                    var divs = document.querySelectorAll('div');
+                                    for (var j = 0; j < divs.length; j++) {
+                                        var d = divs[j];
+                                        var style = window.getComputedStyle(d);
+                                        var bg = style.backgroundColor;
+                                        var isWhite = bg && (bg.indexOf('255') > -1 || bg === 'white');
+                                        if (isWhite && (style.position === 'fixed' || style.position === 'absolute')) {
                                             var rb = d.getBoundingClientRect();
-                                            // Must be reasonably sized (not full-page backdrop)
-                                            if (rb.width > 200 && rb.width < window.innerWidth * 0.9 &&
-                                                rb.height > 200 && rb.height < window.innerHeight * 0.9) {
+                                            if (rb.width > 200 && rb.width < 700 &&
+                                                rb.height > 150 && rb.height < 600) {
                                                 var a2 = rb.width * rb.height;
-                                                if (a2 > bestArea) { best = rb; bestArea = a2; }
+                                                if (a2 < bestArea) {
+                                                    best = rb;
+                                                    bestArea = a2;
+                                                }
                                             }
                                         }
                                     }
                                 }
                                 
-                                // Strategy 3: Look for elements with captcha-related text
-                                if (!best || bestArea < 40000) {
-                                    var all = document.querySelectorAll('div, section, form');
-                                    for (var k = 0; k < all.length; k++) {
-                                        var txt = (all[k].innerText || '').substring(0, 200);
-                                        if (txt.includes('Enter the text') || txt.includes('enter the text') ||
-                                            txt.includes('Введите текст') || txt.includes('captcha') ||
-                                            txt.includes('I am not a robot') || txt.includes('SmartCaptcha')) {
-                                            var rc = all[k].getBoundingClientRect();
-                                            if (rc.width > 200 && rc.height > 150) {
-                                                var a3 = rc.width * rc.height;
-                                                if (a3 > bestArea) { best = rc; bestArea = a3; }
-                                            }
-                                        }
-                                    }
-                                }
-                                
-                                if (best && bestArea > 40000) {
-                                    // Add generous padding
-                                    var pad = 30;
+                                if (best && bestArea < Infinity) {
+                                    var pad = 20;
                                     return JSON.stringify({
                                         x: Math.max(0, best.x - pad),
                                         y: Math.max(0, best.y - pad),

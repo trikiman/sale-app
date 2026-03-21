@@ -605,6 +605,39 @@ body {
   font-size: 11px;
   opacity: 0.5;
   text-align: center;
+  cursor: pointer;
+}
+
+.login-captcha-zoom-hint:hover {
+  opacity: 0.8;
+}
+
+/* Captcha zoom overlay — fullscreen modal */
+.captcha-zoom-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(0, 0, 0, 0.92);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: zoom-out;
+  padding: 16px;
+}
+
+.captcha-zoom-img {
+  max-width: 95vw;
+  max-height: 85vh;
+  object-fit: contain;
+  border-radius: 8px;
+  box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
+}
+
+.captcha-zoom-close {
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 14px;
+  margin-top: 16px;
 }
 
 .login-btn {

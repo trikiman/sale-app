@@ -29,6 +29,7 @@ export default function Login({ userId, onLoginSuccess }) {
   const [verifiedPhone, setVerifiedPhone] = useState('')
   const [captchaImage, setCaptchaImage] = useState(null)
   const [captchaAnswer, setCaptchaAnswer] = useState('')
+  const [captchaZoom, setCaptchaZoom] = useState(false)
 
   // Refs for auto-submit
   const codeSubmitRef = useRef(null)
@@ -213,10 +214,8 @@ export default function Login({ userId, onLoginSuccess }) {
             <div className="login-hint">Решите капчу для продолжения</div>
             {captchaImage && (
               <div className="login-captcha-wrapper">
-                <a href={captchaImage} target="_blank" rel="noopener noreferrer" title="Нажмите чтобы увеличить">
-                  <img src={captchaImage} alt="Капча" className="login-captcha-img" />
-                </a>
-                <div className="login-captcha-zoom-hint">🔍 Нажмите на изображение чтобы увеличить</div>
+                <img src={captchaImage} alt="Капча" className="login-captcha-img" onClick={() => setCaptchaZoom(true)} />
+                <div className="login-captcha-zoom-hint" onClick={() => setCaptchaZoom(true)}>🔍 Нажмите чтобы увеличить</div>
               </div>
             )}
             <input type="text" placeholder="Введите текст с картинки" value={captchaAnswer} onChange={(e) => { setCaptchaAnswer(e.target.value); setError(null) }} className="login-input" disabled={loading} autoFocus autoComplete="off" />
@@ -293,6 +292,12 @@ export default function Login({ userId, onLoginSuccess }) {
         {error && <div className="login-error">{error}</div>}
         <AnimatePresence mode="wait">{renderStep()}</AnimatePresence>
       </motion.div>
+      {captchaZoom && captchaImage && (
+        <div className="captcha-zoom-overlay" onClick={() => setCaptchaZoom(false)}>
+          <img src={captchaImage} alt="Капча увеличенная" className="captcha-zoom-img" />
+          <div className="captcha-zoom-close">✕ Нажмите чтобы закрыть</div>
+        </div>
+      )}
     </div>
   )
 }
