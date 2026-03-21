@@ -1426,9 +1426,10 @@ async def auth_captcha(req: AuthCaptchaRequest):
                                     for i in range(0, len(attrs) - 1, 2):
                                         if attrs[i] == 'src':
                                             src = attrs[i + 1]
+                                    content_doc = getattr(node, 'content_document', None)
+                                    node_frame_id = getattr(node, 'frame_id', None)
+                                    logger.info(f"IFRAME node found: src={src[:100]}, content_doc={content_doc is not None}, node_frame_id={node_frame_id}, depth={depth}")
                                     if 'captcha' in src.lower():
-                                        # Get the content document
-                                        content_doc = getattr(node, 'content_document', None)
                                         if content_doc:
                                             frame_id = getattr(content_doc, 'frame_id', None)
                                             node_id = getattr(content_doc, 'node_id', None)
@@ -1438,6 +1439,14 @@ async def auth_captcha(req: AuthCaptchaRequest):
                                                 'node_id': node_id
                                             })
                                             logger.info(f"Found captcha iframe content_doc: frame_id={frame_id}, src={src[:100]}")
+                                        elif node_frame_id:
+                                            # Use the iframe node's own frame_id
+                                            results.append({
+                                                'src': src,
+                                                'frame_id': node_frame_id,
+                                                'node_id': None
+                                            })
+                                            logger.info(f"Using iframe node frame_id: {node_frame_id}, src={src[:100]}")
                                 # Recurse into children
                                 children = getattr(node, 'children', []) or []
                                 for child in children:
