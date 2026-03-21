@@ -861,6 +861,74 @@ async def safe_evaluate(tab, js_code):
     return result
 
 
+async def solve_captcha_with_gemini(captcha_b64: str, max_retries: int = 1) -> str | None:
+    """Send captcha image to Gemini Vision API and return recognized text.
+    
+    Args:
+        captcha_b64: Base64-encoded PNG image of the captcha
+        max_retries: Number of retries on failure
+        
+    Returns:
+        Recognized captcha text, or None if failed
+    """
+    import aiohttp
+    
+    api_key = os.environ.get("GEMINI_API_KEY", "")
+    if not api_key:
+        logger.warning("GEMINI_API_KEY not set, skipping auto-solve")
+        return None
+    
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
+    
+    payload = {
+        "contents": [{
+            "parts": [
+                {
+                    "inline_data": {
+                        "mime_type": "image/png",
+                        "data": captcha_b64
+                    }
+                },
+                {
+                    "text": "Read the distorted text in this CAPTCHA image. Return ONLY the exact text you see, nothing else. The text consists of English words. Do not add quotes or explanation."
+                }
+            ]
+        }],
+        "generationConfig": {
+            "temperature": 0.1,
+            "maxOutputTokens": 50
+        }
+    }
+    
+    for attempt in range(max_retries + 1):
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                    if resp.status != 200:
+                        error_text = await resp.text()
+                        logger.warning(f"Gemini API error {resp.status}: {error_text[:200]}")
+                        continue
+                    
+                    data = await resp.json()
+                    candidates = data.get("candidates", [])
+                    if not candidates:
+                        logger.warning("Gemini returned no candidates")
+                        continue
+                    
+                    text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
+                    if text:
+                        # Clean up: remove quotes, extra whitespace
+                        text = text.strip('"\'').strip()
+                        logger.info(f"Gemini captcha OCR result: '{text}'")
+                        return text
+                    else:
+                        logger.warning("Gemini returned empty text")
+        except Exception as e:
+            logger.warning(f"Gemini captcha solve attempt {attempt + 1} failed: {e}")
+    
+    return None
+
+
 def _evict_stale_login_sessions():
     """Remove login sessions older than TTL."""
     now = _time.time()
@@ -1162,24 +1230,152 @@ async def auth_login(req: AuthPhoneRequest):
                 logger.error(f"Captcha screenshot failed: {_e}")
 
             if captcha_b64:
-                # Save session for captcha submission — don't close Chrome!
-                _login_sessions[user_id] = {
-                    "browser": browser,
-                    "tab": tab,
-                    "phone": phone_raw,
-                    "force_sms": req.force_sms,
-                    "created_at": _time.time(),
-                    "proc": _chrome_proc,
-                    "profile_dir": _user_data_dir,
-                    "awaiting_captcha": True,
-                }
-                logger.info(f"Returning captcha image: base64 length={len(captcha_b64)}, total response ~{len(captcha_b64) + 100} bytes")
-                return {
-                    "success": True,
-                    "need_captcha": True,
-                    "captcha_image": f"data:image/png;base64,{captcha_b64}",
-                    "message": "Решите капчу для продолжения",
-                }
+                # === AUTO-SOLVE: Try Gemini Vision before bothering the user ===
+                import nodriver.cdp.input_ as cdp_input
+                auto_solved = False
+                
+                for auto_attempt in range(3):  # Up to 3 auto-solve attempts
+                    gemini_answer = await solve_captcha_with_gemini(captcha_b64)
+                    if not gemini_answer:
+                        logger.info("Gemini auto-solve unavailable, falling back to user")
+                        break
+                    
+                    logger.info(f"Gemini auto-solve attempt {auto_attempt + 1}: '{gemini_answer}'")
+                    
+                    # Get iframe bounds for CDP clicking
+                    try:
+                        iframe_bounds = await safe_evaluate(tab, """
+                            (function() {
+                                var iframes = document.querySelectorAll('iframe');
+                                for (var i = 0; i < iframes.length; i++) {
+                                    if (iframes[i].src && iframes[i].src.indexOf('captcha') > -1) {
+                                        var rect = iframes[i].getBoundingClientRect();
+                                        return JSON.stringify({x: rect.x, y: rect.y, w: rect.width, h: rect.height});
+                                    }
+                                }
+                                return 'NO_IFRAME';
+                            })()
+                        """)
+                    except:
+                        iframe_bounds = 'NO_IFRAME'
+                    
+                    if not iframe_bounds or iframe_bounds == 'NO_IFRAME':
+                        logger.warning("No captcha iframe found for auto-solve")
+                        break
+                    
+                    import json as _json2
+                    try:
+                        bounds = _json2.loads(iframe_bounds)
+                    except:
+                        break
+                    
+                    if not bounds or bounds.get('w', 0) <= 0:
+                        break
+                    
+                    ix, iy, iw, ih = bounds['x'], bounds['y'], bounds['w'], bounds['h']
+                    input_x = ix + iw * 0.5
+                    input_y = iy + ih * 0.53
+                    
+                    # Triple-click to focus input
+                    await tab.send(cdp_input.dispatch_mouse_event(type_='mousePressed', x=input_x, y=input_y, button=cdp_input.MouseButton.LEFT, click_count=3))
+                    await asyncio.sleep(0.05)
+                    await tab.send(cdp_input.dispatch_mouse_event(type_='mouseReleased', x=input_x, y=input_y, button=cdp_input.MouseButton.LEFT, click_count=3))
+                    await asyncio.sleep(0.5)
+                    
+                    # Clear existing text
+                    await tab.send(cdp_input.dispatch_key_event(type_='keyDown', key='Backspace', code='Backspace'))
+                    await tab.send(cdp_input.dispatch_key_event(type_='keyUp', key='Backspace', code='Backspace'))
+                    await asyncio.sleep(0.1)
+                    
+                    # Type the Gemini answer
+                    for ch in gemini_answer:
+                        await tab.send(cdp_input.dispatch_key_event(type_='keyDown', key=ch))
+                        await tab.send(cdp_input.dispatch_key_event(type_='char', key=ch, text=ch))
+                        await tab.send(cdp_input.dispatch_key_event(type_='keyUp', key=ch))
+                        await asyncio.sleep(0.03)
+                    
+                    logger.info(f"Auto-typed '{gemini_answer}' into captcha")
+                    await asyncio.sleep(0.3)
+                    
+                    # Click submit button
+                    submit_x = ix + iw * 0.5
+                    submit_y = iy + ih * 0.66
+                    await tab.send(cdp_input.dispatch_mouse_event(type_='mousePressed', x=submit_x, y=submit_y, button=cdp_input.MouseButton.LEFT, click_count=1))
+                    await asyncio.sleep(0.05)
+                    await tab.send(cdp_input.dispatch_mouse_event(type_='mouseReleased', x=submit_x, y=submit_y, button=cdp_input.MouseButton.LEFT, click_count=1))
+                    
+                    await asyncio.sleep(3)  # Wait for captcha validation
+                    
+                    # Check if captcha iframe is still showing
+                    try:
+                        still_captcha = await safe_evaluate(tab, """
+                            (function() {
+                                var iframes = document.querySelectorAll('iframe');
+                                for (var i = 0; i < iframes.length; i++) {
+                                    if (iframes[i].src && iframes[i].src.indexOf('captcha') > -1) {
+                                        var r = iframes[i].getBoundingClientRect();
+                                        if (r.width > 100 && r.height > 100) return true;
+                                    }
+                                }
+                                return false;
+                            })()
+                        """)
+                    except:
+                        still_captcha = True
+                    
+                    if not still_captcha:
+                        logger.info(f"Captcha auto-solved successfully with Gemini! Answer: '{gemini_answer}'")
+                        auto_solved = True
+                        break
+                    else:
+                        # Captcha still showing — wrong answer. Take new screenshot for next attempt.
+                        logger.info(f"Auto-solve attempt {auto_attempt + 1} failed (wrong answer: '{gemini_answer}'), retrying...")
+                        try:
+                            captcha_path = os.path.join(DATA_DIR, f"login_{user_id}_captcha.png")
+                            await tab.save_screenshot(captcha_path)
+                            captcha_b64 = None
+                            from PIL import Image
+                            img = Image.open(captcha_path)
+                            img_w, img_h = img.size
+                            cx, cy = img_w // 2, img_h // 2
+                            crop_half_w = min(int(img_w * 0.22), 300)
+                            crop_half_h = min(int(img_h * 0.35), 220)
+                            cropped = img.crop((max(0, cx - crop_half_w), max(0, cy - crop_half_h),
+                                               min(img_w, cx + crop_half_w), min(img_h, cy + crop_half_h)))
+                            cropped = cropped.resize((cropped.width * 3, cropped.height * 3), Image.LANCZOS)
+                            crop_path = os.path.join(DATA_DIR, f"login_{user_id}_captcha_crop.png")
+                            cropped.save(crop_path, 'PNG')
+                            with open(crop_path, 'rb') as f:
+                                captcha_b64 = base64.b64encode(f.read()).decode('utf-8')
+                        except Exception as re_err:
+                            logger.warning(f"Re-crop failed: {re_err}")
+                            break
+                        if not captcha_b64:
+                            break
+                
+                if auto_solved:
+                    # Captcha solved! Continue to SMS polling (don't return to user)
+                    logger.info("Auto-solve succeeded, continuing to SMS polling...")
+                    # Fall through to the SMS polling code below
+                else:
+                    # Auto-solve failed or unavailable — send captcha to user for manual solve
+                    _login_sessions[user_id] = {
+                        "browser": browser,
+                        "tab": tab,
+                        "phone": phone_raw,
+                        "force_sms": req.force_sms,
+                        "created_at": _time.time(),
+                        "proc": _chrome_proc,
+                        "profile_dir": _user_data_dir,
+                        "awaiting_captcha": True,
+                    }
+                    logger.info(f"Returning captcha image to user: base64 length={len(captcha_b64)}")
+                    return {
+                        "success": True,
+                        "need_captcha": True,
+                        "captcha_image": f"data:image/png;base64,{captcha_b64}",
+                        "message": "Решите капчу для продолжения",
+                    }
             # If screenshot failed, continue to SMS polling (might work without captcha)
 
         # Immediate rate-limit check — the error dialog appears right after click
