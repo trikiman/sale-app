@@ -1111,15 +1111,81 @@ async def auth_login(req: AuthPhoneRequest):
             import base64
             captcha_b64 = None
             
-            # Use save_screenshot (nodriver native — most reliable on low-memory servers)
-            captcha_path = os.path.join(DATA_DIR, f"login_{user_id}_captcha.jpg")
+            # Take full-page screenshot first
+            captcha_path = os.path.join(DATA_DIR, f"login_{user_id}_captcha.png")
             try:
                 await asyncio.wait_for(tab.save_screenshot(captcha_path), timeout=15)
                 fsize = os.path.getsize(captcha_path) if os.path.exists(captcha_path) else 0
                 logger.info(f"Captcha screenshot saved: {captcha_path}, size={fsize}")
+                
                 if fsize > 0:
-                    with open(captcha_path, 'rb') as f:
-                        captcha_b64 = base64.b64encode(f.read()).decode('utf-8')
+                    # Try to crop just the SmartCaptcha popup for readability
+                    try:
+                        # Get popup bounds from JS
+                        bounds_json = await safe_evaluate(tab, """
+                            (function() {
+                                // Look for the SmartCaptcha popup/modal
+                                var el = document.querySelector('[class*="SmartCaptcha"], [class*="smartcaptcha"], [class*="captcha-popup"], [class*="Modal"]');
+                                if (!el) {
+                                    var all = document.querySelectorAll('div, section');
+                                    for (var j = 0; j < all.length; j++) {
+                                        var t = all[j].innerText || '';
+                                        if ((t.includes('SmartCaptcha') || t.includes('Enter the text')) && all[j].offsetWidth > 200 && all[j].offsetWidth < 800) {
+                                            el = all[j]; break;
+                                        }
+                                    }
+                                }
+                                // Fallback: find the captcha iframe itself
+                                if (!el) {
+                                    var iframes = document.querySelectorAll('iframe');
+                                    for (var i = 0; i < iframes.length; i++) {
+                                        if (iframes[i].src && iframes[i].src.indexOf('captcha') > -1) {
+                                            el = iframes[i]; break;
+                                        }
+                                    }
+                                }
+                                if (el) {
+                                    var r = el.getBoundingClientRect();
+                                    return JSON.stringify({x: Math.max(0, r.x - 20), y: Math.max(0, r.y - 20), w: r.width + 40, h: r.height + 40});
+                                }
+                                return null;
+                            })()
+                        """)
+                        logger.info(f"Captcha popup bounds: {bounds_json}")
+                        
+                        if bounds_json and isinstance(bounds_json, str) and bounds_json != 'null':
+                            import json as _json
+                            bounds = _json.loads(bounds_json)
+                            if bounds.get('w', 0) > 100 and bounds.get('h', 0) > 100:
+                                from PIL import Image
+                                img = Image.open(captcha_path)
+                                img_w, img_h = img.size
+                                # The screenshot may have device pixel ratio scaling
+                                # bounds are in CSS pixels, screenshot is in actual pixels
+                                scale = img_w / 1280.0 if img_w > 1280 else 1.0
+                                crop_x = max(0, int(bounds['x'] * scale))
+                                crop_y = max(0, int(bounds['y'] * scale))
+                                crop_r = min(img_w, int((bounds['x'] + bounds['w']) * scale))
+                                crop_b = min(img_h, int((bounds['y'] + bounds['h']) * scale))
+                                
+                                if crop_r > crop_x + 50 and crop_b > crop_y + 50:
+                                    cropped = img.crop((crop_x, crop_y, crop_r, crop_b))
+                                    # Scale up 2x for clarity
+                                    new_w = cropped.width * 2
+                                    new_h = cropped.height * 2
+                                    cropped = cropped.resize((new_w, new_h), Image.LANCZOS)
+                                    crop_path = os.path.join(DATA_DIR, f"login_{user_id}_captcha_crop.png")
+                                    cropped.save(crop_path, 'PNG')
+                                    logger.info(f"Cropped captcha: {crop_x},{crop_y} -> {crop_r},{crop_b}, scaled 2x to {new_w}x{new_h}")
+                                    with open(crop_path, 'rb') as f:
+                                        captcha_b64 = base64.b64encode(f.read()).decode('utf-8')
+                    except Exception as crop_err:
+                        logger.warning(f"Captcha crop failed, using full screenshot: {crop_err}")
+                    
+                    # Fallback: use full screenshot
+                    if not captcha_b64:
+                        with open(captcha_path, 'rb') as f:
+                            captcha_b64 = base64.b64encode(f.read()).decode('utf-8')
             except asyncio.TimeoutError:
                 logger.warning("save_screenshot timed out after 15s")
             except Exception as _e:
@@ -1141,7 +1207,7 @@ async def auth_login(req: AuthPhoneRequest):
                 return {
                     "success": True,
                     "need_captcha": True,
-                    "captcha_image": f"data:image/jpeg;base64,{captcha_b64}",
+                    "captcha_image": f"data:image/png;base64,{captcha_b64}",
                     "message": "Решите капчу для продолжения",
                 }
             # If screenshot failed, continue to SMS polling (might work without captcha)
@@ -1463,7 +1529,7 @@ async def auth_captcha(req: AuthCaptchaRequest):
                 return {
                     "success": True,
                     "need_captcha": True,
-                    "captcha_image": f"data:image/jpeg;base64,{captcha_b64}",
+                    "captcha_image": f"data:image/png;base64,{captcha_b64}",
                     "message": "Неверная капча. Попробуйте ещё раз.",
                 }
         except Exception:

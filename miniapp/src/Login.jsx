@@ -211,7 +211,14 @@ export default function Login({ userId, onLoginSuccess }) {
         return (
           <motion.form key="captcha" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} onSubmit={handleCaptchaSubmit} className="login-form">
             <div className="login-hint">Решите капчу для продолжения</div>
-            {captchaImage && <img src={captchaImage} alt="Капча" className="login-captcha-img" />}
+            {captchaImage && (
+              <div className="login-captcha-wrapper">
+                <a href={captchaImage} target="_blank" rel="noopener noreferrer" title="Нажмите чтобы увеличить">
+                  <img src={captchaImage} alt="Капча" className="login-captcha-img" />
+                </a>
+                <div className="login-captcha-zoom-hint">🔍 Нажмите на изображение чтобы увеличить</div>
+              </div>
+            )}
             <input type="text" placeholder="Введите текст с картинки" value={captchaAnswer} onChange={(e) => { setCaptchaAnswer(e.target.value); setError(null) }} className="login-input" disabled={loading} autoFocus autoComplete="off" />
             <button type="submit" disabled={loading || !captchaAnswer.trim()} className="login-btn">
               {loading ? <><Spinner /> Проверяем…</> : 'Отправить'}
