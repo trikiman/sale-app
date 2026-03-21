@@ -1131,6 +1131,7 @@ async def auth_login(req: AuthPhoneRequest):
                     "profile_dir": _user_data_dir,
                     "awaiting_captcha": True,
                 }
+                logger.info(f"Returning captcha image: base64 length={len(captcha_b64)}, total response ~{len(captcha_b64) + 100} bytes")
                 return {
                     "success": True,
                     "need_captcha": True,
