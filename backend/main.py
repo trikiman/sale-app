@@ -1109,12 +1109,21 @@ async def auth_login(req: AuthPhoneRequest):
 
         if captcha_detected:
             import base64
-            # Take full page screenshot for captcha
+            # Take screenshot and return as base64
+            captcha_b64 = None
             try:
                 captcha_path = os.path.join(DATA_DIR, f"login_{user_id}_captcha.png")
                 await tab.save_screenshot(captcha_path)
-                with open(captcha_path, 'rb') as f:
-                    captcha_b64 = base64.b64encode(f.read()).decode('utf-8')
+                # Validate file exists and has content
+                fsize = os.path.getsize(captcha_path) if os.path.exists(captcha_path) else 0
+                logger.info(f"Captcha screenshot saved: {captcha_path}, size={fsize}")
+                if fsize > 0:
+                    with open(captcha_path, 'rb') as f:
+                        raw = f.read()
+                    captcha_b64 = base64.b64encode(raw).decode('utf-8')
+                    logger.info(f"Captcha base64 encoded: {len(captcha_b64)} chars")
+                else:
+                    logger.error(f"Captcha screenshot file empty or missing: {captcha_path}")
             except Exception as _e:
                 logger.error(f"Captcha screenshot failed: {_e}")
                 captcha_b64 = None
