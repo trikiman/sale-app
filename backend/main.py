@@ -1119,142 +1119,36 @@ async def auth_login(req: AuthPhoneRequest):
                 logger.info(f"Captcha screenshot saved: {captcha_path}, size={fsize}")
                 
                 if fsize > 0:
-                    # Try to crop just the SmartCaptcha popup for readability
+                    # Crop the captcha popup from the center of the screenshot
+                    # The SmartCaptcha popup is always centered in the page,
+                    # and it's inside a cross-origin iframe so we can't detect
+                    # its exact bounds via JS. Simple center-crop is most reliable.
                     try:
-                        # Get popup bounds from JS — multiple strategies
-                        # Get popup bounds from JS — find the SMALLEST captcha dialog
-                        bounds_json = await safe_evaluate(tab, """
-                            (function() {
-                                var best = null;
-                                var bestArea = Infinity;
-                                
-                                // Strategy 1: Find the captcha iframe (Yandex SmartCaptcha)
-                                var iframes = document.querySelectorAll('iframe');
-                                for (var i = 0; i < iframes.length; i++) {
-                                    var src = (iframes[i].src || '').toLowerCase();
-                                    if (src.indexOf('captcha') > -1 || src.indexOf('smartcaptcha') > -1) {
-                                        var r = iframes[i].getBoundingClientRect();
-                                        if (r.width > 100 && r.height > 100) {
-                                            // Use the iframe's parent container (the popup dialog)
-                                            var parent = iframes[i].parentElement;
-                                            while (parent && parent !== document.body) {
-                                                var pr = parent.getBoundingClientRect();
-                                                if (pr.width > 200 && pr.width < 700 && pr.height > 150 && pr.height < 600) {
-                                                    best = pr;
-                                                    bestArea = pr.width * pr.height;
-                                                    break;
-                                                }
-                                                parent = parent.parentElement;
-                                            }
-                                            // If no good parent, use the iframe itself
-                                            if (!best) {
-                                                best = r;
-                                                bestArea = r.width * r.height;
-                                            }
-                                        }
-                                    }
-                                }
-                                
-                                // Strategy 2: Find elements with captcha text, pick the SMALLEST container
-                                var all = document.querySelectorAll('div, section, form');
-                                for (var k = 0; k < all.length; k++) {
-                                    var txt = (all[k].innerText || '').substring(0, 300);
-                                    if (txt.includes('Enter the text') || txt.includes('enter the code') ||
-                                        txt.includes('Submit') || txt.includes('SmartCaptcha') ||
-                                        txt.includes('I am not a robot')) {
-                                        var rc = all[k].getBoundingClientRect();
-                                        // Must be popup-sized (200-700px wide, 150-600px tall)
-                                        if (rc.width > 200 && rc.width < 700 &&
-                                            rc.height > 150 && rc.height < 600) {
-                                            var a = rc.width * rc.height;
-                                            // Pick the SMALLEST matching element
-                                            if (a < bestArea) {
-                                                best = rc;
-                                                bestArea = a;
-                                            }
-                                        }
-                                    }
-                                }
-                                
-                                // Strategy 3: Find white/light background popups (the captcha dialog is white)
-                                if (!best) {
-                                    var divs = document.querySelectorAll('div');
-                                    for (var j = 0; j < divs.length; j++) {
-                                        var d = divs[j];
-                                        var style = window.getComputedStyle(d);
-                                        var bg = style.backgroundColor;
-                                        var isWhite = bg && (bg.indexOf('255') > -1 || bg === 'white');
-                                        if (isWhite && (style.position === 'fixed' || style.position === 'absolute')) {
-                                            var rb = d.getBoundingClientRect();
-                                            if (rb.width > 200 && rb.width < 700 &&
-                                                rb.height > 150 && rb.height < 600) {
-                                                var a2 = rb.width * rb.height;
-                                                if (a2 < bestArea) {
-                                                    best = rb;
-                                                    bestArea = a2;
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                                
-                                if (best && bestArea < Infinity) {
-                                    var pad = 20;
-                                    return JSON.stringify({
-                                        x: Math.max(0, best.x - pad),
-                                        y: Math.max(0, best.y - pad),
-                                        w: best.width + pad * 2,
-                                        h: best.height + pad * 2
-                                    });
-                                }
-                                return null;
-                            })()
-                        """)
-                        logger.info(f"Captcha popup bounds: {bounds_json}")
+                        from PIL import Image
+                        img = Image.open(captcha_path)
+                        img_w, img_h = img.size
                         
-                        if bounds_json and isinstance(bounds_json, str) and bounds_json != 'null':
-                            import json as _json
-                            bounds = _json.loads(bounds_json)
-                            if bounds.get('w', 0) > 100 and bounds.get('h', 0) > 100:
-                                from PIL import Image
-                                img = Image.open(captcha_path)
-                                img_w, img_h = img.size
-                                # The screenshot may have device pixel ratio scaling
-                                scale = img_w / 1280.0 if img_w > 1280 else 1.0
-                                crop_x = max(0, int(bounds['x'] * scale))
-                                crop_y = max(0, int(bounds['y'] * scale))
-                                crop_r = min(img_w, int((bounds['x'] + bounds['w']) * scale))
-                                crop_b = min(img_h, int((bounds['y'] + bounds['h']) * scale))
-                                
-                                if crop_r > crop_x + 50 and crop_b > crop_y + 50:
-                                    cropped = img.crop((crop_x, crop_y, crop_r, crop_b))
-                                    # Scale up 2x for clarity
-                                    new_w = cropped.width * 2
-                                    new_h = cropped.height * 2
-                                    cropped = cropped.resize((new_w, new_h), Image.LANCZOS)
-                                    crop_path = os.path.join(DATA_DIR, f"login_{user_id}_captcha_crop.png")
-                                    cropped.save(crop_path, 'PNG')
-                                    logger.info(f"Cropped captcha: {crop_x},{crop_y} -> {crop_r},{crop_b}, scaled 2x to {new_w}x{new_h}")
-                                    with open(crop_path, 'rb') as f:
-                                        captcha_b64 = base64.b64encode(f.read()).decode('utf-8')
+                        # The popup is roughly 350x300px centered in a 1280x600 page
+                        # Crop the center ~30% horizontally and ~50% vertically
+                        cx, cy = img_w // 2, img_h // 2
+                        crop_half_w = min(int(img_w * 0.22), 300)  # ~280px from center
+                        crop_half_h = min(int(img_h * 0.35), 220)  # ~200px from center
                         
-                        # If bounds detection failed, use center crop as fallback
-                        if not captcha_b64:
-                            from PIL import Image
-                            img = Image.open(captcha_path)
-                            img_w, img_h = img.size
-                            # Center crop — captcha popup is usually centered
-                            margin_x = int(img_w * 0.2)  # 20% margin on each side
-                            margin_y = int(img_h * 0.15) # 15% margin top/bottom
-                            cropped = img.crop((margin_x, margin_y, img_w - margin_x, img_h - margin_y))
-                            new_w = cropped.width * 2
-                            new_h = cropped.height * 2
-                            cropped = cropped.resize((new_w, new_h), Image.LANCZOS)
-                            crop_path = os.path.join(DATA_DIR, f"login_{user_id}_captcha_crop.png")
-                            cropped.save(crop_path, 'PNG')
-                            logger.info(f"Center-cropped captcha fallback: {margin_x},{margin_y} -> {img_w-margin_x},{img_h-margin_y}, scaled 2x to {new_w}x{new_h}")
-                            with open(crop_path, 'rb') as f:
-                                captcha_b64 = base64.b64encode(f.read()).decode('utf-8')
+                        crop_x = max(0, cx - crop_half_w)
+                        crop_y = max(0, cy - crop_half_h)
+                        crop_r = min(img_w, cx + crop_half_w)
+                        crop_b = min(img_h, cy + crop_half_h)
+                        
+                        cropped = img.crop((crop_x, crop_y, crop_r, crop_b))
+                        # Scale up 3x for maximum readability
+                        new_w = cropped.width * 3
+                        new_h = cropped.height * 3
+                        cropped = cropped.resize((new_w, new_h), Image.LANCZOS)
+                        crop_path = os.path.join(DATA_DIR, f"login_{user_id}_captcha_crop.png")
+                        cropped.save(crop_path, 'PNG')
+                        logger.info(f"Center-cropped captcha: {crop_x},{crop_y} -> {crop_r},{crop_b}, scaled 3x to {new_w}x{new_h}")
+                        with open(crop_path, 'rb') as f:
+                            captcha_b64 = base64.b64encode(f.read()).decode('utf-8')
                     except Exception as crop_err:
                         logger.warning(f"Captcha crop failed, using full screenshot: {crop_err}")
                     
