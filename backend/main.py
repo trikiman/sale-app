@@ -1078,25 +1078,34 @@ async def auth_login(req: AuthPhoneRequest):
             await tab.save_screenshot(os.path.join(DATA_DIR, f"login_{user_id}_3_after_click.png"))
         except: pass
 
-        # Check for CAPTCHA (Yandex SmartCaptcha) — appears as a popup
+        # Check for CAPTCHA (Yandex SmartCaptcha) — appears as overlay popup
         captcha_detected = False
         try:
             captcha_result = await safe_evaluate(tab, """
                 (function() {
-                    // SmartCaptcha creates an iframe or div overlay
-                    var captchaImg = document.querySelector('.smartcaptcha img, .captcha__image img, [class*="captcha"] img');
-                    var captchaText = document.body.innerText;
-                    if (captchaImg || captchaText.includes('Enter the code from the image') ||
-                        captchaText.includes('SmartCaptcha') || captchaText.includes('Введите код с картинки')) {
-                        return 'CAPTCHA';
+                    var html = document.documentElement.outerHTML.toLowerCase();
+                    // Check if page HTML contains captcha-related content
+                    if (html.includes('smartcaptcha') || html.includes('captcha__image') ||
+                        html.includes('enter the code from the image') ||
+                        html.includes('введите код с картинки')) {
+                        return 'CAPTCHA_HTML';
                     }
-                    return false;
+                    // Check for captcha iframe
+                    var iframes = document.querySelectorAll('iframe');
+                    for (var i = 0; i < iframes.length; i++) {
+                        if (iframes[i].src && iframes[i].src.includes('captcha')) return 'CAPTCHA_IFRAME';
+                    }
+                    // Check body text
+                    var bodyText = document.body ? document.body.innerText : '';
+                    if (bodyText.includes('SmartCaptcha') || bodyText.includes('Enter the code')) return 'CAPTCHA_TEXT';
+                    return 'NONE';
                 })()
             """)
-            if captcha_result == 'CAPTCHA':
+            logger.info(f"Captcha detection result: {captcha_result}")
+            if isinstance(captcha_result, str) and captcha_result.startswith('CAPTCHA'):
                 captcha_detected = True
-        except Exception:
-            pass
+        except Exception as _e:
+            logger.warning(f"Captcha detection error: {_e}")
 
         if captcha_detected:
             import base64
