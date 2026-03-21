@@ -77,6 +77,8 @@ function ProductCard({ product, index, isFavorite, onToggleFavorite, favoritesLo
             src={product.image}
             alt={product.name}
             loading="lazy"
+            referrerPolicy="no-referrer"
+            crossOrigin="anonymous"
             className={`card-hero-img ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
             onLoad={() => setImageLoaded(true)}
             onError={() => setImageError(true)}
