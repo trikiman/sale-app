@@ -1422,12 +1422,11 @@ async def auth_captcha(req: AuthCaptchaRequest):
                         await tab.send(cdp_input.dispatch_key_event(type_='keyUp', key='Backspace', code='Backspace'))
                         await asyncio.sleep(0.1)
                         
-                        # Type each character of the answer using insertText for reliability
+                        # Type each character — keyDown (no text), char (inserts text), keyUp
                         for ch in answer:
                             await tab.send(cdp_input.dispatch_key_event(
                                 type_='keyDown',
-                                key=ch,
-                                text=ch
+                                key=ch
                             ))
                             await tab.send(cdp_input.dispatch_key_event(
                                 type_='char',
