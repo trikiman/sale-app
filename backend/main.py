@@ -1388,20 +1388,24 @@ async def auth_captcha(req: AuthCaptchaRequest):
                         iframe_w = bounds['w']
                         iframe_h = bounds['h']
                         
-                        # The input field is typically near the top-center of the advanced captcha iframe
-                        # Click on the input field area (approximately center-x, ~30% from top)
+                        # The captcha popup is centered in the iframe.
+                        # Based on actual screenshots of the SmartCaptcha layout:
+                        # - Captcha image: ~25-35% from top
+                        # - "Enter the code" text: ~45% from top
+                        # - Input field: ~53% from top (this is where we need to click!)
+                        # - Submit button: ~66% from top
                         input_x = iframe_x + iframe_w * 0.5
-                        input_y = iframe_y + iframe_h * 0.3
+                        input_y = iframe_y + iframe_h * 0.53
                         
                         logger.info(f"Clicking captcha input at ({input_x}, {input_y}) iframe=({iframe_x},{iframe_y},{iframe_w}x{iframe_h})")
                         
-                        # Click to focus the input
+                        # Triple-click to focus and select all existing text in input
                         await tab.send(cdp_input.dispatch_mouse_event(
                             type_='mousePressed',
                             x=input_x,
                             y=input_y,
                             button=cdp_input.MouseButton.LEFT,
-                            click_count=1
+                            click_count=3
                         ))
                         await asyncio.sleep(0.05)
                         await tab.send(cdp_input.dispatch_mouse_event(
@@ -1409,19 +1413,16 @@ async def auth_captcha(req: AuthCaptchaRequest):
                             x=input_x,
                             y=input_y,
                             button=cdp_input.MouseButton.LEFT,
-                            click_count=1
+                            click_count=3
                         ))
-                        await asyncio.sleep(0.3)
+                        await asyncio.sleep(0.5)
                         
-                        # Select all existing text (Ctrl+A) and delete it
-                        await tab.send(cdp_input.dispatch_key_event(type_='keyDown', key='a', code='KeyA', modifiers=2))
-                        await tab.send(cdp_input.dispatch_key_event(type_='keyUp', key='a', code='KeyA', modifiers=2))
-                        await asyncio.sleep(0.05)
+                        # Delete any selected text
                         await tab.send(cdp_input.dispatch_key_event(type_='keyDown', key='Backspace', code='Backspace'))
                         await tab.send(cdp_input.dispatch_key_event(type_='keyUp', key='Backspace', code='Backspace'))
                         await asyncio.sleep(0.1)
                         
-                        # Type each character of the answer
+                        # Type each character of the answer using insertText for reliability
                         for ch in answer:
                             await tab.send(cdp_input.dispatch_key_event(
                                 type_='keyDown',
@@ -1429,17 +1430,27 @@ async def auth_captcha(req: AuthCaptchaRequest):
                                 text=ch
                             ))
                             await tab.send(cdp_input.dispatch_key_event(
+                                type_='char',
+                                key=ch,
+                                text=ch
+                            ))
+                            await tab.send(cdp_input.dispatch_key_event(
                                 type_='keyUp',
                                 key=ch
                             ))
-                            await asyncio.sleep(0.05)
+                            await asyncio.sleep(0.03)
                         
                         logger.info(f"Typed captcha answer '{answer}' via CDP Input events")
                         await asyncio.sleep(0.3)
                         
-                        # Now click the submit button - typically near bottom-center of the iframe
+                        # Take screenshot to verify typing worked
+                        try:
+                            await tab.save_screenshot(os.path.join(DATA_DIR, f"login_{user_id}_5a_after_typing.png"))
+                        except: pass
+                        
+                        # Now click the submit button — at ~66% from top of iframe
                         submit_x = iframe_x + iframe_w * 0.5
-                        submit_y = iframe_y + iframe_h * 0.75
+                        submit_y = iframe_y + iframe_h * 0.66
                         
                         logger.info(f"Clicking captcha submit at ({submit_x}, {submit_y})")
                         
