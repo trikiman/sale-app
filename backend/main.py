@@ -1357,107 +1357,149 @@ async def auth_captcha(req: AuthCaptchaRequest):
         """)
         logger.info(f"Main page captcha input result: {typed_ok}")
 
-        # If not found on main page, try SmartCaptcha iframes via CDP Target
+        # If not found on main page, try SmartCaptcha iframes via execution contexts
         if typed_ok != 'OK':
-            logger.info("Captcha input not on main page, searching iframes via CDP Target...")
+            logger.info("Captcha input not on main page, trying iframe execution contexts...")
             try:
-                import nodriver.cdp.target as cdp_target
                 import nodriver.cdp.runtime as cdp_runtime
+                import nodriver.cdp.page as cdp_page
                 
-                # Get all targets (including cross-origin iframes)
-                all_targets = await tab.send(cdp_target.get_targets())
-                logger.info(f"Total CDP targets: {len(all_targets) if all_targets else 0}")
+                # Enable Runtime to get execution contexts for all frames
+                await tab.send(cdp_runtime.enable())
+                await asyncio.sleep(0.3)
                 
-                for t in (all_targets or []):
-                    t_url = getattr(t, 'url', '') or ''
-                    t_type = getattr(t, 'type', '') or ''
-                    t_id = getattr(t, 'target_id', '') or ''
-                    logger.info(f"Target: type={t_type}, id={str(t_id)[:20]}, url={t_url[:120]}")
+                # Get frame tree — but also look into the frames via DOM.getDocument
+                # Actually let's try a different approach:
+                # Find iframe elements and get their frame IDs via DOM
+                iframe_info = await safe_evaluate(tab, """
+                    (function() {
+                        var iframes = document.querySelectorAll('iframe');
+                        var info = [];
+                        for (var i = 0; i < iframes.length; i++) {
+                            info.push({
+                                src: iframes[i].src || '',
+                                id: iframes[i].id || '',
+                                name: iframes[i].name || '',
+                                idx: i
+                            });
+                        }
+                        return JSON.stringify(info);
+                    })()
+                """)
+                logger.info(f"Iframe info: {iframe_info}")
+                
+                if iframe_info and isinstance(iframe_info, str):
+                    import json as _json
+                    try:
+                        iframes_list = _json.loads(iframe_info)
+                    except:
+                        iframes_list = []
                     
-                    # Find the SmartCaptcha "advanced" iframe (contains the actual captcha input)
-                    if 'captcha' in t_url.lower() and 'advanced' in t_url.lower():
-                        logger.info(f"Found SmartCaptcha advanced iframe target: {t_url[:120]}")
-                        try:
-                            # Attach to this target
-                            session_id = await tab.send(cdp_target.attach_to_target(
-                                target_id=t_id,
-                                flatten=True
-                            ))
-                            logger.info(f"Attached to captcha iframe, session: {session_id}")
-                            
-                            # Now we need to send Runtime.evaluate via this session
-                            # Use the browser connection to send commands to this session
-                            js_fill = f"""
-                                (function() {{
-                                    var inp = document.querySelector('input');
-                                    if (!inp) return 'NO_INPUT_IN_IFRAME:' + document.body.innerHTML.substring(0, 200);
-                                    inp.focus();
-                                    inp.value = '';
-                                    try {{
-                                        var setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
-                                        setter.call(inp, '{answer}');
-                                    }} catch(e) {{
-                                        inp.value = '{answer}';
-                                    }}
-                                    inp.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                                    inp.dispatchEvent(new Event('change', {{ bubbles: true }}));
-                                    // Also try clicking submit
-                                    var btn = document.querySelector('button[type="submit"], button');
-                                    if (btn) btn.click();
-                                    return 'OK:placeholder=' + inp.placeholder + ',btn=' + (btn ? 'clicked' : 'none');
-                                }})()
-                            """
-                            
-                            # Find the tab/page for this target in browser.targets and evaluate JS
-                            for page in browser.targets:
-                                page_url = getattr(page, 'url', '') or ''
-                                if 'captcha' in page_url.lower() and 'advanced' in page_url.lower():
-                                    logger.info(f"Found captcha page in browser.targets: {page_url[:100]}")
-                                    iframe_result = await safe_evaluate(page, js_fill)
-                                    logger.info(f"Iframe evaluate result: {iframe_result}")
-                                    if iframe_result and str(iframe_result).startswith('OK'):
-                                        typed_ok = 'OK'
-                                        break
-                            
-                            if typed_ok != 'OK':
-                                # Detach and try next approach
-                                try:
-                                    await tab.send(cdp_target.detach_from_target(session_id=session_id))
-                                except: pass
-                                
-                        except Exception as ae:
-                            logger.warning(f"CDP target attach failed: {ae}", exc_info=True)
-                    
-                    # Also try the "backend" iframe target as fallback
-                    elif 'captcha' in t_url.lower() and typed_ok != 'OK':
-                        logger.info(f"Trying captcha backend iframe: {t_url[:120]}")
-                        try:
-                            for page in browser.targets:
-                                page_url = getattr(page, 'url', '') or ''
-                                if 'captcha' in page_url.lower():
-                                    logger.info(f"Trying page: {page_url[:100]}")
-                                    iframe_result = await safe_evaluate(page, f"""
-                                        (function() {{
-                                            var inp = document.querySelector('input');
-                                            if (!inp) return 'NO_INPUT:' + document.querySelectorAll('*').length + ' elements';
-                                            inp.focus();
-                                            inp.value = '{answer}';
-                                            inp.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                                            return 'OK';
-                                        }})()
-                                    """)
-                                    logger.info(f"Captcha page result: {iframe_result}")
-                                    if iframe_result and str(iframe_result).startswith('OK'):
-                                        typed_ok = 'OK'
-                                        break
-                        except Exception as pe:
-                            logger.warning(f"Browser targets iteration failed: {pe}")
-                    
-                    if typed_ok == 'OK':
-                        break
+                    for iframe_data in iframes_list:
+                        iframe_src = iframe_data.get('src', '')
+                        iframe_idx = iframe_data.get('idx', 0)
+                        logger.info(f"Iframe #{iframe_idx}: src={iframe_src[:120]}")
                         
+                        if 'captcha' in iframe_src.lower() and 'advanced' in iframe_src.lower():
+                            logger.info(f"Found SmartCaptcha advanced iframe at index {iframe_idx}")
+                            
+                            # Use contentWindow.postMessage or direct DOM access workaround:
+                            # Since cross-origin blocks contentDocument, use CDP to get the frame node
+                            # and then resolve its execution context
+                            
+                            import nodriver.cdp.dom as cdp_dom
+                            
+                            # Get the document
+                            doc = await tab.send(cdp_dom.get_document(depth=-1, pierce=True))
+                            logger.info(f"DOM document node type: {type(doc)}")
+                            
+                            # Find iframe nodes and their content documents
+                            # Search for the iframe with captcha src
+                            def find_captcha_frame(node, depth=0):
+                                """Recursively search DOM for captcha iframe content document"""
+                                results = []
+                                node_name = getattr(node, 'node_name', '') or ''
+                                # Check if this is an IFRAME
+                                if node_name.upper() == 'IFRAME':
+                                    attrs = getattr(node, 'attributes', []) or []
+                                    src = ''
+                                    for i in range(0, len(attrs) - 1, 2):
+                                        if attrs[i] == 'src':
+                                            src = attrs[i + 1]
+                                    if 'captcha' in src.lower():
+                                        # Get the content document
+                                        content_doc = getattr(node, 'content_document', None)
+                                        if content_doc:
+                                            frame_id = getattr(content_doc, 'frame_id', None)
+                                            node_id = getattr(content_doc, 'node_id', None)
+                                            results.append({
+                                                'src': src, 
+                                                'frame_id': frame_id,
+                                                'node_id': node_id
+                                            })
+                                            logger.info(f"Found captcha iframe content_doc: frame_id={frame_id}, src={src[:100]}")
+                                # Recurse into children
+                                children = getattr(node, 'children', []) or []
+                                for child in children:
+                                    results.extend(find_captcha_frame(child, depth + 1))
+                                return results
+                            
+                            captcha_frames = find_captcha_frame(doc)
+                            logger.info(f"Found {len(captcha_frames)} captcha frame content docs")
+                            
+                            for cf in captcha_frames:
+                                frame_id = cf.get('frame_id')
+                                if not frame_id:
+                                    continue
+                                
+                                # Check if 'advanced' in src (the one with the input)
+                                if 'advanced' not in cf.get('src', '').lower():
+                                    continue
+                                
+                                logger.info(f"Creating isolated world in captcha frame: {frame_id}")
+                                try:
+                                    # The frame_id might be a FrameId object, convert to string
+                                    fid_str = str(frame_id)
+                                    world_id = await tab.send(cdp_page.create_isolated_world(
+                                        frame_id=fid_str,
+                                        world_name='captcha_fill'
+                                    ))
+                                    logger.info(f"Created world {world_id} in frame {fid_str}")
+                                    
+                                    # Evaluate JS to fill the captcha input
+                                    result = await tab.send(cdp_runtime.evaluate(
+                                        expression=f"""
+                                            (function() {{
+                                                var inp = document.querySelector('input');
+                                                if (!inp) return 'NO_INPUT:' + document.body.innerHTML.substring(0, 300);
+                                                inp.focus();
+                                                var setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                                                setter.call(inp, '{answer}');
+                                                inp.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                                inp.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                                                // Click submit
+                                                var btn = document.querySelector('button[type="submit"], button');
+                                                if (btn) btn.click();
+                                                return 'OK:' + inp.placeholder + ',btn=' + (btn ? btn.textContent : 'none');
+                                            }})()
+                                        """,
+                                        context_id=world_id
+                                    ))
+                                    
+                                    val = result[0].value if result and hasattr(result[0], 'value') else str(result)
+                                    logger.info(f"Captcha frame evaluate result: {val}")
+                                    
+                                    if val and str(val).startswith('OK'):
+                                        typed_ok = 'OK'
+                                        break
+                                except Exception as we:
+                                    logger.warning(f"Isolated world evaluation failed: {we}", exc_info=True)
+                            
+                            if typed_ok == 'OK':
+                                break
+                                
             except Exception as te:
-                logger.error(f"CDP target search failed: {te}", exc_info=True)
+                logger.error(f"Execution context search failed: {te}", exc_info=True)
 
         if typed_ok != 'OK':
             logger.error(f"Could not find captcha input field anywhere. Last result: {typed_ok}")
