@@ -1121,32 +1121,71 @@ async def auth_login(req: AuthPhoneRequest):
                 if fsize > 0:
                     # Try to crop just the SmartCaptcha popup for readability
                     try:
-                        # Get popup bounds from JS
+                        # Get popup bounds from JS — multiple strategies
                         bounds_json = await safe_evaluate(tab, """
                             (function() {
-                                // Look for the SmartCaptcha popup/modal
-                                var el = document.querySelector('[class*="SmartCaptcha"], [class*="smartcaptcha"], [class*="captcha-popup"], [class*="Modal"]');
-                                if (!el) {
-                                    var all = document.querySelectorAll('div, section');
-                                    for (var j = 0; j < all.length; j++) {
-                                        var t = all[j].innerText || '';
-                                        if ((t.includes('SmartCaptcha') || t.includes('Enter the text')) && all[j].offsetWidth > 200 && all[j].offsetWidth < 800) {
-                                            el = all[j]; break;
+                                var best = null;
+                                var bestArea = 0;
+                                
+                                // Strategy 1: Find the captcha iframe (Yandex SmartCaptcha)
+                                var iframes = document.querySelectorAll('iframe');
+                                for (var i = 0; i < iframes.length; i++) {
+                                    var src = (iframes[i].src || '').toLowerCase();
+                                    if (src.indexOf('captcha') > -1 || src.indexOf('smartcaptcha') > -1) {
+                                        var r = iframes[i].getBoundingClientRect();
+                                        if (r.width > 100 && r.height > 100) {
+                                            var area = r.width * r.height;
+                                            if (area > bestArea) { best = r; bestArea = area; }
                                         }
                                     }
                                 }
-                                // Fallback: find the captcha iframe itself
-                                if (!el) {
-                                    var iframes = document.querySelectorAll('iframe');
-                                    for (var i = 0; i < iframes.length; i++) {
-                                        if (iframes[i].src && iframes[i].src.indexOf('captcha') > -1) {
-                                            el = iframes[i]; break;
+                                
+                                // Strategy 2: Find modal/overlay containers that are visible and centered
+                                var divs = document.querySelectorAll('div');
+                                for (var j = 0; j < divs.length; j++) {
+                                    var d = divs[j];
+                                    var style = window.getComputedStyle(d);
+                                    // Look for fixed/absolute positioned overlays
+                                    if (style.position === 'fixed' || style.position === 'absolute') {
+                                        var z = parseInt(style.zIndex) || 0;
+                                        if (z >= 100 || style.display !== 'none') {
+                                            var rb = d.getBoundingClientRect();
+                                            // Must be reasonably sized (not full-page backdrop)
+                                            if (rb.width > 200 && rb.width < window.innerWidth * 0.9 &&
+                                                rb.height > 200 && rb.height < window.innerHeight * 0.9) {
+                                                var a2 = rb.width * rb.height;
+                                                if (a2 > bestArea) { best = rb; bestArea = a2; }
+                                            }
                                         }
                                     }
                                 }
-                                if (el) {
-                                    var r = el.getBoundingClientRect();
-                                    return JSON.stringify({x: Math.max(0, r.x - 20), y: Math.max(0, r.y - 20), w: r.width + 40, h: r.height + 40});
+                                
+                                // Strategy 3: Look for elements with captcha-related text
+                                if (!best || bestArea < 40000) {
+                                    var all = document.querySelectorAll('div, section, form');
+                                    for (var k = 0; k < all.length; k++) {
+                                        var txt = (all[k].innerText || '').substring(0, 200);
+                                        if (txt.includes('Enter the text') || txt.includes('enter the text') ||
+                                            txt.includes('Введите текст') || txt.includes('captcha') ||
+                                            txt.includes('I am not a robot') || txt.includes('SmartCaptcha')) {
+                                            var rc = all[k].getBoundingClientRect();
+                                            if (rc.width > 200 && rc.height > 150) {
+                                                var a3 = rc.width * rc.height;
+                                                if (a3 > bestArea) { best = rc; bestArea = a3; }
+                                            }
+                                        }
+                                    }
+                                }
+                                
+                                if (best && bestArea > 40000) {
+                                    // Add generous padding
+                                    var pad = 30;
+                                    return JSON.stringify({
+                                        x: Math.max(0, best.x - pad),
+                                        y: Math.max(0, best.y - pad),
+                                        w: best.width + pad * 2,
+                                        h: best.height + pad * 2
+                                    });
                                 }
                                 return null;
                             })()
@@ -1161,7 +1200,6 @@ async def auth_login(req: AuthPhoneRequest):
                                 img = Image.open(captcha_path)
                                 img_w, img_h = img.size
                                 # The screenshot may have device pixel ratio scaling
-                                # bounds are in CSS pixels, screenshot is in actual pixels
                                 scale = img_w / 1280.0 if img_w > 1280 else 1.0
                                 crop_x = max(0, int(bounds['x'] * scale))
                                 crop_y = max(0, int(bounds['y'] * scale))
@@ -1179,6 +1217,24 @@ async def auth_login(req: AuthPhoneRequest):
                                     logger.info(f"Cropped captcha: {crop_x},{crop_y} -> {crop_r},{crop_b}, scaled 2x to {new_w}x{new_h}")
                                     with open(crop_path, 'rb') as f:
                                         captcha_b64 = base64.b64encode(f.read()).decode('utf-8')
+                        
+                        # If bounds detection failed, use center crop as fallback
+                        if not captcha_b64:
+                            from PIL import Image
+                            img = Image.open(captcha_path)
+                            img_w, img_h = img.size
+                            # Center crop — captcha popup is usually centered
+                            margin_x = int(img_w * 0.2)  # 20% margin on each side
+                            margin_y = int(img_h * 0.15) # 15% margin top/bottom
+                            cropped = img.crop((margin_x, margin_y, img_w - margin_x, img_h - margin_y))
+                            new_w = cropped.width * 2
+                            new_h = cropped.height * 2
+                            cropped = cropped.resize((new_w, new_h), Image.LANCZOS)
+                            crop_path = os.path.join(DATA_DIR, f"login_{user_id}_captcha_crop.png")
+                            cropped.save(crop_path, 'PNG')
+                            logger.info(f"Center-cropped captcha fallback: {margin_x},{margin_y} -> {img_w-margin_x},{img_h-margin_y}, scaled 2x to {new_w}x{new_h}")
+                            with open(crop_path, 'rb') as f:
+                                captcha_b64 = base64.b64encode(f.read()).decode('utf-8')
                     except Exception as crop_err:
                         logger.warning(f"Captcha crop failed, using full screenshot: {crop_err}")
                     
@@ -1520,12 +1576,28 @@ async def auth_captcha(req: AuthCaptchaRequest):
                 })()
             """)
             if still_captcha:
-                # Captcha still showing — wrong answer. Take new screenshot
+                # Captcha still showing — wrong answer. Take new screenshot + crop
                 import base64
                 captcha_path = os.path.join(DATA_DIR, f"login_{user_id}_captcha.png")
                 await tab.save_screenshot(captcha_path)
-                with open(captcha_path, 'rb') as f:
-                    captcha_b64 = base64.b64encode(f.read()).decode('utf-8')
+                captcha_b64 = None
+                try:
+                    from PIL import Image
+                    img = Image.open(captcha_path)
+                    img_w, img_h = img.size
+                    margin_x = int(img_w * 0.2)
+                    margin_y = int(img_h * 0.15)
+                    cropped = img.crop((margin_x, margin_y, img_w - margin_x, img_h - margin_y))
+                    cropped = cropped.resize((cropped.width * 2, cropped.height * 2), Image.LANCZOS)
+                    crop_path = os.path.join(DATA_DIR, f"login_{user_id}_captcha_crop.png")
+                    cropped.save(crop_path, 'PNG')
+                    with open(crop_path, 'rb') as f:
+                        captcha_b64 = base64.b64encode(f.read()).decode('utf-8')
+                except Exception:
+                    pass
+                if not captcha_b64:
+                    with open(captcha_path, 'rb') as f:
+                        captcha_b64 = base64.b64encode(f.read()).decode('utf-8')
                 return {
                     "success": True,
                     "need_captcha": True,
