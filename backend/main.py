@@ -1467,13 +1467,12 @@ async def auth_captcha(req: AuthCaptchaRequest):
                                 
                                 logger.info(f"Creating isolated world in captcha frame: {frame_id}")
                                 try:
-                                    # The frame_id might be a FrameId object, convert to string
-                                    fid_str = str(frame_id)
+                                    # Pass frame_id directly — it's already a FrameId object from DOM
                                     world_id = await tab.send(cdp_page.create_isolated_world(
-                                        frame_id=fid_str,
+                                        frame_id=frame_id,
                                         world_name='captcha_fill'
                                     ))
-                                    logger.info(f"Created world {world_id} in frame {fid_str}")
+                                    logger.info(f"Created world {world_id} in frame {frame_id}")
                                     
                                     # Evaluate JS to fill the captcha input
                                     result = await tab.send(cdp_runtime.evaluate(
