@@ -835,6 +835,11 @@ class AuthLogoutRequest(BaseModel):
     user_id: str
 
 
+class AuthCaptchaRequest(BaseModel):
+    user_id: str
+    captcha_answer: str
+
+
 class TechLoginRequest(BaseModel):
     phone: str
 
@@ -1066,12 +1071,64 @@ async def auth_login(req: AuthPhoneRequest):
         else:
             logger.error("Could not find submit button on VkusVill login page")
 
-        await asyncio.sleep(5)  # Wait for SMS trigger
+        await asyncio.sleep(5)  # Wait for SMS trigger or captcha
         
         # DEBUG: After click
         try:
             await tab.save_screenshot(os.path.join(DATA_DIR, f"login_{user_id}_3_after_click.png"))
         except: pass
+
+        # Check for CAPTCHA (Yandex SmartCaptcha) — appears as a popup
+        captcha_detected = False
+        try:
+            captcha_result = await safe_evaluate(tab, """
+                (function() {
+                    // SmartCaptcha creates an iframe or div overlay
+                    var captchaImg = document.querySelector('.smartcaptcha img, .captcha__image img, [class*="captcha"] img');
+                    var captchaText = document.body.innerText;
+                    if (captchaImg || captchaText.includes('Enter the code from the image') ||
+                        captchaText.includes('SmartCaptcha') || captchaText.includes('Введите код с картинки')) {
+                        return 'CAPTCHA';
+                    }
+                    return false;
+                })()
+            """)
+            if captcha_result == 'CAPTCHA':
+                captcha_detected = True
+        except Exception:
+            pass
+
+        if captcha_detected:
+            import base64
+            # Take full page screenshot for captcha
+            try:
+                captcha_path = os.path.join(DATA_DIR, f"login_{user_id}_captcha.png")
+                await tab.save_screenshot(captcha_path)
+                with open(captcha_path, 'rb') as f:
+                    captcha_b64 = base64.b64encode(f.read()).decode('utf-8')
+            except Exception as _e:
+                logger.error(f"Captcha screenshot failed: {_e}")
+                captcha_b64 = None
+
+            if captcha_b64:
+                # Save session for captcha submission — don't close Chrome!
+                _login_sessions[user_id] = {
+                    "browser": browser,
+                    "tab": tab,
+                    "phone": phone_raw,
+                    "force_sms": req.force_sms,
+                    "created_at": _time.time(),
+                    "proc": _chrome_proc,
+                    "profile_dir": _user_data_dir,
+                    "awaiting_captcha": True,
+                }
+                return {
+                    "success": True,
+                    "need_captcha": True,
+                    "captcha_image": f"data:image/png;base64,{captcha_b64}",
+                    "message": "Решите капчу для продолжения",
+                }
+            # If screenshot failed, continue to SMS polling (might work without captcha)
 
         # Immediate rate-limit check — the error dialog appears right after click
         # (don't wait 30s to tell the user their number is blocked)
@@ -1099,8 +1156,6 @@ async def auth_login(req: AuthPhoneRequest):
             pass  # If early check fails, continue to polling loop
 
         # Wait up to 30s for ACTUAL page transition to SMS code input
-        # (NOT just checking input[name="SMS"] existence — it's a false positive,
-        #  it exists on page load. Check for VISIBLE SMS input or "Введите код" text)
         sms_found = False
         for _ in range(30):
             await asyncio.sleep(1)
@@ -1176,6 +1231,168 @@ async def auth_login(req: AuthPhoneRequest):
             try: shutil.rmtree(_user_data_dir, ignore_errors=True)
             except Exception: pass
         raise HTTPException(status_code=500, detail="Ошибка при попытке входа")
+
+
+@app.post("/api/auth/captcha")
+async def auth_captcha(req: AuthCaptchaRequest):
+    """Submit captcha answer to VkusVill and wait for SMS code input."""
+    import asyncio
+
+    user_id = req.user_id
+    entry = _login_sessions.get(user_id)
+    if not entry or not entry.get("awaiting_captcha"):
+        raise HTTPException(status_code=400, detail="Нет активной капчи. Начните вход заново.")
+
+    tab = entry["tab"]
+    browser = entry["browser"]
+    answer = req.captcha_answer.strip()
+
+    if not answer:
+        raise HTTPException(status_code=400, detail="Введите ответ на капчу")
+
+    try:
+        # Type captcha answer into the input field
+        captcha_input = await tab.select('input[placeholder*="letters"], input[placeholder*="букв"], input.captcha__text-input, [class*="captcha"] input[type="text"]', timeout=3)
+        if not captcha_input:
+            # Fallback: try any text input in the captcha area
+            captcha_input = await tab.select('.smartcaptcha input, [class*="Captcha"] input', timeout=2)
+
+        if captcha_input:
+            await captcha_input.mouse_click()
+            await asyncio.sleep(0.3)
+            # Clear any existing value
+            await tab.send(uc.cdp.input_.dispatch_key_event(type_='keyDown', key='a', code='KeyA', modifiers=2))  # Ctrl+A
+            await tab.send(uc.cdp.input_.dispatch_key_event(type_='keyUp', key='a', code='KeyA'))
+            await asyncio.sleep(0.1)
+            # Type the answer character by character
+            for ch in answer:
+                await tab.send(uc.cdp.input_.dispatch_key_event(
+                    type_='keyDown', key=ch, text=ch,
+                ))
+                await asyncio.sleep(0.03)
+                await tab.send(uc.cdp.input_.dispatch_key_event(
+                    type_='keyUp', key=ch,
+                ))
+                await asyncio.sleep(0.05)
+            await asyncio.sleep(0.5)
+        else:
+            logger.error("Could not find captcha input field")
+            raise HTTPException(status_code=500, detail="Не найдено поле ввода капчи. Попробуйте заново.")
+
+        # Click Submit button
+        submit_btn = await tab.select('button:has-text("Submit"), button:has-text("Подтвердить"), .captcha__submit, [class*="captcha"] button', timeout=2)
+        if not submit_btn:
+            # Fallback: try clicking by evaluating
+            await safe_evaluate(tab, """
+                var btns = document.querySelectorAll('button');
+                for (var b of btns) {
+                    if (b.textContent.trim() === 'Submit' || b.textContent.trim() === 'Подтвердить') {
+                        b.click(); break;
+                    }
+                }
+            """)
+        else:
+            await submit_btn.click()
+
+        await asyncio.sleep(5)  # Wait for captcha validation + SMS trigger
+
+        # DEBUG screenshot
+        try:
+            await tab.save_screenshot(os.path.join(DATA_DIR, f"login_{user_id}_5_after_captcha.png"))
+        except: pass
+
+        # Check if captcha was wrong (captcha still visible)
+        try:
+            still_captcha = await safe_evaluate(tab, """
+                (function() {
+                    var t = document.body.innerText;
+                    return t.includes('SmartCaptcha') || t.includes('Enter the code from the image') || t.includes('Введите код с картинки');
+                })()
+            """)
+            if still_captcha:
+                # Captcha still showing — wrong answer. Take new screenshot
+                import base64
+                captcha_path = os.path.join(DATA_DIR, f"login_{user_id}_captcha.png")
+                await tab.save_screenshot(captcha_path)
+                with open(captcha_path, 'rb') as f:
+                    captcha_b64 = base64.b64encode(f.read()).decode('utf-8')
+                return {
+                    "success": True,
+                    "need_captcha": True,
+                    "captcha_image": f"data:image/png;base64,{captcha_b64}",
+                    "message": "Неверная капча. Попробуйте ещё раз.",
+                }
+        except Exception:
+            pass
+
+        # Check for rate limit
+        try:
+            page_text = await safe_evaluate(tab, "document.body.innerText")
+            if isinstance(page_text, str):
+                if 'заблокирован' in page_text or 'суточный лимит' in page_text:
+                    try: browser.stop()
+                    except: pass
+                    _login_sessions.pop(user_id, None)
+                    raise HTTPException(status_code=429, detail="Исчерпан суточный лимит SMS. Попробуйте завтра.")
+        except HTTPException:
+            raise
+        except Exception:
+            pass
+
+        # Wait up to 30s for SMS code input to appear
+        sms_found = False
+        for _ in range(30):
+            await asyncio.sleep(1)
+            try:
+                result = await safe_evaluate(tab, """
+                    (function() {
+                        var sms = document.querySelector('input[name="SMS"]');
+                        var smsVisible = sms ? (sms.offsetParent !== null &&
+                                                sms.getBoundingClientRect().height > 0) : false;
+                        var codeText = document.body.innerText.includes('Введите код');
+                        var rateLimit = document.body.innerText.includes('Превышено количество попыток');
+                        var dailyBlock = document.body.innerText.includes('заблокирован');
+                        if (rateLimit || dailyBlock) return 'RATE_LIMIT';
+                        return smsVisible || codeText ? 'OK' : false;
+                    })()
+                """)
+            except Exception:
+                result = None
+            if result == 'RATE_LIMIT':
+                try: browser.stop()
+                except: pass
+                _login_sessions.pop(user_id, None)
+                raise HTTPException(status_code=429, detail="Превышено количество попыток. Попробуйте через 3 минуты.")
+            if result == 'OK':
+                sms_found = True
+                break
+
+        if not sms_found:
+            try:
+                await tab.save_screenshot(os.path.join(DATA_DIR, f"login_{user_id}_6_no_sms.png"))
+            except: pass
+            try: browser.stop()
+            except: pass
+            _login_sessions.pop(user_id, None)
+            raise HTTPException(status_code=500, detail="Не удалось отправить SMS после капчи. Попробуйте позже.")
+
+        # Success! SMS input appeared. Update session state.
+        entry["awaiting_captcha"] = False
+        try:
+            await tab.save_screenshot(os.path.join(DATA_DIR, f"login_{user_id}_6_sms_ok.png"))
+        except: pass
+
+        return {"success": True, "need_pin": False, "message": "SMS отправлено. Введите код из SMS."}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        import traceback
+        logger.error(f"Captcha submit error: {type(e).__name__}: {e}\n{traceback.format_exc()}")
+        try: browser.stop()
+        except: pass
+        _login_sessions.pop(user_id, None)
+        raise HTTPException(status_code=500, detail="Ошибка при отправке капчи")
 
 
 @app.post("/api/auth/verify")

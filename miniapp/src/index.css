@@ -581,6 +581,15 @@ body {
   letter-spacing: 0.3em;
 }
 
+.login-captcha-img {
+  width: 100%;
+  max-width: 380px;
+  border-radius: 12px;
+  border: 1px solid var(--card-border);
+  margin: 0 auto;
+  display: block;
+}
+
 .login-btn {
   width: 100%;
   padding: 14px;
