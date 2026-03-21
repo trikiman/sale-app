@@ -1109,72 +1109,21 @@ async def auth_login(req: AuthPhoneRequest):
 
         if captcha_detected:
             import base64
-            # Crop just the captcha popup — not the full page
             captcha_b64 = None
+            
+            # Use save_screenshot (nodriver native — most reliable on low-memory servers)
+            captcha_path = os.path.join(DATA_DIR, f"login_{user_id}_captcha.jpg")
             try:
-                # Find captcha popup bounds via JS
-                # Return bounds as JSON string to avoid safe_evaluate serialization issues
-                bounds_json = await safe_evaluate(tab, """
-                    (function() {
-                        var el = document.querySelector('[class*="SmartCaptcha"], [class*="smartcaptcha"], [class*="captcha-popup"]');
-                        if (!el) {
-                            var all = document.querySelectorAll('div, section');
-                            for (var j = 0; j < all.length; j++) {
-                                if (all[j].innerText && all[j].innerText.includes('SmartCaptcha') && all[j].offsetWidth < 600) {
-                                    el = all[j]; break;
-                                }
-                            }
-                        }
-                        if (el) {
-                            var r = el.getBoundingClientRect();
-                            return JSON.stringify({x: Math.max(0, r.x - 10), y: Math.max(0, r.y - 10), w: r.width + 20, h: r.height + 20});
-                        }
-                        return null;
-                    })()
-                """)
-                logger.info(f"Captcha popup bounds raw: {bounds_json}")
-                popup_bounds = None
-                if bounds_json and isinstance(bounds_json, str):
-                    try:
-                        import json as _json
-                        popup_bounds = _json.loads(bounds_json)
-                    except Exception:
-                        pass
-
-                if popup_bounds and isinstance(popup_bounds, dict) and popup_bounds.get('w', 0) > 50:
-                    # Use CDP to screenshot just the popup area
-                    import nodriver.cdp.page as cdp_page
-                    clip = cdp_page.Viewport(
-                        x=float(popup_bounds['x']),
-                        y=float(popup_bounds['y']),
-                        width=float(popup_bounds['w']),
-                        height=float(popup_bounds['h']),
-                        scale=1.0  # 1x to avoid memory issues
-                    )
-                    try:
-                        b64_data = await asyncio.wait_for(
-                            tab.send(cdp_page.capture_screenshot(format_='jpeg', quality=85, clip=clip)),
-                            timeout=10
-                        )
-                        if b64_data:
-                            captcha_b64 = b64_data
-                            logger.info(f"Captcha cropped screenshot: {len(captcha_b64)} chars b64")
-                    except asyncio.TimeoutError:
-                        logger.warning("Captcha screenshot timed out after 10s, falling back to full page")
-                
-                # Fallback: full page screenshot
-                if not captcha_b64:
-                    logger.info("Falling back to full-page captcha screenshot")
-                    captcha_path = os.path.join(DATA_DIR, f"login_{user_id}_captcha.png")
-                    await tab.save_screenshot(captcha_path)
-                    fsize = os.path.getsize(captcha_path) if os.path.exists(captcha_path) else 0
-                    if fsize > 0:
-                        with open(captcha_path, 'rb') as f:
-                            captcha_b64 = base64.b64encode(f.read()).decode('utf-8')
-                            
+                await asyncio.wait_for(tab.save_screenshot(captcha_path), timeout=15)
+                fsize = os.path.getsize(captcha_path) if os.path.exists(captcha_path) else 0
+                logger.info(f"Captcha screenshot saved: {captcha_path}, size={fsize}")
+                if fsize > 0:
+                    with open(captcha_path, 'rb') as f:
+                        captcha_b64 = base64.b64encode(f.read()).decode('utf-8')
+            except asyncio.TimeoutError:
+                logger.warning("save_screenshot timed out after 15s")
             except Exception as _e:
                 logger.error(f"Captcha screenshot failed: {_e}")
-                captcha_b64 = None
 
             if captcha_b64:
                 # Save session for captcha submission — don't close Chrome!
