@@ -1314,12 +1314,29 @@ async def auth_captcha(req: AuthCaptchaRequest):
         raise HTTPException(status_code=400, detail="Введите ответ на капчу")
 
     try:
-        # Type captcha answer using JS — more reliable than CSS selector
+        # First, dump page info for debugging
+        page_info = await safe_evaluate(tab, """
+            (function() {
+                var iframes = document.querySelectorAll('iframe');
+                var info = 'Iframes: ' + iframes.length;
+                for (var i = 0; i < iframes.length; i++) {
+                    info += ' | src=' + (iframes[i].src || 'none').substring(0, 100);
+                }
+                var inputs = document.querySelectorAll('input');
+                info += ' | Inputs: ' + inputs.length;
+                for (var j = 0; j < inputs.length; j++) {
+                    info += ' | ' + inputs[j].type + ':' + (inputs[j].placeholder || '').substring(0, 50);
+                }
+                return info;
+            })()
+        """)
+        logger.info(f"Page info for captcha: {page_info}")
+
+        # Try main page first
         typed_ok = await safe_evaluate(tab, f"""
             (function() {{
-                var inp = document.querySelector('input[placeholder*="letters"], input[placeholder*="букв"], input[placeholder*="Uppercase"]');
+                var inp = document.querySelector('input[placeholder*="letters"], input[placeholder*="букв"], input[placeholder*="Uppercase"], input[placeholder*="code"]');
                 if (!inp) {{
-                    // Broader: any text input inside captcha area
                     var inputs = document.querySelectorAll('input[type="text"], input:not([type])');
                     for (var i = 0; i < inputs.length; i++) {{
                         var p = inputs[i].closest('[class*="captcha"], [class*="Captcha"], [class*="SmartCaptcha"]');
@@ -1338,10 +1355,89 @@ async def auth_captcha(req: AuthCaptchaRequest):
                 return 'NOT_FOUND';
             }})()
         """)
-        logger.info(f"Captcha input result: {typed_ok}")
+        logger.info(f"Main page captcha input result: {typed_ok}")
+
+        # If not found on main page, try iframes via nodriver targets
+        if typed_ok != 'OK':
+            logger.info("Captcha input not on main page, searching iframes...")
+            try:
+                # Get all browser targets (frames, iframes, etc.)
+                targets = await browser.targets
+                logger.info(f"Browser targets: {len(targets) if targets else 0}")
+                iframe_found = False
+                for target in (targets or []):
+                    target_url = getattr(target, 'url', '') or ''
+                    target_type = getattr(target, 'type', '') or ''
+                    if 'captcha' in target_url.lower() or 'smartcaptcha' in target_url.lower():
+                        logger.info(f"Found captcha iframe target: {target_url[:100]}")
+                        # Connect to this target and evaluate JS
+                        try:
+                            iframe_tab = target
+                            typed_ok = await safe_evaluate(iframe_tab, f"""
+                                (function() {{
+                                    var inp = document.querySelector('input');
+                                    if (!inp) return 'NO_INPUT_IN_IFRAME';
+                                    inp.focus();
+                                    inp.value = '';
+                                    var setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                                    setter.call(inp, '{answer}');
+                                    inp.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                    inp.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                                    return 'OK';
+                                }})()
+                            """)
+                            logger.info(f"Iframe captcha input result: {typed_ok}")
+                            if typed_ok == 'OK':
+                                iframe_found = True
+                                break
+                        except Exception as ie:
+                            logger.warning(f"Iframe target interaction failed: {ie}")
+                
+                if not iframe_found and typed_ok != 'OK':
+                    # Last resort: use CDP Runtime.evaluate on all frames
+                    logger.info("Trying CDP frame execution contexts...")
+                    import nodriver.cdp.page as cdp_page
+                    frame_tree = await tab.send(cdp_page.get_frame_tree())
+                    if frame_tree and hasattr(frame_tree, 'child_frames'):
+                        for child in (frame_tree.child_frames or []):
+                            frame = child.frame if hasattr(child, 'frame') else child
+                            frame_url = getattr(frame, 'url', '') or ''
+                            frame_id = getattr(frame, 'id', '') or ''
+                            logger.info(f"Frame: id={frame_id}, url={frame_url[:100]}")
+                            if 'captcha' in frame_url.lower():
+                                # Execute JS in this frame context
+                                import nodriver.cdp.runtime as cdp_runtime
+                                try:
+                                    # Create isolated world in the iframe
+                                    world = await tab.send(cdp_page.create_isolated_world(frame_id))
+                                    result = await tab.send(cdp_runtime.evaluate(
+                                        expression=f"""
+                                            (function() {{
+                                                var inp = document.querySelector('input');
+                                                if (!inp) return 'NO_INPUT';
+                                                inp.focus();
+                                                inp.value = '';
+                                                var setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                                                setter.call(inp, '{answer}');
+                                                inp.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                                                inp.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                                                return 'OK';
+                                            }})()
+                                        """,
+                                        context_id=world
+                                    ))
+                                    val = result[0].value if result and len(result) > 0 and hasattr(result[0], 'value') else None
+                                    logger.info(f"CDP frame captcha result: {val}")
+                                    if val == 'OK':
+                                        typed_ok = 'OK'
+                                        break
+                                except Exception as fe:
+                                    logger.warning(f"CDP frame execution failed: {fe}")
+            except Exception as te:
+                logger.warning(f"Iframe target search failed: {te}")
 
         if typed_ok != 'OK':
-            logger.error("Could not find captcha input field via JS")
+            logger.error(f"Could not find captcha input field anywhere. Last result: {typed_ok}")
             raise HTTPException(status_code=500, detail="Не найдено поле ввода капчи. Попробуйте заново.")
 
         await asyncio.sleep(0.5)
