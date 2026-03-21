@@ -1435,20 +1435,8 @@ async def auth_captcha(req: AuthCaptchaRequest):
 
         await asyncio.sleep(0.5)
 
-        # Click Submit button
-        submit_btn = await tab.select('button:has-text("Submit"), button:has-text("Подтвердить"), .captcha__submit, [class*="captcha"] button', timeout=2)
-        if not submit_btn:
-            # Fallback: try clicking by evaluating
-            await safe_evaluate(tab, """
-                var btns = document.querySelectorAll('button');
-                for (var b of btns) {
-                    if (b.textContent.trim() === 'Submit' || b.textContent.trim() === 'Подтвердить') {
-                        b.click(); break;
-                    }
-                }
-            """)
-        else:
-            await submit_btn.click()
+        # Submit was already clicked via CDP Input events above
+        # No need for separate tab.select — the button is in a cross-origin iframe
 
         await asyncio.sleep(5)  # Wait for captcha validation + SMS trigger
 
