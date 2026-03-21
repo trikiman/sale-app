@@ -1134,7 +1134,7 @@ async def auth_login(req: AuthPhoneRequest):
                 return {
                     "success": True,
                     "need_captcha": True,
-                    "captcha_image": f"data:image/png;base64,{captcha_b64}",
+                    "captcha_image": f"data:image/jpeg;base64,{captcha_b64}",
                     "message": "Решите капчу для продолжения",
                 }
             # If screenshot failed, continue to SMS polling (might work without captcha)
@@ -1328,7 +1328,7 @@ async def auth_captcha(req: AuthCaptchaRequest):
                 return {
                     "success": True,
                     "need_captcha": True,
-                    "captcha_image": f"data:image/png;base64,{captcha_b64}",
+                    "captcha_image": f"data:image/jpeg;base64,{captcha_b64}",
                     "message": "Неверная капча. Попробуйте ещё раз.",
                 }
         except Exception:
