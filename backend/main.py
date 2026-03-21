@@ -1149,14 +1149,18 @@ async def auth_login(req: AuthPhoneRequest):
                         y=float(popup_bounds['y']),
                         width=float(popup_bounds['w']),
                         height=float(popup_bounds['h']),
-                        scale=2.0  # 2x for clarity
+                        scale=1.0  # 1x to avoid memory issues
                     )
-                    b64_data = await tab.send(cdp_page.capture_screenshot(
-                        format_='jpeg', quality=90, clip=clip
-                    ))
-                    if b64_data:
-                        captcha_b64 = b64_data
-                        logger.info(f"Captcha cropped screenshot: {len(captcha_b64)} chars b64")
+                    try:
+                        b64_data = await asyncio.wait_for(
+                            tab.send(cdp_page.capture_screenshot(format_='jpeg', quality=85, clip=clip)),
+                            timeout=10
+                        )
+                        if b64_data:
+                            captcha_b64 = b64_data
+                            logger.info(f"Captcha cropped screenshot: {len(captcha_b64)} chars b64")
+                    except asyncio.TimeoutError:
+                        logger.warning("Captcha screenshot timed out after 10s, falling back to full page")
                 
                 # Fallback: full page screenshot
                 if not captcha_b64:
