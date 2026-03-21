@@ -1113,20 +1113,11 @@ async def auth_login(req: AuthPhoneRequest):
             captcha_b64 = None
             try:
                 # Find captcha popup bounds via JS
-                popup_bounds = await safe_evaluate(tab, """
+                # Return bounds as JSON string to avoid safe_evaluate serialization issues
+                bounds_json = await safe_evaluate(tab, """
                     (function() {
-                        // Try multiple selectors for the captcha popup
-                        var el = document.querySelector('.SmartCaptcha-Popup, [class*="SmartCaptcha"], [class*="smartcaptcha"], [class*="captcha-popup"]');
+                        var el = document.querySelector('[class*="SmartCaptcha"], [class*="smartcaptcha"], [class*="captcha-popup"]');
                         if (!el) {
-                            // Try finding the popup by its content (the overlay container)
-                            var imgs = document.querySelectorAll('img');
-                            for (var i = 0; i < imgs.length; i++) {
-                                var p = imgs[i].closest('[role="dialog"], [class*="modal"], [class*="popup"], [class*="overlay"]');
-                                if (p) { el = p; break; }
-                            }
-                        }
-                        if (!el) {
-                            // Last resort: find any element containing "SmartCaptcha" text
                             var all = document.querySelectorAll('div, section');
                             for (var j = 0; j < all.length; j++) {
                                 if (all[j].innerText && all[j].innerText.includes('SmartCaptcha') && all[j].offsetWidth < 600) {
@@ -1136,12 +1127,19 @@ async def auth_login(req: AuthPhoneRequest):
                         }
                         if (el) {
                             var r = el.getBoundingClientRect();
-                            return {x: Math.max(0, r.x - 10), y: Math.max(0, r.y - 10), w: r.width + 20, h: r.height + 20};
+                            return JSON.stringify({x: Math.max(0, r.x - 10), y: Math.max(0, r.y - 10), w: r.width + 20, h: r.height + 20});
                         }
                         return null;
                     })()
                 """)
-                logger.info(f"Captcha popup bounds: {popup_bounds}")
+                logger.info(f"Captcha popup bounds raw: {bounds_json}")
+                popup_bounds = None
+                if bounds_json and isinstance(bounds_json, str):
+                    try:
+                        import json as _json
+                        popup_bounds = _json.loads(bounds_json)
+                    except Exception:
+                        pass
 
                 if popup_bounds and isinstance(popup_bounds, dict) and popup_bounds.get('w', 0) > 50:
                     # Use CDP to screenshot just the popup area
@@ -1316,33 +1314,37 @@ async def auth_captcha(req: AuthCaptchaRequest):
         raise HTTPException(status_code=400, detail="Введите ответ на капчу")
 
     try:
-        # Type captcha answer into the input field
-        captcha_input = await tab.select('input[placeholder*="letters"], input[placeholder*="букв"], input.captcha__text-input, [class*="captcha"] input[type="text"]', timeout=3)
-        if not captcha_input:
-            # Fallback: try any text input in the captcha area
-            captcha_input = await tab.select('.smartcaptcha input, [class*="Captcha"] input', timeout=2)
+        # Type captcha answer using JS — more reliable than CSS selector
+        typed_ok = await safe_evaluate(tab, f"""
+            (function() {{
+                var inp = document.querySelector('input[placeholder*="letters"], input[placeholder*="букв"], input[placeholder*="Uppercase"]');
+                if (!inp) {{
+                    // Broader: any text input inside captcha area
+                    var inputs = document.querySelectorAll('input[type="text"], input:not([type])');
+                    for (var i = 0; i < inputs.length; i++) {{
+                        var p = inputs[i].closest('[class*="captcha"], [class*="Captcha"], [class*="SmartCaptcha"]');
+                        if (p) {{ inp = inputs[i]; break; }}
+                    }}
+                }}
+                if (inp) {{
+                    inp.focus();
+                    inp.value = '';
+                    var nativeInputValueSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                    nativeInputValueSetter.call(inp, '{answer}');
+                    inp.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                    inp.dispatchEvent(new Event('change', {{ bubbles: true }}));
+                    return 'OK';
+                }}
+                return 'NOT_FOUND';
+            }})()
+        """)
+        logger.info(f"Captcha input result: {typed_ok}")
 
-        if captcha_input:
-            await captcha_input.mouse_click()
-            await asyncio.sleep(0.3)
-            # Clear any existing value
-            await tab.send(uc.cdp.input_.dispatch_key_event(type_='keyDown', key='a', code='KeyA', modifiers=2))  # Ctrl+A
-            await tab.send(uc.cdp.input_.dispatch_key_event(type_='keyUp', key='a', code='KeyA'))
-            await asyncio.sleep(0.1)
-            # Type the answer character by character
-            for ch in answer:
-                await tab.send(uc.cdp.input_.dispatch_key_event(
-                    type_='keyDown', key=ch, text=ch,
-                ))
-                await asyncio.sleep(0.03)
-                await tab.send(uc.cdp.input_.dispatch_key_event(
-                    type_='keyUp', key=ch,
-                ))
-                await asyncio.sleep(0.05)
-            await asyncio.sleep(0.5)
-        else:
-            logger.error("Could not find captcha input field")
+        if typed_ok != 'OK':
+            logger.error("Could not find captcha input field via JS")
             raise HTTPException(status_code=500, detail="Не найдено поле ввода капчи. Попробуйте заново.")
+
+        await asyncio.sleep(0.5)
 
         # Click Submit button
         submit_btn = await tab.select('button:has-text("Submit"), button:has-text("Подтвердить"), .captcha__submit, [class*="captcha"] button', timeout=2)
