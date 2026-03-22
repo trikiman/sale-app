@@ -1,6 +1,5 @@
 import requests
 import sys
-import time
 import io
 import random
 

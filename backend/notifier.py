@@ -7,7 +7,6 @@ import os
 import sys
 import asyncio
 import logging
-from datetime import datetime
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -223,7 +222,7 @@ class Notifier:
     
     async def run_notification_cycle(self, admin_chat_id: int = None):
         """Run a full notification cycle"""
-        logger.info(f"Running notification cycle...")
+        logger.info("Running notification cycle...")
         
         # Notify admin about new products
         new_count = await self.notify_new_products(admin_chat_id)

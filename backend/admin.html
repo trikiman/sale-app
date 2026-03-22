@@ -4,6 +4,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="VkusVill Admin Panel — manage scrapers, view product stats, and control technical login.">
+  <meta property="og:title" content="VkusVill Admin Panel">
+  <meta property="og:description" content="Manage scrapers, view product stats, and control technical login.">
+  <meta property="og:type" content="website">
   <title>VkusVill Admin</title>
   <style>
     *,
@@ -146,8 +150,8 @@
       color: #fff;
     }
 
-    .btn-purple {
-      background: #7c3aed;
+    .btn-teal {
+      background: #0d9488;
       color: #fff;
     }
 
@@ -283,7 +287,8 @@
       <h1>🛠️ VkusVill Admin Panel</h1>
       <div class="card">
         <div class="row">
-          <input type="password" id="token-input" placeholder="Admin token">
+          <label for="token-input" class="hidden">Admin token</label>
+          <input type="password" id="token-input" placeholder="Admin token" aria-label="Admin token">
           <button class="btn btn-blue" onclick="saveToken()">🔑 Войти</button>
         </div>
         <p id="auth-error" class="hidden">❌ Неверный токен</p>
@@ -294,7 +299,7 @@
     <div id="dashboard" class="hidden">
 
       <div class="row" style="justify-content:space-between; margin-bottom:12px">
-        <h1>🛠️ VkusVill Admin</h1>
+        <h2>🛠️ VkusVill Admin</h2>
         <div class="row">
           <span id="last-refresh" class="text-muted"></span>
           <button class="btn btn-gray btn-sm" onclick="logout()">Выйти</button>
@@ -348,13 +353,15 @@
         <h2>🔑 Техническая авторизация (cookies.json)</h2>
         <div id="tech-login-step1">
           <div class="row">
-            <input type="text" id="tech-phone" placeholder="Телефон (9XXXXXXXXX)">
-            <button class="btn btn-purple" id="btn-tech-login" onclick="techLogin()">📱 Отправить SMS</button>
+            <label for="tech-phone" class="hidden">Phone number</label>
+            <input type="text" id="tech-phone" placeholder="Телефон (9XXXXXXXXX)" aria-label="Телефон">
+            <button class="btn btn-teal" id="btn-tech-login" onclick="techLogin()">📱 Отправить SMS</button>
           </div>
         </div>
         <div id="tech-login-step2" class="hidden">
           <div class="row">
-            <input type="text" id="tech-code" placeholder="Код из SMS">
+            <label for="tech-code" class="hidden">SMS code</label>
+            <input type="text" id="tech-code" placeholder="Код из SMS" aria-label="Код из SMS">
             <button class="btn btn-green" id="btn-tech-verify" onclick="techVerify()">✅ Подтвердить</button>
             <button class="btn btn-gray btn-sm" onclick="techReset()">Отмена</button>
           </div>

@@ -1,5 +1,4 @@
 import requests
-import time
 
 def test_login():
     url = "http://127.0.0.1:8000/api/auth/login"
@@ -16,7 +15,7 @@ def test_login():
         
         try:
             print("Response:", response.json())
-        except Exception as e:
+        except Exception:
             print("Raw Text:", response.text)
             
     except Exception as e:

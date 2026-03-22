@@ -1,5 +1,4 @@
 import nodriver as uc
-import sys
 
 print("uc.cdp dir:", dir(uc.cdp))
 if hasattr(uc.cdp, 'input_'):

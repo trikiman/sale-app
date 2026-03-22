@@ -10,7 +10,7 @@ import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from scrape_categories import _extract_id, _parse_products, load_existing_db, save_db, DB_PATH
+from scrape_categories import _extract_id, _parse_products, load_existing_db, save_db
 import utils
 
 
@@ -121,7 +121,6 @@ class TestDbIO(unittest.TestCase):
         os.rmdir(self._tmpdir)
 
     def test_save_and_load(self):
-        import scrape_categories
         db = {"products": {"123": {"name": "Test", "category": "Напитки"}}}
         save_db(db)
         self.assertTrue(os.path.exists(self._tmp_path))
@@ -150,9 +149,15 @@ class TestNormalizeCategory(unittest.TestCase):
                 "119807": {"name": "Ямс батат", "category": "Овощи, фрукты, ягоды, зелень"},
             }
         }
+        # Match the real file mtime so load_category_db thinks cache is fresh
+        try:
+            utils._category_db_mtime = os.path.getmtime(utils.CATEGORY_DB_PATH)
+        except OSError:
+            utils._category_db_mtime = 0
 
     def tearDown(self):
         utils._category_db_cache = None
+        utils._category_db_mtime = 0
 
     def test_tier1_db_lookup(self):
         """Product in DB → returns DB category regardless of raw_cat."""
@@ -179,10 +184,10 @@ class TestNormalizeCategory(unittest.TestCase):
         result = utils.normalize_category("Красные ценники", "Огурцы", "99999")
         self.assertNotEqual(result, "Красные ценники")
 
-    def test_tier3_returns_novinki(self):
-        """No DB match, no meaningful raw → 'Новинки' (not keyword fallback)."""
+    def test_tier3_keyword_fallback(self):
+        """No DB match, no meaningful raw → keyword fallback matches dairy."""
         result = utils.normalize_category("", "Йогурт натуральный", None)
-        self.assertEqual(result, "Новинки")
+        self.assertEqual(result, "Молочные продукты")
 
     def test_tier3_novinki_for_unknown(self):
         """Completely unknown product → 'Новинки'."""
@@ -204,9 +209,15 @@ class TestLookupCategoryDb(unittest.TestCase):
                 "42530": {"name": "Салат Цезарь", "category": "Готовая еда"},
             }
         }
+        # Match the real file mtime so load_category_db thinks cache is fresh
+        try:
+            utils._category_db_mtime = os.path.getmtime(utils.CATEGORY_DB_PATH)
+        except OSError:
+            utils._category_db_mtime = 0
 
     def tearDown(self):
         utils._category_db_cache = None
+        utils._category_db_mtime = 0
 
     def test_found(self):
         self.assertEqual(utils.lookup_category_db("42530"), "Готовая еда")

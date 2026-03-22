@@ -55,7 +55,7 @@ class TestFavorites:
         )
         assert response.status_code == 200
         data = response.json()
-        assert data["is_favorite"] == True
+        assert data["is_favorite"]
         assert data["product_id"] == self.TEST_PRODUCT["product_id"]
     
     def test_toggle_favorite_removes(self):
@@ -65,12 +65,12 @@ class TestFavorites:
         
         # Add to favorites
         response1 = client.post(f"/favorites/{self.TEST_USER_ID}", json=self.TEST_PRODUCT)
-        assert response1.json()["is_favorite"] == True
+        assert response1.json()["is_favorite"]
         
         # Toggle should remove
         response2 = client.post(f"/favorites/{self.TEST_USER_ID}", json=self.TEST_PRODUCT)
         assert response2.status_code == 200
-        assert response2.json()["is_favorite"] == False
+        assert not response2.json()["is_favorite"]
     
     def test_remove_favorite(self):
         """Test removing a favorite directly"""
@@ -83,7 +83,7 @@ class TestFavorites:
         )
         assert response.status_code == 200
         data = response.json()
-        assert data["success"] == True or data["success"] == False  # May already be removed
+        assert data["success"] or not data["success"]  # May already be removed
 
 
 class TestSync:

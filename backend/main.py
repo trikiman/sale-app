@@ -498,9 +498,15 @@ async def product_details(product_id: str):
     return result
 
 
+# In-memory image cache: {url: (content_bytes, content_type, timestamp)}
+_img_cache: dict = {}
+_IMG_CACHE_MAX = 200
+_IMG_CACHE_TTL = 3600  # 1 hour
+
+
 @app.get("/api/img")
 async def proxy_image(url: str = ""):
-    """Proxy VkusVill images to bypass CDN hotlink/ORB blocking."""
+    """Proxy VkusVill images with in-memory caching."""
     import httpx
     from urllib.parse import urlparse
     if not url:
@@ -508,6 +514,15 @@ async def proxy_image(url: str = ""):
     parsed = urlparse(url)
     if parsed.scheme != "https" or parsed.hostname != "img.vkusvill.ru":
         raise HTTPException(status_code=400, detail="Invalid image URL")
+    # Check in-memory cache
+    now = _time.time()
+    cached = _img_cache.get(url)
+    if cached and (now - cached[2]) < _IMG_CACHE_TTL:
+        return Response(
+            content=cached[0],
+            media_type=cached[1],
+            headers={"Cache-Control": "public, max-age=86400", "X-Cache": "HIT"},
+        )
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(url, headers={
@@ -517,10 +532,16 @@ async def proxy_image(url: str = ""):
             if resp.status_code != 200:
                 raise HTTPException(status_code=resp.status_code, detail="Image fetch failed")
             ct = resp.headers.get("content-type", "image/webp")
+            content = resp.content
+            # Store in cache (evict oldest if full)
+            if len(_img_cache) >= _IMG_CACHE_MAX:
+                oldest_key = min(_img_cache, key=lambda k: _img_cache[k][2])
+                del _img_cache[oldest_key]
+            _img_cache[url] = (content, ct, now)
             return Response(
-                content=resp.content,
+                content=content,
                 media_type=ct,
-                headers={"Cache-Control": "public, max-age=86400"},
+                headers={"Cache-Control": "public, max-age=86400", "X-Cache": "MISS"},
             )
     except httpx.TimeoutException:
         raise HTTPException(status_code=504, detail="Image fetch timeout")
@@ -571,14 +592,21 @@ def get_products():
         # Live staleness: check source file ages at request time (not baked merge-time value)
         STALE_MINUTES = 10
         stale_files = []
+        latest_mtime = 0
         for color in ('green', 'red', 'yellow'):
             src = os.path.join(DATA_DIR, f"{color}_products.json")
             if os.path.exists(src):
-                age_min = (_time.time() - os.path.getmtime(src)) / 60
+                mtime = os.path.getmtime(src)
+                latest_mtime = max(latest_mtime, mtime)
+                age_min = (_time.time() - mtime) / 60
                 if age_min > STALE_MINUTES:
                     stale_files.append(f"{color} ({age_min:.0f}m)")
         data["dataStale"] = len(stale_files) > 0
         data["staleInfo"] = stale_files if stale_files else None
+        # Override baked updatedAt with the most recent source file mtime
+        if latest_mtime > 0:
+            from datetime import datetime, timezone
+            data["updatedAt"] = datetime.fromtimestamp(latest_mtime, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
         # Live greenMissing check (BUG-066: also check empty products, not just file existence)
         green_path = os.path.join(DATA_DIR, "green_products.json")
         if not os.path.exists(green_path):
