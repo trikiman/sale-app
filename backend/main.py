@@ -1353,9 +1353,15 @@ async def auth_login(req: AuthPhoneRequest):
             if captcha_b64:
                 # === AUTO-SOLVE: Try Gemini Vision before bothering the user ===
                 import nodriver.cdp.input_ as cdp_input
+                import time as _time2
                 auto_solved = False
+                auto_start = _time2.monotonic()
                 
                 for auto_attempt in range(3):  # Up to 3 auto-solve attempts
+                    # 1-minute timeout for the entire auto-solve process
+                    if _time2.monotonic() - auto_start > 60:
+                        logger.warning("Auto-solve timed out (>60s), falling back to user")
+                        break
                     gemini_answer = await solve_captcha_with_gemini(captcha_b64)
                     if not gemini_answer:
                         logger.info("Gemini auto-solve unavailable, falling back to user")
@@ -1363,21 +1369,28 @@ async def auth_login(req: AuthPhoneRequest):
                     
                     logger.info(f"Gemini auto-solve attempt {auto_attempt + 1}: '{gemini_answer}'")
                     
-                    # Get iframe bounds for CDP clicking
+                    # Get iframe bounds for CDP clicking — find the LARGEST visible captcha iframe
+                    # (there are 2 iframes: a hidden backend.html and the visible advanced.en.html)
                     try:
                         iframe_bounds = await safe_evaluate(tab, """
                             (function() {
                                 var iframes = document.querySelectorAll('iframe');
+                                var best = null, bestArea = 0;
                                 for (var i = 0; i < iframes.length; i++) {
                                     if (iframes[i].src && iframes[i].src.indexOf('captcha') > -1) {
                                         var rect = iframes[i].getBoundingClientRect();
-                                        return JSON.stringify({x: rect.x, y: rect.y, w: rect.width, h: rect.height});
+                                        var area = rect.width * rect.height;
+                                        if (area > bestArea) {
+                                            bestArea = area;
+                                            best = {x: rect.x, y: rect.y, w: rect.width, h: rect.height, src: iframes[i].src.substring(0, 80)};
+                                        }
                                     }
                                 }
-                                return 'NO_IFRAME';
+                                return best ? JSON.stringify(best) : 'NO_IFRAME';
                             })()
                         """)
-                    except:
+                    except Exception as iframe_err:
+                        logger.warning(f"Iframe detection failed: {iframe_err}")
                         iframe_bounds = 'NO_IFRAME'
                     
                     if not iframe_bounds or iframe_bounds == 'NO_IFRAME':
@@ -1387,10 +1400,13 @@ async def auth_login(req: AuthPhoneRequest):
                     import json as _json2
                     try:
                         bounds = _json2.loads(iframe_bounds)
-                    except:
+                        logger.info(f"Captcha iframe for auto-solve: {iframe_bounds}")
+                    except Exception as json_err:
+                        logger.warning(f"Iframe bounds JSON parse failed: {json_err}, raw: {iframe_bounds[:100]}")
                         break
                     
                     if not bounds or bounds.get('w', 0) <= 0:
+                        logger.warning(f"Captcha iframe has zero size: {bounds}")
                         break
                     
                     ix, iy, iw, ih = bounds['x'], bounds['y'], bounds['w'], bounds['h']
