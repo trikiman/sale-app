@@ -85,9 +85,8 @@ function ProductCard({ product, index, isFavorite, onToggleFavorite, favoritesLo
           <img
             src={proxyImg(product.image)}
             alt={product.name}
-            loading="lazy"
             referrerPolicy="no-referrer"
-            className={`card-hero-img ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
+            className={`card-hero-img ${imageLoaded ? 'loaded' : ''}`}
             onLoad={() => setImageLoaded(true)}
             onError={() => setImageError(true)}
           />

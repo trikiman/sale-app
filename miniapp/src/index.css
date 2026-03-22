@@ -88,6 +88,19 @@ body {
   outline-offset: 2px;
 }
 
+/* Card hero image — always visible, fades to full opacity when loaded */
+.card-hero-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.4;
+  transition: opacity 0.3s ease;
+}
+
+.card-hero-img.loaded {
+  opacity: 1;
+}
+
 /* Card type tints — dark theme */
 .card-tint-green {
   background: rgba(34, 197, 94, 0.08);
