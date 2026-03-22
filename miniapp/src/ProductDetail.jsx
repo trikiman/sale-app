@@ -1,6 +1,15 @@
 import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 
+// Proxy VkusVill CDN images through backend
+function proxyImg(url) {
+  if (!url) return url
+  if (url.includes('img.vkusvill.ru')) {
+    return `/api/img?url=${encodeURIComponent(url)}`
+  }
+  return url
+}
+
 export default function ProductDetail({ product, onClose, onAddToCart, cartState }) {
   const [details, setDetails] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -59,7 +68,7 @@ export default function ProductDetail({ product, onClose, onAddToCart, cartState
           {images.length > 0 && (
             <div className="detail-gallery">
               <img
-                src={images[imgIndex]}
+                src={proxyImg(images[imgIndex])}
                 alt={product.name}
                 className="detail-main-img"
                 onError={e => {
@@ -79,7 +88,7 @@ export default function ProductDetail({ product, onClose, onAddToCart, cartState
                       className={`detail-thumb ${i === imgIndex ? 'active' : ''}`}
                       onClick={() => setImgIndex(i)}
                     >
-                      <img src={img} alt={`${product?.name || 'Product'} image`} onError={e => { e.target.parentElement.style.display = 'none' }} />
+                      <img src={proxyImg(img)} alt={`${product?.name || 'Product'} image`} onError={e => { e.target.parentElement.style.display = 'none' }} />
                     </button>
                   ))}
                 </div>

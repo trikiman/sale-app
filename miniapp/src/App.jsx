@@ -6,6 +6,15 @@ import { buildCategoryRunView } from './categoryRunStatus'
 import { getCardMetaBadges, mergeResolvedWeights, shouldFetchMissingWeight } from './productMeta'
 import './index.css'
 
+// Proxy VkusVill CDN images through backend to bypass browser Private Network Access policy
+function proxyImg(url) {
+  if (!url) return url
+  if (url.includes('img.vkusvill.ru')) {
+    return `/api/img?url=${encodeURIComponent(url)}`
+  }
+  return url
+}
+
 // Emoji lookup for known categories
 const CATEGORY_EMOJIS = {
   'Овощи': '🥬',
@@ -74,7 +83,7 @@ function ProductCard({ product, index, isFavorite, onToggleFavorite, favoritesLo
 
         {product.image && !imageError ? (
           <img
-            src={product.image}
+            src={proxyImg(product.image)}
             alt={product.name}
             loading="lazy"
             referrerPolicy="no-referrer"
