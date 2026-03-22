@@ -919,33 +919,47 @@ async def solve_captcha_with_gemini(captcha_b64: str, max_retries: int = 1) -> s
         
         logger.info("Trying Tesseract OCR for captcha...")
         
-        # Decode base64 image
+        # Decode base64 image — this is the center-cropped popup (includes text + input + buttons)
         img_data = base64.b64decode(captcha_b64)
         img = Image.open(BytesIO(img_data))
+        orig_w, orig_h = img.size
         
-        # Light preprocessing — don't over-process distorted captcha text
-        img = img.convert('L')  # Grayscale
-        img = img.filter(ImageFilter.SHARPEN)
-        enhancer = ImageEnhance.Contrast(img)
-        img = enhancer.enhance(1.5)  # Gentle contrast boost
-        # Scale up another 2x for better OCR on small text
-        img = img.resize((img.width * 2, img.height * 2), Image.LANCZOS)
+        # Re-crop to just the captcha TEXT area (top ~30% of the popup crop)
+        # The distorted text occupies the top portion; below it is the input/buttons
+        text_crop = img.crop((0, 0, orig_w, int(orig_h * 0.35)))
+        logger.info(f"Tesseract: re-cropped text area to {text_crop.size} from {img.size}")
         
-        # OCR with English language, treat as single line of text
-        text = pytesseract.image_to_string(img, config='--psm 7 -l eng').strip()
+        # Save debug image
+        try:
+            text_crop.save(os.path.join(DATA_DIR, "tesseract_debug_crop.png"), 'PNG')
+        except: pass
         
-        if text:
-            # Clean: remove non-alpha chars except spaces
-            import re
-            text = re.sub(r'[^a-zA-Z\s]', '', text).strip()
-            text = ' '.join(text.split())  # Normalize whitespace
-            if text and len(text) >= 3:
-                logger.info(f"Tesseract captcha OCR result: '{text}'")
-                return text
-            else:
-                logger.warning(f"Tesseract result too short after cleanup: '{text}'")
+        # Preprocess: grayscale, sharpen, gentle contrast, scale up
+        text_crop = text_crop.convert('L')
+        text_crop = text_crop.filter(ImageFilter.SHARPEN)
+        enhancer = ImageEnhance.Contrast(text_crop)
+        text_crop = enhancer.enhance(1.5)
+        text_crop = text_crop.resize((text_crop.width * 2, text_crop.height * 2), Image.LANCZOS)
+        
+        # Try multiple PSM modes for best result
+        best_text = ""
+        for psm in [7, 6, 13]:  # 7=single line, 6=block of text, 13=raw line
+            try:
+                raw = pytesseract.image_to_string(text_crop, config=f'--psm {psm} -l eng').strip()
+                if raw:
+                    import re
+                    cleaned = re.sub(r'[^a-zA-Z\s]', '', raw).strip()
+                    cleaned = ' '.join(cleaned.split())
+                    if len(cleaned) > len(best_text):
+                        best_text = cleaned
+                        logger.info(f"Tesseract PSM {psm} result: '{cleaned}' (raw: '{raw}')")
+            except: pass
+        
+        if best_text and len(best_text) >= 3:
+            logger.info(f"Tesseract captcha OCR result: '{best_text}'")
+            return best_text
         else:
-            logger.warning("Tesseract returned empty text")
+            logger.warning(f"Tesseract: no good result (best: '{best_text}')")
     except ImportError:
         logger.warning("pytesseract not installed, cannot use Tesseract OCR")
     except Exception as e:
