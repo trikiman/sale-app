@@ -1020,9 +1020,9 @@ function App() {
                 🔑 Войти
               </button>
               <button
-                onClick={() => setShowLoginPrompt(true)}
+                onClick={() => setShowLogin(true)}
                 className="header-pill header-pill-cart"
-                title="Корзина"
+                title="Войдите для доступа к корзине"
               >
                 🛒
               </button>

@@ -1,6 +1,15 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 
+// Proxy VkusVill CDN images through backend
+function proxyImg(url) {
+  if (!url) return url
+  if (url.includes('img.vkusvill.ru')) {
+    return `/api/img?url=${encodeURIComponent(url)}`
+  }
+  return url
+}
+
 export default function CartPanel({ isOpen, onClose, userId }) {
     const [items, setItems] = useState([])
     const [totalPrice, setTotalPrice] = useState(0)
@@ -204,7 +213,7 @@ export default function CartPanel({ isOpen, onClose, userId }) {
                                             <div key={item.id || i} className={`cart-item ${!item.can_buy ? 'cart-item-oos' : ''}`}>
                                                 {item.image && (
                                                     <img
-                                                        src={item.image.startsWith('http') || item.image.startsWith('//') ? item.image : `https://vkusvill.ru${item.image}`}
+                                                        src={proxyImg(item.image.startsWith('http') || item.image.startsWith('//') ? item.image : `https://vkusvill.ru${item.image}`)}
                                                         alt={item.name || 'Товар'}
                                                         className="cart-item-img"
                                                         onError={e => { e.target.style.display = 'none' }}
