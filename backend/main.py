@@ -923,13 +923,13 @@ async def solve_captcha_with_gemini(captcha_b64: str, max_retries: int = 1) -> s
         img_data = base64.b64decode(captcha_b64)
         img = Image.open(BytesIO(img_data))
         
-        # Preprocess for better OCR: grayscale → sharpen → high contrast → threshold
+        # Light preprocessing — don't over-process distorted captcha text
         img = img.convert('L')  # Grayscale
         img = img.filter(ImageFilter.SHARPEN)
         enhancer = ImageEnhance.Contrast(img)
-        img = enhancer.enhance(2.0)  # Double contrast
-        # Binarize: threshold at 128
-        img = img.point(lambda x: 255 if x > 128 else 0, '1')
+        img = enhancer.enhance(1.5)  # Gentle contrast boost
+        # Scale up another 2x for better OCR on small text
+        img = img.resize((img.width * 2, img.height * 2), Image.LANCZOS)
         
         # OCR with English language, treat as single line of text
         text = pytesseract.image_to_string(img, config='--psm 7 -l eng').strip()
@@ -1324,9 +1324,9 @@ async def auth_login(req: AuthPhoneRequest):
                     logger.info(f"Auto-typed '{gemini_answer}' into captcha")
                     await asyncio.sleep(0.3)
                     
-                    # Click submit button
-                    submit_x = ix + iw * 0.5
-                    submit_y = iy + ih * 0.66
+                    # Click submit button — it's right-of-center (icons are left, button is right)
+                    submit_x = ix + iw * 0.55
+                    submit_y = iy + ih * 0.65
                     await tab.send(cdp_input.dispatch_mouse_event(type_='mousePressed', x=submit_x, y=submit_y, button=cdp_input.MouseButton.LEFT, click_count=1))
                     await asyncio.sleep(0.05)
                     await tab.send(cdp_input.dispatch_mouse_event(type_='mouseReleased', x=submit_x, y=submit_y, button=cdp_input.MouseButton.LEFT, click_count=1))
@@ -1670,9 +1670,9 @@ async def auth_captcha(req: AuthCaptchaRequest):
                             await tab.save_screenshot(os.path.join(DATA_DIR, f"login_{user_id}_5a_after_typing.png"))
                         except: pass
                         
-                        # Now click the submit button — at ~66% from top of iframe
-                        submit_x = iframe_x + iframe_w * 0.5
-                        submit_y = iframe_y + iframe_h * 0.66
+                        # Now click submit — right-of-center (icons left, button right)
+                        submit_x = iframe_x + iframe_w * 0.55
+                        submit_y = iframe_y + iframe_h * 0.65
                         
                         logger.info(f"Clicking captcha submit at ({submit_x}, {submit_y})")
                         
