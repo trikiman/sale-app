@@ -45,8 +45,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database.db import Database
 # PlaywrightScraper removed — migrated to nodriver
 from cart.vkusvill_api import VkusVillCart
-from bot.auth import get_user_cookies_path, normalize_phone as _bot_normalize_phone
-import config
+from bot.auth import get_user_cookies_path
 
 logging.basicConfig(
     level=logging.INFO,
@@ -216,7 +215,8 @@ def _cleanup_debug_screenshots():
 
 def _cleanup_temp_profile_dirs():
     """R2-5: Remove orphaned Chrome temp profile directories."""
-    import tempfile, shutil
+    import tempfile
+    import shutil
     try:
         tmp_dir = tempfile.gettempdir()
         now = _time.time()
@@ -564,7 +564,8 @@ def get_products():
                 break
             except json.JSONDecodeError:
                 if attempt == 0:
-                    import time; time.sleep(0.5)  # Retry once after brief pause
+                    import time
+                    time.sleep(0.5)  # Retry once after brief pause
                 else:
                     raise HTTPException(status_code=500, detail="Invalid JSON data")
         # Live staleness: check source file ages at request time (not baked merge-time value)
@@ -850,7 +851,6 @@ class TechCodeRequest(BaseModel):
 
 async def safe_evaluate(tab, js_code):
     """Helper to catch JS errors in tab.evaluate() which nodriver otherwise swallows."""
-    import nodriver as uc
     result = await tab.evaluate(js_code)
     # Check for ExceptionDetails in the result (nodriver/CDP specific)
     if isinstance(result, dict) and 'exceptionDetails' in result:
@@ -862,69 +862,94 @@ async def safe_evaluate(tab, js_code):
 
 
 async def solve_captcha_with_gemini(captcha_b64: str, max_retries: int = 1) -> str | None:
-    """Send captcha image to Gemini Vision API and return recognized text.
+    """Try to read captcha text. Tries Gemini Vision API first, then Tesseract OCR.
     
     Args:
         captcha_b64: Base64-encoded PNG image of the captcha
         max_retries: Number of retries on failure
         
     Returns:
-        Recognized captcha text, or None if failed
+        Recognized captcha text, or None if all methods failed
     """
-    import aiohttp
-    
+    # === Method 1: Gemini Vision API ===
     api_key = os.environ.get("GEMINI_API_KEY", "")
-    if not api_key:
-        logger.warning("GEMINI_API_KEY not set, skipping auto-solve")
-        return None
-    
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
-    
-    payload = {
-        "contents": [{
-            "parts": [
-                {
-                    "inline_data": {
-                        "mime_type": "image/png",
-                        "data": captcha_b64
-                    }
-                },
-                {
-                    "text": "Read the distorted text in this CAPTCHA image. Return ONLY the exact text you see, nothing else. The text consists of English words. Do not add quotes or explanation."
-                }
-            ]
-        }],
-        "generationConfig": {
-            "temperature": 0.1,
-            "maxOutputTokens": 50
-        }
-    }
-    
-    for attempt in range(max_retries + 1):
+    if api_key:
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=15)) as resp:
-                    if resp.status != 200:
-                        error_text = await resp.text()
-                        logger.warning(f"Gemini API error {resp.status}: {error_text[:200]}")
-                        continue
-                    
-                    data = await resp.json()
-                    candidates = data.get("candidates", [])
-                    if not candidates:
-                        logger.warning("Gemini returned no candidates")
-                        continue
-                    
-                    text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
-                    if text:
-                        # Clean up: remove quotes, extra whitespace
-                        text = text.strip('"\'').strip()
-                        logger.info(f"Gemini captcha OCR result: '{text}'")
-                        return text
-                    else:
-                        logger.warning("Gemini returned empty text")
-        except Exception as e:
-            logger.warning(f"Gemini captcha solve attempt {attempt + 1} failed: {e}")
+            import aiohttp
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={api_key}"
+            payload = {
+                "contents": [{"parts": [
+                    {"inline_data": {"mime_type": "image/png", "data": captcha_b64}},
+                    {"text": "Read the distorted text in this CAPTCHA image. Return ONLY the exact text you see, nothing else. The text consists of English words. Do not add quotes or explanation."}
+                ]}],
+                "generationConfig": {"temperature": 0.1, "maxOutputTokens": 50}
+            }
+            for attempt in range(max_retries + 1):
+                try:
+                    async with aiohttp.ClientSession() as session:
+                        async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                            if resp.status == 429:
+                                logger.warning("Gemini API quota exceeded, falling back to Tesseract")
+                                break  # Don't retry on quota — go to Tesseract
+                            if resp.status != 200:
+                                error_text = await resp.text()
+                                logger.warning(f"Gemini API error {resp.status}: {error_text[:200]}")
+                                continue
+                            data = await resp.json()
+                            candidates = data.get("candidates", [])
+                            if candidates:
+                                text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
+                                if text:
+                                    text = text.strip('"\'').strip()
+                                    logger.info(f"Gemini captcha OCR result: '{text}'")
+                                    return text
+                except Exception as e:
+                    logger.warning(f"Gemini attempt {attempt + 1} failed: {e}")
+        except ImportError:
+            logger.warning("aiohttp not available for Gemini")
+    else:
+        logger.info("No GEMINI_API_KEY, skipping Gemini OCR")
+    
+    # === Method 2: Tesseract OCR (local, no API key needed) ===
+    try:
+        import pytesseract
+        from PIL import Image, ImageFilter, ImageEnhance
+        import base64
+        from io import BytesIO
+        
+        logger.info("Trying Tesseract OCR for captcha...")
+        
+        # Decode base64 image
+        img_data = base64.b64decode(captcha_b64)
+        img = Image.open(BytesIO(img_data))
+        
+        # Preprocess for better OCR: grayscale → sharpen → high contrast → threshold
+        img = img.convert('L')  # Grayscale
+        img = img.filter(ImageFilter.SHARPEN)
+        enhancer = ImageEnhance.Contrast(img)
+        img = enhancer.enhance(2.0)  # Double contrast
+        # Binarize: threshold at 128
+        img = img.point(lambda x: 255 if x > 128 else 0, '1')
+        
+        # OCR with English language, treat as single line of text
+        text = pytesseract.image_to_string(img, config='--psm 7 -l eng').strip()
+        
+        if text:
+            # Clean: remove non-alpha chars except spaces
+            import re
+            text = re.sub(r'[^a-zA-Z\s]', '', text).strip()
+            text = ' '.join(text.split())  # Normalize whitespace
+            if text and len(text) >= 3:
+                logger.info(f"Tesseract captcha OCR result: '{text}'")
+                return text
+            else:
+                logger.warning(f"Tesseract result too short after cleanup: '{text}'")
+        else:
+            logger.warning("Tesseract returned empty text")
+    except ImportError:
+        logger.warning("pytesseract not installed, cannot use Tesseract OCR")
+    except Exception as e:
+        logger.warning(f"Tesseract OCR failed: {e}")
     
     return None
 
@@ -1016,7 +1041,9 @@ async def auth_login(req: AuthPhoneRequest):
     _chrome_proc = None  # Only set on Windows
     _user_data_dir = None
     try:
-        import tempfile, subprocess as _subp, socket as _socket
+        import tempfile
+        import subprocess as _subp
+        import socket as _socket
 
         # Launch a SEPARATE temporary Chrome for login (don't touch scraper Chrome)
         # Fresh profile = no cookies = VkusVill login form shown directly
