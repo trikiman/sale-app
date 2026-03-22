@@ -910,7 +910,39 @@ async def solve_captcha_with_gemini(captcha_b64: str, max_retries: int = 1) -> s
     else:
         logger.info("No GEMINI_API_KEY, skipping Gemini OCR")
     
-    # === Method 2: Tesseract OCR (local, no API key needed) ===
+    # === Method 2: Google Cloud Vision API (separate quota from Gemini) ===
+    if api_key:
+        try:
+            import aiohttp
+            vision_url = f"https://vision.googleapis.com/v1/images:annotate?key={api_key}"
+            vision_payload = {
+                "requests": [{
+                    "image": {"content": captcha_b64},
+                    "features": [{"type": "TEXT_DETECTION", "maxResults": 5}]
+                }]
+            }
+            async with aiohttp.ClientSession() as session:
+                async with session.post(vision_url, json=vision_payload, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        annotations = data.get("responses", [{}])[0].get("textAnnotations", [])
+                        if annotations:
+                            text = annotations[0].get("description", "").strip()
+                            if text:
+                                # Clean: keep only alpha + spaces
+                                import re
+                                text = re.sub(r'[^a-zA-Z\s]', '', text).strip()
+                                text = ' '.join(text.split())
+                                if len(text) >= 3:
+                                    logger.info(f"Google Vision OCR result: '{text}'")
+                                    return text
+                    else:
+                        err = await resp.text()
+                        logger.warning(f"Vision API error {resp.status}: {err[:150]}")
+        except Exception as e:
+            logger.warning(f"Vision API failed: {e}")
+    
+    # === Method 3: Tesseract OCR with tight captcha-only crop ===
     try:
         import pytesseract
         from PIL import Image, ImageFilter, ImageEnhance
@@ -919,31 +951,35 @@ async def solve_captcha_with_gemini(captcha_b64: str, max_retries: int = 1) -> s
         
         logger.info("Trying Tesseract OCR for captcha...")
         
-        # Decode base64 image — this is the center-cropped popup (includes text + input + buttons)
         img_data = base64.b64decode(captcha_b64)
         img = Image.open(BytesIO(img_data))
         orig_w, orig_h = img.size
         
-        # Re-crop to just the captcha TEXT area (top ~30% of the popup crop)
-        # The distorted text occupies the top portion; below it is the input/buttons
-        text_crop = img.crop((0, 0, orig_w, int(orig_h * 0.35)))
-        logger.info(f"Tesseract: re-cropped text area to {text_crop.size} from {img.size}")
+        # Tight crop: just the captcha IMAGE rectangle within the popup
+        # The popup has: captcha image at top, then label, input, buttons, footer
+        # The captcha image is at ~30-73% width, 16-36% height of the center-crop
+        text_crop = img.crop((
+            int(orig_w * 0.28),   # Left edge of captcha image
+            int(orig_h * 0.12),   # Top edge
+            int(orig_w * 0.75),   # Right edge
+            int(orig_h * 0.38)    # Bottom edge
+        ))
+        logger.info(f"Tesseract: tight-cropped captcha image to {text_crop.size} from {img.size}")
         
-        # Save debug image
+        # Save debug
         try:
             text_crop.save(os.path.join(DATA_DIR, "tesseract_debug_crop.png"), 'PNG')
         except: pass
         
-        # Preprocess: grayscale, sharpen, gentle contrast, scale up
+        # Preprocess: grayscale, sharpen, contrast, scale up
         text_crop = text_crop.convert('L')
         text_crop = text_crop.filter(ImageFilter.SHARPEN)
         enhancer = ImageEnhance.Contrast(text_crop)
         text_crop = enhancer.enhance(1.5)
         text_crop = text_crop.resize((text_crop.width * 2, text_crop.height * 2), Image.LANCZOS)
         
-        # Try multiple PSM modes for best result
         best_text = ""
-        for psm in [7, 6, 13]:  # 7=single line, 6=block of text, 13=raw line
+        for psm in [7, 6, 13]:
             try:
                 raw = pytesseract.image_to_string(text_crop, config=f'--psm {psm} -l eng').strip()
                 if raw:
@@ -952,7 +988,7 @@ async def solve_captcha_with_gemini(captcha_b64: str, max_retries: int = 1) -> s
                     cleaned = ' '.join(cleaned.split())
                     if len(cleaned) > len(best_text):
                         best_text = cleaned
-                        logger.info(f"Tesseract PSM {psm} result: '{cleaned}' (raw: '{raw}')")
+                        logger.info(f"Tesseract PSM {psm}: '{cleaned}'")
             except: pass
         
         if best_text and len(best_text) >= 3:
@@ -961,7 +997,7 @@ async def solve_captcha_with_gemini(captcha_b64: str, max_retries: int = 1) -> s
         else:
             logger.warning(f"Tesseract: no good result (best: '{best_text}')")
     except ImportError:
-        logger.warning("pytesseract not installed, cannot use Tesseract OCR")
+        logger.warning("pytesseract not installed")
     except Exception as e:
         logger.warning(f"Tesseract OCR failed: {e}")
     
