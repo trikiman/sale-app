@@ -11,7 +11,7 @@ def run_tests():
         try:
             page.goto("http://localhost:5173", timeout=5000)
             page.wait_for_selector(".app-container")
-        except Exception as e:
+        except Exception:
             print("Frontend not easily reachable, skipping UI test.")
             sys.exit(0)
 

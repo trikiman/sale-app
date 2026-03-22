@@ -79,7 +79,7 @@ export default function ProductDetail({ product, onClose, onAddToCart, cartState
                       className={`detail-thumb ${i === imgIndex ? 'active' : ''}`}
                       onClick={() => setImgIndex(i)}
                     >
-                      <img src={img} alt="" onError={e => { e.target.parentElement.style.display = 'none' }} />
+                      <img src={img} alt={`${product?.name || 'Product'} image`} onError={e => { e.target.parentElement.style.display = 'none' }} />
                     </button>
                   ))}
                 </div>

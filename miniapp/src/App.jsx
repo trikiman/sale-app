@@ -78,7 +78,6 @@ function ProductCard({ product, index, isFavorite, onToggleFavorite, favoritesLo
             alt={product.name}
             loading="lazy"
             referrerPolicy="no-referrer"
-            crossOrigin="anonymous"
             className={`card-hero-img ${imageLoaded ? 'opacity-100' : 'opacity-0'}`}
             onLoad={() => setImageLoaded(true)}
             onError={() => setImageError(true)}
@@ -1004,12 +1003,21 @@ function App() {
               </button>
             </>
           ) : (
-            <button
-              onClick={() => setShowLogin(true)}
-              className="header-pill header-pill-action"
-            >
-              🔑 Войти
-            </button>
+            <>
+              <button
+                onClick={() => setShowLogin(true)}
+                className="header-pill header-pill-action"
+              >
+                🔑 Войти
+              </button>
+              <button
+                onClick={() => setShowLoginPrompt(true)}
+                className="header-pill header-pill-cart"
+                title="Корзина"
+              >
+                🛒
+              </button>
+            </>
           )}
           <button
             onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
@@ -1018,21 +1026,23 @@ function App() {
           >
             {theme === 'dark' ? '\u2600\ufe0f' : '\ud83c\udf19'}
           </button>
-          <a
-            href="/admin"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="header-pill header-pill-action"
-          >
-            {'\ud83d\udee0\ufe0f'} Админ
-          </a>
+          {isAuthenticated && (
+            <a
+              href="/admin"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="header-pill header-pill-action"
+            >
+              {'\ud83d\udee0\ufe0f'} Админ
+            </a>
+          )}
         </div>
 
         {/* Detailed Stats */}
         <div className="flex justify-center gap-4 text-xs mt-2 opacity-80 font-medium flex-wrap">
           <div className="flex items-center gap-1">
             <span className="text-lg">📦</span>
-            <span>{totalCount}</span>
+            <span>{totalCount} всего</span>
           </div>
           <div className="flex items-center gap-1 text-green-500">
             <span className="text-lg">🟢</span>
