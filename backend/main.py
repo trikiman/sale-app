@@ -862,7 +862,7 @@ async def safe_evaluate(tab, js_code):
 
 
 async def solve_captcha_with_gemini(captcha_b64: str, max_retries: int = 1) -> str | None:
-    """Try to read captcha text. Tries Gemini Vision API first, then Tesseract OCR.
+    """Try to read captcha text. Tries Groq Vision first, then Gemini, Vision API, Tesseract.
     
     Args:
         captcha_b64: Base64-encoded PNG image of the captcha
@@ -871,6 +871,50 @@ async def solve_captcha_with_gemini(captcha_b64: str, max_retries: int = 1) -> s
     Returns:
         Recognized captcha text, or None if all methods failed
     """
+    import re as _re
+    
+    # === Method 0: Groq Vision API (Llama 4 Scout — best for captchas) ===
+    groq_key = os.environ.get("GROQ_API_KEY", "")
+    if groq_key:
+        try:
+            import aiohttp
+            headers = {
+                'Authorization': f'Bearer {groq_key}',
+                'Content-Type': 'application/json',
+            }
+            payload = {
+                'model': 'meta-llama/llama-4-scout-17b-16e-instruct',
+                'messages': [{
+                    'role': 'user',
+                    'content': [
+                        {'type': 'text', 'text': 'Read the distorted text in this captcha image. Return ONLY the text words, nothing else. No quotes, no explanation.'},
+                        {'type': 'image_url', 'image_url': {'url': f'data:image/png;base64,{captcha_b64}'}}
+                    ]
+                }],
+                'max_tokens': 50,
+                'temperature': 0,
+            }
+            async with aiohttp.ClientSession() as session:
+                async with session.post('https://api.groq.com/openai/v1/chat/completions',
+                                        json=payload, headers=headers,
+                                        timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        text = data['choices'][0]['message']['content'].strip().strip('"\'').strip()
+                        # Clean: keep only alpha + spaces
+                        text = _re.sub(r'[^a-zA-Z\s]', '', text).strip()
+                        text = ' '.join(text.split())
+                        if len(text) >= 3:
+                            logger.info(f"Groq Vision OCR result: '{text}'")
+                            return text
+                    else:
+                        err = await resp.text()
+                        logger.warning(f"Groq API error {resp.status}: {err[:150]}")
+        except Exception as e:
+            logger.warning(f"Groq Vision failed: {e}")
+    else:
+        logger.info("No GROQ_API_KEY, skipping Groq Vision")
+    
     # === Method 1: Gemini Vision API ===
     api_key = os.environ.get("GEMINI_API_KEY", "")
     if api_key:
