@@ -52,9 +52,16 @@ body {
   gap: 16px;
 }
 
+@media (max-width: 480px) {
+  .product-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+  }
+}
+
 .product-grid.list-view {
-  grid-template-columns: repeat(2, 1fr);
-  max-width: 100%;
+  grid-template-columns: 1fr;
+  max-width: 600px;
   margin: 0 auto;
 }
 
