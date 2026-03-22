@@ -1537,21 +1537,7 @@ async def auth_login(req: AuthPhoneRequest):
                 positions = await safe_evaluate(tab, """
                     (function() {
                         var result = {input: null, button: null};
-                        // Find input by checking all visible text inputs
-                        var inputs = document.querySelectorAll('input[type="text"], input:not([type])');
-                        for (var i = 0; i < inputs.length; i++) {
-                            var r = inputs[i].getBoundingClientRect();
-                            var ph = (inputs[i].placeholder || '').toLowerCase();
-                            if (r.width > 50 && r.height > 10 && r.top > 0 && (ph.indexOf('имя') > -1 || ph.indexOf('name') > -1 || ph === '')) {
-                                // Check if it's inside the registration modal
-                                var parent = inputs[i].closest('[class*="modal"], [class*="popup"], [class*="dialog"], div');
-                                if (parent && parent.textContent.indexOf('Регистрация') > -1) {
-                                    result.input = {x: r.x + r.width/2, y: r.y + r.height/2};
-                                    break;
-                                }
-                            }
-                        }
-                        // Find Register button
+                        // Find Register button first
                         var btns = document.querySelectorAll('button, [role="button"]');
                         for (var i = 0; i < btns.length; i++) {
                             if (btns[i].textContent.trim().indexOf('Зарегистрироваться') > -1) {
@@ -1560,6 +1546,24 @@ async def auth_login(req: AuthPhoneRequest):
                                 break;
                             }
                         }
+                        // Find ALL visible inputs and pick the one closest above the Register button
+                        var inputs = document.querySelectorAll('input');
+                        var bestInput = null, bestDist = 999;
+                        for (var i = 0; i < inputs.length; i++) {
+                            var r = inputs[i].getBoundingClientRect();
+                            if (r.width < 50 || r.height < 10 || r.top < 0) continue;
+                            var t = inputs[i].type || 'text';
+                            if (t === 'hidden' || t === 'checkbox' || t === 'radio' || t === 'submit') continue;
+                            // Must be above the button and within reasonable distance
+                            if (result.button && r.y < result.button.y && (result.button.y - r.y) < 200) {
+                                var dist = result.button.y - r.y;
+                                if (dist < bestDist) {
+                                    bestDist = dist;
+                                    bestInput = {x: r.x + r.width/2, y: r.y + r.height/2};
+                                }
+                            }
+                        }
+                        result.input = bestInput;
                         return JSON.stringify(result);
                     })()
                 """)
@@ -1577,6 +1581,14 @@ async def auth_login(req: AuthPhoneRequest):
                 if input_pos:
                     # Click the name input field
                     ix, iy = input_pos['x'], input_pos['y']
+                elif btn_pos:
+                    # Fallback: the name input is ~60px above the Register button
+                    ix, iy = btn_pos['x'], btn_pos['y'] - 60
+                    logger.info(f"Input not found via JS, using fallback position ({ix}, {iy})")
+                else:
+                    ix, iy = None, None
+                
+                if ix is not None:
                     await tab.send(cdp_input.dispatch_mouse_event(type_='mousePressed', x=ix, y=iy, button=cdp_input.MouseButton.LEFT, click_count=1))
                     await asyncio.sleep(0.05)
                     await tab.send(cdp_input.dispatch_mouse_event(type_='mouseReleased', x=ix, y=iy, button=cdp_input.MouseButton.LEFT, click_count=1))
@@ -1590,7 +1602,7 @@ async def auth_login(req: AuthPhoneRequest):
                         await tab.send(cdp_input.dispatch_key_event(type_='keyUp', key=ch))
                         await asyncio.sleep(0.03)
                     
-                    logger.info(f"Typed name '{name}' via CDP")
+                    logger.info(f"Typed name '{name}' via CDP at ({ix}, {iy})")
                     await asyncio.sleep(0.5)
                 
                 if btn_pos:
