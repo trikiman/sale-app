@@ -1547,6 +1547,7 @@ async def auth_login(req: AuthPhoneRequest):
                             }
                         }
                         // Find ALL visible inputs and pick the one closest above the Register button
+                        // IMPORTANT: must also be horizontally aligned with button (in same modal)
                         var inputs = document.querySelectorAll('input');
                         var bestInput = null, bestDist = 999;
                         for (var i = 0; i < inputs.length; i++) {
@@ -1554,12 +1555,15 @@ async def auth_login(req: AuthPhoneRequest):
                             if (r.width < 50 || r.height < 10 || r.top < 0) continue;
                             var t = inputs[i].type || 'text';
                             if (t === 'hidden' || t === 'checkbox' || t === 'radio' || t === 'submit') continue;
-                            // Must be above the button and within reasonable distance
+                            // Must be above the button, within reasonable Y distance, AND horizontally aligned
                             if (result.button && r.y < result.button.y && (result.button.y - r.y) < 200) {
+                                var inputCx = r.x + r.width/2;
+                                var xDist = Math.abs(inputCx - result.button.x);
+                                if (xDist > 200) continue;  // Too far horizontally = different modal/form
                                 var dist = result.button.y - r.y;
                                 if (dist < bestDist) {
                                     bestDist = dist;
-                                    bestInput = {x: r.x + r.width/2, y: r.y + r.height/2};
+                                    bestInput = {x: inputCx, y: r.y + r.height/2};
                                 }
                             }
                         }
