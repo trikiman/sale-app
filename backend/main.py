@@ -1515,6 +1515,59 @@ async def auth_login(req: AuthPhoneRequest):
                     }
             # If screenshot failed, continue to SMS polling (might work without captcha)
 
+        # === Handle VkusVill Registration dialog ===
+        # After captcha, VkusVill may show "Регистрация" if the phone has no loyalty card.
+        # We need to fill in a name and click "Зарегистрироваться" to proceed to SMS.
+        await asyncio.sleep(2)  # Wait for page transition after captcha
+        try:
+            reg_check = await safe_evaluate(tab, """
+                (function() {
+                    var body = document.body.innerText;
+                    if (body.indexOf('Регистрация') > -1 && body.indexOf('Зарегистрироваться') > -1) {
+                        return 'REGISTRATION';
+                    }
+                    return 'NO';
+                })()
+            """)
+            if reg_check == 'REGISTRATION':
+                logger.info("Registration form detected — filling name and submitting")
+                # Fill in the name field and click Register
+                await safe_evaluate(tab, """
+                    (function() {
+                        var inputs = document.querySelectorAll('input');
+                        for (var i = 0; i < inputs.length; i++) {
+                            var ph = (inputs[i].placeholder || '').toLowerCase();
+                            var nm = (inputs[i].name || '').toLowerCase();
+                            if (ph.indexOf('имя') > -1 || nm.indexOf('name') > -1 || nm === 'имя') {
+                                var nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+                                    window.HTMLInputElement.prototype, 'value').set;
+                                nativeInputValueSetter.call(inputs[i], 'Покупатель');
+                                inputs[i].dispatchEvent(new Event('input', { bubbles: true }));
+                                inputs[i].dispatchEvent(new Event('change', { bubbles: true }));
+                                break;
+                            }
+                        }
+                    })()
+                """)
+                await asyncio.sleep(0.5)
+                # Click the Register button
+                await safe_evaluate(tab, """
+                    (function() {
+                        var buttons = document.querySelectorAll('button, a, [role="button"]');
+                        for (var i = 0; i < buttons.length; i++) {
+                            if (buttons[i].textContent.indexOf('Зарегистрироваться') > -1) {
+                                buttons[i].click();
+                                return 'CLICKED';
+                            }
+                        }
+                        return 'NOT_FOUND';
+                    })()
+                """)
+                logger.info("Clicked 'Зарегистрироваться' button")
+                await asyncio.sleep(3)  # Wait for registration processing
+        except Exception as reg_err:
+            logger.warning(f"Registration form handling failed: {reg_err}")
+
         # Immediate rate-limit check — the error dialog appears right after click
         # (don't wait 30s to tell the user their number is blocked)
         # Use safe_evaluate to handle ExceptionDetails from nodriver
