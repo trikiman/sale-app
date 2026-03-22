@@ -145,11 +145,30 @@ def run_script(script_name, tag=None):
     return proc.returncode
 
 
+def _is_chrome_process(proc_name: str) -> bool:
+    """Check if a process name is Chrome (cross-platform)."""
+    name = (proc_name or "").lower()
+    return name in ("chrome.exe", "chrome", "google-chrome", "google-chrome-stable", "chromium", "chromium-browser")
+
+
+def _kill_pid(pid: int):
+    """Kill a process by PID (cross-platform)."""
+    if sys.platform == 'win32':
+        subprocess.run(
+            ["taskkill", "/F", "/T", "/PID", str(pid)],
+            capture_output=True, timeout=5
+        )
+    else:
+        import signal
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+
 def _kill_orphan_chromes():
     """Kill only ORPHAN Chrome (uc_ temp profiles from green scraper).
     Does NOT kill the main CDP Chrome on port 19222 — red/yellow need it."""
-    if sys.platform != 'win32':
-        return
     try:
         import psutil
     except ImportError:
@@ -157,15 +176,12 @@ def _kill_orphan_chromes():
     killed = 0
     for proc in psutil.process_iter(["pid", "name"]):
         try:
-            if (proc.name() or "").lower() != "chrome.exe":
+            if not _is_chrome_process(proc.name()):
                 continue
             cmdline = " ".join(proc.cmdline()).lower()
             # Only kill temp-profile chromes, NOT the main CDP one
             if "uc_" in cmdline and "remote-debugging-port" not in cmdline:
-                subprocess.run(
-                    ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
-                    capture_output=True, timeout=5
-                )
+                _kill_pid(proc.pid)
                 killed += 1
         except (psutil.AccessDenied, psutil.NoSuchProcess, OSError):
             continue
@@ -176,24 +192,22 @@ def _kill_orphan_chromes():
 def _kill_all_scraper_chrome():
     """Kill ALL scraper Chrome (including main CDP on 19222).
     Used before restarting Chrome with a new proxy."""
-    if sys.platform != 'win32':
-        return
     try:
         import psutil
     except ImportError:
-        subprocess.run(['taskkill', '/F', '/IM', 'chrome.exe'], capture_output=True)
+        if sys.platform == 'win32':
+            subprocess.run(['taskkill', '/F', '/IM', 'chrome.exe'], capture_output=True)
+        else:
+            subprocess.run(['pkill', '-9', '-f', 'chrome'], capture_output=True)
         return
     killed = 0
     for proc in psutil.process_iter(["pid", "name"]):
         try:
-            if (proc.name() or "").lower() != "chrome.exe":
+            if not _is_chrome_process(proc.name()):
                 continue
             cmdline = " ".join(proc.cmdline()).lower()
             if "remote-debugging-port" in cmdline or "uc_" in cmdline:
-                subprocess.run(
-                    ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
-                    capture_output=True, timeout=5
-                )
+                _kill_pid(proc.pid)
                 killed += 1
         except (psutil.AccessDenied, psutil.NoSuchProcess, OSError):
             continue
@@ -280,7 +294,7 @@ def run_full_cycle(proxy_state):
                 before_ts = os.path.getmtime(data_path) if os.path.exists(data_path) else 0
                 code = run_script(script, f"{tag}-RETRY")
             else:
-                log(f"  No working proxy found — skipping retry")
+                log("  No working proxy found — skipping retry")
 
         file_updated = _check_file_updated(data_path, before_ts)
 

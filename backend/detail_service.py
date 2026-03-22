@@ -21,6 +21,7 @@ import os
 import logging
 import queue
 import shutil
+import sys
 import tempfile
 import threading
 import time
@@ -105,15 +106,21 @@ async def _worker_main(loop):
         tmp_dir = tempfile.mkdtemp(prefix='uc_detail_')
         logger.info(f"[Worker] Launching Chrome, tmp={tmp_dir}")
 
-        browser = await uc.start(
-            user_data_dir=tmp_dir,
-            browser_args=[
+        _browser_args = [
                 '--no-first-run',
                 '--no-default-browser-check',
                 '--disable-features=LocalNetworkAccessChecks',
-                '--window-size=1,1',
-                '--window-position=-9999,-9999',
-            ],
+        ]
+        if sys.platform == 'win32':
+            _browser_args += ['--window-size=1,1', '--window-position=-9999,-9999']
+        else:
+            _browser_args += [
+                '--headless=new', '--no-sandbox', '--disable-gpu',
+                '--disable-dev-shm-usage', '--disable-software-rasterizer',
+            ]
+        browser = await uc.start(
+            user_data_dir=tmp_dir,
+            browser_args=_browser_args,
         )
         logger.info("[Worker] Chrome launched")
 
