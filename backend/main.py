@@ -1530,41 +1530,79 @@ async def auth_login(req: AuthPhoneRequest):
                 })()
             """)
             if reg_check == 'REGISTRATION':
-                logger.info("Registration form detected — filling name and submitting")
-                # Fill in the name field and click Register
-                await safe_evaluate(tab, """
+                logger.info("Registration form detected — filling name via CDP and submitting")
+                import nodriver.cdp.input_ as cdp_input
+                
+                # Find the name input field position and the Register button position
+                positions = await safe_evaluate(tab, """
                     (function() {
-                        var inputs = document.querySelectorAll('input');
+                        var result = {input: null, button: null};
+                        // Find input by checking all visible text inputs
+                        var inputs = document.querySelectorAll('input[type="text"], input:not([type])');
                         for (var i = 0; i < inputs.length; i++) {
+                            var r = inputs[i].getBoundingClientRect();
                             var ph = (inputs[i].placeholder || '').toLowerCase();
-                            var nm = (inputs[i].name || '').toLowerCase();
-                            if (ph.indexOf('имя') > -1 || nm.indexOf('name') > -1 || nm === 'имя') {
-                                var nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-                                    window.HTMLInputElement.prototype, 'value').set;
-                                nativeInputValueSetter.call(inputs[i], 'Покупатель');
-                                inputs[i].dispatchEvent(new Event('input', { bubbles: true }));
-                                inputs[i].dispatchEvent(new Event('change', { bubbles: true }));
+                            if (r.width > 50 && r.height > 10 && r.top > 0 && (ph.indexOf('имя') > -1 || ph.indexOf('name') > -1 || ph === '')) {
+                                // Check if it's inside the registration modal
+                                var parent = inputs[i].closest('[class*="modal"], [class*="popup"], [class*="dialog"], div');
+                                if (parent && parent.textContent.indexOf('Регистрация') > -1) {
+                                    result.input = {x: r.x + r.width/2, y: r.y + r.height/2};
+                                    break;
+                                }
+                            }
+                        }
+                        // Find Register button
+                        var btns = document.querySelectorAll('button, [role="button"]');
+                        for (var i = 0; i < btns.length; i++) {
+                            if (btns[i].textContent.trim().indexOf('Зарегистрироваться') > -1) {
+                                var r = btns[i].getBoundingClientRect();
+                                result.button = {x: r.x + r.width/2, y: r.y + r.height/2};
                                 break;
                             }
                         }
+                        return JSON.stringify(result);
                     })()
                 """)
-                await asyncio.sleep(0.5)
-                # Click the Register button
-                await safe_evaluate(tab, """
-                    (function() {
-                        var buttons = document.querySelectorAll('button, a, [role="button"]');
-                        for (var i = 0; i < buttons.length; i++) {
-                            if (buttons[i].textContent.indexOf('Зарегистрироваться') > -1) {
-                                buttons[i].click();
-                                return 'CLICKED';
-                            }
-                        }
-                        return 'NOT_FOUND';
-                    })()
-                """)
-                logger.info("Clicked 'Зарегистрироваться' button")
-                await asyncio.sleep(3)  # Wait for registration processing
+                
+                import json as _json3
+                try:
+                    pos = _json3.loads(positions) if isinstance(positions, str) else {}
+                except:
+                    pos = {}
+                
+                input_pos = pos.get('input')
+                btn_pos = pos.get('button')
+                logger.info(f"Registration positions: input={input_pos}, button={btn_pos}")
+                
+                if input_pos:
+                    # Click the name input field
+                    ix, iy = input_pos['x'], input_pos['y']
+                    await tab.send(cdp_input.dispatch_mouse_event(type_='mousePressed', x=ix, y=iy, button=cdp_input.MouseButton.LEFT, click_count=1))
+                    await asyncio.sleep(0.05)
+                    await tab.send(cdp_input.dispatch_mouse_event(type_='mouseReleased', x=ix, y=iy, button=cdp_input.MouseButton.LEFT, click_count=1))
+                    await asyncio.sleep(0.3)
+                    
+                    # Type name using CDP key events (Cyrillic)
+                    name = "Покупатель"
+                    for ch in name:
+                        await tab.send(cdp_input.dispatch_key_event(type_='keyDown', key=ch))
+                        await tab.send(cdp_input.dispatch_key_event(type_='char', key=ch, text=ch))
+                        await tab.send(cdp_input.dispatch_key_event(type_='keyUp', key=ch))
+                        await asyncio.sleep(0.03)
+                    
+                    logger.info(f"Typed name '{name}' via CDP")
+                    await asyncio.sleep(0.5)
+                
+                if btn_pos:
+                    # Click Register button
+                    bx, by = btn_pos['x'], btn_pos['y']
+                    await tab.send(cdp_input.dispatch_mouse_event(type_='mousePressed', x=bx, y=by, button=cdp_input.MouseButton.LEFT, click_count=1))
+                    await asyncio.sleep(0.05)
+                    await tab.send(cdp_input.dispatch_mouse_event(type_='mouseReleased', x=bx, y=by, button=cdp_input.MouseButton.LEFT, click_count=1))
+                    logger.info("Clicked 'Зарегистрироваться' via CDP")
+                    await asyncio.sleep(3)
+                else:
+                    logger.warning("Register button position not found")
         except Exception as reg_err:
             logger.warning(f"Registration form handling failed: {reg_err}")
 
