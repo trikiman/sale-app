@@ -20,6 +20,7 @@ if sys.platform == 'win32':
 
 # Configuration
 INTERVAL_MINUTES = 3
+SCRAPER_TIMEOUT = 300  # 5 minutes max per scraper
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 PAUSE_FILE = os.path.join(DATA_DIR, "login_pause")
@@ -85,6 +86,7 @@ def run_script(script_name, tag=None):
 
     env = os.environ.copy()
     env['PYTHONIOENCODING'] = 'utf-8'
+    env['PYTHONUNBUFFERED'] = '1'  # Force line-by-line output (no buffering)
 
     try:
         proc = subprocess.Popen(
