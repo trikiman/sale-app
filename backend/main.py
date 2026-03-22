@@ -1618,6 +1618,120 @@ async def auth_login(req: AuthPhoneRequest):
         except Exception as reg_err:
             logger.warning(f"Registration form handling failed: {reg_err}")
 
+        # === After registration, VkusVill returns to login form ===
+        # We need to click "Продолжить" again to trigger SMS dispatch.
+        await asyncio.sleep(2)
+        try:
+            post_reg_check = await safe_evaluate(tab, """
+                (function() {
+                    var body = document.body.innerText;
+                    if (body.indexOf('Продолжить') > -1 && body.indexOf('номер телефона') > -1) return 'LOGIN_FORM';
+                    if (body.indexOf('Получить код') > -1) return 'LOGIN_FORM';
+                    if (body.indexOf('Введите код') > -1) return 'SMS_OK';
+                    return 'OTHER';
+                })()
+            """)
+            if post_reg_check == 'LOGIN_FORM':
+                logger.info("Post-registration: login form detected, clicking Продолжить/Получить код again")
+                # Click the submit button 
+                await safe_evaluate(tab, """
+                    (function() {
+                        var btns = document.querySelectorAll('button, [role="button"]');
+                        for (var i = 0; i < btns.length; i++) {
+                            var t = btns[i].textContent.trim();
+                            if (t.indexOf('Продолжить') > -1 || t.indexOf('Получить код') > -1) {
+                                btns[i].click();
+                                return 'CLICKED';
+                            }
+                        }
+                        return 'NOT_FOUND';
+                    })()
+                """)
+                logger.info("Clicked Продолжить after registration")
+                await asyncio.sleep(5)  # Wait for VkusVill to process
+                
+                # Check if another captcha appeared
+                captcha_check2 = await safe_evaluate(tab, """
+                    (function() {
+                        var iframes = document.querySelectorAll('iframe');
+                        for (var i = 0; i < iframes.length; i++) {
+                            if (iframes[i].src && iframes[i].src.indexOf('captcha') > -1) {
+                                var r = iframes[i].getBoundingClientRect();
+                                if (r.width > 100 && r.height > 100) return 'CAPTCHA';
+                            }
+                        }
+                        return 'NO_CAPTCHA';
+                    })()
+                """)
+                if captcha_check2 == 'CAPTCHA':
+                    logger.info("Second captcha appeared after registration — solving...")
+                    # Take screenshot, crop, solve again
+                    try:
+                        captcha_path2 = os.path.join(DATA_DIR, f"login_{user_id}_captcha2.png")
+                        await tab.save_screenshot(captcha_path2)
+                        from PIL import Image
+                        img2 = Image.open(captcha_path2)
+                        w2, h2 = img2.size
+                        cx2, cy2 = w2 // 2, h2 // 2
+                        chw2 = min(int(w2 * 0.22), 300)
+                        chh2 = min(int(h2 * 0.35), 220)
+                        crop2 = img2.crop((max(0, cx2-chw2), max(0, cy2-chh2), min(w2, cx2+chw2), min(h2, cy2+chh2)))
+                        crop2 = crop2.resize((crop2.width*3, crop2.height*3), Image.LANCZOS)
+                        crop2_path = os.path.join(DATA_DIR, f"login_{user_id}_captcha2_crop.png")
+                        crop2.save(crop2_path, 'PNG')
+                        with open(crop2_path, 'rb') as f:
+                            captcha_b64_2 = base64.b64encode(f.read()).decode('utf-8')
+                        answer2 = await solve_captcha_with_gemini(captcha_b64_2)
+                        if answer2:
+                            logger.info(f"Second captcha OCR result: '{answer2}'")
+                            import nodriver.cdp.input_ as cdp_input
+                            # Find captcha iframe and type
+                            ifb2 = await safe_evaluate(tab, """
+                                (function() {
+                                    var iframes = document.querySelectorAll('iframe');
+                                    var best = null, bestArea = 0;
+                                    for (var i = 0; i < iframes.length; i++) {
+                                        if (iframes[i].src && iframes[i].src.indexOf('captcha') > -1) {
+                                            var r = iframes[i].getBoundingClientRect();
+                                            var a = r.width * r.height;
+                                            if (a > bestArea) { bestArea = a; best = {x:r.x,y:r.y,w:r.width,h:r.height}; }
+                                        }
+                                    }
+                                    return best ? JSON.stringify(best) : 'NO';
+                                })()
+                            """)
+                            import json as _json4
+                            try:
+                                b2 = _json4.loads(ifb2) if isinstance(ifb2, str) and ifb2 != 'NO' else None
+                            except:
+                                b2 = None
+                            if b2:
+                                cx2 = b2['x'] + b2['w'] * 0.5
+                                cy2 = b2['y'] + b2['h'] * 0.53
+                                await tab.send(cdp_input.dispatch_mouse_event(type_='mousePressed', x=cx2, y=cy2, button=cdp_input.MouseButton.LEFT, click_count=3))
+                                await asyncio.sleep(0.05)
+                                await tab.send(cdp_input.dispatch_mouse_event(type_='mouseReleased', x=cx2, y=cy2, button=cdp_input.MouseButton.LEFT, click_count=3))
+                                await asyncio.sleep(0.5)
+                                for ch in answer2:
+                                    await tab.send(cdp_input.dispatch_key_event(type_='keyDown', key=ch))
+                                    await tab.send(cdp_input.dispatch_key_event(type_='char', key=ch, text=ch))
+                                    await tab.send(cdp_input.dispatch_key_event(type_='keyUp', key=ch))
+                                    await asyncio.sleep(0.03)
+                                logger.info(f"Typed second captcha answer '{answer2}'")
+                                await asyncio.sleep(0.3)
+                                sx2 = b2['x'] + b2['w'] * 0.55
+                                sy2 = b2['y'] + b2['h'] * 0.65
+                                await tab.send(cdp_input.dispatch_mouse_event(type_='mousePressed', x=sx2, y=sy2, button=cdp_input.MouseButton.LEFT, click_count=1))
+                                await asyncio.sleep(0.05)
+                                await tab.send(cdp_input.dispatch_mouse_event(type_='mouseReleased', x=sx2, y=sy2, button=cdp_input.MouseButton.LEFT, click_count=1))
+                                logger.info("Submitted second captcha")
+                                await asyncio.sleep(5)
+                    except Exception as cap2_err:
+                        logger.warning(f"Second captcha handling failed: {cap2_err}")
+            elif post_reg_check == 'SMS_OK':
+                logger.info("Post-registration: SMS input already visible!")
+        except Exception as post_reg_err:
+            logger.warning(f"Post-registration check failed: {post_reg_err}")
         # Immediate rate-limit check — the error dialog appears right after click
         # (don't wait 30s to tell the user their number is blocked)
         # Use safe_evaluate to handle ExceptionDetails from nodriver
