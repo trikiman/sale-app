@@ -605,8 +605,9 @@ def get_products():
         data["staleInfo"] = stale_files if stale_files else None
         # Override baked updatedAt with the most recent source file mtime
         if latest_mtime > 0:
-            from datetime import datetime, timezone
-            data["updatedAt"] = datetime.fromtimestamp(latest_mtime, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+            from datetime import datetime, timezone, timedelta
+            _msk = timezone(timedelta(hours=3))  # Moscow timezone
+            data["updatedAt"] = datetime.fromtimestamp(latest_mtime, tz=_msk).strftime("%Y-%m-%d %H:%M:%S")
         # Live greenMissing check (BUG-066: also check empty products, not just file existence)
         green_path = os.path.join(DATA_DIR, "green_products.json")
         if not os.path.exists(green_path):

@@ -65,7 +65,7 @@ def merge_products():
     
     if stale_files:
         print(f"\n  🚨 STALE DATA WARNING: {', '.join(stale_files)}")
-        print(f"  🚨 Run scrapers to refresh!\n")
+        print("  🚨 Run scrapers to refresh!\n")
     
     # Count by type
     all_products = deduplicate_products(all_products)
@@ -86,9 +86,13 @@ def merge_products():
     # This reflects the most recent successful scraper run
     if source_timestamps:
         newest_ts = max(source_timestamps)  # BUG-L02: renamed from oldest_ts
-        data_time = datetime.fromtimestamp(newest_ts).strftime("%Y-%m-%d %H:%M:%S")
+        from datetime import timezone, timedelta
+        _msk = timezone(timedelta(hours=3))  # Moscow timezone
+        data_time = datetime.fromtimestamp(newest_ts, tz=_msk).strftime("%Y-%m-%d %H:%M:%S")
     else:
-        data_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        from datetime import timezone, timedelta
+        _msk = timezone(timedelta(hours=3))
+        data_time = datetime.now(tz=_msk).strftime("%Y-%m-%d %H:%M:%S")
     
     # BUG-E03: Reuse already-computed green_count instead of re-reading file
     green_path = os.path.join(DATA_DIR, "green_products.json")
@@ -114,7 +118,7 @@ def merge_products():
     if os.path.exists(os.path.dirname(miniapp_path)):
         with open(miniapp_path, 'w', encoding='utf-8') as f:
             json.dump(output, f, ensure_ascii=False, indent=2)
-        print(f"  ✅ Copied to miniapp")
+        print("  ✅ Copied to miniapp")
     
     print(f"\n{'='*60}")
     print(f"✅ MERGED TOTAL: {len(all_products)} products")
