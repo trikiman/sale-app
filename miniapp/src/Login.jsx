@@ -1,6 +1,9 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 
+// Auth endpoints: use Cloudflare tunnel (HTTPS, 100s timeout) instead of Vercel proxy (30s timeout)
+const AUTH_BASE = 'https://breeding-effort-constraint-injection.trycloudflare.com'
+
 const Spinner = () => <span className="login-spinner" />
 
 // BUG-B fix: Pydantic 422 errors return detail as an array of objects,
@@ -43,7 +46,7 @@ export default function Login({ userId, onLoginSuccess }) {
     if (!cleanPhone || cleanPhone.length < 10) return
     setLoading(true); setError(null)
     try {
-      const res = await fetch('/api/auth/login', {
+      const res = await fetch(`${AUTH_BASE}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: String(userId), phone: cleanPhone, force_sms: forceSms })
@@ -71,7 +74,7 @@ export default function Login({ userId, onLoginSuccess }) {
     if (!captchaAnswer.trim()) return
     setLoading(true); setError(null)
     try {
-      const res = await fetch('/api/auth/captcha', {
+      const res = await fetch(`${AUTH_BASE}/api/auth/captcha`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: String(userId), captcha_answer: captchaAnswer.trim() })
@@ -101,7 +104,7 @@ export default function Login({ userId, onLoginSuccess }) {
     if (!pinValue || pinValue.length !== 4) return
     setLoading(true); setError(null)
     try {
-      const res = await fetch('/api/auth/verify-pin', {
+      const res = await fetch(`${AUTH_BASE}/api/auth/verify-pin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: userId, phone, pin: pinValue })
@@ -125,12 +128,20 @@ export default function Login({ userId, onLoginSuccess }) {
     if (!codeValue || codeValue.length < 4) return
     setLoading(true); setError(null)
     try {
-      const res = await fetch('/api/auth/verify', {
+      const res = await fetch(`${AUTH_BASE}/api/auth/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: userId, code: codeValue })
       })
-      const data = await res.json()
+      let data
+      const ct = res.headers.get('content-type') || ''
+      if (ct.includes('application/json')) {
+        data = await res.json()
+      } else {
+        // Vercel proxy returned HTML (502/504) instead of JSON
+        const txt = await res.text()
+        throw new Error(res.status >= 500 ? 'Сервер не ответил. Попробуйте ещё раз.' : txt.slice(0, 100))
+      }
       if (res.ok && data.success) {
         if (data.need_set_pin && data.phone) {
           setVerifiedPhone(data.phone)
@@ -156,7 +167,7 @@ export default function Login({ userId, onLoginSuccess }) {
     if (pin1 !== pin2) { setError('PIN не совпадают. Попробуйте ещё раз.'); setConfirmPin(''); setSetPinStep(1); setNewPin(''); return }
     setLoading(true); setError(null)
     try {
-      const res = await fetch('/api/auth/set-pin', {
+      const res = await fetch(`${AUTH_BASE}/api/auth/set-pin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: userId, phone: verifiedPhone, pin: pin1 })
@@ -205,6 +216,7 @@ export default function Login({ userId, onLoginSuccess }) {
             <button type="submit" disabled={loading || phone.replace(/\D/g, '').length < 10} className="login-btn">
               {loading ? <><Spinner /> Проверяем…</> : 'Получить код'}
             </button>
+            {loading && <div className="login-loading-hint">Первый вход может занять до 30 секунд.</div>}
           </motion.form>
         )
 
