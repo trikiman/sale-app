@@ -80,6 +80,7 @@ def _is_kill_trigger(line: str) -> str | None:
 def run_script(script_name, tag=None):
     """Run a script with real-time output parsing.
     Returns: 0 = OK, non-zero = error, -2 = block/timeout detected (retry candidate)."""
+    import threading
     script_path = os.path.join(BASE_DIR, script_name)
     tag = tag or script_name.replace("scrape_", "").replace(".py", "").upper()
     log(f"Starting {script_name}...")
@@ -104,11 +105,34 @@ def run_script(script_name, tag=None):
         return -1
 
     killed_by_trigger = None
-    start_time = time.time()
+    timed_out = False
+
+    # Watchdog timer: kills process if no progress for SCRAPER_TIMEOUT seconds
+    # Timer resets on each line of output (proves scraper is alive)
+    watchdog = [None]  # mutable container for timer reference
+
+    def _timeout_kill():
+        nonlocal timed_out
+        timed_out = True
+        log(f"TIMEOUT {script_name} killed after {SCRAPER_TIMEOUT}s of no output")
+        try:
+            proc.kill()
+        except Exception:
+            pass
+
+    def _reset_watchdog():
+        if watchdog[0]:
+            watchdog[0].cancel()
+        watchdog[0] = threading.Timer(SCRAPER_TIMEOUT, _timeout_kill)
+        watchdog[0].daemon = True
+        watchdog[0].start()
+
+    _reset_watchdog()  # Start initial watchdog
 
     # Stream output line by line, check for kill triggers
     try:
         for line in proc.stdout:
+            _reset_watchdog()  # Reset on each line (scraper is alive)
             line = line.rstrip('\n\r')
             # Log to file + console
             with open(LOG_FILE, "a", encoding="utf-8") as f:
@@ -126,16 +150,20 @@ def run_script(script_name, tag=None):
                 log(f"KILL TRIGGER detected in {script_name}: '{trigger}' — killing immediately")
                 proc.kill()
                 break
-
-            # Safety net: hard timeout
-            if time.time() - start_time > SCRAPER_TIMEOUT:
-                log(f"TIMEOUT {script_name} killed after {SCRAPER_TIMEOUT}s")
-                proc.kill()
-                return -2
     except Exception as e:
         log(f"Error reading output from {script_name}: {e}")
+    finally:
+        if watchdog[0]:
+            watchdog[0].cancel()
 
-    proc.wait(timeout=10)
+    try:
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait(timeout=5)
+
+    if timed_out:
+        return -2
 
     if killed_by_trigger:
         return -2  # trigger retry
