@@ -128,17 +128,20 @@ export default function Login({ userId, onLoginSuccess }) {
     if (!codeValue || codeValue.length < 4) return
     setLoading(true); setError(null)
     try {
+      const ctrl = new AbortController()
+      const timer = setTimeout(() => ctrl.abort(), 90000) // 90s timeout
       const res = await fetch(`${AUTH_BASE}/api/auth/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: userId, code: codeValue })
+        body: JSON.stringify({ user_id: userId, code: codeValue }),
+        signal: ctrl.signal
       })
+      clearTimeout(timer)
       let data
       const ct = res.headers.get('content-type') || ''
       if (ct.includes('application/json')) {
         data = await res.json()
       } else {
-        // Vercel proxy returned HTML (502/504) instead of JSON
         const txt = await res.text()
         throw new Error(res.status >= 500 ? 'Сервер не ответил. Попробуйте ещё раз.' : txt.slice(0, 100))
       }
@@ -150,7 +153,13 @@ export default function Login({ userId, onLoginSuccess }) {
           onLoginSuccess(phone)
         }
       } else { setError(extractErrorMsg(data, 'Неверный код')); setCode('') }
-    } catch (e) { setError(e.message || 'Нет связи с сервером') }
+    } catch (e) {
+      if (e.name === 'AbortError') {
+        setError('Превышено время ожидания (90с). Попробуйте ещё раз.')
+      } else {
+        setError(e.message || 'Нет связи с сервером')
+      }
+    }
     finally { setLoading(false) }
   }
 
