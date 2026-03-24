@@ -75,6 +75,7 @@ app.add_middleware(
         "http://localhost:5173",
         "http://localhost:8000",
         "https://web.telegram.org",
+        "https://vkusvill-proxy.vercel.app",
         os.environ.get("WEB_APP_ORIGIN", "https://t.me"),
     ],
     allow_credentials=True,
@@ -413,13 +414,11 @@ async def product_details(product_id: str):
     except Exception as e:
         logger.warning(f"Product {product_id}: HTTP fetch failed ({e}), trying Chrome fallback")
 
-    # Fallback to Chrome worker if HTTP failed
+    # Chrome fallback DISABLED — spawning Chrome from scraper causes memory pressure
+    # that kills login Chrome instances. If HTTP fails, just use cached/fallback data.
     if not html:
-        try:
-            html = await detail_service.fetch_product_html(url)
-        except Exception as e:
-            logger.warning(f"Product details Chrome fetch failed for {product_id}: {e}")
-            return _fallback_product_details(product_id, product, str(e))
+        logger.info(f"Product {product_id}: HTTP failed, skipping (Chrome fallback disabled)")
+        return _fallback_product_details(product_id, product, "HTTP fetch failed, Chrome fallback disabled")
 
     if not html or len(html) < 500:
         return _fallback_product_details(product_id, product, "Empty HTML response")
@@ -1077,6 +1076,28 @@ async def solve_captcha_with_gemini(captcha_b64: str, max_retries: int = 1) -> s
     return None
 
 
+async def _keepalive_login_chrome(user_id: str):
+    """Background task: ping Chrome JS context every 10s to prevent idle exit."""
+    import asyncio as _async
+    _fail_count = 0
+    logger.info(f"Keepalive started for {user_id}")
+    while True:
+        await _async.sleep(10)
+        entry = _login_sessions.get(user_id)
+        if not entry or not entry.get("tab"):
+            logger.info(f"Keepalive stopping for {user_id}: session removed")
+            return
+        try:
+            await entry["tab"].evaluate("1+1")
+            _fail_count = 0
+        except Exception as e:
+            _fail_count += 1
+            logger.warning(f"Keepalive ping {_fail_count}/3 failed for {user_id}: {e}")
+            if _fail_count >= 3:
+                logger.error(f"Keepalive giving up for {user_id} after 3 failures")
+                return
+
+
 def _evict_stale_login_sessions():
     """Remove login sessions older than TTL."""
     now = _time.time()
@@ -1179,22 +1200,20 @@ async def auth_login(req: AuthPhoneRequest):
         _user_data_dir = tempfile.mkdtemp(prefix='uc_login_')
 
         if sys.platform != 'win32':
-            from chrome_stealth import find_chrome
-            _chrome_path = find_chrome()
-            if not _chrome_path:
-                raise RuntimeError("Chrome not found")
-            _chrome_proc = _subp.Popen([
-                _chrome_path,
-                f'--remote-debugging-port={_debug_port}',
-                f'--user-data-dir={_user_data_dir}',
-                '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage',
-                '--headless=new', '--disable-software-rasterizer',
-                '--disable-blink-features=AutomationControlled',
-                '--disable-features=IsolateOrigins,site-per-process',
-                '--window-size=1280,720', '--lang=ru-RU,ru',
-                '--no-first-run', '--no-default-browser-check',
-                'about:blank',
-            ], stdout=_subp.DEVNULL, stderr=_subp.DEVNULL)
+            # Use nodriver.start() for proper Chrome lifecycle management
+            import nodriver as uc
+            browser = await uc.start(
+                headless=True,
+                user_data_dir=_user_data_dir,
+                browser_args=[
+                    '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage',
+                    '--disable-software-rasterizer',
+                    '--disable-blink-features=AutomationControlled',
+                    '--disable-features=IsolateOrigins,site-per-process',
+                    '--window-size=1280,720', '--lang=ru-RU,ru',
+                ],
+            )
+            _chrome_proc = None  # nodriver manages the process
         else:
             _chrome_path = None
             for p in [
@@ -1224,9 +1243,7 @@ async def auth_login(req: AuthPhoneRequest):
                 'about:blank',
             ], creationflags=_subp.CREATE_NO_WINDOW if sys.platform == 'win32' else 0)
 
-        await asyncio.sleep(3)
-        browser = await uc.Browser.create(host='127.0.0.1', port=_debug_port)
-        browser._process_pid = _chrome_proc.pid
+        # browser already created by nodriver.start() above
 
         # Fresh profile — no cookies needed to clear, go straight to /personal/
         tab = await browser.get('https://vkusvill.ru/personal/')
@@ -1697,10 +1714,11 @@ async def auth_login(req: AuthPhoneRequest):
                     })()
                 """)
                 if captcha_check2 == 'CAPTCHA':
-                    logger.info("Second captcha appeared after registration — solving...")
-                    # Take screenshot, crop, solve again
-                    try:
-                        captcha_path2 = os.path.join(DATA_DIR, f"login_{user_id}_captcha2.png")
+                    logger.info("Second captcha appeared after registration — solving (up to 3 attempts)...")
+                    for _cap2_attempt in range(3):
+                     # Take screenshot, crop, solve again
+                     try:
+                        captcha_path2 = os.path.join(DATA_DIR, f"login_{user_id}_captcha2_{_cap2_attempt}.png")
                         await tab.save_screenshot(captcha_path2)
                         from PIL import Image
                         img2 = Image.open(captcha_path2)
@@ -1710,13 +1728,13 @@ async def auth_login(req: AuthPhoneRequest):
                         chh2 = min(int(h2 * 0.35), 220)
                         crop2 = img2.crop((max(0, cx2-chw2), max(0, cy2-chh2), min(w2, cx2+chw2), min(h2, cy2+chh2)))
                         crop2 = crop2.resize((crop2.width*3, crop2.height*3), Image.LANCZOS)
-                        crop2_path = os.path.join(DATA_DIR, f"login_{user_id}_captcha2_crop.png")
+                        crop2_path = os.path.join(DATA_DIR, f"login_{user_id}_captcha2_crop_{_cap2_attempt}.png")
                         crop2.save(crop2_path, 'PNG')
                         with open(crop2_path, 'rb') as f:
                             captcha_b64_2 = base64.b64encode(f.read()).decode('utf-8')
                         answer2 = await solve_captcha_with_gemini(captcha_b64_2)
                         if answer2:
-                            logger.info(f"Second captcha OCR result: '{answer2}'")
+                            logger.info(f"Second captcha OCR attempt {_cap2_attempt+1}: '{answer2}'")
                             import nodriver.cdp.input_ as cdp_input
                             # Find captcha iframe and type
                             ifb2 = await safe_evaluate(tab, """
@@ -1757,10 +1775,33 @@ async def auth_login(req: AuthPhoneRequest):
                                 await tab.send(cdp_input.dispatch_mouse_event(type_='mousePressed', x=sx2, y=sy2, button=cdp_input.MouseButton.LEFT, click_count=1))
                                 await asyncio.sleep(0.05)
                                 await tab.send(cdp_input.dispatch_mouse_event(type_='mouseReleased', x=sx2, y=sy2, button=cdp_input.MouseButton.LEFT, click_count=1))
-                                logger.info("Submitted second captcha")
+                                logger.info(f"Submitted second captcha (attempt {_cap2_attempt+1})")
                                 await asyncio.sleep(5)
-                    except Exception as cap2_err:
-                        logger.warning(f"Second captcha handling failed: {cap2_err}")
+                                # Check if captcha is gone (solved correctly)
+                                still_captcha = await safe_evaluate(tab, """
+                                    (function() {
+                                        var iframes = document.querySelectorAll('iframe');
+                                        for (var i = 0; i < iframes.length; i++) {
+                                            if (iframes[i].src && iframes[i].src.indexOf('captcha') > -1) {
+                                                var r = iframes[i].getBoundingClientRect();
+                                                if (r.width > 100 && r.height > 100) return 'CAPTCHA';
+                                            }
+                                        }
+                                        return 'NO';
+                                    })()
+                                """)
+                                if still_captcha != 'CAPTCHA':
+                                    logger.info(f"Second captcha solved on attempt {_cap2_attempt+1}!")
+                                    break
+                                else:
+                                    logger.warning(f"Second captcha attempt {_cap2_attempt+1} failed (wrong answer: '{answer2}'), refreshing...")
+                                    await asyncio.sleep(2)
+                                    continue
+                     except Exception as cap2_err:
+                        logger.warning(f"Second captcha attempt {_cap2_attempt+1} failed: {cap2_err}")
+                        if _cap2_attempt < 2:
+                            await asyncio.sleep(2)
+                            continue
             elif post_reg_check == 'SMS_OK':
                 logger.info("Post-registration: SMS input already visible!")
         except Exception as post_reg_err:
@@ -1847,6 +1888,9 @@ async def auth_login(req: AuthPhoneRequest):
             "proc": _chrome_proc,
             "profile_dir": _user_data_dir,
         }
+        # Start keepalive to prevent Chrome from dying while user types SMS code
+        import asyncio as _ka_asyncio
+        _ka_asyncio.create_task(_keepalive_login_chrome(user_id))
         return {"success": True, "need_pin": False, "message": "SMS отправлено. Введите код из SMS."}
 
     except HTTPException:
@@ -2212,65 +2256,185 @@ async def auth_verify(req: AuthCodeRequest):
         if not code.isdigit() or not (4 <= len(code) <= 8):
             raise HTTPException(status_code=400, detail="Некорректный код")
 
-        # Fill SMS code using CDP key events (same method as phone — VkusVill validates via JS events)
+        # Fill SMS code using CDP key events
         import nodriver as uc
-        sms_input = await tab.find('input[name="SMS"]', best_match=True)
-        if sms_input:
-            await sms_input.mouse_click()
-            await asyncio.sleep(0.3)
-            for digit in code:
-                await tab.send(uc.cdp.input_.dispatch_key_event(
-                    type_='keyDown', key=digit, text=digit,
-                    code=f'Digit{digit}',
-                    windows_virtual_key_code=ord(digit),
-                    native_virtual_key_code=ord(digit),
-                ))
-                await asyncio.sleep(0.05)
-                await tab.send(uc.cdp.input_.dispatch_key_event(
-                    type_='keyUp', key=digit,
-                    code=f'Digit{digit}',
-                    windows_virtual_key_code=ord(digit),
-                    native_virtual_key_code=ord(digit),
-                ))
-                await asyncio.sleep(0.15)
-            await asyncio.sleep(0.5)
-        else:
-            raise HTTPException(status_code=500, detail="SMS input not found")
 
-        # Click submit button (may say "Войти" or "Подтвердить")
-        submit_clicked = False
-        btns = await tab.select_all('button')
-        for b in btns:
-            txt = (b.text or '').strip() if hasattr(b, 'text') else ''
-            if any(kw in txt for kw in ['Войти', 'Подтвердить', 'Далее']):
-                await b.mouse_click()
-                submit_clicked = True
-                logger.info(f"Clicked submit button: '{txt}'")
-                break
-        if not submit_clicked:
-            # Try JS click on any visible submit button
-            await tab.evaluate('document.querySelector("button[type=submit], .js-VkIdButton, .LoginForm__btn")?.click()')
-            logger.info("Fallback: JS click on submit button")
-        await asyncio.sleep(10)  # Wait for VkusVill to process login
+        # Robust recovery: handle both node errors AND ProtocolException (context destroyed)
+        sms_input = None
+        for _attempt in range(1):  # Single attempt — keepalive prevents Chrome death
+            try:
+                # First check if context is alive
+                try:
+                    await tab.evaluate("1+1")
+                except Exception:
+                    logger.warning(f"Attempt {_attempt+1}: JS context dead, navigating to /personal/")
+                    await tab.get("https://vkusvill.ru/personal/")
+                    await asyncio.sleep(5)
 
-        # Navigate to /personal/ to confirm auth (sets UF_USER_AUTH=Y)
-        await tab.get('https://vkusvill.ru/personal/')
-        await asyncio.sleep(5)
+                sms_input = await tab.find('input[name="SMS"]', best_match=True, timeout=5)
+                if sms_input:
+                    import nodriver.cdp.input_ as cdp_input
+                    logger.info(f"SMS input found on attempt {_attempt+1}")
 
-        # Navigate to cart to bind delivery address cookies
-        await tab.get('https://vkusvill.ru/cart/')
-        await asyncio.sleep(5)
+                    # Close any popup/modal first so we interact with the clean page
+                    await safe_evaluate(tab, """
+                        // Close popup modal if present
+                        var closeBtn = document.querySelector('.VV_Modal__Close, .modal-close, [class*="close"]');
+                        if (closeBtn) closeBtn.click();
+                        // Also try clicking overlay
+                        var overlay = document.querySelector('.VV_Modal__Overlay, .modal-overlay, [class*="overlay"]');
+                        if (overlay) overlay.click();
+                    """)
+                    await asyncio.sleep(0.5)
 
-        # If UF_USER_AUTH still N, try refreshing /personal/ once more (VkusVill can be slow)
-        cdp_cookies_check = await browser.cookies.get_all()
-        auth_check = {c.name: c.value for c in cdp_cookies_check}
-        if auth_check.get("UF_USER_AUTH") != "Y":
-            logger.info("UF_USER_AUTH not Y yet, retrying /personal/...")
-            await tab.get('https://vkusvill.ru/personal/')
-            await asyncio.sleep(8)
+                    # Focus and clear the SMS input
+                    await safe_evaluate(tab, """
+                        var inp = document.querySelector('input[name="SMS"]');
+                        if (inp) { inp.focus(); inp.click(); inp.value = ''; }
+                    """)
+                    await asyncio.sleep(0.3)
 
-        # Get ALL cookies via CDP (includes httpOnly — not accessible via document.cookie)
-        cdp_cookies = await browser.cookies.get_all()
+                    # Type using CDP keyDown/keyUp (original approach)
+                    for digit in code:
+                        await tab.send(cdp_input.dispatch_key_event(
+                            type_='keyDown', key=digit, text=digit,
+                            code=f'Digit{digit}',
+                            windows_virtual_key_code=ord(digit),
+                            native_virtual_key_code=ord(digit),
+                        ))
+                        await asyncio.sleep(0.05)
+                        await tab.send(cdp_input.dispatch_key_event(
+                            type_='keyUp', key=digit,
+                            code=f'Digit{digit}',
+                            windows_virtual_key_code=ord(digit),
+                            native_virtual_key_code=ord(digit),
+                        ))
+                        await asyncio.sleep(0.15)
+                    await asyncio.sleep(0.3)
+
+                    # Also set via JS as backup for React state
+                    await safe_evaluate(tab, f"""
+                        (function() {{
+                            var inp = document.querySelector('input[name="SMS"]');
+                            if (!inp) return;
+                            var ns = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+                            ns.call(inp, '{code}');
+                            var t = inp._valueTracker; if (t) t.setValue('');
+                            inp.dispatchEvent(new Event('input', {{bubbles:true}}));
+                            inp.dispatchEvent(new Event('change', {{bubbles:true}}));
+                        }})()
+                    """)
+                    await asyncio.sleep(0.3)
+
+                    _val = await safe_evaluate(tab, "document.querySelector('input[name=\"SMS\"]')?.value || 'EMPTY'")
+                    logger.info(f"SMS input value: {_val}")
+
+                    # Pre-submit screenshot
+                    _presub = os.path.join(DATA_DIR, f"verify_presubmit_{user_id}.png")
+                    try:
+                        await tab.save_screenshot(_presub)
+                        logger.info(f"Pre-submit screenshot: {_presub}")
+                    except:
+                        pass
+
+                    # Click submit - force-enable if disabled, via JS
+                    _btn_state = await safe_evaluate(tab, """
+                        (function() {
+                            var btns = document.querySelectorAll('button');
+                            for (var i = 0; i < btns.length; i++) {
+                                var t = btns[i].textContent.trim();
+                                if (t.indexOf('Войти') > -1 || t.indexOf('Подтвердить') > -1) {
+                                    if (btns[i].disabled) {
+                                        btns[i].disabled = false;
+                                        btns[i].removeAttribute('disabled');
+                                    }
+                                    btns[i].click();
+                                    return 'clicked:' + t;
+                                }
+                            }
+                            return 'no button';
+                        })()
+                    """)
+                    logger.info(f"Submit button: {_btn_state}")
+
+                    # Poll for error/success for 12 seconds
+                    _verify_ss = os.path.join(DATA_DIR, f"verify_result_{user_id}.png")
+                    _found_error = False
+                    _login_succeeded = False
+                    for _poll in range(12):
+                        await asyncio.sleep(1)
+                        _pt = await safe_evaluate(tab, "document.body.innerText") or ""
+                        _ptl = _pt.lower() if isinstance(_pt, str) else ""
+
+                        if 'неверный' in _ptl or 'неверн' in _ptl:
+                            logger.info(f"Wrong code on poll {_poll+1}")
+                            try:
+                                await tab.save_screenshot(_verify_ss)
+                            except:
+                                pass
+                            _found_error = True
+                            break
+
+                        _url = await safe_evaluate(tab, "window.location.href") or ""
+                        if '/personal/' in str(_url) and 'auth' not in str(_url).lower():
+                            logger.info(f"Success redirect on poll {_poll+1}")
+                            _login_succeeded = True
+                            break
+
+                        if _poll == 3:
+                            try:
+                                await tab.save_screenshot(_verify_ss)
+                            except:
+                                pass
+
+                    if not _found_error:
+                        try:
+                            await tab.save_screenshot(_verify_ss)
+                        except:
+                            pass
+
+                    if _found_error:
+                        try:
+                            browser.stop()
+                        except:
+                            pass
+                        if user_id in _login_sessions:
+                            del _login_sessions[user_id]
+                        return {"success": False, "error": "wrong_code", "message": "Введён неверный код", "screenshot": _verify_ss}
+
+                else:
+                    raise HTTPException(status_code=500, detail="SMS input not found")
+
+            except Exception as _sms_err:
+                logger.warning(f"SMS attempt {_attempt+1} failed: {_sms_err}")
+                if _attempt == 0:
+                    raise HTTPException(status_code=500, detail=f"SMS code entry failed: {_sms_err}")
+
+        # === Cookie extraction with HARD 25s timeout ===
+        async def _get_cookies_with_nav():
+            _cdp = []
+            try:
+                await asyncio.wait_for(tab.get('https://vkusvill.ru/personal/'), timeout=8)
+                await asyncio.sleep(1)
+            except Exception as e:
+                logger.warning(f"Nav /personal/ failed: {e}")
+            try:
+                await asyncio.wait_for(tab.get('https://vkusvill.ru/cart/'), timeout=8)
+                await asyncio.sleep(1)
+            except Exception as e:
+                logger.warning(f"Nav /cart/ failed: {e}")
+            try:
+                _cdp = await asyncio.wait_for(browser.cookies.get_all(), timeout=5)
+            except Exception:
+                logger.warning("CDP cookies timed out")
+            return _cdp
+
+        try:
+            cdp_cookies = await asyncio.wait_for(_get_cookies_with_nav(), timeout=25)
+            logger.info(f"Cookie extraction OK: {len(cdp_cookies)} cookies")
+        except asyncio.TimeoutError:
+            logger.warning("HARD TIMEOUT (25s) on cookie extraction — returning success anyway")
+            cdp_cookies = []
         cookies_list = [
             {
                 "name": c.name,
@@ -2289,9 +2453,11 @@ async def auth_verify(req: AuthCodeRequest):
         cookie_map = {c["name"]: c["value"] for c in cookies_list}
         is_authenticated = cookie_map.get("UF_USER_AUTH") == "Y"
 
-        if not is_authenticated:
+        if not is_authenticated and not _login_succeeded:
             logger.warning(f"Login failed for {entry.get('phone', user_id)}: UF_USER_AUTH={cookie_map.get('UF_USER_AUTH', 'missing')} — NOT saving cookies")
             return {"success": False, "message": "Не удалось подтвердить вход. VkusVill не принял код — попробуйте ещё раз."}
+        if not is_authenticated and _login_succeeded:
+            logger.info(f"VkusVill redirected (login OK) but cookies incomplete for {entry.get('phone', user_id)}")
 
         # Save cookies by PHONE (not user_id)
         phone_10 = entry.get("phone", "")
