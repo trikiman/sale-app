@@ -76,6 +76,7 @@ app.add_middleware(
         "http://localhost:8000",
         "https://web.telegram.org",
         "https://vkusvill-proxy.vercel.app",
+        "https://vkusvillsale.vercel.app",
         os.environ.get("WEB_APP_ORIGIN", "https://t.me"),
     ],
     allow_credentials=True,
