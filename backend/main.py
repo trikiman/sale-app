@@ -2263,7 +2263,12 @@ async def auth_verify(req: AuthCodeRequest):
         # After captcha auto-solve, VkusVill reloads the page, destroying the old tab's CDP target.
         # We recover by getting a fresh tab reference from the browser's active targets.
         sms_input = None
+        _login_succeeded = False
+        _found_error = False
+        _verify_ss = None
         for _attempt in range(3):
+            if _login_succeeded or _found_error:
+                break  # Don't retry if we already have a result
             try:
                 # First check if the current tab's context is still alive
                 try:
@@ -2272,7 +2277,7 @@ async def auth_verify(req: AuthCodeRequest):
                     logger.warning(f"Attempt {_attempt+1}: CDP context dead ({_ctx_err}), refreshing tab from browser targets")
                     # Get a fresh tab — the browser is still alive, just the tab target changed
                     try:
-                        targets = await browser.targets
+                        targets = browser.targets
                         if targets:
                             tab = targets[0]
                             entry["tab"] = tab  # Update session with fresh tab
@@ -2375,8 +2380,6 @@ async def auth_verify(req: AuthCodeRequest):
 
                     # Poll for error/success for 12 seconds
                     _verify_ss = os.path.join(DATA_DIR, f"verify_result_{user_id}.png")
-                    _found_error = False
-                    _login_succeeded = False
                     for _poll in range(12):
                         await asyncio.sleep(1)
                         _pt = await safe_evaluate(tab, "document.body.innerText") or ""
