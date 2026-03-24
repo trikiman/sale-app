@@ -512,7 +512,7 @@ async def proxy_image(url: str = ""):
     if not url:
         raise HTTPException(status_code=400, detail="Missing url parameter")
     parsed = urlparse(url)
-    if parsed.scheme != "https" or parsed.hostname != "img.vkusvill.ru":
+    if parsed.scheme != "https" or not parsed.hostname or not parsed.hostname.endswith("vkusvill.ru"):
         raise HTTPException(status_code=400, detail="Invalid image URL")
     # Check in-memory cache
     now = _time.time()
