@@ -1,8 +1,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 
-// Auth endpoints: use Cloudflare tunnel (HTTPS, 100s timeout) instead of Vercel proxy (30s timeout)
-const AUTH_BASE = 'https://breeding-effort-constraint-injection.trycloudflare.com'
+// Auth endpoints: Vercel proxy (30s timeout) — verify returns in ~16s now
+const AUTH_BASE = ''
 
 const Spinner = () => <span className="login-spinner" />
 
