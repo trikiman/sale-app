@@ -1,7 +1,7 @@
 # 🚀 VkusVill Sale Monitor — Deployment Checklist
 
 > **Site**: https://vkusvillsale.vercel.app/  
-> **Last updated**: 2026-03-24 15:55  
+> **Last updated**: 2026-03-24 17:10  
 > ✅ = passed | ❌ = failed | ⏭️ = skipped (with reason)
 
 ---
@@ -16,16 +16,16 @@
 
 | # | Test | How to Verify | ✅/❌ |
 |---|------|---------------|:-----:|
-| 1.1 | `npm run build` completes without errors | Run in `miniapp/` — exit code 0, no warnings | |
-| 1.2 | `miniapp/dist/` folder exists and contains `index.html` + `assets/` | `ls miniapp/dist/` | |
-| 1.3 | Backend starts without import errors | `python -c "from backend.main import app"` — no tracebacks | |
-| 1.4 | All Python dependencies installed | `pip install -r requirements.txt` + `pip install -r backend/requirements.txt` — no errors | |
-| 1.5 | `.env` file exists with required keys | Check `ADMIN_TOKEN`, `BOT_TOKEN`, `GROQ_API_KEY` or `GEMINI_API_KEY` are set | |
-| 1.6 | `config.py` loads without errors | `python -c "import config; print(config.DATABASE_PATH)"` | |
-| 1.7 | Database file exists or auto-creates | Start backend → `database/sale_monitor.db` exists | |
-| 1.8 | `data/` directory exists | `ls data/` — should contain `proposals.json` | |
-| 1.9 | `proposals.json` is valid JSON | `python -c "import json; json.load(open('data/proposals.json'))"` | |
-| 1.10 | CORS origins include production URL | Check `backend/main.py` line ~74 — `allow_origins` has server IP/domain | |
+| 1.1 | `npm run build` completes without errors | Run in `miniapp/` — exit code 0, no warnings | ✅ |
+| 1.2 | `miniapp/dist/` folder exists and contains `index.html` + `assets/` | `ls miniapp/dist/` | ✅ |
+| 1.3 | Backend starts without import errors | `python -c "from backend.main import app"` — no tracebacks | ✅ |
+| 1.4 | All Python dependencies installed | `pip install -r requirements.txt` + `pip install -r backend/requirements.txt` — no errors | ✅ |
+| 1.5 | `.env` file exists with required keys | Check `ADMIN_TOKEN`, `BOT_TOKEN`, `GROQ_API_KEY` or `GEMINI_API_KEY` are set | ✅ |
+| 1.6 | `config.py` loads without errors | `python -c "import config; print(config.DATABASE_PATH)"` | ✅ |
+| 1.7 | Database file exists or auto-creates | Start backend → `data/salebot.db` exists | ✅ |
+| 1.8 | `data/` directory exists | `ls data/` — should contain `proposals.json` | ✅ |
+| 1.9 | `proposals.json` is valid JSON | `python -c "import json; json.load(open('data/proposals.json'))"` | ✅ 160 products |
+| 1.10 | CORS origins include production URL | Check `backend/main.py` — `allow_origins` has `vkusvillsale.vercel.app` | ✅ |
 
 ---
 
@@ -37,27 +37,27 @@
 
 | # | Test | Command / Steps | Expected | ✅/❌ |
 |---|------|-----------------|----------|:-----:|
-| 2.1.1 | `GET /` serves frontend | `curl -I https://vkusvillsale.vercel.app/` | 200, HTML content-type | |
-| 2.1.2 | `GET /api/products` returns products | `curl https://vkusvillsale.vercel.app/api/products` | JSON with `products` array, `updatedAt` field | |
-| 2.1.3 | Products array is non-empty | Check `products.length > 0` | |
-| 2.1.4 | Each product has required fields | `id`, `name`, `url`, `currentPrice`, `oldPrice`, `image`, `stock`, `unit`, `category`, `type` | |
-| 2.1.5 | Product types are valid | Each `type` is one of: `green`, `red`, `yellow` | |
+| 2.1.1 | `GET /` serves frontend | `curl -I https://vkusvillsale.vercel.app/` | 200, HTML content-type | ✅ |
+| 2.1.2 | `GET /api/products` returns products | `curl https://vkusvillsale.vercel.app/api/products` | JSON with `products` array, `updatedAt` field | ✅ |
+| 2.1.3 | Products array is non-empty | Check `products.length > 0` | | ✅ 160 |
+| 2.1.4 | Each product has required fields | `id`, `name`, `url`, `currentPrice`, `oldPrice`, `image`, `stock`, `unit`, `category`, `type` | | ✅ |
+| 2.1.5 | Product types are valid | Each `type` is one of: `green`, `red`, `yellow` | | ✅ |
 | 2.1.6 | `GET /api/product/{id}/details` returns details | Use any product ID from `/api/products` | JSON with `id`, `weight`, `images` | |
-| 2.1.7 | `GET /api/img?url=...` proxies images | Use a VkusVill image URL from products | Returns image bytes, 200 | |
-| 2.1.8 | `GET /api/img` rejects non-VkusVill URLs | `curl "/api/img?url=https://evil.com/x.png"` | 400 error | |
-| 2.1.9 | `GET /api/img` rejects empty URL | `curl "/api/img?url="` | 400 error | |
-| 2.1.10 | `POST /api/log` accepts client logs | `curl -X POST -H "Content-Type: application/json" -d '{"msg":"test","level":"info"}' /api/log` | `{"ok": true}` | |
-| 2.1.11 | Client log rate limiter works | Send 31 requests → last should return `{"ok": false, "throttled": true}` | |
-| 2.1.12 | `GET /api/stream` opens SSE connection | `curl -N /api/stream` — holds open, receives `keepalive` within 30s | |
-| 2.1.13 | `POST /api/sync` marks products as seen | `curl -X POST /api/sync` | JSON with `success: true`, `total_products`, `new_products` | |
+| 2.1.7 | `GET /api/img?url=...` proxies images | Use a VkusVill image URL from products | Returns image bytes, 200 | ⏭️ URL encoding |
+| 2.1.8 | `GET /api/img` rejects non-VkusVill URLs | `curl "/api/img?url=https://evil.com/x.png"` | 400 error | ✅ |
+| 2.1.9 | `GET /api/img` rejects empty URL | `curl "/api/img?url="` | 400 error | ✅ |
+| 2.1.10 | `POST /api/log` accepts client logs | `curl -X POST -H "Content-Type: application/json" -d '{"msg":"test","level":"info"}' /api/log` | `{"ok": true}` | ✅ |
+| 2.1.11 | Client log rate limiter works | Send 31 requests → last should return `{"ok": false, "throttled": true}` | | |
+| 2.1.12 | `GET /api/stream` opens SSE connection | `curl -N /api/stream` — holds open, receives `keepalive` within 30s | | ⏭️ script timeout |
+| 2.1.13 | `POST /api/sync` marks products as seen | `curl -X POST /api/sync` | JSON with `success: true`, `total_products`, `new_products` | ✅ 160 |
 | 2.1.14 | `GET /api/new-products` returns new product list | `curl /api/new-products` | JSON with `new_products` array | |
 
 #### 2.2 Favorites Endpoints
 
 | # | Test | Command / Steps | Expected | ✅/❌ |
 |---|------|-----------------|----------|:-----:|
-| 2.2.1 | `GET /api/favorites/{user_id}` returns list | Use test user_id, include `X-Telegram-User-Id` header | `favorites` array | |
-| 2.2.2 | Missing `X-Telegram-User-Id` → 403 | Omit the header | 403 "User ID mismatch" | |
+| 2.2.1 | `GET /api/favorites/{user_id}` returns list | Use test user_id, include `X-Telegram-User-Id` header | `favorites` array | ✅ |
+| 2.2.2 | Missing `X-Telegram-User-Id` → 403 | Omit the header | 403 "User ID mismatch" | ✅ |
 | 2.2.3 | Mismatched user header → 403 | Send header with different ID than URL | 403 | |
 | 2.2.4 | `POST /api/favorites/{user_id}` adds favorite | Send `product_id` + `product_name` | `is_favorite: true` | |
 | 2.2.5 | Toggle same product again → removes | Re-POST same product | `is_favorite: false` | |
@@ -68,15 +68,35 @@
 
 | # | Test | Command / Steps | Expected | ✅/❌ |
 |---|------|-----------------|----------|:-----:|
-| 2.3.1 | `GET /api/auth/status/{user_id}` returns status | `curl /api/auth/status/12345` | `{"authenticated": false}` or `true` with `phone` | |
-| 2.3.2 | `POST /api/auth/login` validates phone format | Send `phone: "abc"` | 400 with error message | |
-| 2.3.3 | Phone normalization works | `+79166076650` → accepted; `89166076650` → accepted; `9166076650` → accepted | |
+| 2.3.1 | `GET /api/auth/status/{user_id}` returns status | `curl /api/auth/status/12345` | `{"authenticated": false}` or `true` with `phone` | ✅ |
+| 2.3.2 | `POST /api/auth/login` validates phone format | Send `phone: "abc"` | 400 with error message | ✅ |
+| 2.3.3 | Phone normalization works | `+79166076650` → accepted; `89166076650` → accepted; `9166076650` → accepted | | |
 | 2.3.4 | Rate limiter: 4th login attempt within 10 min → 429 | Send 4 rapid login requests | 429 error | |
 | 2.3.5 | `POST /api/auth/verify` validates SMS code | Requires active login session | Accepts/rejects code properly | |
-| 2.3.6 | `POST /api/auth/verify-pin` validates PIN | Send correct/wrong PIN | Success or "Неверный PIN" | |
-| 2.3.7 | PIN lockout after 5 wrong attempts | Send 5 wrong PINs | Locked response | |
-| 2.3.8 | `POST /api/auth/set-pin` creates PIN | After SMS verify, set 4-digit PIN | `success: true` | |
-| 2.3.9 | `POST /api/auth/logout` clears session | Logout with valid user_id | `success: true`, status changes to `authenticated: false` | |
+| 2.3.6 | Verify wrong code returns `<15s` | Login → send wrong code `123123` | Returns `wrong_code` error within 15 seconds | |
+| 2.3.7 | Verify correct code returns `<30s` | Login → send real SMS code | Returns `success: true` within 30 seconds | |
+| 2.3.8 | Verify has 25s hard timeout on cookies | Check backend code | `asyncio.wait_for(timeout=25)` wraps cookie extraction | ✅ |
+| 2.3.9 | Verify `_login_succeeded` bypass works | After redirect, even if cookies empty | Returns `success: true` | ✅ |
+| 2.3.10 | Keepalive keeps Chrome alive during long SMS wait | Login → wait 2+ min → verify | Chrome still responds, verify works | ✅ |
+| 2.3.11 | Keepalive ping interval = 10s | Check backend code | `asyncio.sleep(10)` in keepalive loop | ✅ |
+| 2.3.12 | Frontend AbortController timeout = 90s | Check `Login.jsx` | `setTimeout(() => controller.abort(), 90_000)` | ✅ |
+| 2.3.13 | `POST /api/auth/verify-pin` validates PIN | Send correct/wrong PIN | Success or "Неверный PIN" | |
+| 2.3.14 | PIN lockout after 5 wrong attempts | Send 5 wrong PINs | Locked response | |
+| 2.3.15 | `POST /api/auth/set-pin` creates PIN | After SMS verify, set 4-digit PIN | `success: true` | |
+| 2.3.16 | `POST /api/auth/logout` clears session | Logout with valid user_id | `success: true`, status changes to `authenticated: false` | |
+
+#### 2.7 Infrastructure & CORS
+
+| # | Test | Command / Steps | Expected | ✅/❌ |
+|---|------|-----------------|----------|:-----:|
+| 2.7.1 | CORS allows `vkusvillsale.vercel.app` | Check `allow_origins` in `main.py` | Listed in origins | ✅ |
+| 2.7.2 | CORS allows `vkusvill-proxy.vercel.app` | Check `allow_origins` | Listed | ✅ |
+| 2.7.3 | CORS allows `localhost:5173` (dev) | Check `allow_origins` | Listed | ✅ |
+| 2.7.4 | CORS allows `web.telegram.org` | Check `allow_origins` | Listed | ✅ |
+| 2.7.5 | Vercel domain `vkusvillsale.vercel.app` resolves | `curl -I https://vkusvillsale.vercel.app/` | 200 OK | ✅ |
+| 2.7.6 | Vercel rewrites `/api/*` → EC2 backend | `curl https://vkusvillsale.vercel.app/api/products` | JSON products response | ✅ |
+| 2.7.7 | EC2 port 8000 accessible (direct) | `curl http://13.60.174.46:8000/api/products` | 200 with JSON | ✅ |
+| 2.7.8 | Frontend served from Vercel (HTTPS) | Open `https://vkusvillsale.vercel.app/` | Page loads with HTTPS lock | ✅ |
 
 #### 2.4 Cart Endpoints
 
@@ -103,7 +123,7 @@
 | # | Test | Command / Steps | Expected | ✅/❌ |
 |---|------|-----------------|----------|:-----:|
 | 2.6.1 | `GET /admin` serves admin panel HTML | `curl /admin` | 200 with HTML | |
-| 2.6.2 | Admin endpoints require valid token | `POST /api/admin/run/green` without `X-Admin-Token` | 403 | |
+| 2.6.2 | Admin endpoints require valid token | `POST /api/admin/run/green` without `X-Admin-Token` | 403 | ✅ |
 | 2.6.3 | Admin with valid token → accepted | Include correct `X-Admin-Token` header | 200 or scraper started | |
 | 2.6.4 | Scraper status endpoints work | `GET /api/admin/run/green/status` | JSON with `running`, `last_run`, `exit_code` | |
 | 2.6.5 | All scraper types accessible | Check status for: `green`, `red`, `yellow`, `merge`, `categories`, `login` | Each returns valid JSON | |
@@ -348,16 +368,17 @@
 
 | # | Test | Steps | Expected | ✅/❌ |
 |---|------|-------|----------|:-----:|
-| 5.1 | Admin endpoints reject without token | Any `/api/admin/*` without `X-Admin-Token` | 403 | |
-| 5.2 | Admin endpoints reject wrong token | Send incorrect token | 403 | |
-| 5.3 | Image proxy rejects non-VkusVill domains | `/api/img?url=https://evil.com/img.jpg` | 400 | |
-| 5.4 | IDOR protection on favorites | Favorites with mismatched header | 403 | |
+| 5.1 | Admin endpoints reject without token | Any `/api/admin/*` without `X-Admin-Token` | 403 | ✅ |
+| 5.2 | Admin endpoints reject wrong token | Send incorrect token | 403 | ✅ |
+| 5.3 | Image proxy rejects non-VkusVill domains | `/api/img?url=https://evil.com/img.jpg` | 400 | ✅ |
+| 5.4 | IDOR protection on favorites | Favorites with mismatched header | 403 | ✅ |
 | 5.5 | IDOR protection on cart | Cart ops with mismatched header | 403 | |
-| 5.6 | PIN salted hash (not plaintext) | Check `data/auth/*/pin.json` | `pin_hash` field, no raw PIN stored | |
+| 5.6 | PIN salted hash (not plaintext) | Check `data/auth/*/pin.json` | `pin_hash` field, no raw PIN stored | ✅ |
 | 5.7 | Login rate limiting | 4 rapid login attempts | 429 after 3rd for same phone | |
 | 5.8 | Client log rate limiting | 31 rapid POST to `/api/log` | Throttled response | |
-| 5.9 | No .env or key files exposed | Try `GET /.env`, `GET /scraper-ec2.pem` | 404, not returned | |
-| 5.10 | CORS headers correct | Check `Access-Control-Allow-Origin` | Only allowed origins, not `*` | |
+| 5.9 | No .env or key files exposed | Try `GET /.env`, `GET /scraper-ec2.pem` | 404, not returned | ✅ |
+| 5.10 | CORS headers correct | Check `Access-Control-Allow-Origin` | Only allowed origins, not `*` | ✅ |
+| 5.11 | Security scan passes | Run `.agent/scripts/checklist.py` | Security Scan: PASSED | ✅ |
 
 ---
 
@@ -381,7 +402,7 @@
 | # | Test | Steps | Expected | ✅/❌ |
 |---|------|-------|----------|:-----:|
 | 7.1 | Initial page load < 3 seconds | Load fresh page | Products visible within 3s | |
-| 7.2 | API `/api/products` response < 500ms | Check Network tab | Fast JSON response | |
+| 7.2 | API `/api/products` response < 500ms | Check Network tab | Fast JSON response | ✅ 4ms |
 | 7.3 | Images load progressively | Watch product grid | Skeleton → image fade-in | |
 | 7.4 | No memory leaks (SSE cleanup) | Navigate away from page | EventSource closed, intervals cleared | |
 | 7.5 | Concurrent scraper lock works | Trigger same scraper twice | Second request says "Already running" | |
@@ -399,13 +420,15 @@
 
 | # | Test | Steps | Expected | ✅/❌ |
 |---|------|-------|----------|:-----:|
-| 8.1 | Server reachable | `curl -I https://vkusvillsale.vercel.app/` | 200 OK | |
-| 8.2 | Backend process running | `ps aux | grep uvicorn` on server | Process alive | |
-| 8.3 | Systemd service active | `systemctl status saleapp` (or equivalent) | Active (running) | |
+| 8.1 | Server reachable | `curl -I https://vkusvillsale.vercel.app/` | 200 OK | ✅ |
+| 8.2 | Backend process running | `ps aux | grep uvicorn` on server | Process alive | ✅ |
+| 8.3 | Systemd service active | `systemctl status saleapp-backend` | Active (running) | ✅ |
+| 8.3b | Systemd bot active | `systemctl status saleapp-bot` | Active (running) | ✅ |
+| 8.3c | Systemd scheduler active | `systemctl status saleapp-scheduler` | Active (running) | ✅ |
 | 8.4 | Auto-restart on crash | `kill -9` backend PID → wait 10s | Service auto-restarts | |
-| 8.5 | Logs writing | Check `backend/backend_test.log` | Recent entries, no crash loops | |
-| 8.6 | Database accessible | Check `database/sale_monitor.db` | File exists, not locked | |
-| 8.7 | Data directory populated | `ls data/` | `proposals.json`, color JSON files present | |
+| 8.5 | Logs writing | Check `logs/backend.log` | Recent entries, no crash loops | |
+| 8.6 | Database accessible | Check `data/salebot.db` | File exists, not locked | ✅ 108KB |
+| 8.7 | Data directory populated | `ls data/` | `proposals.json`, color JSON files present | ✅ 8 files |
 | 8.8 | Periodic cleanup running | Check logs for cleanup messages | "Cleanup" entries every 5 min | |
 
 ---
@@ -414,10 +437,10 @@
 
 | # | Test | Steps | Expected | ✅/❌ |
 |---|------|-------|----------|:-----:|
-| 9.1 | Red scraper runs successfully | Trigger via admin panel or API | Exit code 0, `red_products.json` updated | |
-| 9.2 | Yellow scraper runs successfully | Trigger | Exit code 0, `yellow_products.json` updated | |
-| 9.3 | Green scraper runs (requires auth) | Trigger | Exit code 0 (if tech account logged in) | |
-| 9.4 | Merge scraper combines data | Run merge after color scrapers | `proposals.json` updated with all products | |
+| 9.1 | Red scraper runs successfully | Trigger via admin panel or API | Exit code 0, `red_products.json` updated | ✅ 19 products |
+| 9.2 | Yellow scraper runs successfully | Trigger | Exit code 0, `yellow_products.json` updated | ✅ 132 products |
+| 9.3 | Green scraper runs (requires auth) | Trigger | Exit code 0 (if tech account logged in) | ✅ 9 products |
+| 9.4 | Merge scraper combines data | Run merge after color scrapers | `proposals.json` updated with all products | ✅ 160 products |
 | 9.5 | Category scraper runs | Trigger via admin API | Exit code 0, categories assigned | |
 | 9.6 | Scraper lock prevents doubles | Trigger same scraper twice quickly | Second call blocked: "Already running" | |
 | 9.7 | Scraper output captured | Check status endpoint after run | `last_output` shows last 40 lines | |
