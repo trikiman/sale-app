@@ -2433,28 +2433,87 @@ async def auth_verify(req: AuthCodeRequest):
         # Chrome to crash during the wait, resulting in 0 cookies extracted.
         # Wait 5s for VkusVill page to fully reload and set cookies after redirect.
         await asyncio.sleep(5)
-        logger.info("Waited 5s for page to settle, extracting cookies...")
+        logger.info("Waited 5s for page to settle, refreshing tab before cookie extraction...")
+
+        # After VkusVill's success redirect, the old tab CDP target often dies.
+        # Get a fresh tab reference from browser.targets (same recovery as SMS retry).
         try:
-            cdp_cookies = await asyncio.wait_for(browser.cookies.get_all(), timeout=10)
-            logger.info(f"Cookie extraction OK: {len(cdp_cookies)} cookies")
-        except asyncio.TimeoutError:
-            logger.warning("Cookie extraction timed out (10s)")
-            cdp_cookies = []
-        except Exception as _cookie_err:
-            logger.warning(f"Cookie extraction failed: {_cookie_err}")
-            cdp_cookies = []
-        cookies_list = [
-            {
-                "name": c.name,
-                "value": c.value,
-                "domain": c.domain,
-                "path": c.path,
-                "secure": c.secure,
-                "httpOnly": c.http_only,
-                "expiry": int(c.expires) if getattr(c, "expires", None) else None,
-            }
-            for c in cdp_cookies
-        ]
+            fresh_targets = browser.targets
+            if fresh_targets:
+                tab = fresh_targets[0]
+                entry["tab"] = tab
+                # Verify the fresh tab is responsive
+                _ping = await asyncio.wait_for(tab.evaluate("1+1"), timeout=3)
+                logger.info(f"Fresh tab OK (ping={_ping}), extracting cookies...")
+            else:
+                logger.warning("No browser targets found for cookie extraction")
+        except Exception as _tab_err:
+            logger.warning(f"Tab refresh failed: {_tab_err}")
+
+        # Strategy 1: Tab-level CDP Network.getAllCookies (more reliable than browser.cookies)
+        cdp_cookies = []
+        try:
+            import nodriver.cdp.network as _cdp_net
+            cdp_cookies = await asyncio.wait_for(tab.send(_cdp_net.get_all_cookies()), timeout=5)
+            logger.info(f"Strategy 1 (tab CDP): {len(cdp_cookies)} cookies")
+        except Exception as _e1:
+            logger.warning(f"Strategy 1 (tab CDP) failed: {_e1}")
+
+        # Strategy 2: JS document.cookie fallback (gets non-httpOnly cookies)
+        if not cdp_cookies:
+            try:
+                js_cookies_str = await asyncio.wait_for(
+                    tab.evaluate("document.cookie"),
+                    timeout=5
+                )
+                if js_cookies_str and isinstance(js_cookies_str, str) and len(js_cookies_str) > 5:
+                    logger.info(f"Strategy 2 (JS): got {len(js_cookies_str)} chars of cookies")
+                    # Parse "name=value; name2=value2" format into list
+                    from http.cookies import SimpleCookie
+                    sc = SimpleCookie()
+                    sc.load(js_cookies_str)
+                    cdp_cookies = []  # Will use cookies_list directly below
+                    js_parsed = [
+                        {"name": k, "value": v.value, "domain": ".vkusvill.ru", "path": "/",
+                         "secure": False, "httpOnly": False, "expiry": None}
+                        for k, v in sc.items()
+                    ]
+                    logger.info(f"Strategy 2 (JS): parsed {len(js_parsed)} cookies")
+                else:
+                    js_parsed = []
+                    logger.warning(f"Strategy 2 (JS): empty or invalid: {repr(js_cookies_str)[:100]}")
+            except Exception as _e2:
+                js_parsed = []
+                logger.warning(f"Strategy 2 (JS) failed: {_e2}")
+        else:
+            js_parsed = []
+
+        # Strategy 3: browser.cookies as last resort (may hang, short timeout)
+        if not cdp_cookies and not js_parsed:
+            try:
+                cdp_cookies = await asyncio.wait_for(browser.cookies.get_all(), timeout=3)
+                logger.info(f"Strategy 3 (browser): {len(cdp_cookies)} cookies")
+            except Exception as _e3:
+                logger.warning(f"Strategy 3 (browser) failed: {_e3}")
+                cdp_cookies = []
+        # Build cookies_list from CDP cookies (Strategy 1/3) or JS-parsed (Strategy 2)
+        if cdp_cookies:
+            cookies_list = [
+                {
+                    "name": c.name,
+                    "value": c.value,
+                    "domain": c.domain,
+                    "path": c.path,
+                    "secure": c.secure,
+                    "httpOnly": c.http_only,
+                    "expiry": int(c.expires) if getattr(c, "expires", None) else None,
+                }
+                for c in cdp_cookies
+            ]
+        elif js_parsed:
+            cookies_list = js_parsed
+        else:
+            cookies_list = []
 
         # Verify login actually succeeded before saving cookies
         # UF_USER_AUTH=Y is the definitive proof of authentication
