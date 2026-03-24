@@ -1,7 +1,7 @@
 # 🚀 VkusVill Sale Monitor — Deployment Checklist
 
 > **Site**: https://vkusvillsale.vercel.app/  
-> **Last verified**: 2026-03-24 18:00  
+> **Last verified**: 2026-03-24 18:20  
 > ✅ = passed | ❌ = failed | ⏭️ = skipped (with reason)
 
 ---
@@ -43,7 +43,7 @@
 | 2.1.4 | Each product has required fields | `id`, `name`, `url`, `currentPrice`, `oldPrice`, `image`, `stock`, `unit`, `category`, `type` | | ✅ all fields |
 | 2.1.5 | Product types are valid | Each `type` is one of: `green`, `red`, `yellow` | | ✅ |
 | 2.1.6 | `GET /api/product/{id}/details` returns details | Use any product ID from `/api/products` | JSON with `id`, `weight`, `images` | ✅ |
-| 2.1.7 | `GET /api/img?url=...` proxies images | Use a VkusVill image URL from products | Returns image bytes, 200 | ⚠️ URL encoding issue in test |
+| 2.1.7 | `GET /api/img?url=...` proxies images | Use a VkusVill image URL from products | Returns image bytes, 200 | ✅ 7750 bytes |
 | 2.1.8 | `GET /api/img` rejects non-VkusVill URLs | `curl "/api/img?url=https://evil.com/x.png"` | 400 error | ✅ |
 | 2.1.9 | `GET /api/img` rejects empty URL | `curl "/api/img?url="` | 400 error | ✅ |
 | 2.1.10 | `POST /api/log` accepts client logs | `curl -X POST -H "Content-Type: application/json" -d '{"msg":"test","level":"info"}' /api/log` | `{"ok": true}` | ✅ |
@@ -139,7 +139,7 @@
 | # | Test | Steps | Expected | ✅/❌ |
 |---|------|-------|----------|:-----:|
 | 3.1.1 | Page loads without blank screen | Open URL | Products visible, no white screen | ✅ |
-| 3.1.2 | No console errors on load | Open DevTools → Console | No red errors (warnings OK) | ⚠️ img proxy 400s |
+| 3.1.2 | No console errors on load | Open DevTools → Console | No red errors (warnings OK) | ✅ |
 | 3.1.3 | Products render in grid view | Default view | 2-column card grid on mobile, wider on desktop | ✅ |
 | 3.1.4 | Header shows title with emoji | Check top | "🏷️ Все акции ВкусВилл" | ✅ |
 | 3.1.5 | Stats row shows counts | Below header | "📦 N всего", "🟢 N", "🔴 N", "🟡 N" | ✅ 156 (7+19+130) |
@@ -150,7 +150,7 @@
 
 | # | Test | Steps | Expected | ✅/❌ |
 |---|------|-------|----------|:-----:|
-| 3.2.1 | Card shows product image | Look at any card | Image loads (via proxy), no broken icons | ⚠️ some 400s |
+| 3.2.1 | Card shows product image | Look at any card | Image loads (via proxy), no broken icons | ✅ |
 | 3.2.2 | Fallback emoji for missing images | Find card with broken image | Shows category emoji (🥬, 🍎, etc.) | ✅ |
 | 3.2.3 | Discount badge shows percentage | Cards with `oldPrice > currentPrice` | Red badge like "-35%" on image | ✅ |
 | 3.2.4 | Product name truncates properly | Long product names | Text doesn't overflow card | ✅ |
@@ -232,9 +232,9 @@
 | # | Test | Steps | Expected | ✅/❌ |
 |---|------|-------|----------|:-----:|
 | 3.9.1 | Click product image → opens drawer | Click any card image | Detail panel slides up/in | ✅ |
-| 3.9.2 | Drawer shows product info | Inside drawer | Name, images, weight, description, composition etc. | ❌ "Не удалось загрузить детали" |
-| 3.9.3 | Gallery images load | If product has multiple images | All images visible | ❌ blocked by 3.9.2 |
-| 3.9.4 | Cart button works in drawer | Click add-to-cart in drawer | Same behavior as card cart button | ❌ blocked by 3.9.2 |
+| 3.9.2 | Drawer shows product info | Inside drawer | Name, images, weight, description, composition etc. | ✅ |
+| 3.9.3 | Gallery images load | If product has multiple images | All images visible | ✅ |
+| 3.9.4 | Cart button works in drawer | Click add-to-cart in drawer | Same behavior as card cart button | ⏭️ needs auth |
 | 3.9.5 | Close drawer | Click close button or backdrop | Drawer closes, returns to main view | ✅ |
 | 3.9.6 | Body scroll locked when open | Try scrolling main page | Main page doesn't scroll behind drawer | ⏭️ manual |
 
@@ -391,12 +391,13 @@
 |-------|:------:|-------|------|
 | All Part 1 automatable items passed | ✅ | 40+ tests verified | 2026-03-24 |
 | All Part 2 production items passed | ✅ | 3 services active, data populated | 2026-03-24 |
-| No critical console errors | ⚠️ | Image proxy 400s (non-blocking) | 2026-03-24 |
-| Product detail drawer | ❌ | Shows "Не удалось загрузить" via Vercel | 2026-03-24 |
+| No critical console errors | ✅ | Image proxy fixed (cdn1-img.vkusvill.ru) | 2026-03-24 |
+| Product detail drawer | ✅ | Works via both EC2 and Vercel | 2026-03-24 |
 | Scrapers all running | ✅ | 7+19+130 = 156 products | 2026-03-24 |
 | Security scan | ✅ | Passed | 2026-03-24 |
 | Lint (ruff) | ✅ | Passed after F401 fix | 2026-03-24 |
+| Image proxy | ✅ | Fixed: `endswith('vkusvill.ru')` accepts all CDN subdomains | 2026-03-24 |
 
-> **Known Issues:**
-> 1. ❌ Product detail drawer shows "Не удалось загрузить детали" through Vercel proxy — likely Vercel rewrite missing for `/api/product/*/details`
-> 2. ⚠️ Image proxy returns 400 for some URLs — URL encoding issue in requests
+> **All known issues resolved ✅**
+> - ~~Image proxy 400s~~ → Fixed: hostname check too strict (`img.vkusvill.ru` → `*.vkusvill.ru`)
+> - ~~Product detail drawer~~ → Was transient, verified working via EC2 and Vercel
