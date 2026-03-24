@@ -2259,17 +2259,33 @@ async def auth_verify(req: AuthCodeRequest):
 
         # Fill SMS code using CDP key events
 
-        # Robust recovery: handle both node errors AND ProtocolException (context destroyed)
+        # Robust recovery: handle CDP -32000 "No search session" after page reload/navigation
+        # After captcha auto-solve, VkusVill reloads the page, destroying the old tab's CDP target.
+        # We recover by getting a fresh tab reference from the browser's active targets.
         sms_input = None
-        for _attempt in range(1):  # Single attempt — keepalive prevents Chrome death
+        for _attempt in range(3):
             try:
-                # First check if context is alive
+                # First check if the current tab's context is still alive
                 try:
                     await tab.evaluate("1+1")
-                except Exception:
-                    logger.warning(f"Attempt {_attempt+1}: JS context dead, navigating to /personal/")
-                    await tab.get("https://vkusvill.ru/personal/")
-                    await asyncio.sleep(5)
+                except Exception as _ctx_err:
+                    logger.warning(f"Attempt {_attempt+1}: CDP context dead ({_ctx_err}), refreshing tab from browser targets")
+                    # Get a fresh tab — the browser is still alive, just the tab target changed
+                    try:
+                        targets = await browser.targets
+                        if targets:
+                            tab = targets[0]
+                            entry["tab"] = tab  # Update session with fresh tab
+                            logger.info(f"Attempt {_attempt+1}: Got fresh tab target, waiting for page to stabilize")
+                            await asyncio.sleep(3)
+                        else:
+                            logger.warning(f"Attempt {_attempt+1}: No browser targets found")
+                            await asyncio.sleep(2)
+                            continue
+                    except Exception as _target_err:
+                        logger.warning(f"Attempt {_attempt+1}: Failed to get targets: {_target_err}")
+                        await asyncio.sleep(2)
+                        continue
 
                 sms_input = await tab.find('input[name="SMS"]', best_match=True, timeout=5)
                 if sms_input:
@@ -2407,8 +2423,9 @@ async def auth_verify(req: AuthCodeRequest):
 
             except Exception as _sms_err:
                 logger.warning(f"SMS attempt {_attempt+1} failed: {_sms_err}")
-                if _attempt == 0:
+                if _attempt >= 2:
                     raise HTTPException(status_code=500, detail=f"SMS code entry failed: {_sms_err}")
+                await asyncio.sleep(2)  # Wait before retry
 
         # === Cookie extraction with HARD 25s timeout ===
         # OPTIMIZATION NOTE (2024-03-24):
