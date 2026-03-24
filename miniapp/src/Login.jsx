@@ -30,9 +30,7 @@ export default function Login({ userId, onLoginSuccess }) {
   const [error, setError] = useState(null)
   const [showInfo, setShowInfo] = useState(false)
   const [verifiedPhone, setVerifiedPhone] = useState('')
-  const [captchaImage, setCaptchaImage] = useState(null)
-  const [captchaAnswer, setCaptchaAnswer] = useState('')
-  const [captchaZoom, setCaptchaZoom] = useState(false)
+
 
   // Refs for auto-submit
   const codeSubmitRef = useRef(null)
@@ -54,13 +52,7 @@ export default function Login({ userId, onLoginSuccess }) {
       const data = await res.json()
       if (res.ok && data.success) {
         localStorage.setItem('vv_last_phone', cleanPhone)
-        if (data.need_captcha) {
-          setCaptchaImage(data.captcha_image)
-          setCaptchaAnswer('')
-          setStep('captcha')
-        } else {
-          setStep(data.need_pin ? 'pin' : 'code')
-        }
+        setStep(data.need_pin ? 'pin' : 'code')
       } else {
         setError(extractErrorMsg(data, 'Не удалось отправить SMS'))
       }
@@ -68,36 +60,7 @@ export default function Login({ userId, onLoginSuccess }) {
     finally { setLoading(false) }
   }
 
-  // ── Captcha Step ──
-  const handleCaptchaSubmit = async (e) => {
-    e.preventDefault()
-    if (!captchaAnswer.trim()) return
-    setLoading(true); setError(null)
-    try {
-      const res = await fetch(`${AUTH_BASE}/api/auth/captcha`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: String(userId), captcha_answer: captchaAnswer.trim() })
-      })
-      const data = await res.json()
-      if (res.ok && data.success) {
-        if (data.need_captcha) {
-          // Wrong captcha — new image returned
-          setCaptchaImage(data.captcha_image)
-          setCaptchaAnswer('')
-          setError(data.message || 'Неверная капча')
-        } else {
-          // Captcha solved — SMS sent
-          setCaptchaImage(null)
-          setCaptchaAnswer('')
-          setStep('code')
-        }
-      } else {
-        setError(extractErrorMsg(data, 'Ошибка капчи'))
-      }
-    } catch (e) { setError(e.message || 'Нет связи с сервером') }
-    finally { setLoading(false) }
-  }
+
 
   // ── PIN Step ──
   const doPinSubmit = async (pinValue) => {
@@ -223,29 +186,13 @@ export default function Login({ userId, onLoginSuccess }) {
             </div>
             {showInfo && <div className="login-info-tooltip">Включите, если хотите войти заново через SMS. Старые данные будут удалены и создан новый PIN.</div>}
             <button type="submit" disabled={loading || phone.replace(/\D/g, '').length < 10} className="login-btn">
-              {loading ? <><Spinner /> Проверяем…</> : 'Получить код'}
+              {loading ? <><Spinner /> Получаем код…</> : 'Получить код'}
             </button>
-            {loading && <div className="login-loading-hint">Первый вход может занять до 30 секунд.</div>}
+            {loading && <div className="login-loading-hint">Разгадываем капчу и отправляем SMS. Это может занять до 60 секунд.</div>}
           </motion.form>
         )
 
-      case 'captcha':
-        return (
-          <motion.form key="captcha" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} onSubmit={handleCaptchaSubmit} className="login-form">
-            <div className="login-hint">Решите капчу для продолжения</div>
-            {captchaImage && (
-              <div className="login-captcha-wrapper">
-                <img src={captchaImage} alt="Капча" className="login-captcha-img" onClick={() => setCaptchaZoom(true)} />
-                <div className="login-captcha-zoom-hint" onClick={() => setCaptchaZoom(true)}>🔍 Нажмите чтобы увеличить</div>
-              </div>
-            )}
-            <input type="text" placeholder="Введите текст с картинки" value={captchaAnswer} onChange={(e) => { setCaptchaAnswer(e.target.value); setError(null) }} className="login-input" disabled={loading} autoFocus autoComplete="off" />
-            <button type="submit" disabled={loading || !captchaAnswer.trim()} className="login-btn">
-              {loading ? <><Spinner /> Проверяем…</> : 'Отправить'}
-            </button>
-            <button type="button" onClick={() => { setStep('phone'); setCaptchaImage(null); setCaptchaAnswer(''); setError(null) }} className="login-back-btn" disabled={loading}>Изменить номер</button>
-          </motion.form>
-        )
+
 
       case 'pin':
         return (
@@ -313,12 +260,7 @@ export default function Login({ userId, onLoginSuccess }) {
         {error && <div className="login-error">{error}</div>}
         <AnimatePresence mode="wait">{renderStep()}</AnimatePresence>
       </motion.div>
-      {captchaZoom && captchaImage && (
-        <div className="captcha-zoom-overlay" onClick={() => setCaptchaZoom(false)}>
-          <img src={captchaImage} alt="Капча увеличенная" className="captcha-zoom-img" />
-          <div className="captcha-zoom-close">✕ Нажмите чтобы закрыть</div>
-        </div>
-      )}
+
     </div>
   )
 }

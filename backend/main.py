@@ -1398,23 +1398,24 @@ async def auth_login(req: AuthPhoneRequest):
                 logger.error(f"Captcha screenshot failed: {_e}")
 
             if captcha_b64:
-                # === AUTO-SOLVE: Try Gemini Vision before bothering the user ===
+                # === AUTO-SOLVE: Solve captcha automatically (never show to user) ===
                 import nodriver.cdp.input_ as cdp_input
                 import time as _time2
                 auto_solved = False
                 auto_start = _time2.monotonic()
                 
-                for auto_attempt in range(3):  # Up to 3 auto-solve attempts
-                    # 1-minute timeout for the entire auto-solve process
-                    if _time2.monotonic() - auto_start > 60:
-                        logger.warning("Auto-solve timed out (>60s), falling back to user")
+                for auto_attempt in range(8):  # Up to 8 auto-solve attempts (each fail generates a new captcha)
+                    # 2-minute timeout for the entire auto-solve process
+                    if _time2.monotonic() - auto_start > 120:
+                        logger.warning("Auto-solve timed out (>120s)")
                         break
                     gemini_answer = await solve_captcha_with_gemini(captcha_b64)
                     if not gemini_answer:
-                        logger.info("Gemini auto-solve unavailable, falling back to user")
-                        break
+                        logger.info(f"Auto-solve attempt {auto_attempt + 1}: OCR unavailable, retrying...")
+                        await asyncio.sleep(1)
+                        continue
                     
-                    logger.info(f"Gemini auto-solve attempt {auto_attempt + 1}: '{gemini_answer}'")
+                    logger.info(f"Auto-solve attempt {auto_attempt + 1}/8: '{gemini_answer}'")
                     
                     # Get iframe bounds for CDP clicking — find the LARGEST visible captcha iframe
                     # (there are 2 iframes: a hidden backend.html and the visible advanced.en.html)
@@ -1542,23 +1543,16 @@ async def auth_login(req: AuthPhoneRequest):
                     logger.info("Auto-solve succeeded, continuing to SMS polling...")
                     # Fall through to the SMS polling code below
                 else:
-                    # Auto-solve failed or unavailable — send captcha to user for manual solve
-                    _login_sessions[user_id] = {
-                        "browser": browser,
-                        "tab": tab,
-                        "phone": phone_raw,
-                        "force_sms": req.force_sms,
-                        "created_at": _time.time(),
-                        "proc": _chrome_proc,
-                        "profile_dir": _user_data_dir,
-                        "awaiting_captcha": True,
-                    }
-                    logger.info(f"Returning captcha image to user: base64 length={len(captcha_b64)}")
+                    # All 8 auto-solve attempts failed — clean up and ask user to retry
+                    logger.warning(f"All auto-solve attempts exhausted for {user_id}")
+                    try:
+                        browser.stop()
+                    except Exception:
+                        pass
+                    _login_sessions.pop(user_id, None)
                     return {
-                        "success": True,
-                        "need_captcha": True,
-                        "captcha_image": f"data:image/png;base64,{captcha_b64}",
-                        "message": "Решите капчу для продолжения",
+                        "success": False,
+                        "message": "Не удалось пройти капчу автоматически. Попробуйте ещё раз.",
                     }
             # If screenshot failed, continue to SMS polling (might work without captcha)
 
