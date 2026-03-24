@@ -2411,6 +2411,13 @@ async def auth_verify(req: AuthCodeRequest):
                     raise HTTPException(status_code=500, detail=f"SMS code entry failed: {_sms_err}")
 
         # === Cookie extraction with HARD 25s timeout ===
+        # OPTIMIZATION NOTE (2024-03-24):
+        # Current worst case: ~27s (8s+8s+5s nav timeouts + 2s submit). Vercel limit: 30s (3s margin).
+        # Option A: Reduce nav timeouts from 8s to 3s each → worst case 17s (13s margin).
+        # Option B: Skip nav entirely, grab cookies right after redirect → worst case ~2s.
+        # If 16s is too slow, skip nav to /personal/ and /cart/
+        # and grab cookies immediately after redirect. Browser already has them.
+        # This would reduce verify from ~16s to ~2s. Only do this if current flow breaks.
         async def _get_cookies_with_nav():
             _cdp = []
             try:
