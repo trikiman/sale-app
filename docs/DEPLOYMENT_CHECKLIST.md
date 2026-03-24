@@ -1,7 +1,7 @@
 # 🚀 VkusVill Sale Monitor — Deployment Checklist
 
-> **Site**: https://sale-app-rust.vercel.app/  
-> **Last updated**: 2026-03-24  
+> **Site**: https://vkusvillsale.vercel.app/  
+> **Last updated**: 2026-03-24 15:55  
 > ✅ = passed | ❌ = failed | ⏭️ = skipped (with reason)
 
 ---
@@ -31,14 +31,14 @@
 
 ### 2. 🌐 BACKEND API ENDPOINTS
 
-> Test each endpoint using `curl` or browser DevTools against `https://sale-app-rust.vercel.app`
+> Test each endpoint using `curl` or browser DevTools against `https://vkusvillsale.vercel.app`
 
 #### 2.1 Public Endpoints
 
 | # | Test | Command / Steps | Expected | ✅/❌ |
 |---|------|-----------------|----------|:-----:|
-| 2.1.1 | `GET /` serves frontend | `curl -I https://sale-app-rust.vercel.app/` | 200, HTML content-type | |
-| 2.1.2 | `GET /api/products` returns products | `curl https://sale-app-rust.vercel.app/api/products` | JSON with `products` array, `updatedAt` field | |
+| 2.1.1 | `GET /` serves frontend | `curl -I https://vkusvillsale.vercel.app/` | 200, HTML content-type | |
+| 2.1.2 | `GET /api/products` returns products | `curl https://vkusvillsale.vercel.app/api/products` | JSON with `products` array, `updatedAt` field | |
 | 2.1.3 | Products array is non-empty | Check `products.length > 0` | |
 | 2.1.4 | Each product has required fields | `id`, `name`, `url`, `currentPrice`, `oldPrice`, `image`, `stock`, `unit`, `category`, `type` | |
 | 2.1.5 | Product types are valid | Each `type` is one of: `green`, `red`, `yellow` | |
@@ -112,7 +112,7 @@
 
 ### 3. 🖥️ FRONTEND — MINIAPP UI
 
-> Open `https://sale-app-rust.vercel.app/` in browser. Test in both desktop and mobile viewports.
+> Open `https://vkusvillsale.vercel.app/` in browser. Test in both desktop and mobile viewports.
 
 #### 3.1 Initial Load
 
@@ -399,7 +399,7 @@
 
 | # | Test | Steps | Expected | ✅/❌ |
 |---|------|-------|----------|:-----:|
-| 8.1 | Server reachable | `curl -I https://sale-app-rust.vercel.app/` | 200 OK | |
+| 8.1 | Server reachable | `curl -I https://vkusvillsale.vercel.app/` | 200 OK | |
 | 8.2 | Backend process running | `ps aux | grep uvicorn` on server | Process alive | |
 | 8.3 | Systemd service active | `systemctl status saleapp` (or equivalent) | Active (running) | |
 | 8.4 | Auto-restart on crash | `kill -9` backend PID → wait 10s | Service auto-restarts | |
