@@ -2258,7 +2258,6 @@ async def auth_verify(req: AuthCodeRequest):
             raise HTTPException(status_code=400, detail="Некорректный код")
 
         # Fill SMS code using CDP key events
-        import nodriver as uc
 
         # Robust recovery: handle both node errors AND ProtocolException (context destroyed)
         sms_input = None
