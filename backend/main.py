@@ -2427,34 +2427,21 @@ async def auth_verify(req: AuthCodeRequest):
         # === Cookie extraction with HARD 25s timeout ===
         # OPTIMIZATION NOTE (2024-03-24):
         # Current worst case: ~27s (8s+8s+5s nav timeouts + 2s submit). Vercel limit: 30s (3s margin).
-        # Option A: Reduce nav timeouts from 8s to 3s each → worst case 17s (13s margin).
-        # Option B: Skip nav entirely, grab cookies right after redirect → worst case ~2s.
-        # If 16s is too slow, skip nav to /personal/ and /cart/
-        # and grab cookies immediately after redirect. Browser already has them.
-        # This would reduce verify from ~16s to ~2s. Only do this if current flow breaks.
-        async def _get_cookies_with_nav():
-            _cdp = []
-            try:
-                await asyncio.wait_for(tab.get('https://vkusvill.ru/personal/'), timeout=8)
-                await asyncio.sleep(1)
-            except Exception as e:
-                logger.warning(f"Nav /personal/ failed: {e}")
-            try:
-                await asyncio.wait_for(tab.get('https://vkusvill.ru/cart/'), timeout=8)
-                await asyncio.sleep(1)
-            except Exception as e:
-                logger.warning(f"Nav /cart/ failed: {e}")
-            try:
-                _cdp = await asyncio.wait_for(browser.cookies.get_all(), timeout=5)
-            except Exception:
-                logger.warning("CDP cookies timed out")
-            return _cdp
-
+        # Option B (activated): Skip nav entirely, grab cookies right after redirect.
+        # CDP browser.cookies.get_all() returns ALL cookies regardless of current page.
+        # The nav to /personal/ and /cart/ was adding 16s of timeout risk and causing
+        # Chrome to crash during the wait, resulting in 0 cookies extracted.
+        # Wait 5s for VkusVill page to fully reload and set cookies after redirect.
+        await asyncio.sleep(5)
+        logger.info("Waited 5s for page to settle, extracting cookies...")
         try:
-            cdp_cookies = await asyncio.wait_for(_get_cookies_with_nav(), timeout=25)
+            cdp_cookies = await asyncio.wait_for(browser.cookies.get_all(), timeout=10)
             logger.info(f"Cookie extraction OK: {len(cdp_cookies)} cookies")
         except asyncio.TimeoutError:
-            logger.warning("HARD TIMEOUT (25s) on cookie extraction — returning success anyway")
+            logger.warning("Cookie extraction timed out (10s)")
+            cdp_cookies = []
+        except Exception as _cookie_err:
+            logger.warning(f"Cookie extraction failed: {_cookie_err}")
             cdp_cookies = []
         cookies_list = [
             {
