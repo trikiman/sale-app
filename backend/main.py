@@ -2261,6 +2261,14 @@ async def auth_verify(req: AuthCodeRequest):
     if not entry:
         raise HTTPException(status_code=400, detail="Сессия истекла. Начните заново.")
 
+    # Guard against duplicate calls — if already verified, return cached result
+    if entry.get("_verified"):
+        logger.info(f"Duplicate verify call for {user_id} — returning cached success")
+        return entry["_verified"]
+
+    # Mark as in-progress to block concurrent calls
+    entry["_verify_in_progress"] = True
+
     browser = entry["browser"]
     tab = entry["tab"]
     try:
@@ -2559,13 +2567,16 @@ async def auth_verify(req: AuthCodeRequest):
                 json.dump(cookies_list, f, indent=2)
             logger.info(f"Saved {len(cookies_list)} cookies for user {user_id} (UF_USER_AUTH=Y)")
 
-        return {
+        _result = {
             "success": True,
             "need_set_pin": bool(phone_10),
             "phone": phone_10,
             "message": "Авторизация успешна. Установите PIN.",
             "profile_dir": entry.get("profile_dir"),
         }
+        # Cache result so duplicate calls return it instantly
+        entry["_verified"] = _result
+        return _result
 
     except HTTPException:
         raise
