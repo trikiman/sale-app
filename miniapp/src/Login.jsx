@@ -44,19 +44,37 @@ export default function Login({ userId, onLoginSuccess }) {
     if (!cleanPhone || cleanPhone.length < 10) return
     setLoading(true); setError(null)
     try {
+      const ctrl = new AbortController()
+      const timer = setTimeout(() => ctrl.abort(), 150000) // 150s client timeout
       const res = await fetch(`${AUTH_BASE}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: String(userId), phone: cleanPhone, force_sms: forceSms })
+        body: JSON.stringify({ user_id: String(userId), phone: cleanPhone, force_sms: forceSms }),
+        signal: ctrl.signal
       })
-      const data = await res.json()
+      clearTimeout(timer)
+      // Handle non-JSON responses (Vercel gateway timeout returns HTML)
+      const ct = res.headers.get('content-type') || ''
+      let data
+      if (ct.includes('application/json')) {
+        data = await res.json()
+      } else {
+        // Vercel 30s timeout or other non-JSON error
+        throw new Error('Превышено время ожидания. Попробуйте ещё раз.')
+      }
       if (res.ok && data.success) {
         localStorage.setItem('vv_last_phone', cleanPhone)
         setStep(data.need_pin ? 'pin' : 'code')
       } else {
         setError(extractErrorMsg(data, 'Не удалось отправить SMS'))
       }
-    } catch (e) { setError(e.message || 'Нет связи с сервером') }
+    } catch (e) {
+      if (e.name === 'AbortError') {
+        setError('Превышено время ожидания (150с). Попробуйте ещё раз.')
+      } else {
+        setError(e.message || 'Нет связи с сервером')
+      }
+    }
     finally { setLoading(false) }
   }
 
