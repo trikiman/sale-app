@@ -2450,16 +2450,56 @@ async def auth_verify(req: AuthCodeRequest):
         except Exception as _tab_err:
             logger.warning(f"Tab refresh failed: {_tab_err}")
 
-        # Strategy 1: Tab-level CDP Network.getAllCookies (more reliable than browser.cookies)
+        # CRITICAL FIX: nodriver's Cookie.from_json() crashes with KeyError('sameParty')
+        # because Chrome removed the sameParty field from CDP, but nodriver still expects it.
+        # This makes browser.cookies.get_all() and tab.send(Network.get_all_cookies()) hang
+        # forever — nodriver's internal listener swallows the KeyError.
+        # FIX: Send raw CDP command and parse JSON ourselves.
         cdp_cookies = []
         try:
-            import nodriver.cdp.network as _cdp_net
-            cdp_cookies = await asyncio.wait_for(tab.send(_cdp_net.get_all_cookies()), timeout=5)
-            logger.info(f"Strategy 1 (tab CDP): {len(cdp_cookies)} cookies")
+            import json as _json_mod
+            # Send raw CDP command through the tab's websocket
+            _raw_result = await asyncio.wait_for(
+                tab.send(nodriver.cdp.network.get_cookies()),
+                timeout=5
+            )
+            if _raw_result:
+                # nodriver may return parsed cookies or raw dict depending on version
+                cdp_cookies = _raw_result
+                logger.info(f"CDP get_cookies: got {len(cdp_cookies)} cookies")
         except Exception as _e1:
-            logger.warning(f"Strategy 1 (tab CDP) failed: {_e1}")
+            logger.warning(f"CDP get_cookies failed: {type(_e1).__name__}: {_e1}")
 
-        # Strategy 2: JS document.cookie fallback (gets non-httpOnly cookies)
+        # If CDP failed, try raw websocket approach
+        if not cdp_cookies:
+            try:
+                # Use the tab's websocket connection directly
+                import json as _json_mod
+                _ws = tab._ws
+                if _ws:
+                    _msg_id = tab._last_id + 1
+                    tab._last_id = _msg_id
+                    await _ws.send(_json_mod.dumps({
+                        "id": _msg_id,
+                        "method": "Network.getCookies",
+                        "params": {}
+                    }))
+                    # Read responses until we get our ID
+                    for _ in range(20):
+                        _resp_raw = await asyncio.wait_for(_ws.recv(), timeout=3)
+                        _resp = _json_mod.loads(_resp_raw)
+                        if _resp.get("id") == _msg_id:
+                            _raw_cookies = _resp.get("result", {}).get("cookies", [])
+                            logger.info(f"Raw websocket: got {len(_raw_cookies)} cookies")
+                            cdp_cookies = _raw_cookies  # These are dicts, not Cookie objects
+                            break
+                else:
+                    logger.warning("Tab websocket not available")
+            except Exception as _e2:
+                logger.warning(f"Raw websocket cookies failed: {type(_e2).__name__}: {_e2}")
+
+        # JS document.cookie as absolute last resort
+        js_parsed = []
         if not cdp_cookies:
             try:
                 js_cookies_str = await asyncio.wait_for(
@@ -2467,49 +2507,42 @@ async def auth_verify(req: AuthCodeRequest):
                     timeout=5
                 )
                 if js_cookies_str and isinstance(js_cookies_str, str) and len(js_cookies_str) > 5:
-                    logger.info(f"Strategy 2 (JS): got {len(js_cookies_str)} chars of cookies")
-                    # Parse "name=value; name2=value2" format into list
+                    logger.info(f"JS document.cookie: got {len(js_cookies_str)} chars")
                     from http.cookies import SimpleCookie
                     sc = SimpleCookie()
                     sc.load(js_cookies_str)
-                    cdp_cookies = []  # Will use cookies_list directly below
                     js_parsed = [
                         {"name": k, "value": v.value, "domain": ".vkusvill.ru", "path": "/",
                          "secure": False, "httpOnly": False, "expiry": None}
                         for k, v in sc.items()
                     ]
-                    logger.info(f"Strategy 2 (JS): parsed {len(js_parsed)} cookies")
-                else:
-                    js_parsed = []
-                    logger.warning(f"Strategy 2 (JS): empty or invalid: {repr(js_cookies_str)[:100]}")
-            except Exception as _e2:
-                js_parsed = []
-                logger.warning(f"Strategy 2 (JS) failed: {_e2}")
-        else:
-            js_parsed = []
-
-        # Strategy 3: browser.cookies as last resort (may hang, short timeout)
-        if not cdp_cookies and not js_parsed:
-            try:
-                cdp_cookies = await asyncio.wait_for(browser.cookies.get_all(), timeout=3)
-                logger.info(f"Strategy 3 (browser): {len(cdp_cookies)} cookies")
+                    logger.info(f"JS parsed: {len(js_parsed)} cookies")
             except Exception as _e3:
-                logger.warning(f"Strategy 3 (browser) failed: {_e3}")
-                cdp_cookies = []
-        # Build cookies_list from CDP cookies (Strategy 1/3) or JS-parsed (Strategy 2)
+                logger.warning(f"JS document.cookie failed: {_e3}")
+        # Build cookies_list — handle both raw dicts (websocket) and nodriver Cookie objects
         if cdp_cookies:
-            cookies_list = [
-                {
-                    "name": c.name,
-                    "value": c.value,
-                    "domain": c.domain,
-                    "path": c.path,
-                    "secure": c.secure,
-                    "httpOnly": c.http_only,
-                    "expiry": int(c.expires) if getattr(c, "expires", None) else None,
-                }
-                for c in cdp_cookies
-            ]
+            cookies_list = []
+            for c in cdp_cookies:
+                if isinstance(c, dict):
+                    cookies_list.append({
+                        "name": c.get("name", ""),
+                        "value": c.get("value", ""),
+                        "domain": c.get("domain", ""),
+                        "path": c.get("path", "/"),
+                        "secure": c.get("secure", False),
+                        "httpOnly": c.get("httpOnly", False),
+                        "expiry": int(c["expires"]) if c.get("expires") and c["expires"] > 0 else None,
+                    })
+                else:
+                    cookies_list.append({
+                        "name": c.name,
+                        "value": c.value,
+                        "domain": c.domain,
+                        "path": c.path,
+                        "secure": c.secure,
+                        "httpOnly": getattr(c, "http_only", False),
+                        "expiry": int(c.expires) if getattr(c, "expires", None) else None,
+                    })
         elif js_parsed:
             cookies_list = js_parsed
         else:
