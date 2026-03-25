@@ -9,6 +9,23 @@ import sys as _sys
 if _sys.platform == 'win32':
     import asyncio as _asyncio
     _asyncio.set_event_loop_policy(_asyncio.WindowsProactorEventLoopPolicy())
+
+# CRITICAL FIX: Monkey-patch nodriver's Cookie.from_json() to handle Chrome removing
+# the 'sameParty' field from CDP responses. Without this, browser.cookies.get_all()
+# hangs forever because nodriver's internal KeyError is swallowed by its event listener.
+try:
+    import nodriver.cdp.network as _cdn
+    _original_cookie_from_json = _cdn.Cookie.from_json
+
+    @classmethod
+    def _patched_cookie_from_json(cls, json_data):
+        if 'sameParty' not in json_data:
+            json_data['sameParty'] = False
+        return _original_cookie_from_json.__func__(cls, json_data)
+
+    _cdn.Cookie.from_json = _patched_cookie_from_json
+except Exception:
+    pass  # nodriver not installed or different version
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Header, Query, Body, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse, Response
@@ -2450,56 +2467,16 @@ async def auth_verify(req: AuthCodeRequest):
         except Exception as _tab_err:
             logger.warning(f"Tab refresh failed: {_tab_err}")
 
-        # CRITICAL FIX: nodriver's Cookie.from_json() crashes with KeyError('sameParty')
-        # because Chrome removed the sameParty field from CDP, but nodriver still expects it.
-        # This makes browser.cookies.get_all() and tab.send(Network.get_all_cookies()) hang
-        # forever — nodriver's internal listener swallows the KeyError.
-        # FIX: Send raw CDP command and parse JSON ourselves.
+        # Cookie extraction — monkey-patch at top of main.py fixes nodriver's sameParty crash
         cdp_cookies = []
-        try:
-            import json as _json_mod
-            # Send raw CDP command through the tab's websocket
-            _raw_result = await asyncio.wait_for(
-                tab.send(nodriver.cdp.network.get_cookies()),
-                timeout=5
-            )
-            if _raw_result:
-                # nodriver may return parsed cookies or raw dict depending on version
-                cdp_cookies = _raw_result
-                logger.info(f"CDP get_cookies: got {len(cdp_cookies)} cookies")
-        except Exception as _e1:
-            logger.warning(f"CDP get_cookies failed: {type(_e1).__name__}: {_e1}")
-
-        # If CDP failed, try raw websocket approach
-        if not cdp_cookies:
-            try:
-                # Use the tab's websocket connection directly
-                import json as _json_mod
-                _ws = tab._ws
-                if _ws:
-                    _msg_id = tab._last_id + 1
-                    tab._last_id = _msg_id
-                    await _ws.send(_json_mod.dumps({
-                        "id": _msg_id,
-                        "method": "Network.getCookies",
-                        "params": {}
-                    }))
-                    # Read responses until we get our ID
-                    for _ in range(20):
-                        _resp_raw = await asyncio.wait_for(_ws.recv(), timeout=3)
-                        _resp = _json_mod.loads(_resp_raw)
-                        if _resp.get("id") == _msg_id:
-                            _raw_cookies = _resp.get("result", {}).get("cookies", [])
-                            logger.info(f"Raw websocket: got {len(_raw_cookies)} cookies")
-                            cdp_cookies = _raw_cookies  # These are dicts, not Cookie objects
-                            break
-                else:
-                    logger.warning("Tab websocket not available")
-            except Exception as _e2:
-                logger.warning(f"Raw websocket cookies failed: {type(_e2).__name__}: {_e2}")
-
-        # JS document.cookie as absolute last resort
         js_parsed = []
+        try:
+            cdp_cookies = await asyncio.wait_for(browser.cookies.get_all(), timeout=10)
+            logger.info(f"browser.cookies.get_all(): {len(cdp_cookies)} cookies")
+        except Exception as _e1:
+            logger.warning(f"browser.cookies failed: {type(_e1).__name__}: {_e1}")
+
+        # JS document.cookie fallback (non-httpOnly cookies only)
         if not cdp_cookies:
             try:
                 js_cookies_str = await asyncio.wait_for(
@@ -2507,7 +2484,7 @@ async def auth_verify(req: AuthCodeRequest):
                     timeout=5
                 )
                 if js_cookies_str and isinstance(js_cookies_str, str) and len(js_cookies_str) > 5:
-                    logger.info(f"JS document.cookie: got {len(js_cookies_str)} chars")
+                    logger.info(f"JS document.cookie: {len(js_cookies_str)} chars")
                     from http.cookies import SimpleCookie
                     sc = SimpleCookie()
                     sc.load(js_cookies_str)
@@ -2517,9 +2494,10 @@ async def auth_verify(req: AuthCodeRequest):
                         for k, v in sc.items()
                     ]
                     logger.info(f"JS parsed: {len(js_parsed)} cookies")
-            except Exception as _e3:
-                logger.warning(f"JS document.cookie failed: {_e3}")
-        # Build cookies_list — handle both raw dicts (websocket) and nodriver Cookie objects
+            except Exception as _e2:
+                logger.warning(f"JS document.cookie failed: {_e2}")
+
+        # Build cookies_list
         if cdp_cookies:
             cookies_list = []
             for c in cdp_cookies:
