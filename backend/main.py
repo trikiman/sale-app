@@ -2291,6 +2291,20 @@ async def auth_verify(req: AuthCodeRequest):
         _login_succeeded = False
         _found_error = False
         _verify_ss = None
+
+        # Early check: is Chrome process still alive?
+        try:
+            await tab.evaluate("1+1")
+        except (ConnectionRefusedError, OSError) as _dead_err:
+            logger.error(f"Chrome process dead for {user_id}: {_dead_err}")
+            _login_sessions.pop(user_id, None)
+            raise HTTPException(
+                status_code=410,
+                detail="Сессия браузера истекла. Нажмите 'Изменить номер' и начните заново."
+            )
+        except Exception:
+            pass  # CDP context stale but Chrome may still be alive — continue
+
         for _attempt in range(3):
             if _login_succeeded or _found_error:
                 break  # Don't retry if we already have a result
@@ -2452,7 +2466,14 @@ async def auth_verify(req: AuthCodeRequest):
             except Exception as _sms_err:
                 logger.warning(f"SMS attempt {_attempt+1} failed: {_sms_err}")
                 if _attempt >= 2:
-                    raise HTTPException(status_code=500, detail=f"SMS code entry failed: {_sms_err}")
+                    # Check if it's a dead Chrome process (connection refused)
+                    err_str = str(_sms_err)
+                    if 'Errno 111' in err_str or 'Connect call failed' in err_str or 'ConnectionRefused' in err_str:
+                        raise HTTPException(
+                            status_code=410,
+                            detail="Сессия браузера истекла. Нажмите 'Изменить номер' и начните заново."
+                        )
+                    raise HTTPException(status_code=500, detail="Не удалось ввести код. Попробуйте ещё раз.")
                 await asyncio.sleep(2)  # Wait before retry
 
         # === Cookie extraction with HARD 25s timeout ===
