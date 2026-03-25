@@ -2266,7 +2266,12 @@ async def auth_verify(req: AuthCodeRequest):
         logger.info(f"Duplicate verify call for {user_id} — returning cached success")
         return entry["_verified"]
 
-    # Mark as in-progress to block concurrent calls
+    # If another verify is already in-progress, block this call
+    if entry.get("_verify_in_progress"):
+        logger.info(f"Verify already in-progress for {user_id} — blocking duplicate")
+        raise HTTPException(status_code=409, detail="Верификация уже выполняется. Подождите.")
+
+    # Mark as in-progress (atomic in single-threaded asyncio - set before any await)
     entry["_verify_in_progress"] = True
 
     browser = entry["browser"]
