@@ -144,6 +144,10 @@ _phone_map_lock = threading.Lock()  # R2-9: File lock for user_phone_map.json
 _login_sessions: dict = {}
 _LOGIN_TTL_SECONDS = 600  # 10 minutes max for login flow
 
+# Async login jobs: {job_id: {status, message, result, user_id, created_at}}
+_login_jobs: dict = {}
+_LOGIN_JOB_TTL = 600  # 10 minutes
+
 # R2-3: In-memory login rate limiter: {phone_10: [timestamps]}
 _login_attempts: dict = {}
 _LOGIN_RATE_LIMIT = 3  # max attempts per phone
@@ -1137,29 +1141,10 @@ def _evict_stale_login_sessions():
 
 @app.post("/api/auth/login")
 async def auth_login(req: AuthPhoneRequest):
-    """Start login via nodriver: navigate to /personal/, fill phone, wait for SMS."""
-    import nodriver as uc
+    """Start login: validate inputs, then launch Chrome in background. Returns job_id immediately."""
     import asyncio
     import time as _time
-    import sys
-
-    # R2-4: Cleanup old debug screenshots (older than 1 hour)
-    _cleanup_debug_screenshots()
-
-    # Patch nodriver Config to include LocalNetworkAccessChecks in --disable-features
-    # R2-45: Guard patch to apply only once
-    if not getattr(uc.Config, '_saleapp_patched', False):
-        _orig_config_call = uc.Config.__call__
-        def _patched_call(self):
-            args = _orig_config_call(self)
-            return [
-                (a + ',LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations'
-                 if a.startswith('--disable-features=') else a)
-                for a in args
-            ]
-        uc.Config.__call__ = _patched_call
-        uc.Config._saleapp_patched = True
-
+    import uuid
 
     user_id = req.user_id
     phone_raw = _normalize_phone(req.phone)
@@ -1175,15 +1160,75 @@ async def auth_login(req: AuthPhoneRequest):
     attempts.append(now)
     _login_attempts[phone_raw] = attempts
 
-    # Check if this phone already has valid cookies (or .bak from logout) + PIN (skip browser!)
+    # Check if this phone already has valid cookies + PIN (skip browser!)
     _cookies_path = _phone_cookies_path(phone_raw)
     _has_cookies_or_bak = os.path.exists(_cookies_path) or os.path.exists(_cookies_path + ".bak")
     if not req.force_sms and _has_cookies_or_bak:
         pin_data = _load_pin_data(phone_raw)
         if pin_data and pin_data.get("pin_hash"):
-            # Save user→phone mapping
             _save_user_phone_mapping(user_id, phone_raw)
             return {"success": True, "need_pin": True, "message": "Введите PIN-код"}
+
+    # Generate job ID and start background task
+    job_id = str(uuid.uuid4())[:8]
+    _login_jobs[job_id] = {
+        "status": "starting",
+        "message": "Запускаем...",
+        "result": None,
+        "user_id": user_id,
+        "phone": phone_raw,
+        "created_at": _time.time(),
+    }
+
+    # Evict old jobs
+    stale_jobs = [k for k, v in _login_jobs.items() if now - v.get("created_at", 0) > _LOGIN_JOB_TTL]
+    for k in stale_jobs:
+        _login_jobs.pop(k, None)
+
+    asyncio.create_task(_run_login_job(job_id, user_id, phone_raw, req.force_sms))
+    return {"success": True, "job_id": job_id, "message": "Запущен вход..."}
+
+
+@app.get("/api/auth/login/status/{job_id}")
+async def auth_login_status(job_id: str):
+    """Poll login job progress. Returns current status and message."""
+    job = _login_jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return {
+        "status": job["status"],
+        "message": job["message"],
+        "result": job.get("result"),
+    }
+
+
+async def _run_login_job(job_id: str, user_id: str, phone_raw: str, force_sms: bool):
+    """Background task: launch Chrome, fill phone, solve captcha, wait for SMS.
+    Updates _login_jobs[job_id] with progress. On success, stores browser in _login_sessions."""
+    import nodriver as uc
+    import asyncio
+    import time as _time
+    import sys
+
+    def _update(status: str, message: str):
+        _login_jobs[job_id]["status"] = status
+        _login_jobs[job_id]["message"] = message
+
+    # R2-4: Cleanup old debug screenshots
+    _cleanup_debug_screenshots()
+
+    # Patch nodriver Config (once)
+    if not getattr(uc.Config, '_saleapp_patched', False):
+        _orig_config_call = uc.Config.__call__
+        def _patched_call(self):
+            args = _orig_config_call(self)
+            return [
+                (a + ',LocalNetworkAccessChecks,BlockInsecurePrivateNetworkRequests,PrivateNetworkAccessForWorkers,PrivateNetworkAccessForNavigations'
+                 if a.startswith('--disable-features=') else a)
+                for a in args
+            ]
+        uc.Config.__call__ = _patched_call
+        uc.Config._saleapp_patched = True
 
     # Cleanup existing session for this user
     old_entry = _login_sessions.pop(user_id, None)
@@ -1197,19 +1242,18 @@ async def auth_login(req: AuthPhoneRequest):
             old_entry["proc"].kill()
         except Exception:
             pass
-
     _evict_stale_login_sessions()
 
     browser = None
-    _chrome_proc = None  # Only set on Windows
+    _chrome_proc = None
     _user_data_dir = None
     try:
         import tempfile
         import subprocess as _subp
         import socket as _socket
 
-        # Launch a SEPARATE temporary Chrome for login (don't touch scraper Chrome)
-        # Fresh profile = no cookies = VkusVill login form shown directly
+        _update("launching", "Запускаем браузер...")
+
         def _find_free_port():
             with _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM) as s:
                 s.bind(('127.0.0.1', 0))
@@ -1219,8 +1263,6 @@ async def auth_login(req: AuthPhoneRequest):
         _user_data_dir = tempfile.mkdtemp(prefix='uc_login_')
 
         if sys.platform != 'win32':
-            # Use nodriver.start() for proper Chrome lifecycle management
-            import nodriver as uc
             browser = await uc.start(
                 headless=True,
                 user_data_dir=_user_data_dir,
@@ -1232,7 +1274,7 @@ async def auth_login(req: AuthPhoneRequest):
                     '--window-size=1280,720', '--lang=ru-RU,ru',
                 ],
             )
-            _chrome_proc = None  # nodriver manages the process
+            _chrome_proc = None
         else:
             _chrome_path = None
             for p in [
@@ -1262,94 +1304,75 @@ async def auth_login(req: AuthPhoneRequest):
                 'about:blank',
             ], creationflags=_subp.CREATE_NO_WINDOW if sys.platform == 'win32' else 0)
 
-        # browser already created by nodriver.start() above
-
-        # Fresh profile — no cookies needed to clear, go straight to /personal/
+        _update("navigating", "Открываем ВкусВилл...")
         tab = await browser.get('https://vkusvill.ru/personal/')
-        await asyncio.sleep(5)  # Wait for page load
+        await asyncio.sleep(5)
 
-        # DEBUG: Initial state
         try:
             await tab.save_screenshot(os.path.join(DATA_DIR, f"login_{user_id}_1_init.png"))
         except: pass
 
-        # BUG-026: Bypass the strict phone mask physically
-        # React aggressive masks often block JS focus or `.value` setters.
+        _update("entering_phone", "Вводим номер телефона...")
 
-        # 1. Get coordinates of the input box and click it to focus
         input_box = await tab.select('input.js-user-form-checksms-api-phone1', timeout=2)
         if not input_box:
             input_box = await tab.select('input[name="USER_PHONE"]', timeout=2)
-            
+
         if input_box:
-            # Physically click the center of the element to trigger React focus events
             await input_box.mouse_click()
             await asyncio.sleep(0.5)
-
-            # 2. Type cleanly using raw CDP to guarantee realistic typing speed
             for digit in phone_raw:
                 await tab.send(uc.cdp.input_.dispatch_key_event(
-                    type_='keyDown',
-                    key=digit,
-                    text=digit,
+                    type_='keyDown', key=digit, text=digit,
                     code=f'Digit{digit}',
                     windows_virtual_key_code=ord(digit),
                     native_virtual_key_code=ord(digit),
                 ))
                 await asyncio.sleep(0.05)
                 await tab.send(uc.cdp.input_.dispatch_key_event(
-                    type_='keyUp',
-                    key=digit,
-                    code=f'Digit{digit}',
+                    type_='keyUp', key=digit, code=f'Digit{digit}',
                     windows_virtual_key_code=ord(digit),
                     native_virtual_key_code=ord(digit),
                 ))
-                await asyncio.sleep(0.2)  # Give mask time to format the number
+                await asyncio.sleep(0.2)
             await asyncio.sleep(1.0)
         else:
             logger.error("Could not find phone input box on VkusVill login page")
 
-        # DEBUG: After phone entry
         try:
             await tab.save_screenshot(os.path.join(DATA_DIR, f"login_{user_id}_2_phone.png"))
         except: pass
 
-        # 3. Locate the submit button and click it naturally
-        # If the mask accepted the input, this button should be enabled.
+        _update("submitting", "Отправляем форму...")
+
         submit_btn = await tab.select('button.js-user-form-submit-btn', timeout=2)
         if submit_btn:
-            # Force enable just in case React is lagging
             await tab.evaluate("document.querySelector('button.js-user-form-submit-btn').disabled = false;")
             await tab.evaluate("document.querySelector('button.js-user-form-submit-btn').classList.remove('disabled');")
             await submit_btn.click()
         else:
             logger.error("Could not find submit button on VkusVill login page")
 
-        await asyncio.sleep(5)  # Wait for SMS trigger or captcha
-        
-        # DEBUG: After click
+        await asyncio.sleep(5)
         try:
             await tab.save_screenshot(os.path.join(DATA_DIR, f"login_{user_id}_3_after_click.png"))
         except: pass
 
-        # Check for CAPTCHA (Yandex SmartCaptcha) — appears as overlay popup
+        # Check for CAPTCHA
         captcha_detected = False
         try:
             captcha_result = await safe_evaluate(tab, """
                 (function() {
                     var html = document.documentElement.outerHTML.toLowerCase();
-                    // Check if page HTML contains captcha-related content
                     if (html.includes('smartcaptcha') || html.includes('captcha__image') ||
                         html.includes('enter the code from the image') ||
                         html.includes('введите код с картинки')) {
                         return 'CAPTCHA_HTML';
                     }
-                    // Check for captcha iframe
                     var iframes = document.querySelectorAll('iframe');
                     for (var i = 0; i < iframes.length; i++) {
                         if (iframes[i].src && iframes[i].src.includes('captcha')) return 'CAPTCHA_IFRAME';
                     }
-                    // Check body text
                     var bodyText = document.body ? document.body.innerText : '';
                     if (bodyText.includes('SmartCaptcha') || bodyText.includes('Enter the code')) return 'CAPTCHA_TEXT';
                     return 'NONE';
@@ -1364,37 +1387,26 @@ async def auth_login(req: AuthPhoneRequest):
         if captcha_detected:
             import base64
             captcha_b64 = None
-            
-            # Take full-page screenshot first
+
             captcha_path = os.path.join(DATA_DIR, f"login_{user_id}_captcha.png")
             try:
                 await asyncio.wait_for(tab.save_screenshot(captcha_path), timeout=15)
                 fsize = os.path.getsize(captcha_path) if os.path.exists(captcha_path) else 0
                 logger.info(f"Captcha screenshot saved: {captcha_path}, size={fsize}")
-                
+
                 if fsize > 0:
-                    # Crop the captcha popup from the center of the screenshot
-                    # The SmartCaptcha popup is always centered in the page,
-                    # and it's inside a cross-origin iframe so we can't detect
-                    # its exact bounds via JS. Simple center-crop is most reliable.
                     try:
                         from PIL import Image
                         img = Image.open(captcha_path)
                         img_w, img_h = img.size
-                        
-                        # The popup is roughly 350x300px centered in a 1280x600 page
-                        # Crop the center ~30% horizontally and ~50% vertically
                         cx, cy = img_w // 2, img_h // 2
-                        crop_half_w = min(int(img_w * 0.22), 300)  # ~280px from center
-                        crop_half_h = min(int(img_h * 0.35), 220)  # ~200px from center
-                        
+                        crop_half_w = min(int(img_w * 0.22), 300)
+                        crop_half_h = min(int(img_h * 0.35), 220)
                         crop_x = max(0, cx - crop_half_w)
                         crop_y = max(0, cy - crop_half_h)
                         crop_r = min(img_w, cx + crop_half_w)
                         crop_b = min(img_h, cy + crop_half_h)
-                        
                         cropped = img.crop((crop_x, crop_y, crop_r, crop_b))
-                        # Scale up 3x for maximum readability
                         new_w = cropped.width * 3
                         new_h = cropped.height * 3
                         cropped = cropped.resize((new_w, new_h), Image.LANCZOS)
@@ -1405,8 +1417,7 @@ async def auth_login(req: AuthPhoneRequest):
                             captcha_b64 = base64.b64encode(f.read()).decode('utf-8')
                     except Exception as crop_err:
                         logger.warning(f"Captcha crop failed, using full screenshot: {crop_err}")
-                    
-                    # Fallback: use full screenshot
+
                     if not captcha_b64:
                         with open(captcha_path, 'rb') as f:
                             captcha_b64 = base64.b64encode(f.read()).decode('utf-8')
@@ -1416,27 +1427,26 @@ async def auth_login(req: AuthPhoneRequest):
                 logger.error(f"Captcha screenshot failed: {_e}")
 
             if captcha_b64:
-                # === AUTO-SOLVE: Solve captcha automatically (never show to user) ===
                 import nodriver.cdp.input_ as cdp_input
                 import time as _time2
                 auto_solved = False
                 auto_start = _time2.monotonic()
-                
-                for auto_attempt in range(8):  # Up to 8 auto-solve attempts (each fail generates a new captcha)
-                    # 2-minute timeout for the entire auto-solve process
+
+                for auto_attempt in range(8):
                     if _time2.monotonic() - auto_start > 120:
                         logger.warning("Auto-solve timed out (>120s)")
                         break
+
+                    _update("solving_captcha", f"Разгадываем капчу (попытка {auto_attempt + 1})...")
+
                     gemini_answer = await solve_captcha_with_gemini(captcha_b64)
                     if not gemini_answer:
                         logger.info(f"Auto-solve attempt {auto_attempt + 1}: OCR unavailable, retrying...")
                         await asyncio.sleep(1)
                         continue
-                    
+
                     logger.info(f"Auto-solve attempt {auto_attempt + 1}/8: '{gemini_answer}'")
-                    
-                    # Get iframe bounds for CDP clicking — find the LARGEST visible captcha iframe
-                    # (there are 2 iframes: a hidden backend.html and the visible advanced.en.html)
+
                     try:
                         iframe_bounds = await safe_evaluate(tab, """
                             (function() {
@@ -1458,11 +1468,11 @@ async def auth_login(req: AuthPhoneRequest):
                     except Exception as iframe_err:
                         logger.warning(f"Iframe detection failed: {iframe_err}")
                         iframe_bounds = 'NO_IFRAME'
-                    
+
                     if not iframe_bounds or iframe_bounds == 'NO_IFRAME':
                         logger.warning("No captcha iframe found for auto-solve")
                         break
-                    
+
                     import json as _json2
                     try:
                         bounds = _json2.loads(iframe_bounds)
@@ -1470,46 +1480,41 @@ async def auth_login(req: AuthPhoneRequest):
                     except Exception as json_err:
                         logger.warning(f"Iframe bounds JSON parse failed: {json_err}, raw: {iframe_bounds[:100]}")
                         break
-                    
+
                     if not bounds or bounds.get('w', 0) <= 0:
                         logger.warning(f"Captcha iframe has zero size: {bounds}")
                         break
-                    
+
                     ix, iy, iw, ih = bounds['x'], bounds['y'], bounds['w'], bounds['h']
                     input_x = ix + iw * 0.5
                     input_y = iy + ih * 0.53
-                    
-                    # Triple-click to focus input
+
                     await tab.send(cdp_input.dispatch_mouse_event(type_='mousePressed', x=input_x, y=input_y, button=cdp_input.MouseButton.LEFT, click_count=3))
                     await asyncio.sleep(0.05)
                     await tab.send(cdp_input.dispatch_mouse_event(type_='mouseReleased', x=input_x, y=input_y, button=cdp_input.MouseButton.LEFT, click_count=3))
                     await asyncio.sleep(0.5)
-                    
-                    # Clear existing text
+
                     await tab.send(cdp_input.dispatch_key_event(type_='keyDown', key='Backspace', code='Backspace'))
                     await tab.send(cdp_input.dispatch_key_event(type_='keyUp', key='Backspace', code='Backspace'))
                     await asyncio.sleep(0.1)
-                    
-                    # Type the Gemini answer
+
                     for ch in gemini_answer:
                         await tab.send(cdp_input.dispatch_key_event(type_='keyDown', key=ch))
                         await tab.send(cdp_input.dispatch_key_event(type_='char', key=ch, text=ch))
                         await tab.send(cdp_input.dispatch_key_event(type_='keyUp', key=ch))
                         await asyncio.sleep(0.03)
-                    
+
                     logger.info(f"Auto-typed '{gemini_answer}' into captcha")
                     await asyncio.sleep(0.3)
-                    
-                    # Click submit button — it's right-of-center (icons are left, button is right)
+
                     submit_x = ix + iw * 0.55
                     submit_y = iy + ih * 0.65
                     await tab.send(cdp_input.dispatch_mouse_event(type_='mousePressed', x=submit_x, y=submit_y, button=cdp_input.MouseButton.LEFT, click_count=1))
                     await asyncio.sleep(0.05)
                     await tab.send(cdp_input.dispatch_mouse_event(type_='mouseReleased', x=submit_x, y=submit_y, button=cdp_input.MouseButton.LEFT, click_count=1))
-                    
-                    await asyncio.sleep(3)  # Wait for captcha validation
-                    
-                    # Check if captcha iframe is still showing
+
+                    await asyncio.sleep(3)
+
                     try:
                         still_captcha = await safe_evaluate(tab, """
                             (function() {
@@ -1525,13 +1530,12 @@ async def auth_login(req: AuthPhoneRequest):
                         """)
                     except:
                         still_captcha = True
-                    
+
                     if not still_captcha:
                         logger.info(f"Captcha auto-solved successfully with Gemini! Answer: '{gemini_answer}'")
                         auto_solved = True
                         break
                     else:
-                        # Captcha still showing — wrong answer. Take new screenshot for next attempt.
                         logger.info(f"Auto-solve attempt {auto_attempt + 1} failed (wrong answer: '{gemini_answer}'), retrying...")
                         try:
                             captcha_path = os.path.join(DATA_DIR, f"login_{user_id}_captcha.png")
@@ -1555,29 +1559,24 @@ async def auth_login(req: AuthPhoneRequest):
                             break
                         if not captcha_b64:
                             break
-                
+
                 if auto_solved:
-                    # Captcha solved! Continue to SMS polling (don't return to user)
                     logger.info("Auto-solve succeeded, continuing to SMS polling...")
-                    # Fall through to the SMS polling code below
                 else:
-                    # All 8 auto-solve attempts failed — clean up and ask user to retry
                     logger.warning(f"All auto-solve attempts exhausted for {user_id}")
                     try:
                         browser.stop()
                     except Exception:
                         pass
                     _login_sessions.pop(user_id, None)
-                    return {
-                        "success": False,
-                        "message": "Не удалось пройти капчу автоматически. Попробуйте ещё раз.",
-                    }
+                    _update("error", "Не удалось пройти капчу автоматически. Попробуйте ещё раз.")
+                    _login_jobs[job_id]["result"] = {"success": False}
+                    return
             # If screenshot failed, continue to SMS polling (might work without captcha)
 
         # === Handle VkusVill Registration dialog ===
-        # After captcha, VkusVill may show "Регистрация" if the phone has no loyalty card.
-        # We need to fill in a name and click "Зарегистрироваться" to proceed to SMS.
-        await asyncio.sleep(2)  # Wait for page transition after captcha
+        _update("handling_registration", "Проверяем форму...")
+        await asyncio.sleep(2)
         try:
             reg_check = await safe_evaluate(tab, """
                 (function() {
@@ -1831,20 +1830,23 @@ async def auth_login(req: AuthPhoneRequest):
                     except: pass
                     try: browser.stop()
                     except Exception: pass
-                    raise HTTPException(status_code=429, detail="Ваш номер заблокирован для отправки SMS. Исчерпан суточный лимит (4 запроса). Попробуйте завтра.")
+                    _update("error", "Ваш номер заблокирован для отправки SMS. Исчерпан суточный лимит (4 запроса). Попробуйте завтра.")
+                    _login_jobs[job_id]["result"] = {"success": False}
+                    return
                 if 'Превышено количество попыток' in page_text:
                     try:
                         await tab.save_screenshot(os.path.join(DATA_DIR, f"login_{user_id}_4_rate_limit.png"))
                     except: pass
                     try: browser.stop()
                     except Exception: pass
-                    raise HTTPException(status_code=429, detail="Превышено количество попыток. Запросите новую СМС через 3 минуты.")
-        except HTTPException:
-            raise
+                    _update("error", "Превышено количество попыток. Запросите новую СМС через 3 минуты.")
+                    _login_jobs[job_id]["result"] = {"success": False}
+                    return
         except Exception:
             pass  # If early check fails, continue to polling loop
 
         # Wait up to 30s for ACTUAL page transition to SMS code input
+        _update("waiting_sms", "Ожидаем SMS...")
         sms_found = False
         for _ in range(30):
             await asyncio.sleep(1)
@@ -1871,21 +1873,23 @@ async def auth_login(req: AuthPhoneRequest):
                 except: pass
                 try: browser.stop()
                 except Exception: pass
-                if 'DAILY' in result:
-                    raise HTTPException(status_code=429, detail="Ваш номер заблокирован для отправки SMS. Исчерпан суточный лимит (4 запроса). Попробуйте завтра.")
-                raise HTTPException(status_code=429, detail="Превышено количество попыток. Запросите новую СМС через 3 минуты.")
+                msg = "Ваш номер заблокирован для отправки SMS. Исчерпан суточный лимит (4 запроса). Попробуйте завтра." if 'DAILY' in result else "Превышено количество попыток. Запросите новую СМС через 3 минуты."
+                _update("error", msg)
+                _login_jobs[job_id]["result"] = {"success": False}
+                return
             if result == 'OK':
                 sms_found = True
                 break
 
         if not sms_found:
-            # Take failure screenshot
             try:
                 await tab.save_screenshot(os.path.join(DATA_DIR, f"login_{user_id}_4_no_sms.png"))
             except: pass
             try: browser.stop()
             except Exception: pass
-            raise HTTPException(status_code=500, detail="Не удалось отправить SMS. Попробуйте позже.")
+            _update("error", "Не удалось отправить SMS. Попробуйте позже.")
+            _login_jobs[job_id]["result"] = {"success": False}
+            return
 
         # Take success screenshot showing SMS code input screen
         try:
@@ -1896,7 +1900,7 @@ async def auth_login(req: AuthPhoneRequest):
             "browser": browser,
             "tab": tab,
             "phone": phone_raw,
-            "force_sms": req.force_sms,
+            "force_sms": force_sms,
             "created_at": _time.time(),
             "proc": _chrome_proc,
             "profile_dir": _user_data_dir,
@@ -1904,14 +1908,14 @@ async def auth_login(req: AuthPhoneRequest):
         # Start keepalive to prevent Chrome from dying while user types SMS code
         import asyncio as _ka_asyncio
         _ka_asyncio.create_task(_keepalive_login_chrome(user_id))
-        return {"success": True, "need_pin": False, "message": "SMS отправлено. Введите код из SMS."}
 
-    except HTTPException:
-        raise
+        _update("done", "SMS отправлено. Введите код из SMS.")
+        _login_jobs[job_id]["result"] = {"success": True, "need_pin": False}
+        return
+
     except Exception as e:
         import traceback
-        logger.error(f"Login error: {type(e).__name__}: {e}\n{traceback.format_exc()}")
-        # Kill the separate login Chrome and clean up temp profile
+        logger.error(f"Login job error: {type(e).__name__}: {e}\n{traceback.format_exc()}")
         if browser:
             try: browser.stop()
             except Exception: pass
@@ -1922,7 +1926,8 @@ async def auth_login(req: AuthPhoneRequest):
             import shutil
             try: shutil.rmtree(_user_data_dir, ignore_errors=True)
             except Exception: pass
-        raise HTTPException(status_code=500, detail="Ошибка при попытке входа")
+        _update("error", "Ошибка при попытке входа. Попробуйте ещё раз.")
+        _login_jobs[job_id]["result"] = {"success": False}
 
 
 @app.post("/api/auth/captcha")

@@ -30,6 +30,7 @@ export default function Login({ userId, onLoginSuccess }) {
   const [error, setError] = useState(null)
   const [showInfo, setShowInfo] = useState(false)
   const [verifiedPhone, setVerifiedPhone] = useState('')
+  const [statusText, setStatusText] = useState('')
 
 
   // Refs for auto-submit
@@ -39,43 +40,86 @@ export default function Login({ userId, onLoginSuccess }) {
   // ── Phone Step ──
   const handlePhoneSubmit = async (e) => {
     e.preventDefault()
-    // Strip to pure digits for the API (prevents Pydantic 422 on non-string/format issues)
     const cleanPhone = phone.replace(/\D/g, '')
     if (!cleanPhone || cleanPhone.length < 10) return
-    setLoading(true); setError(null)
+    setLoading(true); setError(null); setStatusText('Отправляем запрос...')
     try {
-      const ctrl = new AbortController()
-      const timer = setTimeout(() => ctrl.abort(), 150000) // 150s client timeout
+      // Step 1: Start login job (returns instantly)
       const res = await fetch(`${AUTH_BASE}/api/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: String(userId), phone: cleanPhone, force_sms: forceSms }),
-        signal: ctrl.signal
+        body: JSON.stringify({ user_id: String(userId), phone: cleanPhone, force_sms: forceSms })
       })
-      clearTimeout(timer)
-      // Handle non-JSON responses (Vercel gateway timeout returns HTML)
       const ct = res.headers.get('content-type') || ''
       let data
       if (ct.includes('application/json')) {
         data = await res.json()
       } else {
-        // Vercel 30s timeout or other non-JSON error
-        throw new Error('Превышено время ожидания. Попробуйте ещё раз.')
+        throw new Error('Сервер не отвечает. Попробуйте ещё раз.')
       }
-      if (res.ok && data.success) {
+      if (!res.ok || !data.success) {
+        setError(extractErrorMsg(data, 'Не удалось начать вход'))
+        setLoading(false)
+        return
+      }
+
+      // Fast path: already has cookies + PIN
+      if (data.need_pin) {
         localStorage.setItem('vv_last_phone', cleanPhone)
-        setStep(data.need_pin ? 'pin' : 'code')
-      } else {
-        setError(extractErrorMsg(data, 'Не удалось отправить SMS'))
+        setStep('pin')
+        setLoading(false)
+        return
       }
+
+      // Step 2: Poll for status
+      const jobId = data.job_id
+      if (!jobId) {
+        setError('Сервер не вернул job_id')
+        setLoading(false)
+        return
+      }
+
+      localStorage.setItem('vv_last_phone', cleanPhone)
+      setStatusText('Запускаем браузер...')
+
+      // Poll every 3s for up to 3 minutes
+      for (let i = 0; i < 60; i++) {
+        await new Promise(r => setTimeout(r, 3000))
+        try {
+          const pollRes = await fetch(`${AUTH_BASE}/api/auth/login/status/${jobId}`)
+          if (!pollRes.ok) {
+            if (pollRes.status === 404) {
+              setError('Сессия не найдена. Попробуйте ещё раз.')
+              setLoading(false)
+              return
+            }
+            continue
+          }
+          const pollData = await pollRes.json()
+          setStatusText(pollData.message || 'Обработка...')
+
+          if (pollData.status === 'done') {
+            const result = pollData.result || {}
+            setStep(result.need_pin ? 'pin' : 'code')
+            setLoading(false)
+            return
+          }
+          if (pollData.status === 'error') {
+            setError(pollData.message || 'Ошибка входа')
+            setLoading(false)
+            return
+          }
+          // else: still in progress, keep polling
+        } catch {
+          // Network error on poll — keep trying
+        }
+      }
+      // Timeout after 3 minutes of polling
+      setError('Превышено время ожидания (3 мин). Попробуйте ещё раз.')
     } catch (e) {
-      if (e.name === 'AbortError') {
-        setError('Превышено время ожидания (150с). Попробуйте ещё раз.')
-      } else {
-        setError(e.message || 'Нет связи с сервером')
-      }
+      setError(e.message || 'Нет связи с сервером')
     }
-    finally { setLoading(false) }
+    finally { setLoading(false); setStatusText('') }
   }
 
 
@@ -204,9 +248,9 @@ export default function Login({ userId, onLoginSuccess }) {
             </div>
             {showInfo && <div className="login-info-tooltip">Включите, если хотите войти заново через SMS. Старые данные будут удалены и создан новый PIN.</div>}
             <button type="submit" disabled={loading || phone.replace(/\D/g, '').length < 10} className="login-btn">
-              {loading ? <><Spinner /> Получаем код…</> : 'Получить код'}
+            {loading ? <><Spinner /> {statusText || 'Получаем код…'}</> : 'Получить код'}
             </button>
-            {loading && <div className="login-loading-hint">Разгадываем капчу и отправляем SMS. Это может занять до 60 секунд.</div>}
+            {loading && <div className="login-loading-hint">{statusText || 'Разгадываем капчу и отправляем SMS...'}</div>}
           </motion.form>
         )
 
