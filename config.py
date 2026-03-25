@@ -28,7 +28,7 @@ COOKIE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cookies.
 USER_COOKIES_DIR = os.path.join(DATA_DIR, "user_cookies")
 
 # Admin panel token (set ADMIN_TOKEN env variable on AWS to override)
-ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "122662Rus")
+ADMIN_TOKEN = os.environ.get("ADMIN_TOKEN", "")
 
 # Web App URL (Telegram requires HTTPS)
 WEB_APP_URL = os.environ.get("WEB_APP_URL", "https://t.me/your_bot_name/app")

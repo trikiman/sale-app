@@ -33,6 +33,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import List, Optional
 import hashlib
+import hmac
 import time as _time
 from collections import deque
 from datetime import datetime
@@ -263,7 +264,7 @@ def _periodic_cleanup():
 threading.Thread(target=_periodic_cleanup, daemon=True).start()
 
 def _require_token(token: Optional[str]):
-    if not ADMIN_TOKEN or not token or token != ADMIN_TOKEN:
+    if not ADMIN_TOKEN or not token or not hmac.compare_digest(token, ADMIN_TOKEN):
         logger.warning("Admin auth failed: token mismatch")
         raise HTTPException(status_code=403, detail="Invalid admin token")
 
