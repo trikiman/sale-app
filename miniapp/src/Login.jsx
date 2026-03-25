@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 
-// Auth endpoints: Vercel proxy (30s timeout) — verify returns in ~16s now
+// Auth endpoints: Vercel proxy (30s timeout) — verify returns in ~16s now (v2)
 const AUTH_BASE = ''
 
 const Spinner = () => <span className="login-spinner" />
