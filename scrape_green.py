@@ -6,13 +6,12 @@ Uses nodriver (CDP) instead of undetected_chromedriver for Chrome 145+ compatibi
 import asyncio
 import json
 import os
-import requests as _requests
 import sys
 import time
 import tempfile
 import subprocess
 import shutil
-from chrome_stealth import launch_stealth_browser, cleanup_browser, find_chrome
+from chrome_stealth import launch_stealth_browser, find_chrome
 
 from utils import normalize_category, parse_stock, clean_price, deduplicate_products, synthesize_discount, save_products_safe, check_vkusvill_available, normalize_stock_unit
 
@@ -177,7 +176,7 @@ async def _load_cookies(page):
     """Load VkusVill session cookies from cookies.json into browser via CDP."""
     if not os.path.exists(COOKIES_PATH):
         print(f"  [GREEN] No cookies.json found at {COOKIES_PATH}")
-        print(f"  [GREEN] Run tech-login from admin panel to save session.")
+        print("  [GREEN] Run tech-login from admin panel to save session.")
         return False
 
     with open(COOKIES_PATH, 'r', encoding='utf-8') as f:
@@ -220,7 +219,7 @@ def _fetch_basket_snapshot() -> dict:
         raw = json.load(f)
 
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36',
         'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
         'X-Requested-With': 'XMLHttpRequest',
         'Origin': 'https://vkusvill.ru',
@@ -233,7 +232,11 @@ def _fetch_basket_snapshot() -> dict:
     import httpx
     for attempt in range(1):
         try:
-            with httpx.Client(proxy='socks5h://127.0.0.1:10811', timeout=15) as client:
+            _proxy = os.environ.get("SOCKS_PROXY", "")
+            client_kwargs = dict(timeout=15)
+            if _proxy:
+                client_kwargs['proxy'] = _proxy
+            with httpx.Client(**client_kwargs) as client:
                 r = client.post(
                     'https://vkusvill.ru/ajax/delivery_order/basket_recalc.php',
                     data={'COUPON': '', 'BONUS': ''},
@@ -568,33 +571,83 @@ async def _add_green_cards_to_cart(page, card_source: str, total_cards: int):
 
     for idx in range(total_cards):
         # Find the FIRST card that still has a clickable add button.
-        # Two possible behaviors after adding an item:
-        #   1. Item DISAPPEARS from DOM → remaining items shift up (this account)
-        #   2. Item STAYS but button changes to quantity control → skip it
-        # Using cards[idx] was wrong because it skipped items after DOM shifts.
-        # Instead, we scan all cards and click the first one with an add button.
+        # Scroll each card into view before clicking — VkusVill uses Swiper
+        # carousel where offscreen cards have offsetParent === null.
         result = await _js(page, f"""
             (() => {{
                 const scope = {scope_expr};
-                const isVisible = (el) => !!(el && el.offsetParent !== null && !el.classList.contains('_hidden'));
                 if (!scope) return 'no_scope';
                 const cards = scope.querySelectorAll('.ProductCard');
                 if (cards.length === 0) return 'no_card';
                 for (let i = 0; i < cards.length; i++) {{
                     const card = cards[i];
-                    if (card.querySelector('.ProductCard__quantityControl')) continue;
-                    const btn = card.querySelector('.js-delivery__basket--add, .CartButton__content--add, .CartButton__content, .ProductCard__add, .ProductCard__addToCart, button');
-                    if (btn && isVisible(btn)) {{
+                    // Skip cards already in cart (has quantity control)
+                    if (card.querySelector('.ProductCard__quantityControl, [class*="quantityControl"], [class*="QuantityControl"]')) continue;
+                    // Scroll card into view to make it visible in Swiper
+                    card.scrollIntoView({{behavior: 'instant', block: 'center'}});
+                    // Look for add-to-cart button with broad selectors
+                    const btn = card.querySelector(
+                        '.js-delivery__basket--add, .CartButton__content--add, .CartButton__content, ' +
+                        '.ProductCard__add, .ProductCard__addToCart, ' +
+                        'button[class*="cart" i], button[class*="Cart"], button[class*="basket" i]'
+                    );
+                    if (btn) {{
+                        btn.scrollIntoView({{behavior: 'instant', block: 'center'}});
                         btn.click();
                         return 'added';
+                    }}
+                    // Fallback: find ANY button inside the card
+                    const anyBtn = card.querySelector('button');
+                    if (anyBtn) {{
+                        const btnText = (anyBtn.innerText || '').toLowerCase();
+                        if (btnText.includes('корзин') || btnText.includes('добавить') || btnText.includes('купить')) {{
+                            anyBtn.scrollIntoView({{behavior: 'instant', block: 'center'}});
+                            anyBtn.click();
+                            return 'added';
+                        }}
                     }}
                 }}
                 return 'no_button';
             }})()
         """)
         result = str(result) if result else 'no_button'
+
+        # If no_button, retry once after scrolling to bottom then back
+        if result == 'no_button' and idx == 0:
+            await _js(page, 'window.scrollTo(0, document.body.scrollHeight)')
+            await asyncio.sleep(2)
+            await _js(page, f"""
+                (() => {{
+                    const scope = {scope_expr};
+                    if (scope) scope.scrollIntoView({{behavior: 'instant', block: 'center'}});
+                }})()
+            """)
+            await asyncio.sleep(2)
+            # Retry the click
+            result = await _js(page, f"""
+                (() => {{
+                    const scope = {scope_expr};
+                    if (!scope) return 'no_scope';
+                    const cards = scope.querySelectorAll('.ProductCard');
+                    for (const card of cards) {{
+                        if (card.querySelector('.ProductCard__quantityControl, [class*="quantityControl"]')) continue;
+                        card.scrollIntoView({{behavior: 'instant', block: 'center'}});
+                        const btn = card.querySelector(
+                            '.js-delivery__basket--add, .CartButton__content--add, .CartButton__content, ' +
+                            '.ProductCard__add, button[class*="cart" i], button[class*="Cart"], button'
+                        );
+                        if (btn) {{
+                            btn.click();
+                            return 'added_retry';
+                        }}
+                    }}
+                    return 'no_button';
+                }})()
+            """)
+            result = str(result) if result else 'no_button'
+
         results_summary[result] = results_summary.get(result, 0) + 1
-        if result == 'added':
+        if result in ('added', 'added_retry'):
             added_count += 1
         await asyncio.sleep(1.5)  # 1.5s delay: wait for disappear animation + avoid bot ban
 
@@ -844,6 +897,8 @@ def _extract_green_from_basket_dict(basket: dict) -> list:
             img = f"https://vkusvill.ru{img}"
 
         stock_data = stock_map.get(pid, {})
+        stock_value = stock_data.get('value', 0)
+        stock_unit = stock_data.get('unit') or _normalize_unit(item.get('UNIT') or item.get('UNITS'))
         products.append({
             'id': pid,
             'name': item.get('NAME', ''),
@@ -851,8 +906,9 @@ def _extract_green_from_basket_dict(basket: dict) -> list:
             'currentPrice': stock_data.get('price') or str(item.get('PRICE', '0')),
             'oldPrice': stock_data.get('oldPrice') or str(item.get('BASE_PRICE') or item.get('PRICE_OLD') or item.get('OLD_PRICE') or '0'),
             'image': img,
+            'stock': stock_value if stock_value else 0,
             'stockText': _stock_text_from_map(stock_data),
-            'unit': stock_data.get('unit') or _normalize_unit(item.get('UNIT') or item.get('UNITS')),
+            'unit': stock_unit,
             'category': 'Зелёные ценники',
             'type': 'green',
             'can_buy': item.get('CAN_BUY') == 'Y',
@@ -1235,22 +1291,32 @@ async def scrape_green_prices_async():
                     for (const section of sections) {
                         const title = section.querySelector('h2, h3, [class*="title"], [class*="Title"]');
                         if (title && (title.textContent || '').includes('Добавьте в заказ')) {
+                            section.scrollIntoView({behavior: 'instant', block: 'center'});
                             const btn = section.querySelector('.js-delivery__basket--add, .CartButton__content, button[class*="cart"], button[class*="Cart"]');
-                            if (btn && btn.offsetParent !== null) {
+                            if (btn) {
+                                btn.scrollIntoView({behavior: 'instant', block: 'center'});
                                 btn.click();
                                 return 'added_from_recommend';
                             }
                         }
                     }
-                    // Fallback: just click the first "В корзину" button on the page
-                    // that's NOT in the green section
+                    // Fallback: click the first "В корзину" button NOT in the green section
                     const greenSection = document.getElementById('js-Delivery__Order-green-state-not-empty');
                     const allBtns = document.querySelectorAll('.js-delivery__basket--add, .CartButton__content--add');
                     for (const btn of allBtns) {
                         if (greenSection && greenSection.contains(btn)) continue;
-                        if (btn.offsetParent !== null) {
+                        btn.scrollIntoView({behavior: 'instant', block: 'center'});
+                        btn.click();
+                        return 'added_fallback';
+                    }
+                    // Last resort: find any button with cart text
+                    const allButtons = document.querySelectorAll('button');
+                    for (const btn of allButtons) {
+                        const t = (btn.innerText || '').toLowerCase();
+                        if (t.includes('корзин') && !greenSection?.contains(btn)) {
+                            btn.scrollIntoView({behavior: 'instant', block: 'center'});
                             btn.click();
-                            return 'added_fallback';
+                            return 'added_text_match';
                         }
                     }
                     return 'no_button_found';
@@ -1270,6 +1336,61 @@ async def scrape_green_prices_async():
                 print("  [GREEN] Could not add seed item — cart may still be empty")
         else:
             print("  [GREEN] Cart already has items — skipping seed")
+
+        # ── STEP 2.9: Clear unavailable items from cart ──
+        # VkusVill cart has ~300 item limit. Unavailable (faded/half-alpha)
+        # items are dead weight that block adding new green items for stock check.
+        print("  [GREEN] Step 2.9: Clearing unavailable items from cart...")
+        clear_result = await _js(page, r"""
+            (() => {
+                // SAFE button: removes ONLY unavailable items (faded/alpha)
+                // Selector: button.js-delivery__basket_unavailable--clear
+                // Located in: .js-delivery__basket_footer--items-unavailable section
+                // DANGEROUS button to AVOID: button.js-delivery__basket--clear (clears ENTIRE cart!)
+
+                // Method 1: Direct selector for the unavailable-clear button
+                const safeBtn = document.querySelector('button.js-delivery__basket_unavailable--clear');
+                if (safeBtn) {
+                    safeBtn.click();
+                    return {method: 'unavailable_clear_btn', status: 'clicked'};
+                }
+
+                // Method 2: Find "Удалить" inside the unavailable footer ONLY
+                const unavailFooter = document.querySelector('.js-delivery__basket_footer--items-unavailable');
+                if (unavailFooter) {
+                    const deleteEls = unavailFooter.querySelectorAll('a, button, span, div');
+                    for (const el of deleteEls) {
+                        const text = (el.textContent || '').trim();
+                        if (text.includes('Удалить') && text.length < 30) {
+                            el.click();
+                            return {method: 'footer_delete_text', status: 'clicked'};
+                        }
+                    }
+                    return {method: 'none', status: 'footer_found_no_button'};
+                }
+
+                // No unavailable section found
+                return {method: 'none', status: 'no_unavailable_section'};
+            })()
+        """)
+        # Parse nodriver response
+        if isinstance(clear_result, list):
+            parsed = {}
+            for item in clear_result:
+                if isinstance(item, (list, tuple)) and len(item) == 2:
+                    key = item[0]
+                    val = item[1]
+                    parsed[key] = val.get('value') if isinstance(val, dict) and 'value' in val else val
+            clear_result = parsed
+        print(f"  [GREEN] Cart cleanup result: {clear_result}")
+
+        if isinstance(clear_result, dict) and clear_result.get('status') == 'clicked':
+            await asyncio.sleep(3)  # Wait for VkusVill to process deletion
+            print(f"  [GREEN] ✅ Cleared unavailable items via {clear_result.get('method')}")
+            await _step_screenshot(page, "after_clear_unavailable")
+        else:
+            status = clear_result.get('status', 'unknown') if isinstance(clear_result, dict) else str(clear_result)
+            print(f"  [GREEN] No unavailable items to clear ({status})")
 
         # ── STEP 3: Find "Зелёные ценники" section ──
         print("  [GREEN] Step 3: Looking for green section...")
@@ -1648,6 +1769,68 @@ async def scrape_green_prices_async():
         section_found = green_button != 'not_in_dom'
         print(f"  [GREEN] Step 6: Using {len(raw_products)} items scraped from green section (pre-add)")
 
+        # ── STEP 6a: Scrape stock from cart DOM (most reliable — no API needed) ──
+        # After reload, green items are in the cart with visible stock text.
+        # Read it directly from the rendered BasketItem cards.
+        print("  [GREEN] Step 6a: Scraping stock from cart page DOM...")
+        await _js(page, 'window.scrollTo(0, document.body.scrollHeight)')
+        await asyncio.sleep(2)
+        await _js(page, 'window.scrollTo(0, 0)')
+        await asyncio.sleep(1)
+
+        dom_stock_map = await _js(page, r"""
+            (() => {
+                const stockMap = {};
+                // Cart items use .js-delivery-basket-item or .Delivery__Order__BasketItem
+                const items = document.querySelectorAll(
+                    '.js-delivery-basket-item, .Delivery__Order__BasketItem, .BasketItem, [class*="BasketItem"]'
+                );
+                items.forEach(item => {
+                    // Find product ID from link or data attribute
+                    const link = item.querySelector('a[href*="/goods/"]') || item.querySelector('a[href*=".html"]');
+                    let pid = '';
+                    if (link) {
+                        const m = (link.href || '').match(/(\d+)\.html/);
+                        if (m) pid = m[1];
+                    }
+                    if (!pid) {
+                        const dataEl = item.querySelector('[data-id]') || item.querySelector('[data-product-id]');
+                        if (dataEl) pid = dataEl.getAttribute('data-id') || dataEl.getAttribute('data-product-id') || '';
+                    }
+                    if (!pid) return;
+
+                    const text = (item.innerText || '').replace(/\u00a0/g, ' ');
+
+                    // Detect unit from text/price
+                    const isKg = text.includes('/кг') || text.includes('за кг');
+                    const unit = isKg ? 'кг' : 'шт';
+
+                    stockMap[pid] = {text, unit};
+                });
+                return stockMap;
+            })()
+        """) or {}
+
+        if dom_stock_map and isinstance(dom_stock_map, dict):
+            dom_filled = 0
+            for p in raw_products:
+                pid = str(p.get('id', ''))
+                if not pid or pid not in dom_stock_map:
+                    continue
+                cart_item = dom_stock_map[pid]
+                cart_text = str(cart_item.get('text', ''))
+                cart_unit = str(cart_item.get('unit', 'шт'))
+
+                # Set stockText from cart DOM for later parse_stock() processing
+                if cart_text and not p.get('stockText', '').strip():
+                    p['stockText'] = cart_text
+                if cart_unit and cart_unit != 'шт':
+                    p['unit'] = cart_unit
+                dom_filled += 1
+            print(f"  [GREEN] Step 6a: Matched {dom_filled}/{len(raw_products)} green items to cart DOM (of {len(dom_stock_map)} cart items)")
+        else:
+            print(f"  [GREEN] Step 6a: No cart items found in DOM")
+
         # BUG-067: Supplement DOM-scraped items with basket_recalc data
         # The DOM may still miss items that weren't rendered despite Swiper pagination
         print("  [GREEN] Step 6b: Fetching green items from basket_recalc (supplement)...")
@@ -1671,6 +1854,8 @@ async def scrape_green_prices_async():
                     existing = existing_ids[bg_id]
                     if bg.get('stockText'):
                         existing['stockText'] = bg['stockText']
+                    if bg.get('stock') and bg['stock'] not in [0, '0']:
+                        existing['stock'] = bg['stock']
                     if bg.get('unit'):
                         existing['unit'] = bg['unit']
                     if bg.get('currentPrice') and bg['currentPrice'] not in ['0', '', 'None']:
@@ -1700,6 +1885,7 @@ async def scrape_green_prices_async():
                     unit = sd.get('unit', 'шт')
                     if sv is not None:
                         p['stockText'] = f"{sv} {unit}"
+                        p['stock'] = sv  # Set numeric stock directly
                         if not p.get('unit') or p['unit'] == 'шт':
                             p['unit'] = unit
                         # Also update prices if we have them
@@ -1778,16 +1964,24 @@ async def scrape_green_prices_async():
             p['currentPrice'] = clean_price(p.get('currentPrice', '0'))
             p['oldPrice'] = clean_price(p.get('oldPrice', '0'))
             p = synthesize_discount(p)
-            p['stock'] = parse_stock(p.get('stockText', ''))
+            # Preserve existing numeric stock set by basket_recalc (authoritative)
+            existing_stock = p.get('stock')
+            if existing_stock and existing_stock not in [0, '0']:
+                p['stock'] = existing_stock
+            else:
+                p['stock'] = parse_stock(p.get('stockText', ''))
             p['unit'] = normalize_stock_unit(p.get('unit'), p['stock'])
 
-            # Fallback: if stock=99 (placeholder), use previous known-good stock
-            if p['stock'] == 99:
+            # Fallback: if stock=99 (placeholder) or stock=0 (failed enrichment),
+            # use previous known-good stock from cache
+            if p['stock'] in (99, 0):
                 pid = str(p.get('id', ''))
                 if pid in prev_stock_map:
-                    p['stock'] = prev_stock_map[pid]['stock']
-                    p['unit'] = prev_stock_map[pid]['unit']
-                    print(f"  [GREEN] Fallback stock for {p.get('name','')[:25]}: {p['stock']} {p['unit']}")
+                    cached = prev_stock_map[pid]
+                    old_stock = p['stock']
+                    p['stock'] = cached['stock']
+                    p['unit'] = cached['unit']
+                    print(f"  [GREEN] Cache fallback for {p.get('name','')[:25]}: {old_stock} → {p['stock']} {p['unit']}")
 
             if 'stockText' in p:
                 del p['stockText']

@@ -3,7 +3,6 @@ import os
 import json
 import time
 import sys
-import requests as _requests
 
 # Path to category database
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -65,13 +64,17 @@ def check_vkusvill_available(strict: bool = False) -> bool:
     """
     try:
         import httpx
-        with httpx.Client(proxy='socks5h://127.0.0.1:10811', timeout=10) as client:
+        _proxy = os.environ.get("SOCKS_PROXY", "")
+        client_kwargs = dict(timeout=10)
+        if _proxy:
+            client_kwargs['proxy'] = _proxy
+        with httpx.Client(**client_kwargs) as client:
             r = client.get(
                 'https://vkusvill.ru/',
                 headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'},
             )
         if r.status_code == 200:
-            print(f'  [CHECK] VkusVill OK (200)')
+            print('  [CHECK] VkusVill OK (200)')
             return True
         print(f'  [CHECK] VkusVill returned {r.status_code} — possible IP ban or downtime. Aborting scrape.')
         return False
@@ -318,7 +321,7 @@ def parse_stock(text):
 
     # If it says "In stock" but no number, assume plenty
     if 'в наличии' in text_lower:
-        return 0  # in stock but unknown quantity
+        return 99  # in stock but unknown quantity — triggers cache fallback
 
     return 0
 
