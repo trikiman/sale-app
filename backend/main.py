@@ -148,6 +148,10 @@ _LOGIN_TTL_SECONDS = 600  # 10 minutes max for login flow
 _login_jobs: dict = {}
 _LOGIN_JOB_TTL = 600  # 10 minutes
 
+# Async verify jobs: {job_id: {status, message, result, user_id, created_at}}
+_verify_jobs: dict = {}
+_VERIFY_JOB_TTL = 300  # 5 minutes
+
 # R2-3: In-memory login rate limiter: {phone_10: [timestamps]}
 _login_attempts: dict = {}
 _LOGIN_RATE_LIMIT = 3  # max attempts per phone
@@ -420,28 +424,104 @@ async def product_details(product_id: str):
 
     # Fetch HTML via direct HTTP (fast: ~2-3s) — VkusVill pages are server-rendered
     html = None
+    ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36"
+
+    # Try direct connection first
     try:
         import httpx
-        async with httpx.AsyncClient(
-            proxy="socks5://127.0.0.1:10811",
-            timeout=10,
-            follow_redirects=True,
-        ) as client:
+        async with httpx.AsyncClient(timeout=4, follow_redirects=True) as client:
             resp = await client.get(url, headers={
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-                "Accept": "text/html",
+                "User-Agent": ua,
+                "Accept": "text/html,application/xhtml+xml",
             })
             if resp.status_code == 200 and len(resp.text) > 500:
                 html = resp.text
-                logger.info(f"Product {product_id}: fetched {len(html)} bytes via HTTP in {resp.elapsed.total_seconds():.1f}s")
+                logger.info(f"Product {product_id}: fetched {len(html)} bytes via direct in {resp.elapsed.total_seconds():.1f}s")
     except Exception as e:
-        logger.warning(f"Product {product_id}: HTTP fetch failed ({e}), trying Chrome fallback")
+        logger.warning(f"Product {product_id}: direct HTTP failed ({e})")
 
-    # Chrome fallback DISABLED — spawning Chrome from scraper causes memory pressure
-    # that kills login Chrome instances. If HTTP fails, just use cached/fallback data.
+    # If direct failed, use ProxyManager with smart retry
+    # Strategy: 1s HEAD check per proxy → first that passes → full fetch (5s)
+    # ConnectError → proxy dead → remove. Timeout → VkusVill slow → keep proxy.
     if not html:
-        logger.info(f"Product {product_id}: HTTP failed, skipping (Chrome fallback disabled)")
-        return _fallback_product_details(product_id, product, "HTTP fetch failed, Chrome fallback disabled")
+        try:
+            import sys, httpx
+            if os.path.dirname(os.path.dirname(__file__)) not in sys.path:
+                sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+            from proxy_manager import ProxyManager
+            pm = ProxyManager(log_func=lambda msg: logger.info(f"[PROXY] {msg}"))
+
+            # Get all proxies in pool
+            pool = pm._cache.get("proxies", [])
+            if not pool:
+                pm.ensure_pool()
+                pool = pm._cache.get("proxies", [])
+
+            dead_proxies = []
+            working_proxy = None
+
+            # Phase 1: Quick 1s HEAD check to find a live proxy
+            for entry in pool:
+                addr = entry["addr"]
+                proxy_url = f"socks5://{addr}"
+                try:
+                    async with httpx.AsyncClient(
+                        timeout=httpx.Timeout(connect=1.0, read=1.0, write=1.0, pool=1.0),
+                        proxy=proxy_url
+                    ) as client:
+                        await client.head("https://vkusvill.ru/", headers={"User-Agent": ua})
+                    # HEAD succeeded — this proxy is alive
+                    working_proxy = addr
+                    logger.info(f"Product {product_id}: proxy {addr} passed 1s health check")
+                    break
+                except httpx.ConnectError:
+                    # Proxy is dead — can't even connect
+                    logger.info(f"Product {product_id}: proxy {addr} dead (ConnectError)")
+                    dead_proxies.append(addr)
+                except httpx.TimeoutException:
+                    # Connected but VkusVill slow — proxy might be fine, skip to next
+                    logger.info(f"Product {product_id}: proxy {addr} timeout (VkusVill slow?), trying next")
+                except Exception:
+                    # Other error — skip but don't remove
+                    logger.info(f"Product {product_id}: proxy {addr} check failed, trying next")
+
+            # Remove confirmed dead proxies
+            for addr in dead_proxies:
+                pm.remove_proxy(addr)
+
+            # Phase 2: If we found a working proxy, do the full page fetch
+            if working_proxy:
+                proxy_url = f"socks5://{working_proxy}"
+                try:
+                    async with httpx.AsyncClient(
+                        timeout=httpx.Timeout(connect=3.0, read=5.0, write=3.0, pool=3.0),
+                        follow_redirects=True, proxy=proxy_url
+                    ) as client:
+                        resp = await client.get(url, headers={
+                            "User-Agent": ua,
+                            "Accept": "text/html,application/xhtml+xml",
+                        })
+                        if resp.status_code == 200 and len(resp.text) > 500:
+                            html = resp.text
+                            logger.info(f"Product {product_id}: fetched {len(html)} bytes via proxy {working_proxy} in {resp.elapsed.total_seconds():.1f}s")
+                        else:
+                            logger.warning(f"Product {product_id}: proxy {working_proxy} returned status {resp.status_code}")
+                except httpx.ConnectError:
+                    pm.remove_proxy(working_proxy)
+                    logger.warning(f"Product {product_id}: proxy {working_proxy} died during fetch")
+                except Exception as e:
+                    logger.warning(f"Product {product_id}: fetch via {working_proxy} failed ({e})")
+            else:
+                if dead_proxies:
+                    logger.info(f"Product {product_id}: removed {len(dead_proxies)} dead proxies, none working")
+                else:
+                    logger.info(f"Product {product_id}: all proxies timed out — VkusVill may be down")
+        except ImportError:
+            logger.warning(f"Product {product_id}: proxy_manager not available")
+
+    if not html:
+        logger.info(f"Product {product_id}: all attempts failed, returning fallback")
+        return _fallback_product_details(product_id, product, "HTTP fetch failed (direct blocked, proxy unavailable)")
 
     if not html or len(html) < 500:
         return _fallback_product_details(product_id, product, "Empty HTML response")
@@ -546,7 +626,11 @@ async def proxy_image(url: str = ""):
             headers={"Cache-Control": "public, max-age=86400", "X-Cache": "HIT"},
         )
     try:
-        async with httpx.AsyncClient(timeout=10) as client:
+        _proxy = os.environ.get("SOCKS_PROXY", "")
+        client_kwargs: dict = {"timeout": 10}
+        if _proxy:
+            client_kwargs["proxy"] = _proxy
+        async with httpx.AsyncClient(**client_kwargs) as client:
             resp = await client.get(url, headers={
                 "Referer": "https://vkusvill.ru/",
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -2259,8 +2343,11 @@ async def auth_captcha(req: AuthCaptchaRequest):
 
 @app.post("/api/auth/verify")
 async def auth_verify(req: AuthCodeRequest):
-    """Submit SMS code via nodriver, navigate to /cart/, save full cookies."""
+    """Start SMS code verification in background. Returns job_id immediately.
+    Poll GET /api/auth/verify/status/{job_id} for progress."""
     import asyncio
+    import uuid
+    import time as _time
 
     user_id = req.user_id
     entry = _login_sessions.get(user_id)
@@ -2272,30 +2359,75 @@ async def auth_verify(req: AuthCodeRequest):
         logger.info(f"Duplicate verify call for {user_id} — returning cached success")
         return entry["_verified"]
 
-    # If another verify is already in-progress, block this call
-    if entry.get("_verify_in_progress"):
-        logger.info(f"Verify already in-progress for {user_id} — blocking duplicate")
-        raise HTTPException(status_code=409, detail="Верификация уже выполняется. Подождите.")
+    # If another verify is already in-progress, return existing job_id
+    if entry.get("_verify_in_progress") and entry.get("_verify_job_id"):
+        logger.info(f"Verify already in-progress for {user_id} — returning existing job_id")
+        return {"success": True, "job_id": entry["_verify_job_id"], "message": "Верификация уже выполняется."}
 
-    # Mark as in-progress (atomic in single-threaded asyncio - set before any await)
+    code = req.code.strip()
+    if not code.isdigit() or not (4 <= len(code) <= 8):
+        raise HTTPException(status_code=400, detail="Некорректный код")
+
+    # Generate job ID and start background task
+    job_id = str(uuid.uuid4())[:8]
+    now = _time.time()
+    _verify_jobs[job_id] = {
+        "status": "starting",
+        "message": "Начинаем проверку кода...",
+        "result": None,
+        "user_id": user_id,
+        "created_at": now,
+    }
+
+    # Mark as in-progress
     entry["_verify_in_progress"] = True
+    entry["_verify_job_id"] = job_id
+
+    # Evict old verify jobs
+    stale = [k for k, v in _verify_jobs.items() if now - v.get("created_at", 0) > _VERIFY_JOB_TTL]
+    for k in stale:
+        _verify_jobs.pop(k, None)
+
+    asyncio.create_task(_run_verify_job(job_id, user_id, code))
+    return {"success": True, "job_id": job_id, "message": "Проверяем код..."}
+
+
+@app.get("/api/auth/verify/status/{job_id}")
+async def auth_verify_status(job_id: str):
+    """Poll verify job progress. Returns current status and message."""
+    job = _verify_jobs.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return {
+        "status": job["status"],
+        "message": job["message"],
+        "result": job.get("result"),
+    }
+
+
+async def _run_verify_job(job_id: str, user_id: str, code: str):
+    """Background task: type SMS code into Chrome, wait for redirect, extract cookies.
+    Updates _verify_jobs[job_id] with progress."""
+    import asyncio
+
+    def _update(status: str, message: str):
+        _verify_jobs[job_id]["status"] = status
+        _verify_jobs[job_id]["message"] = message
+
+    entry = _login_sessions.get(user_id)
+    if not entry:
+        _update("error", "Сессия истекла. Начните заново.")
+        _verify_jobs[job_id]["result"] = {"success": False, "error": "session_expired"}
+        return
 
     browser = entry["browser"]
     tab = entry["tab"]
     try:
-        code = req.code.strip()
-        if not code.isdigit() or not (4 <= len(code) <= 8):
-            raise HTTPException(status_code=400, detail="Некорректный код")
-
-        # Fill SMS code using CDP key events
-
-        # Robust recovery: handle CDP -32000 "No search session" after page reload/navigation
-        # After captcha auto-solve, VkusVill reloads the page, destroying the old tab's CDP target.
-        # We recover by getting a fresh tab reference from the browser's active targets.
-        sms_input = None
         _login_succeeded = False
         _found_error = False
         _verify_ss = None
+
+        _update("checking_session", "Проверяем сессию браузера...")
 
         # Early check: is Chrome process still alive?
         try:
@@ -2303,10 +2435,9 @@ async def auth_verify(req: AuthCodeRequest):
         except (ConnectionRefusedError, OSError) as _dead_err:
             logger.error(f"Chrome process dead for {user_id}: {_dead_err}")
             _login_sessions.pop(user_id, None)
-            raise HTTPException(
-                status_code=410,
-                detail="Сессия браузера истекла. Нажмите 'Изменить номер' и начните заново."
-            )
+            _update("error", "Сессия браузера истекла. Нажмите 'Изменить номер' и начните заново.")
+            _verify_jobs[job_id]["result"] = {"success": False, "error": "session_expired"}
+            return
         except Exception:
             pass  # CDP context stale but Chrome may still be alive — continue
 
@@ -2319,12 +2450,11 @@ async def auth_verify(req: AuthCodeRequest):
                     await tab.evaluate("1+1")
                 except Exception as _ctx_err:
                     logger.warning(f"Attempt {_attempt+1}: CDP context dead ({_ctx_err}), refreshing tab from browser targets")
-                    # Get a fresh tab — the browser is still alive, just the tab target changed
                     try:
                         targets = browser.targets
                         if targets:
                             tab = targets[0]
-                            entry["tab"] = tab  # Update session with fresh tab
+                            entry["tab"] = tab
                             logger.info(f"Attempt {_attempt+1}: Got fresh tab target, waiting for page to stabilize")
                             await asyncio.sleep(3)
                         else:
@@ -2336,17 +2466,17 @@ async def auth_verify(req: AuthCodeRequest):
                         await asyncio.sleep(2)
                         continue
 
+                _update("typing_code", "Вводим код...")
+
                 sms_input = await tab.find('input[name="SMS"]', best_match=True, timeout=5)
                 if sms_input:
                     import nodriver.cdp.input_ as cdp_input
                     logger.info(f"SMS input found on attempt {_attempt+1}")
 
-                    # Close any popup/modal first so we interact with the clean page
+                    # Close any popup/modal first
                     await safe_evaluate(tab, """
-                        // Close popup modal if present
                         var closeBtn = document.querySelector('.VV_Modal__Close, .modal-close, [class*="close"]');
                         if (closeBtn) closeBtn.click();
-                        // Also try clicking overlay
                         var overlay = document.querySelector('.VV_Modal__Overlay, .modal-overlay, [class*="overlay"]');
                         if (overlay) overlay.click();
                     """)
@@ -2359,7 +2489,7 @@ async def auth_verify(req: AuthCodeRequest):
                     """)
                     await asyncio.sleep(0.3)
 
-                    # Type using CDP keyDown/keyUp (original approach)
+                    # Type using CDP keyDown/keyUp
                     for digit in code:
                         await tab.send(cdp_input.dispatch_key_event(
                             type_='keyDown', key=digit, text=digit,
@@ -2402,6 +2532,8 @@ async def auth_verify(req: AuthCodeRequest):
                     except:
                         pass
 
+                    _update("submitting", "Отправляем код...")
+
                     # Click submit - force-enable if disabled, via JS
                     _btn_state = await safe_evaluate(tab, """
                         (function() {
@@ -2421,6 +2553,8 @@ async def auth_verify(req: AuthCodeRequest):
                         })()
                     """)
                     logger.info(f"Submit button: {_btn_state}")
+
+                    _update("waiting_redirect", "Проверяем код...")
 
                     # Poll for error/success for 12 seconds
                     _verify_ss = os.path.join(DATA_DIR, f"verify_result_{user_id}.png")
@@ -2461,45 +2595,45 @@ async def auth_verify(req: AuthCodeRequest):
                             browser.stop()
                         except:
                             pass
-                        if user_id in _login_sessions:
-                            del _login_sessions[user_id]
-                        return {"success": False, "error": "wrong_code", "message": "Введён неверный код", "screenshot": _verify_ss}
+                        _login_sessions.pop(user_id, None)
+                        _update("done", "Введён неверный код")
+                        _verify_jobs[job_id]["result"] = {"success": False, "error": "wrong_code", "message": "Введён неверный код"}
+                        return
 
                 else:
-                    raise HTTPException(status_code=500, detail="SMS input not found")
+                    logger.error(f"SMS input not found on attempt {_attempt+1}")
+                    if _attempt >= 2:
+                        _update("error", "Не найдено поле ввода SMS. Начните заново.")
+                        _verify_jobs[job_id]["result"] = {"success": False, "error": "sms_input_not_found"}
+                        return
+                    await asyncio.sleep(2)
+                    continue
 
             except Exception as _sms_err:
                 logger.warning(f"SMS attempt {_attempt+1} failed: {_sms_err}")
                 if _attempt >= 2:
-                    # Check if it's a dead Chrome process (connection refused)
                     err_str = str(_sms_err)
                     if 'Errno 111' in err_str or 'Connect call failed' in err_str or 'ConnectionRefused' in err_str:
-                        raise HTTPException(
-                            status_code=410,
-                            detail="Сессия браузера истекла. Нажмите 'Изменить номер' и начните заново."
-                        )
-                    raise HTTPException(status_code=500, detail="Не удалось ввести код. Попробуйте ещё раз.")
-                await asyncio.sleep(2)  # Wait before retry
+                        _update("error", "Сессия браузера истекла. Нажмите 'Изменить номер' и начните заново.")
+                        _verify_jobs[job_id]["result"] = {"success": False, "error": "session_expired"}
+                    else:
+                        _update("error", "Не удалось ввести код. Попробуйте ещё раз.")
+                        _verify_jobs[job_id]["result"] = {"success": False, "error": "typing_failed"}
+                    return
+                await asyncio.sleep(2)
 
-        # === Cookie extraction with HARD 25s timeout ===
-        # OPTIMIZATION NOTE (2024-03-24):
-        # Current worst case: ~27s (8s+8s+5s nav timeouts + 2s submit). Vercel limit: 30s (3s margin).
-        # Option B (activated): Skip nav entirely, grab cookies right after redirect.
-        # CDP browser.cookies.get_all() returns ALL cookies regardless of current page.
-        # The nav to /personal/ and /cart/ was adding 16s of timeout risk and causing
-        # Chrome to crash during the wait, resulting in 0 cookies extracted.
+        _update("extracting_cookies", "Сохраняем авторизацию...")
+
         # Wait 5s for VkusVill page to fully reload and set cookies after redirect.
         await asyncio.sleep(5)
         logger.info("Waited 5s for page to settle, refreshing tab before cookie extraction...")
 
         # After VkusVill's success redirect, the old tab CDP target often dies.
-        # Get a fresh tab reference from browser.targets (same recovery as SMS retry).
         try:
             fresh_targets = browser.targets
             if fresh_targets:
                 tab = fresh_targets[0]
                 entry["tab"] = tab
-                # Verify the fresh tab is responsive
                 _ping = await asyncio.wait_for(tab.evaluate("1+1"), timeout=3)
                 logger.info(f"Fresh tab OK (ping={_ping}), extracting cookies...")
             else:
@@ -2507,7 +2641,7 @@ async def auth_verify(req: AuthCodeRequest):
         except Exception as _tab_err:
             logger.warning(f"Tab refresh failed: {_tab_err}")
 
-        # Cookie extraction — monkey-patch at top of main.py fixes nodriver's sameParty crash
+        # Cookie extraction
         cdp_cookies = []
         js_parsed = []
         try:
@@ -2516,7 +2650,7 @@ async def auth_verify(req: AuthCodeRequest):
         except Exception as _e1:
             logger.warning(f"browser.cookies failed: {type(_e1).__name__}: {_e1}")
 
-        # JS document.cookie fallback (non-httpOnly cookies only)
+        # JS document.cookie fallback
         if not cdp_cookies:
             try:
                 js_cookies_str = await asyncio.wait_for(
@@ -2567,21 +2701,21 @@ async def auth_verify(req: AuthCodeRequest):
             cookies_list = []
 
         # Verify login actually succeeded before saving cookies
-        # UF_USER_AUTH=Y is the definitive proof of authentication
         cookie_map = {c["name"]: c["value"] for c in cookies_list}
         is_authenticated = cookie_map.get("UF_USER_AUTH") == "Y"
 
         if not is_authenticated and not _login_succeeded:
             logger.warning(f"Login failed for {entry.get('phone', user_id)}: UF_USER_AUTH={cookie_map.get('UF_USER_AUTH', 'missing')} — NOT saving cookies")
-            return {"success": False, "message": "Не удалось подтвердить вход. VkusVill не принял код — попробуйте ещё раз."}
+            _update("done", "Не удалось подтвердить вход.")
+            _verify_jobs[job_id]["result"] = {"success": False, "message": "Не удалось подтвердить вход. VkusVill не принял код — попробуйте ещё раз."}
+            return
         if not is_authenticated and _login_succeeded:
             logger.info(f"VkusVill redirected (login OK) but cookies incomplete for {entry.get('phone', user_id)}")
 
-        # Save cookies by PHONE (not user_id)
+        # Save cookies by PHONE
         phone_10 = entry.get("phone", "")
         if phone_10:
             cookies_path = _phone_cookies_path(phone_10)
-            # If force_sms ("Новый вход"), delete old cookies first
             if entry.get("force_sms"):
                 bak = cookies_path + ".bak"
                 if os.path.exists(bak):
@@ -2592,7 +2726,6 @@ async def auth_verify(req: AuthCodeRequest):
             _save_user_phone_mapping(user_id, phone_10)
             logger.info(f"Saved {len(cookies_list)} cookies for phone {phone_10} (UF_USER_AUTH=Y)")
         else:
-            # Fallback: save by user_id (legacy)
             cookies_path = get_user_cookies_path(int(user_id) if user_id.isdigit() else user_id)
             os.makedirs(os.path.dirname(cookies_path), exist_ok=True)
             with open(cookies_path, 'w', encoding='utf-8') as f:
@@ -2606,15 +2739,15 @@ async def auth_verify(req: AuthCodeRequest):
             "message": "Авторизация успешна. Установите PIN.",
             "profile_dir": entry.get("profile_dir"),
         }
-        # Cache result so duplicate calls return it instantly
         entry["_verified"] = _result
-        return _result
+        _update("done", "Авторизация успешна!")
+        _verify_jobs[job_id]["result"] = _result
 
-    except HTTPException:
-        raise
     except Exception as e:
-        logger.error(f"Verify error: {e}")
-        raise HTTPException(status_code=500, detail="Ошибка при проверке кода")
+        import traceback
+        logger.error(f"Verify job error: {type(e).__name__}: {e}\n{traceback.format_exc()}")
+        _update("error", "Ошибка при проверке кода. Попробуйте ещё раз.")
+        _verify_jobs[job_id]["result"] = {"success": False, "error": "internal_error"}
     finally:
         try:
             browser.stop()
@@ -3123,6 +3256,60 @@ def admin_get_logs(
     _require_token(token)
     lines = list(log_buffer)[-n:]
     return {"lines": lines, "total": len(log_buffer)}
+
+
+@app.get("/admin/proxy-stats")
+def admin_proxy_stats(
+    token: Optional[str] = Header(None, alias="X-Admin-Token"),
+):
+    """Return proxy pool statistics for the admin dashboard."""
+    _require_token(token)
+    cache_file = os.path.join(BASE_PROJECT_DIR, "data", "working_proxies.json")
+    try:
+        with open(cache_file, "r") as f:
+            cache = json.load(f)
+    except Exception:
+        return {"pool_size": 0, "proxies": [], "cache_age": None, "healthy": False}
+
+    proxies_raw = cache.get("proxies", [])
+    last_refresh = cache.get("last_refresh")
+
+    # Calculate cache age
+    cache_age_min = None
+    if last_refresh:
+        try:
+            from datetime import datetime
+            lr = datetime.fromisoformat(last_refresh)
+            cache_age_min = round((datetime.now() - lr).total_seconds() / 60, 1)
+        except Exception:
+            pass
+
+    # Build proxy list with stats
+    proxies_out = []
+    for p in proxies_raw:
+        tested_ago = None
+        if p.get("tested_at"):
+            try:
+                from datetime import datetime
+                t = datetime.fromisoformat(p["tested_at"])
+                tested_ago = round((datetime.now() - t).total_seconds() / 60, 1)
+            except Exception:
+                pass
+        proxies_out.append({
+            "addr": p.get("addr", "?"),
+            "speed": round(p.get("speed", 0), 2),
+            "tested_ago_min": tested_ago,
+            "tested_at": p.get("tested_at", "?"),
+        })
+
+    return {
+        "pool_size": len(proxies_raw),
+        "min_healthy": 7,
+        "healthy": len(proxies_raw) >= 7,
+        "cache_age_min": cache_age_min,
+        "last_refresh": last_refresh,
+        "proxies": proxies_out,
+    }
 
 
 # ─── Admin Panel (HTML served from backend/admin.html) ───────────────────────

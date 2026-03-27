@@ -16,8 +16,12 @@ The existing flow is overly complex (~700 lines in `scrape_green_prices_async`) 
 2.5. SEED ITEM: If cart is empty, add one item from "Добавьте в заказ" section
      - Without this, first add-to-cart triggers page force-reload, killing modal
      - Wait for reload, navigate back to /cart/
+2.9. CLEAR ALPHA ITEMS: Click button.js-delivery__basket_unavailable--clear
+     - Removes only alpha/faded items taking up cart slots (~300 limit)
+     - ⚠️ Do NOT use button.js-delivery__basket--clear — that clears ENTIRE cart!
+     - After click: wait 2s → reload page
 3. Close delivery modal if it pops up
-4. Scrape green items from #js-Delivery__Order-green-state-not-empty section
+ from #js-Delivery__Order-green-state-not-empty section
    - All items in this section are green by definition
    - Extract: id (data-id attr), name (URL slug), price, oldPrice, image, url
    - This MUST happen BEFORE add-to-cart (items disappear after add+reload)

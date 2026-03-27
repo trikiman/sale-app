@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback, memo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import CartPanel from './CartPanel'
 import ProductDetail from './ProductDetail'
@@ -51,7 +51,7 @@ function getCategoryEmoji(category) {
   return '📦'
 }
 
-function ProductCard({ product, index, isFavorite, onToggleFavorite, favoritesLoading, onAddToCart, viewMode, cartState, onOpenDetail }) {
+const ProductCard = memo(function ProductCard({ product, index, isFavorite, onToggleFavorite, favoritesLoading, onAddToCart, viewMode, cartState, onOpenDetail }) {
   const [imageLoaded, setImageLoaded] = useState(false)
   const [imageError, setImageError] = useState(false)
   const metaBadges = getCardMetaBadges(product)
@@ -167,7 +167,7 @@ function ProductCard({ product, index, isFavorite, onToggleFavorite, favoritesLo
           {metaBadges.map((badge) => (
             <span
               key={`${badge.kind}-${badge.text}`}
-              className={badge.kind === 'stock' ? 'card-stock' : 'card-weight'}
+              className={badge.kind === 'stock' ? 'card-stock' : badge.kind === 'stock-zero' ? 'card-stock-zero' : 'card-weight'}
             >
               {badge.text}
             </span>
@@ -176,7 +176,14 @@ function ProductCard({ product, index, isFavorite, onToggleFavorite, favoritesLo
       </div>
     </div>
   )
-}
+}, (prev, next) => {
+  // Custom comparator: skip re-render if nothing card-relevant changed
+  return prev.product === next.product
+    && prev.isFavorite === next.isFavorite
+    && prev.cartState === next.cartState
+    && prev.favoritesLoading === next.favoritesLoading
+    && prev.viewMode === next.viewMode
+})
 
 function CategoryFilter({ selected, onSelect, categories }) {
   const scrollRef = useRef(null)
@@ -331,7 +338,7 @@ function App() {
           window.location.reload()
         }
       })
-      .catch(() => {})
+      .catch(() => { })
   }, [isGuest, userId])
 
   // Generate Telegram link for guest users (only if not already linked)
@@ -413,7 +420,7 @@ function App() {
   }, [userId])
 
   const [favBusy, setFavBusy] = useState(new Set())
-  const handleToggleFavorite = async (product) => {
+  const handleToggleFavorite = useCallback(async (product) => {
     // Debounce: skip if already in-flight for this product
     if (favBusy.has(product.id)) return
     setFavBusy(s => { const n = new Set(s); n.add(product.id); return n })
@@ -469,7 +476,7 @@ function App() {
     } finally {
       setFavBusy(s => { const n = new Set(s); n.delete(product.id); return n })
     }
-  }
+  })
 
   // Reusable product loader (used for initial load + auto-refresh)
   const loadProducts = (isAutoRefresh = false) => {
@@ -547,6 +554,7 @@ function App() {
   // Per-product cart button state: 'loading' | 'success' | 'error' | null
   const [cartStates, setCartStates] = useState({})
   const [selectedProduct, setSelectedProduct] = useState(null)
+  const handleOpenDetail = useCallback((product) => setSelectedProduct(product), [])
   const pendingWeightIdsRef = useRef(new Set())
   const [soldOutIds, setSoldOutIds] = useState(() => {
     try {
@@ -564,7 +572,7 @@ function App() {
   const [cartCount, setCartCount] = useState(0)
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false)
 
-  const handleAddToCart = async (product) => {
+  const handleAddToCart = useCallback(async (product) => {
     if (!isAuthenticated) {
       setShowLoginPrompt(true)
       return
@@ -625,7 +633,7 @@ function App() {
       setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), 2000)
       setTimeout(() => setToastMessage(null), 3000)
     }
-  }
+  })
 
   const triggerCategoryScraper = () => {
     setCategorizingDone(false)
@@ -636,7 +644,7 @@ function App() {
       last_output: '',
       exit_code: null,
     })
-    const adminToken = sessionStorage.getItem('vv_admin_token') || ''
+    const adminToken = localStorage.getItem('vv_admin_token') || ''
     fetch('/api/admin/run/categories', { method: 'POST', headers: { 'X-Admin-Token': adminToken } })
       .then(async (response) => {
         let data = null
@@ -1036,7 +1044,7 @@ function App() {
           </button>
           {isAuthenticated && (
             <a
-              href="/admin"
+              href={`${window.location.origin}/admin`}
               target="_blank"
               rel="noopener noreferrer"
               className="header-pill header-pill-action"
@@ -1125,12 +1133,12 @@ function App() {
                   onKeyDown={e => {
                     if (e.key === 'Enter' && tokenInputValue) {
                       const t = tokenInputValue
-                      sessionStorage.setItem('vv_admin_token', t)
+                      localStorage.setItem('vv_admin_token', t)
                       setShowTokenInput(false)
                       setTokenInputValue('')
                       setScraperRunning(true)
                       fetch('/api/admin/run/green', { method: 'POST', headers: { 'X-Admin-Token': t } })
-                        .then(r => r.status === 403 ? (sessionStorage.removeItem('vv_admin_token'), null) : r.json())
+                        .then(r => r.status === 403 ? (localStorage.removeItem('vv_admin_token'), null) : r.json())
                         .then(data => { if (data) { setScraperRunning(false); setScraperDone(true) } })
                         .catch(() => setScraperRunning(false))
                     }
@@ -1144,12 +1152,12 @@ function App() {
                   onClick={() => {
                     if (!tokenInputValue) return
                     const t = tokenInputValue
-                    sessionStorage.setItem('vv_admin_token', t)
+                    localStorage.setItem('vv_admin_token', t)
                     setShowTokenInput(false)
                     setTokenInputValue('')
                     setScraperRunning(true)
                     fetch('/api/admin/run/green', { method: 'POST', headers: { 'X-Admin-Token': t } })
-                      .then(r => r.status === 403 ? (sessionStorage.removeItem('vv_admin_token'), null) : r.json())
+                      .then(r => r.status === 403 ? (localStorage.removeItem('vv_admin_token'), null) : r.json())
                       .then(data => { if (data) { setScraperRunning(false); setScraperDone(true) } })
                       .catch(() => setScraperRunning(false))
                   }}
@@ -1166,14 +1174,14 @@ function App() {
                 whileTap={{ scale: 0.95 }}
                 disabled={scraperRunning}
                 onClick={() => {
-                  const storedToken = sessionStorage.getItem('vv_admin_token')
+                  const storedToken = localStorage.getItem('vv_admin_token')
                   if (storedToken) {
                     // Token already stored — fire immediately
                     setScraperRunning(true)
                     fetch('/api/admin/run/green', { method: 'POST', headers: { 'X-Admin-Token': storedToken } })
                       .then(r => {
                         if (r.status === 403) {
-                          sessionStorage.removeItem('vv_admin_token')
+                          localStorage.removeItem('vv_admin_token')
                           setScraperRunning(false)
                           setShowTokenInput(true)
                           return null
@@ -1352,7 +1360,6 @@ function App() {
 
       {/* Product Grid */}
       <div className={`product-grid ${viewMode === 'list' ? 'list-view' : ''}`}>
-        <AnimatePresence>
           {filteredProducts.map((product, index) => (
             <ProductCard
               key={product.id}
@@ -1361,13 +1368,12 @@ function App() {
               isFavorite={favorites.has(product.id)}
               onToggleFavorite={handleToggleFavorite}
               onAddToCart={handleAddToCart}
-              onOpenDetail={setSelectedProduct}
+              onOpenDetail={handleOpenDetail}
               cartState={cartStates[product.id] || null}
               favoritesLoading={favoritesLoading}
               viewMode={viewMode}
             />
           ))}
-        </AnimatePresence>
 
         {filteredProducts.length === 0 && !loading && !error && (
           <motion.div

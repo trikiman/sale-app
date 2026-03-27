@@ -4,10 +4,8 @@ Handles the `/login` command and SMS verification flow via Playwright.
 """
 import os
 import re
-import json
 import logging
-import asyncio
-from typing import Dict, Any, Optional
+from typing import Dict, Optional
 
 from telegram import Update
 from telegram.ext import (

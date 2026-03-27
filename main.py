@@ -27,7 +27,7 @@ def main():
     logger.info("Starting VkusVill Sale Monitor Bot...")
 
     # Initialize database
-    db = get_database()
+    get_database()
     logger.info("Database initialized")
 
     # Create Telegram application

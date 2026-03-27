@@ -10,6 +10,7 @@
 - Never continuously check status after spawning a swarm — wait for results
 - ALWAYS read a file before editing it
 - NEVER commit secrets, credentials, or .env files
+- **EC2 Rule**: ALWAYS use `ssh -i "e:\Projects\saleapp\scraper-ec2-new" ubuntu@13.53.115.26` for EC2 operations. NEVER use browser/Instance Connect — it's slower, wastes tokens, and risks logging out of AWS. If SSH times out, retry 2-3 times before considering alternatives.
 
 ## File Organization
 

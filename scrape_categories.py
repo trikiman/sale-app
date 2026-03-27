@@ -154,7 +154,7 @@ async def fetch_page(session: aiohttp.ClientSession, url: str) -> str | None:
         await asyncio.sleep(0.2)
         async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
             if resp.status == 429:  # Rate limited
-                print(f"   ⚠ Rate limited (429), waiting 30s...")
+                print("   ⚠ Rate limited (429), waiting 30s...")
                 await asyncio.sleep(30)
                 return None
             if resp.status != 200:

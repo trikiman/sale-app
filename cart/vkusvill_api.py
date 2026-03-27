@@ -25,7 +25,7 @@ BASKET_UPDATE_URL = "https://vkusvill.ru/ajax/delivery_order/basket_update.php"
 BASKET_RECALC_URL = "https://vkusvill.ru/ajax/delivery_order/basket_recalc.php"
 BASKET_CLEAR_URL = "https://vkusvill.ru/ajax/delivery_order/basket_clear.php"
 VKUSVILL_BASE = "https://vkusvill.ru"
-SOCKS_PROXY = os.environ.get("SOCKS_PROXY", "socks5h://127.0.0.1:10811")
+SOCKS_PROXY = os.environ.get("SOCKS_PROXY", "")  # Empty = direct connection (no proxy)
 
 
 class VkusVillCart:
@@ -97,7 +97,10 @@ class VkusVillCart:
         sessid and user_id matching the session from the cookies.
         """
         try:
-            with httpx.Client(proxy=SOCKS_PROXY, timeout=15) as client:
+            client_kwargs = dict(timeout=15)
+            if SOCKS_PROXY:
+                client_kwargs['proxy'] = SOCKS_PROXY
+            with httpx.Client(**client_kwargs) as client:
                 r = client.get(VKUSVILL_BASE, headers={
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36',
                     'Cookie': self._cookie_str,
@@ -137,7 +140,10 @@ class VkusVillCart:
             'Cookie': self._cookie_str,
         }
 
-        with httpx.Client(proxy=SOCKS_PROXY, timeout=15) as client:
+        client_kwargs = dict(timeout=15)
+        if SOCKS_PROXY:
+            client_kwargs['proxy'] = SOCKS_PROXY
+        with httpx.Client(**client_kwargs) as client:
             r = client.post(url, data=data, headers=headers)
         try:
             return r.json()
@@ -149,7 +155,10 @@ class VkusVillCart:
         """Check if the current session is logged in to VkusVill."""
         self._ensure_session()
         try:
-            with httpx.Client(proxy=SOCKS_PROXY, timeout=15) as client:
+            client_kwargs = dict(timeout=15)
+            if SOCKS_PROXY:
+                client_kwargs['proxy'] = SOCKS_PROXY
+            with httpx.Client(**client_kwargs) as client:
                 r = client.get(
                     f"{VKUSVILL_BASE}/personal/",
                     headers={
@@ -215,7 +224,7 @@ class VkusVillCart:
                 logger.error(f"Cart API request failed: {e}")
                 return {'success': False, 'error': str(e)}
             except json.JSONDecodeError:
-                logger.error(f"Cart API returned non-JSON")
+                logger.error("Cart API returned non-JSON")
                 return {'success': False, 'error': 'Invalid response from VkusVill'}
         
         if not last_result:

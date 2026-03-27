@@ -136,7 +136,7 @@ def kill_all(procs: list[dict]):
 
 
 def main():
-    print(f"🔍 Scanning for saleapp processes...\n")
+    print("🔍 Scanning for saleapp processes...\n")
     procs = find_targets()
 
     if not procs:

@@ -148,44 +148,92 @@ export default function Login({ userId, onLoginSuccess }) {
     if (clean.length === 4) setTimeout(() => doPinSubmit(clean), 150)
   }
 
-  // ── SMS Code Step ──
+  // ── SMS Code Step (async polling — bypasses Vercel 30s timeout) ──
   const doCodeSubmit = async (codeValue) => {
     if (!codeValue || codeValue.length < 4) return
-    setLoading(true); setError(null)
+    setLoading(true); setError(null); setStatusText('Отправляем код...')
     try {
-      const ctrl = new AbortController()
-      const timer = setTimeout(() => ctrl.abort(), 90000) // 90s timeout
+      // Step 1: Start verify job (returns instantly with job_id)
       const res = await fetch(`${AUTH_BASE}/api/auth/verify`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ user_id: userId, code: codeValue }),
-        signal: ctrl.signal
+        body: JSON.stringify({ user_id: userId, code: codeValue })
       })
-      clearTimeout(timer)
-      let data
       const ct = res.headers.get('content-type') || ''
+      let data
       if (ct.includes('application/json')) {
         data = await res.json()
       } else {
-        const txt = await res.text()
-        throw new Error(res.status >= 500 ? 'Сервер не ответил. Попробуйте ещё раз.' : txt.slice(0, 100))
+        throw new Error('Сервер не отвечает. Попробуйте ещё раз.')
       }
-      if (res.ok && data.success) {
+      if (!res.ok || !data.success) {
+        setError(extractErrorMsg(data, 'Не удалось проверить код'))
+        setLoading(false); setStatusText('')
+        return
+      }
+
+      const jobId = data.job_id
+      if (!jobId) {
+        // Legacy direct response (backward compat if backend not updated)
         if (data.need_set_pin && data.phone) {
           setVerifiedPhone(data.phone)
           setStep('set_pin')
         } else {
           onLoginSuccess(phone)
         }
-      } else { setError(extractErrorMsg(data, 'Неверный код')); setCode('') }
-    } catch (e) {
-      if (e.name === 'AbortError') {
-        setError('Превышено время ожидания (90с). Попробуйте ещё раз.')
-      } else {
-        setError(e.message || 'Нет связи с сервером')
+        setLoading(false); setStatusText('')
+        return
       }
+
+      // Step 2: Poll for status every 3s for up to 2 minutes
+      setStatusText('Проверяем код...')
+      for (let i = 0; i < 40; i++) {
+        await new Promise(r => setTimeout(r, 3000))
+        try {
+          const pollRes = await fetch(`${AUTH_BASE}/api/auth/verify/status/${jobId}`)
+          if (!pollRes.ok) {
+            if (pollRes.status === 404) {
+              setError('Сессия не найдена. Попробуйте ещё раз.')
+              setLoading(false); setStatusText('')
+              return
+            }
+            continue
+          }
+          const pollData = await pollRes.json()
+          setStatusText(pollData.message || 'Обработка...')
+
+          if (pollData.status === 'done') {
+            const result = pollData.result || {}
+            if (result.success) {
+              if (result.need_set_pin && result.phone) {
+                setVerifiedPhone(result.phone)
+                setStep('set_pin')
+              } else {
+                onLoginSuccess(phone)
+              }
+            } else {
+              setError(result.message || 'Неверный код')
+              setCode('')
+            }
+            setLoading(false); setStatusText('')
+            return
+          }
+          if (pollData.status === 'error') {
+            setError(pollData.message || 'Ошибка проверки кода')
+            setLoading(false); setStatusText('')
+            return
+          }
+          // else: still in progress, keep polling
+        } catch {
+          // Network error on poll — keep trying
+        }
+      }
+      // Timeout after 2 minutes of polling
+      setError('Превышено время ожидания (2 мин). Попробуйте ещё раз.')
+    } catch (e) {
+      setError(e.message || 'Нет связи с сервером')
     }
-    finally { setLoading(false) }
+    finally { setLoading(false); setStatusText('') }
   }
 
   const handleCodeChange = (val) => {
@@ -276,8 +324,9 @@ export default function Login({ userId, onLoginSuccess }) {
             <div className="login-hint">Код отправлен на {phone}</div>
             <input type="text" inputMode="numeric" placeholder="Код из SMS" value={code} onChange={(e) => handleCodeChange(e.target.value)} maxLength={6} className="login-input login-input-code" disabled={loading} autoFocus />
             <button type="submit" disabled={loading || code.length < 4} className="login-btn">
-              {loading ? <><Spinner /> Проверяем…</> : 'Подтвердить'}
+              {loading ? <><Spinner /> {statusText || 'Проверяем…'}</> : 'Подтвердить'}
             </button>
+            {loading && <div className="login-loading-hint">{statusText || 'Проверяем код...'}</div>}
             <button type="button" onClick={() => { setStep('phone'); setCode(''); setForceSms(false); setError(null) }} className="login-back-btn" disabled={loading}>Изменить номер</button>
           </motion.form>
         )

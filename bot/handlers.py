@@ -2,22 +2,19 @@
 Telegram Bot Handlers for VkusVill Sale Monitor
 """
 import logging
-from typing import List
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import (
     Application, 
     CommandHandler, 
     CallbackQueryHandler,
-    ContextTypes,
-    MessageHandler,
-    filters
+    ContextTypes
 )
 from telegram.constants import ParseMode
 
 import config
 from database.db import get_database
-from scraper.vkusvill import get_scraper, Product
+from scraper.vkusvill import get_scraper
 
 
 # Configure logging
@@ -491,7 +488,7 @@ async def handle_remove_category(update: Update, context: ContextTypes.DEFAULT_T
         )
     else:
         await query.edit_message_text(
-            f"❌ Не удалось удалить категорию.",
+            "❌ Не удалось удалить категорию.",
             parse_mode=ParseMode.HTML
         )
 

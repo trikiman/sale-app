@@ -2,14 +2,12 @@
 VkusVill Playwright-based Scraper
 Uses browser automation for authenticated scraping
 """
-import asyncio
 import hashlib
 import json
 import os
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import List, Optional, Dict, Tuple
-from bs4 import BeautifulSoup
 
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page
 
@@ -159,7 +157,6 @@ class Product:
     @property
     def formatted_message(self) -> str:
         """Format product for Telegram message (full format)"""
-        emoji = "🟢" if self.is_green_price else "🏷️"
         weight_part = f" ({self.weight_str})" if self.weight_str else ""
         stock_part = f"\n📊 В наличии: {self.stock_count} шт" if self.stock_count > 0 else ""
         
@@ -185,7 +182,7 @@ def format_products_grouped(products: List[Product]) -> str:
     
     # Build message
     lines = [
-        f"🟢 <b>ЗЕЛЁНЫЕ ЦЕННИКИ</b>",
+        "🟢 <b>ЗЕЛЁНЫЕ ЦЕННИКИ</b>",
         f"📦 {len(products)} товаров | -40%",
         ""
     ]
@@ -196,9 +193,9 @@ def format_products_grouped(products: List[Product]) -> str:
     for cat in category_order:
         if cat in groups:
             prods = groups[cat]
-            lines.append(f"━━━━━━━━━━━━━━━━━━")
+            lines.append("━━━━━━━━━━━━━━━━━━")
             lines.append(f"<b>{cat}</b> ({len(prods)})")
-            lines.append(f"━━━━━━━━━━━━━━━━━━")
+            lines.append("━━━━━━━━━━━━━━━━━━")
             
             for p in prods[:10]:  # Limit per category
                 lines.append(p.formatted_line)
@@ -246,12 +243,12 @@ class PlaywrightScraper:
             print(f"Loading saved browser state from {self._storage_path}")
             self._context = await self._browser.new_context(
                 storage_state=self._storage_path,
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36"
             )
         else:
             print("Creating new browser context (no saved state)")
             self._context = await self._browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36"
             )
         
         self._page = await self._context.new_page()

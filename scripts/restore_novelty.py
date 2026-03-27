@@ -1,5 +1,7 @@
 """restore_novelty.py — restores proposals.json from .bak"""
-import shutil, sys, os
+import shutil
+import sys
+import os
 
 if sys.platform == 'win32':
     sys.stdout.reconfigure(encoding='utf-8')

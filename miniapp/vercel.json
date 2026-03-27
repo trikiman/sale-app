@@ -5,6 +5,10 @@
       "destination": "http://13.60.174.46:8000/api/:path*"
     },
     {
+      "source": "/admin",
+      "destination": "http://13.60.174.46:8000/admin"
+    },
+    {
       "source": "/admin/:path*",
       "destination": "http://13.60.174.46:8000/admin/:path*"
     }

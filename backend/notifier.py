@@ -41,13 +41,16 @@ class Notifier:
         # Configure proxy for Telegram API (required on networks that block api.telegram.org)
         self.bot = None
         if TELEGRAM_AVAILABLE and self.bot_token:
-            proxy_url = os.environ.get('SOCKS5_PROXY', 'socks5://127.0.0.1:10811')
+            proxy_url = os.environ.get('SOCKS5_PROXY', '')
             try:
-                from telegram.request import HTTPXRequest
-                request = HTTPXRequest(proxy=proxy_url, connect_timeout=10, read_timeout=15)
-                self.bot = Bot(self.bot_token, request=request)
+                if proxy_url:
+                    from telegram.request import HTTPXRequest
+                    request = HTTPXRequest(proxy=proxy_url, connect_timeout=10, read_timeout=15)
+                    self.bot = Bot(self.bot_token, request=request)
+                else:
+                    self.bot = Bot(self.bot_token)
             except Exception as e:
-                logger.warning(f"Failed to init Bot with proxy ({proxy_url}): {e}")
+                logger.warning(f"Failed to init Bot{f' with proxy ({proxy_url})' if proxy_url else ''}: {e}")
                 # Fallback: try without proxy
                 try:
                     self.bot = Bot(self.bot_token)

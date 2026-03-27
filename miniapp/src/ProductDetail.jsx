@@ -21,7 +21,7 @@ export default function ProductDetail({ product, onClose, onAddToCart, cartState
     setDetails(null)
     setImgIndex(0)
     const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 30000)
+    const timeout = setTimeout(() => controller.abort(), 8000)
     fetch(`/api/product/${product.id}/details`, { signal: controller.signal })
       .then(r => r.json())
       .then(d => setDetails(d))
@@ -136,8 +136,25 @@ export default function ProductDetail({ product, onClose, onAddToCart, cartState
               Загружаем детали…
             </div>
           ) : details?._error ? (
-            <div style={{ textAlign: 'center', padding: '16px 0', opacity: 0.6, fontSize: '13px' }}>
-              Не удалось загрузить детали
+            <div style={{ textAlign: 'center', padding: '16px 0' }}>
+              <p style={{ opacity: 0.6, fontSize: '13px', margin: '0 0 12px' }}>
+                📋 Подробная информация временно недоступна
+              </p>
+              {product.url && (
+                <a
+                  href={product.url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: '6px',
+                    padding: '10px 20px', borderRadius: '12px',
+                    background: 'rgba(0,180,90,0.12)', color: '#00b45a',
+                    fontWeight: 600, fontSize: '14px', textDecoration: 'none',
+                  }}
+                >
+                  🔗 Открыть на VkusVill
+                </a>
+              )}
             </div>
           ) : (
             <div className="detail-sections">
@@ -169,6 +186,34 @@ export default function ProductDetail({ product, onClose, onAddToCart, cartState
                 <div className="detail-section">
                   <h3 className="detail-section-title">Хранение</h3>
                   <p className="detail-section-body">{details.storage}</p>
+                </div>
+              )}
+              {/* If no detail sections are available, show info message */}
+              {details?.source_unavailable && !details?.description && !details?.composition && (
+                <div className="detail-section" style={{ textAlign: 'center', opacity: 0.7 }}>
+                  <p style={{ fontSize: '13px', margin: '8px 0' }}>
+                    📋 Подробная информация временно недоступна
+                  </p>
+                </div>
+              )}
+              {/* VkusVill link */}
+              {product.url && (
+                <div className="detail-section" style={{ textAlign: 'center' }}>
+                  <a
+                    href={product.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="detail-vkusvill-link"
+                    style={{
+                      display: 'inline-flex', alignItems: 'center', gap: '6px',
+                      padding: '10px 20px', borderRadius: '12px',
+                      background: 'rgba(0,180,90,0.12)', color: '#00b45a',
+                      fontWeight: 600, fontSize: '14px', textDecoration: 'none',
+                      transition: 'background 0.2s',
+                    }}
+                  >
+                    🔗 Открыть на VkusVill
+                  </a>
                 </div>
               )}
             </div>

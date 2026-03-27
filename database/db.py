@@ -10,7 +10,7 @@ from typing import List, Optional, Set
 from contextlib import contextmanager
 
 import config
-from database.models import User, FavoriteCategory, FavoriteProduct, SeenProduct
+from database.models import User, FavoriteCategory, FavoriteProduct
 
 
 class Database:

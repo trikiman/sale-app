@@ -1,0 +1,15 @@
+# Ruff linter config for saleapp
+# Ignore noisy style rules that would require big refactors
+[lint]
+ignore = [
+    "E401",   # multiple imports on one line
+    "E402",   # module level import not at top
+    "E701",   # multiple statements on one line (colon)
+    "E722",   # bare except
+    "E741",   # ambiguous variable name
+    "F841",   # local variable assigned but never used
+]
+
+[lint.per-file-ignores]
+# Agent kit scripts - ignore all
+".agent/**" = ["ALL"]

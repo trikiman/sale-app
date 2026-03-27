@@ -13,7 +13,6 @@ Usage:
 import json
 import os
 import time
-import random
 import concurrent.futures
 from datetime import datetime
 
@@ -135,7 +134,7 @@ class ProxyManager:
 
         # Keep existing good proxies, add new ones
         existing = {p["addr"] for p in self._cache.get("proxies", [])}
-        new_count = self.refresh_proxy_list(exclude=existing)
+        self.refresh_proxy_list(exclude=existing)
         total = self.pool_count()
         self._log(f"Pool now has {total} proxies")
         return total
@@ -380,6 +379,6 @@ if __name__ == "__main__":
         count = pm.refresh_proxy_list()
         print(f"  Found {count} working proxies")
 
-    print(f"\n=== Cache contents ===")
+    print("\n=== Cache contents ===")
     for entry in pm._cache.get("proxies", [])[:5]:
         print(f"  {entry['addr']} ({entry['speed']:.1f}s)")

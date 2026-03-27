@@ -3,7 +3,7 @@ Notification system for VkusVill Sale Monitor
 Sends Telegram notifications when matching sales are found
 """
 import logging
-from typing import List, Dict, Set
+from typing import List, Dict
 
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.constants import ParseMode

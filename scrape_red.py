@@ -7,10 +7,8 @@ import asyncio
 import json
 import os
 import sys
-import subprocess
-import tempfile
 import shutil
-from chrome_stealth import launch_stealth_browser, cleanup_browser
+from chrome_stealth import launch_stealth_browser
 
 from utils import normalize_category, parse_stock, clean_price, deduplicate_products, synthesize_discount, save_products_safe, check_vkusvill_available, normalize_stock_unit
 
@@ -37,7 +35,7 @@ async def _launch_browser():
 
 async def _load_cookies(page):
     if not os.path.exists(COOKIES_PATH):
-        print(f"  [RED] No cookies.json found. Run tech-login from admin panel.")
+        print("  [RED] No cookies.json found. Run tech-login from admin panel.")
         return False
     with open(COOKIES_PATH, 'r', encoding='utf-8') as f:
         cookies = json.load(f)

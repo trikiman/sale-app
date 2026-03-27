@@ -375,6 +375,32 @@
         <div id="scraper-status-list"></div>
       </div>
 
+      <!-- Proxy Pool Dashboard -->
+      <div class="card">
+        <h2>🌐 Proxy Pool</h2>
+        <div class="row" style="gap:16px; margin-bottom:12px">
+          <div style="display:flex; align-items:center; gap:8px">
+            <span id="proxy-badge" class="badge badge-off">—</span>
+            <span id="proxy-count" class="text-muted">Загрузка...</span>
+          </div>
+          <span id="proxy-refresh-age" class="text-muted" style="font-size:11px"></span>
+        </div>
+        <div style="overflow-x:auto">
+          <table id="proxy-table" style="width:100%; border-collapse:collapse; font-size:12px; font-family:monospace">
+            <thead>
+              <tr style="border-bottom:1px solid #334155; color:#64748b; text-align:left">
+                <th style="padding:6px 8px">#</th>
+                <th style="padding:6px 8px">IP:Port</th>
+                <th style="padding:6px 8px">Скорость</th>
+                <th style="padding:6px 8px">Протестирован</th>
+              </tr>
+            </thead>
+            <tbody id="proxy-tbody"></tbody>
+          </table>
+        </div>
+        <div id="proxy-empty" class="text-muted mt2 hidden" style="text-align:center">Пул пуст — прокси не найдены</div>
+      </div>
+
       <!-- Logs -->
       <div class="card">
         <div class="row" style="justify-content:space-between; margin-bottom:10px">
@@ -391,7 +417,7 @@
   </div><!-- /wrap -->
 
   <script>
-    var token = sessionStorage.getItem('vv_admin_token') || '';
+    var token = localStorage.getItem('vv_admin_token') || '';
     var autoRefreshInterval = null;
 
     window.onload = function () {
@@ -401,7 +427,7 @@
 
     function saveToken() {
       token = document.getElementById('token-input').value.trim();
-      sessionStorage.setItem('vv_admin_token', token);
+      localStorage.setItem('vv_admin_token', token);
       tryAuth();
     }
 
@@ -418,6 +444,7 @@
           applyStatus(data);
           startAutoRefresh();
           loadLogs();
+          loadProxyStats();
         })
         .catch(function (err) {
           var errEl = document.getElementById('auth-error');
@@ -434,7 +461,7 @@
 
     function logout() {
       token = '';
-      sessionStorage.removeItem('vv_admin_token');
+      localStorage.removeItem('vv_admin_token');
       stopAutoRefresh();
       document.getElementById('dashboard').classList.add('hidden');
       document.getElementById('auth-section').classList.remove('hidden');
@@ -640,12 +667,79 @@
 
     function startAutoRefresh() {
       stopAutoRefresh();
-      autoRefreshInterval = setInterval(refreshStatus, 5000);
+      autoRefreshInterval = setInterval(function() { refreshStatus(); loadProxyStats(); }, 5000);
       // Pause when tab is not visible
       document.addEventListener('visibilitychange', function () {
         if (document.hidden) { stopAutoRefresh(); }
         else if (!autoRefreshInterval) { startAutoRefresh(); }
       });
+    }
+
+    function loadProxyStats() {
+      fetch('/admin/proxy-stats', { headers: { 'X-Admin-Token': token } })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          var badge = document.getElementById('proxy-badge');
+          var countEl = document.getElementById('proxy-count');
+          var ageEl = document.getElementById('proxy-refresh-age');
+          var tbody = document.getElementById('proxy-tbody');
+          var emptyEl = document.getElementById('proxy-empty');
+
+          // Health badge
+          if (data.healthy) {
+            badge.className = 'badge badge-on';
+            badge.textContent = 'ЗДОРОВ';
+          } else if (data.pool_size > 0) {
+            badge.className = 'badge';
+            badge.style.background = '#78350f';
+            badge.style.color = '#fbbf24';
+            badge.textContent = 'МАЛО';
+          } else {
+            badge.className = 'badge badge-off';
+            badge.textContent = 'ПУСТ';
+          }
+
+          countEl.textContent = data.pool_size + '/' + data.min_healthy + ' прокси';
+
+          // Cache age
+          if (data.cache_age_min !== null) {
+            if (data.cache_age_min < 60) {
+              ageEl.textContent = 'Обновлено ' + Math.round(data.cache_age_min) + ' мин. назад';
+            } else {
+              ageEl.textContent = 'Обновлено ' + Math.round(data.cache_age_min / 60) + ' ч. назад';
+            }
+          }
+
+          // Table
+          tbody.innerHTML = '';
+          if (data.proxies.length === 0) {
+            emptyEl.classList.remove('hidden');
+            document.getElementById('proxy-table').classList.add('hidden');
+          } else {
+            emptyEl.classList.add('hidden');
+            document.getElementById('proxy-table').classList.remove('hidden');
+            for (var i = 0; i < data.proxies.length; i++) {
+              var p = data.proxies[i];
+              var tr = document.createElement('tr');
+              tr.style.borderBottom = '1px solid #1e293b';
+
+              // Speed color: <2s green, <5s yellow, >5s red
+              var speedColor = p.speed < 2 ? '#4ade80' : (p.speed < 5 ? '#fbbf24' : '#f87171');
+              var ageText = p.tested_ago_min !== null
+                ? (p.tested_ago_min < 60 ? Math.round(p.tested_ago_min) + ' мин. назад' : Math.round(p.tested_ago_min / 60) + ' ч. назад')
+                : '—';
+
+              tr.innerHTML = '<td style="padding:5px 8px; color:#64748b">' + (i + 1) + '</td>'
+                + '<td style="padding:5px 8px; color:#e2e8f0">' + p.addr + '</td>'
+                + '<td style="padding:5px 8px; color:' + speedColor + '; font-weight:600">' + p.speed + 's</td>'
+                + '<td style="padding:5px 8px; color:#64748b">' + ageText + '</td>';
+              tbody.appendChild(tr);
+            }
+          }
+        })
+        .catch(function() {
+          document.getElementById('proxy-count').textContent = '⚠ Ошибка загрузки';
+        });
     }
 
     function stopAutoRefresh() {
