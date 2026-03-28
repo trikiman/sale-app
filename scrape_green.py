@@ -747,7 +747,7 @@ async def _scrape_cart_stock_map(page) -> dict:
                 } else if (text.includes('\\u041c\\u0430\\u043b\\u043e') || text.includes('\\u043c\\u0430\\u043b\\u043e')) {
                     stock = 3;
                 } else if (text.includes('\\u043d\\u0430\\u043b\\u0438\\u0447\\u0438\\u0438')) {
-                    stock = 0;  // "в наличии" without number = unknown qty, don't show fake count
+                    stock = 1;  // "в наличии" without number — item available, show at least 1
                 }
 
                 let price = null;
@@ -1951,6 +1951,46 @@ async def scrape_green_prices_async():
                 if 'can_buy' not in p:
                     p['can_buy'] = True
                 p['type'] = 'green'
+
+        # ── STEP 6.5: DOM fallback for items still missing stock ──
+        # The cart page shows "В наличии X шт" for every item.
+        # Use _scrape_cart_stock_map to read stock from DOM for items basket API missed.
+        missing_stock = [p for p in raw_products if not p.get('stock')]
+        if missing_stock:
+            print(f"  [GREEN] Step 6.5: {len(missing_stock)} items still missing stock — trying cart DOM fallback...")
+            try:
+                # Scroll cart page to ensure all items are rendered
+                await _js(page, "window.scrollTo(0, document.body.scrollHeight)")
+                await asyncio.sleep(2)
+                dom_stock_map = await _scrape_cart_stock_map(page)
+                dom_filled = 0
+                for p in missing_stock:
+                    pid = str(p.get('id', ''))
+                    if pid and pid in dom_stock_map:
+                        sd = dom_stock_map[pid]
+                        if sd.get('value') and sd['value'] not in (99,):
+                            p['stock'] = sd['value']
+                            p['unit'] = sd.get('unit', p.get('unit', 'шт'))
+                            if sd.get('price') and sd['price'] != '1':
+                                p['currentPrice'] = sd['price']
+                            if sd.get('oldPrice'):
+                                p['oldPrice'] = sd['oldPrice']
+                            dom_filled += 1
+                            print(f"    DOM stock for {p.get('name','')[:30]}: {p['stock']} {p['unit']}")
+                print(f"  [GREEN] DOM fallback filled {dom_filled}/{len(missing_stock)} items")
+            except Exception as e:
+                print(f"  [GREEN] DOM fallback failed: {e}")
+
+        # ── STEP 6.9: Last resort — green items on the page ARE available ──
+        # If still stock=0 after all enrichment, default to 1
+        # (being on the green page is proof the item exists and can be bought)
+        still_missing = [p for p in raw_products if not p.get('stock')]
+        if still_missing:
+            for p in still_missing:
+                p['stock'] = 1
+                if not p.get('unit'):
+                    p['unit'] = 'шт'
+            print(f"  [GREEN] Step 6.9: Defaulted {len(still_missing)} items to stock=1 (available on green page)")
 
         section_found = green_button != 'not_in_dom'
 

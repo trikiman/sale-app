@@ -363,9 +363,9 @@ def parse_stock(text):
     if 'мало' in text_lower or 'осталось' in text_lower:
         return 3  # Low stock indicator
 
-    # If it says "In stock" but no number → unknown quantity, don't fake it
+    # If it says "In stock" but no number → at least 1 available
     if 'в наличии' in text_lower:
-        return 0  # Unknown quantity — better to not show than show fake 99
+        return 1  # Item available, show at least 1
 
     return 0
 
