@@ -1644,26 +1644,45 @@ async def scrape_green_prices_async():
                         if (idMatch) productId = idMatch[1];
                     }
 
-                    // Stock text: look for "В наличии X шт" or "X кг" on the card
-                    let stockText = '';
-                    const cardText = card.innerText || '';
-                    const stockPatterns = [
-                        /(?:В наличии|в наличии)[:\s]*([\d.,]+)\s*(шт|кг)/i,
-                        /(?:Осталось|осталось)\s*([\d.,]+)\s*(шт|кг)/i,
-                        /([\d.,]+)\s*(шт|кг)\s*(?:в наличии|осталось)/i
-                    ];
-                    for (const pat of stockPatterns) {
-                        const m = cardText.match(pat);
-                        if (m) {
-                            stockText = 'В наличии ' + m[1] + ' ' + m[2];
-                            break;
-                        }
+                    // Stock: Priority 1 — data-max on add-to-cart button (most reliable for green items)
+                    let dataMax = '';
+                    const addBtn = card.querySelector('.js-delivery__basket--add, [data-max], button[class*="Cart"]');
+                    if (addBtn && addBtn.getAttribute('data-max')) {
+                        dataMax = addBtn.getAttribute('data-max');
                     }
-                    if (!stockText && /(?:В наличии|Мало|мало)/i.test(cardText)) {
-                        stockText = 'В наличии';
+                    // Also check quantity control for items already in cart
+                    if (!dataMax) {
+                        const qtyCtrl = card.querySelector('[data-max]');
+                        if (qtyCtrl) dataMax = qtyCtrl.getAttribute('data-max') || '';
                     }
 
-                    products.push({ id: productId, name, currentPrice, oldPrice, stockText, image, url });
+                    // Stock: Priority 2 — text patterns from card
+                    let stockText = '';
+                    if (dataMax && parseFloat(dataMax) > 0) {
+                        // Determine unit from price text
+                        const priceText = card.innerText || '';
+                        const unit = /кг/.test(priceText) ? 'кг' : 'шт';
+                        stockText = 'В наличии ' + dataMax + ' ' + unit;
+                    } else {
+                        const cardText = card.innerText || '';
+                        const stockPatterns = [
+                            /(?:В наличии|в наличии)[:\s]*([\d.,]+)\s*(шт|кг)/i,
+                            /(?:Осталось|осталось)\s*([\d.,]+)\s*(шт|кг)/i,
+                            /([\d.,]+)\s*(шт|кг)\s*(?:в наличии|осталось)/i
+                        ];
+                        for (const pat of stockPatterns) {
+                            const m = cardText.match(pat);
+                            if (m) {
+                                stockText = 'В наличии ' + m[1] + ' ' + m[2];
+                                break;
+                            }
+                        }
+                        if (!stockText && /(?:В наличии|Мало|мало)/i.test(cardText)) {
+                            stockText = 'В наличии';
+                        }
+                    }
+
+                    products.push({ id: productId, name, currentPrice, oldPrice, stockText, dataMax, image, url });
                 });
                 return products;
             })()
@@ -1673,7 +1692,8 @@ async def scrape_green_prices_async():
         print(f"  [GREEN] Green section: found {len(raw_products)} green items")
         for rp in raw_products:
             st = rp.get('stockText', '')
-            print(f"    → id={rp.get('id','?'):>6} {rp.get('name','')[:30]:30s} stockText='{st}'")
+            dm = rp.get('dataMax', '')
+            print(f"    → id={rp.get('id','?'):>6} {rp.get('name','')[:30]:30s} dataMax='{dm}' stockText='{st}'")
 
         # ── STEP 4 (button): Check green button #js-Delivery__Order-green-show-all ──
         # 3 states: VISIBLE → modal, HIDDEN → inline, NOT IN DOM → no new items
@@ -2059,24 +2079,45 @@ async def scrape_green_prices_async():
             if sm_enriched:
                 print(f"  [GREEN] Full stock map enriched {sm_enriched}/{len(raw_products)} items")
 
-        # ── STEP 6.5: Per-product stock fetch for items basket API missed ──
+        # ── STEP 6.5: Enrich missing items from card's data-max attribute ──
         missing_stock = [p for p in raw_products if not p.get('stock')]
         if missing_stock:
-            print(f"  [GREEN] Step 6.5: {len(missing_stock)} items missing stock — fetching per-product...")
-            try:
-                xhr_filled = await _fetch_stock_per_product(page, missing_stock)
-                print(f"  [GREEN] Step 6.5: XHR enriched {xhr_filled}/{len(missing_stock)} items")
-            except Exception as e:
-                print(f"  [GREEN] Step 6.5 XHR failed: {e}")
+            dm_filled = 0
+            for p in missing_stock:
+                dm = p.get('dataMax', '')
+                if dm:
+                    try:
+                        val = float(dm.replace(',', '.'))
+                        if val > 0:
+                            p['stock'] = val if '.' in str(dm) else int(val)
+                            # Determine unit from price text
+                            cp = p.get('currentPrice', '')
+                            p['unit'] = 'кг' if 'кг' in cp else 'шт'
+                            dm_filled += 1
+                            print(f"  [GREEN] Step 6.5: data-max stock for {p.get('name','')[:30]}: {p['stock']}")
+                    except (ValueError, TypeError):
+                        pass
+            print(f"  [GREEN] Step 6.5: data-max enriched {dm_filled}/{len(missing_stock)} items")
 
-        # ── STEP 6.9: Last resort — parse stockText from card, or default to 1 ──
-        # Green cards show "В наличии X шт" — parse that before defaulting
+        # ── STEP 6.9: Last resort — parse stockText/dataMax from card, or default to 1 ──
         still_missing = [p for p in raw_products if not p.get('stock')]
         if still_missing:
             parsed_count = 0
             default_count = 0
             for p in still_missing:
-                # Try stockText first (captured from card in Step 4)
+                # Try dataMax first (from card's button data-max attribute)
+                dm = p.get('dataMax', '')
+                if dm:
+                    try:
+                        val = float(dm.replace(',', '.'))
+                        if val > 0:
+                            p['stock'] = val if '.' in str(dm) else int(val)
+                            parsed_count += 1
+                            print(f"  [GREEN] Parsed stock from data-max: {p.get('name','')[:30]} → {p['stock']}")
+                            continue
+                    except (ValueError, TypeError):
+                        pass
+                # Try stockText (text patterns from card)
                 st = p.get('stockText', '')
                 parsed = parse_stock(st) if st else 0
                 if parsed and parsed not in (99,):
@@ -2088,7 +2129,7 @@ async def scrape_green_prices_async():
                     default_count += 1
                 if not p.get('unit'):
                     p['unit'] = 'шт'
-            print(f"  [GREEN] Step 6.9: {parsed_count} from card text, {default_count} defaulted to 1")
+            print(f"  [GREEN] Step 6.9: {parsed_count} from data-max/card, {default_count} defaulted to 1")
 
         section_found = green_button != 'not_in_dom'
 
