@@ -258,32 +258,76 @@ def keyword_fallback(product_name):
     return 'Другое'
 
 
+# Canonical category map: merge VkusVill's inconsistent names into clean groups
+_CATEGORY_ALIASES = {
+    # Bread variants
+    'хлеб, хлебные изделия': 'Хлеб и выпечка',
+    'выпечка и хлеб': 'Хлеб и выпечка',
+    'хлеб и выпечка': 'Хлеб и выпечка',
+    'хлебобулочные изделия': 'Хлеб и выпечка',
+    # Dairy variants
+    'молочные продукты, яйцо': 'Молочные продукты',
+    'молочные продукты': 'Молочные продукты',
+    'молоко, сливки': 'Молочные продукты',
+    # Meat variants
+    'мясо, мясные деликатесы': 'Мясо, птица',
+    'мясо, птица': 'Мясо, птица',
+    'мясо и птица': 'Мясо, птица',
+    'мясная гастрономия': 'Мясо, птица',
+    'птица': 'Мясо, птица',
+    # Fish variants
+    'рыба, икра и морепродукты': 'Рыба и морепродукты',
+    'рыба и морепродукты': 'Рыба и морепродукты',
+    'рыбная гастрономия': 'Рыба и морепродукты',
+    # Sweets variants
+    'сладости и десерты': 'Сладости и десерты',
+    'торты, пирожные, десерты': 'Сладости и десерты',
+    'кондитерские изделия': 'Сладости и десерты',
+    # Veggies variants
+    'овощи, фрукты, ягоды, зелень': 'Овощи и фрукты',
+    'овощи и фрукты': 'Овощи и фрукты',
+    'фрукты': 'Овощи и фрукты',
+    'овощи': 'Овощи и фрукты',
+    # Frozen variants
+    'замороженные продукты': 'Замороженные продукты',
+    'заморозка': 'Замороженные продукты',
+}
+
+
+def _apply_category_alias(category: str) -> str:
+    """Normalize category name through alias map."""
+    if not category:
+        return category
+    key = category.lower().replace('ё', 'е').strip()
+    return _CATEGORY_ALIASES.get(key, category)
+
+
 def normalize_category(raw_cat, product_name, product_id=None):
     """
     Normalizes category using a three-tier approach:
     1. Database lookup by product ID (most accurate)
     2. Use raw VkusVill category if meaningful
     3. Keyword fallback for unknown items
+    All results are passed through _apply_category_alias() to merge duplicates.
     """
     # Tier 1: Database lookup (most accurate)
     if product_id:
         db_category = lookup_category_db(product_id)
         if db_category:
-            return db_category
+            return _apply_category_alias(db_category)
     
     # Tier 2: Use raw category if it's meaningful (not just "Green/Red tags")
     if raw_cat:
         raw_lower = raw_cat.lower().replace('ё', 'е')  # Normalize ё to е for matching
         # Skip generic tag categories
         if 'зелен' not in raw_lower and 'красн' not in raw_lower and 'желт' not in raw_lower:
-            # Return the raw category as-is (VkusVill's actual category)
-            return raw_cat
+            return _apply_category_alias(raw_cat)
     
     # Tier 3: Keyword fallback for unknown items
     if product_name:
         kw_result = keyword_fallback(product_name)
         if kw_result and kw_result != 'Другое':
-            return kw_result
+            return _apply_category_alias(kw_result)
 
     # Tier 4: Not in DB, no meaningful raw category, no keyword match → 'Новинки'
     return 'Новинки'
@@ -317,11 +361,11 @@ def parse_stock(text):
 
     # "Осталось мало" / "мало" means low stock but still available
     if 'мало' in text_lower or 'осталось' in text_lower:
-        return 5  # Assume low stock = 5 items
+        return 3  # Low stock indicator
 
-    # If it says "In stock" but no number, assume plenty
+    # If it says "In stock" but no number → unknown quantity, don't fake it
     if 'в наличии' in text_lower:
-        return 99  # in stock but unknown quantity — triggers cache fallback
+        return 0  # Unknown quantity — better to not show than show fake 99
 
     return 0
 

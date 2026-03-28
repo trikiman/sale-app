@@ -1915,7 +1915,7 @@ async def scrape_green_prices_async():
                 pid = str(p.get('id', ''))
                 if pid and pid in basket_by_id:
                     bp = basket_by_id[pid]
-                    p['stock'] = bp.get('stock', p.get('stock', 99))
+                    p['stock'] = bp.get('stock', p.get('stock', 0))
                     p['unit'] = bp.get('unit', p.get('unit', 'шт'))
                     p['can_buy'] = bp.get('can_buy', True)
                     if bp.get('currentPrice') and bp['currentPrice'] != '0':
@@ -1929,7 +1929,7 @@ async def scrape_green_prices_async():
                 else:
                     # Not in basket — keep from DOM, mark stock as unknown
                     if 'stock' not in p or p.get('stock') is None:
-                        p['stock'] = 99
+                        p['stock'] = 0
                     if 'can_buy' not in p:
                         p['can_buy'] = True
                     if 'unit' not in p or not p.get('unit'):
@@ -1947,7 +1947,7 @@ async def scrape_green_prices_async():
             print("  [GREEN] ⚠️ Basket API returned 0 — keeping modal data without stock enrichment")
             for p in raw_products:
                 if 'stock' not in p or p.get('stock') is None:
-                    p['stock'] = 99
+                    p['stock'] = 0
                 if 'can_buy' not in p:
                     p['can_buy'] = True
                 p['type'] = 'green'
@@ -2017,16 +2017,18 @@ async def scrape_green_prices_async():
                 p['stock'] = parse_stock(p.get('stockText', ''))
             p['unit'] = normalize_stock_unit(p.get('unit'), p['stock'])
 
-            # Fallback: if stock=99 (placeholder) or stock=0 (failed enrichment),
-            # use previous known-good stock from cache
-            if p['stock'] in (99, 0):
+            # Fallback: if stock=0 (unknown/failed enrichment),
+            # use previous known-good stock from cache (but NOT old 99 placeholders)
+            if p['stock'] in (0, 99):
                 pid = str(p.get('id', ''))
                 if pid in prev_stock_map:
                     cached = prev_stock_map[pid]
-                    old_stock = p['stock']
-                    p['stock'] = cached['stock']
-                    p['unit'] = cached['unit']
-                    print(f"  [GREEN] Cache fallback for {p.get('name','')[:25]}: {old_stock} → {p['stock']} {p['unit']}")
+                    cached_stock = cached['stock']
+                    if cached_stock and cached_stock not in (0, 99):
+                        old_stock = p['stock']
+                        p['stock'] = cached_stock
+                        p['unit'] = cached['unit']
+                        print(f"  [GREEN] Cache fallback for {p.get('name','')[:25]}: {old_stock} → {p['stock']} {p['unit']}")
 
             if 'stockText' in p:
                 del p['stockText']
