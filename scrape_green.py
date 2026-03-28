@@ -566,90 +566,77 @@ async def _extract_green_cards(page, card_source: str) -> list:
 
 async def _add_green_cards_to_cart(page, card_source: str, total_cards: int):
     scope_expr = _green_card_scope_expr(card_source)
-    added_count = 0
-    results_summary = {'no_scope': 0, 'no_card': 0, 'already_in_cart': 0, 'added': 0, 'no_button': 0}
 
-    for idx in range(total_cards):
-        # Find the FIRST card that still has a clickable add button.
-        # Scroll each card into view before clicking — VkusVill uses Swiper
-        # carousel where offscreen cards have offsetParent === null.
-        result = await _js(page, f"""
-            (() => {{
-                const scope = {scope_expr};
-                if (!scope) return 'no_scope';
-                const cards = scope.querySelectorAll('.ProductCard');
-                if (cards.length === 0) return 'no_card';
-                for (let i = 0; i < cards.length; i++) {{
-                    const card = cards[i];
-                    // Skip cards already in cart (has quantity control)
-                    if (card.querySelector('.ProductCard__quantityControl, [class*="quantityControl"], [class*="QuantityControl"]')) continue;
-                    // Scroll card into view to make it visible in Swiper
-                    card.scrollIntoView({{behavior: 'instant', block: 'center'}});
-                    // Look for add-to-cart button with broad selectors
-                    const btn = card.querySelector(
-                        '.js-delivery__basket--add, .CartButton__content--add, .CartButton__content, ' +
-                        '.ProductCard__add, .ProductCard__addToCart, ' +
-                        'button[class*="cart" i], button[class*="Cart"], button[class*="basket" i]'
-                    );
-                    if (btn) {{
-                        btn.scrollIntoView({{behavior: 'instant', block: 'center'}});
+    # Batch ALL clicks in a SINGLE JS call to avoid Chrome WebSocket timeout
+    # (137 individual _js() calls = 411 WebSocket evaluations → HTTP 500)
+    # NOTE: Must be SYNCHRONOUS — nodriver can't await async IIFEs
+    result_json = await _js(page, f"""
+        (() => {{
+            const results = {{no_scope: 0, no_card: 0, already_in_cart: 0, added: 0, no_button: 0}};
+            const scope = {scope_expr};
+            if (!scope) return JSON.stringify({{results, added: 0}});
+            const cards = scope.querySelectorAll('.ProductCard, .ProductCards__item');
+            let addedCount = 0;
+            for (let i = 0; i < {total_cards}; i++) {{
+                const card = cards[i];
+                if (!card) {{ results.no_card++; continue; }}
+                if (card.querySelector('.ProductCard__quantityControl, [class*="quantityControl"]')) {{
+                    results.already_in_cart++;
+                    continue;
+                }}
+                card.scrollIntoView({{behavior: 'instant', block: 'center'}});
+                let clicked = false;
+                const btns = card.querySelectorAll('button');
+                for (const btn of btns) {{
+                    if (btn.disabled) continue;
+                    const text = (btn.innerText || '').toLowerCase().trim();
+                    if (text.includes('в корзину') || text.includes('корзин') || text.includes('добавить')) {{
                         btn.click();
-                        return 'added';
-                    }}
-                    // Fallback: find ANY button inside the card
-                    const anyBtn = card.querySelector('button');
-                    if (anyBtn) {{
-                        const btnText = (anyBtn.innerText || '').toLowerCase();
-                        if (btnText.includes('корзин') || btnText.includes('добавить') || btnText.includes('купить')) {{
-                            anyBtn.scrollIntoView({{behavior: 'instant', block: 'center'}});
-                            anyBtn.click();
-                            return 'added';
-                        }}
+                        clicked = true;
+                        break;
                     }}
                 }}
-                return 'no_button';
-            }})()
-        """)
-        result = str(result) if result else 'no_button'
-
-        # If no_button, retry once after scrolling to bottom then back
-        if result == 'no_button' and idx == 0:
-            await _js(page, 'window.scrollTo(0, document.body.scrollHeight)')
-            await asyncio.sleep(2)
-            await _js(page, f"""
-                (() => {{
-                    const scope = {scope_expr};
-                    if (scope) scope.scrollIntoView({{behavior: 'instant', block: 'center'}});
-                }})()
-            """)
-            await asyncio.sleep(2)
-            # Retry the click
-            result = await _js(page, f"""
-                (() => {{
-                    const scope = {scope_expr};
-                    if (!scope) return 'no_scope';
-                    const cards = scope.querySelectorAll('.ProductCard');
-                    for (const card of cards) {{
-                        if (card.querySelector('.ProductCard__quantityControl, [class*="quantityControl"]')) continue;
-                        card.scrollIntoView({{behavior: 'instant', block: 'center'}});
-                        const btn = card.querySelector(
-                            '.js-delivery__basket--add, .CartButton__content--add, .CartButton__content, ' +
-                            '.ProductCard__add, button[class*="cart" i], button[class*="Cart"], button'
-                        );
-                        if (btn) {{
-                            btn.click();
-                            return 'added_retry';
-                        }}
+                if (!clicked) {{
+                    const cssBtn = card.querySelector(
+                        '.js-delivery__basket--add, .CartButton__content--add, .CartButton__content, ' +
+                        '.ProductCard__add, .ProductCard__addToCart'
+                    );
+                    if (cssBtn) {{ cssBtn.click(); clicked = true; }}
+                }}
+                if (clicked) {{
+                    results.added++;
+                    addedCount++;
+                }} else {{
+                    results.no_button++;
+                }}
+                // Dismiss popups inline (sync)
+                const modals = document.querySelectorAll('[class*="Modal"]');
+                for (const m of modals) {{
+                    if (m.id === 'js-modal-cart-prods-scroll') continue;
+                    const txt = m.innerText || '';
+                    if (txt.includes('Уже работаем') || txt.includes('похожие товары')) {{
+                        const close = m.querySelector('[class*="close"], [class*="Close"]');
+                        if (close) close.click();
                     }}
-                    return 'no_button';
-                }})()
-            """)
-            result = str(result) if result else 'no_button'
+                }}
+            }}
+            return JSON.stringify({{results, added: addedCount}});
+        }})()
+    """)
 
-        results_summary[result] = results_summary.get(result, 0) + 1
-        if result in ('added', 'added_retry'):
-            added_count += 1
-        await asyncio.sleep(1.5)  # 1.5s delay: wait for disappear animation + avoid bot ban
+    # Parse the batched result
+    try:
+        if isinstance(result_json, str):
+            data = json.loads(result_json)
+        elif isinstance(result_json, dict):
+            data = result_json
+        else:
+            data = {'results': {'added': 0}, 'added': 0}
+        results_summary = data.get('results', {})
+        added_count = data.get('added', 0)
+    except (json.JSONDecodeError, TypeError):
+        results_summary = {'added': 0, 'error': 1}
+        added_count = 0
 
     return results_summary, added_count
 
@@ -665,6 +652,70 @@ async def _close_green_modal(page):
             }
         })()
     """)
+
+
+async def _close_delivery_modal(page):
+    """Force-close the 'Ассортимент зависит от времени доставки' delivery modal.
+    This modal auto-pops after every page reload and blocks the green items modal.
+    Must be called before any green section interaction."""
+    result = await _js(page, r"""
+        (() => {
+            // Check if delivery modal is visible
+            const deliverySelectors = [
+                '.VV23_RWayModal',
+                '[class*="RWayModal"]',
+                '[class*="DeliveryModal"]',
+                '[class*="delivery-modal"]'
+            ];
+            let deliveryModal = null;
+            for (const sel of deliverySelectors) {
+                const el = document.querySelector(sel);
+                if (el && el.offsetParent !== null) {
+                    deliveryModal = el;
+                    break;
+                }
+            }
+            // Also check by content — modal containing "Ассортимент зависит"
+            if (!deliveryModal) {
+                const allModals = document.querySelectorAll('[class*="Modal"]');
+                for (const m of allModals) {
+                    if (m.offsetParent === null) continue;
+                    const text = (m.innerText || '').substring(0, 200);
+                    if (text.includes('Ассортимент зависит') || text.includes('Больше товаров') || text.includes('времени доставки')) {
+                        deliveryModal = m;
+                        break;
+                    }
+                }
+            }
+            if (!deliveryModal) return 'no_delivery_modal';
+
+            // Try to close it
+            const closeSelectors = '.Modal__close, .js-modal-close, .VV_ModalClose, [class*="Modal"] [class*="close"], [class*="Modal"] [class*="Close"]';
+            // Prefer close button INSIDE the delivery modal
+            let closeBtn = deliveryModal.querySelector('[class*="close"], [class*="Close"], button[class*="close"]');
+            if (!closeBtn) {
+                closeBtn = document.querySelector(closeSelectors);
+            }
+            if (closeBtn) {
+                closeBtn.click();
+                return 'closed_button';
+            }
+            // Fallback: click overlay behind modal
+            const overlay = document.querySelector('.Modal__overlay, [class*="overlay"], [class*="Overlay"]');
+            if (overlay) {
+                overlay.click();
+                return 'closed_overlay';
+            }
+            return 'no_close_button';
+        })()
+    """)
+    if result and result != 'no_delivery_modal':
+        print(f"  [GREEN] Delivery modal: {result}")
+        await asyncio.sleep(1)
+    # Always send Escape as backup
+    await _js(page, "document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', code: 'Escape', bubbles: true}))")
+    await asyncio.sleep(0.5)
+    return result
 
 
 async def _scrape_cart_stock_map(page) -> dict:
@@ -872,7 +923,8 @@ def _fetch_green_from_basket() -> list:
 
 
 def _extract_green_from_basket_dict(basket: dict) -> list:
-    """Extract green-priced items from a basket dict (shared by requests + CDP path)."""
+    """Extract ALL items from a basket dict for stock enrichment.
+    Green filtering happens at the modal level — basket is just for stock data."""
     if not isinstance(basket, dict):
         return []
 
@@ -882,9 +934,8 @@ def _extract_green_from_basket_dict(basket: dict) -> list:
     for item in basket.values():
         if not isinstance(item, dict):
             continue
-        if not (item.get('IS_GREEN') == '1' or item.get('IS_GREEN') is True or item.get('IS_GREEN') == 1):
-            continue
-        if item.get('CAN_BUY') != 'Y':
+        # Skip non-product entries (metadata, totals, etc.)
+        if not item.get('PRODUCT_ID'):
             continue
 
         pid = str(item.get('PRODUCT_ID', ''))
@@ -899,6 +950,7 @@ def _extract_green_from_basket_dict(basket: dict) -> list:
         stock_data = stock_map.get(pid, {})
         stock_value = stock_data.get('value', 0)
         stock_unit = stock_data.get('unit') or _normalize_unit(item.get('UNIT') or item.get('UNITS'))
+        is_green = item.get('IS_GREEN') in ('1', 1, True)
         products.append({
             'id': pid,
             'name': item.get('NAME', ''),
@@ -912,9 +964,11 @@ def _extract_green_from_basket_dict(basket: dict) -> list:
             'category': 'Зелёные ценники',
             'type': 'green',
             'can_buy': item.get('CAN_BUY') == 'Y',
+            'is_green_api': is_green,
         })
 
-    print(f"  [GREEN] basket_recalc: {len(products)} green items (IS_GREEN=1) out of {len(basket)} total")
+    green_count = sum(1 for p in products if p.get('is_green_api'))
+    print(f"  [GREEN] basket_recalc: {len(products)} total items ({green_count} IS_GREEN=1)")
     return products
 
 
@@ -1385,12 +1439,27 @@ async def scrape_green_prices_async():
         print(f"  [GREEN] Cart cleanup result: {clear_result}")
 
         if isinstance(clear_result, dict) and clear_result.get('status') == 'clicked':
-            await asyncio.sleep(3)  # Wait for VkusVill to process deletion
+            await asyncio.sleep(2)  # Wait for VkusVill to process deletion
             print(f"  [GREEN] ✅ Cleared unavailable items via {clear_result.get('method')}")
+            # Reload page after clearing (per plan step 2.9)
+            page = await browser.get(GREEN_URL)
+            await asyncio.sleep(8)
             await _step_screenshot(page, "after_clear_unavailable")
         else:
             status = clear_result.get('status', 'unknown') if isinstance(clear_result, dict) else str(clear_result)
             print(f"  [GREEN] No unavailable items to clear ({status})")
+
+        # ── STEP 2.95: Force-close delivery modal before green section ──
+        # VkusVill reopens the delivery time modal after every page reload.
+        # If not closed, it blocks clicks on the green "show all" button and
+        # prevents the green items modal from opening.
+        print("  [GREEN] Step 2.95: Closing any delivery modal...")
+        for _attempt in range(3):
+            dm_result = await _close_delivery_modal(page)
+            if dm_result == 'no_delivery_modal':
+                break
+            print(f"  [GREEN] Delivery modal close attempt {_attempt+1}: {dm_result}")
+            await asyncio.sleep(1)
 
         # ── STEP 3: Find "Зелёные ценники" section ──
         print("  [GREEN] Step 3: Looking for green section...")
@@ -1538,35 +1607,98 @@ async def scrape_green_prices_async():
             # ── STEP 3.1: Button visible → click → modal → scrape + add all ──
             print("  [GREEN] Step 3.1: Button visible — clicking to open modal...")
             await _step_screenshot(page, "before_modal_click")
-            await _js(page, r"""
-                (() => {
-                    const section = document.getElementById('js-Delivery__Order-green-state-not-empty');
-                    if (section) section.scrollIntoView({behavior: 'instant', block: 'center'});
-                })()
-            """)
-            await asyncio.sleep(1)
 
-            clicked = await _js(page, r"""
-                (() => {
-                    const btn = document.getElementById('js-Delivery__Order-green-show-all');
-                    if (btn && !btn.classList.contains('_hidden') && btn.offsetParent !== null) {
-                        btn.click();
-                        return true;
-                    }
-                    return false;
-                })()
-            """)
-            print(f"  [GREEN] Button clicked: {clicked}")
-            await asyncio.sleep(3)
+            modal_ready = False
+            for modal_attempt in range(3):
+                # Ensure delivery modal is closed before clicking green button
+                dm_check = await _close_delivery_modal(page)
+                if dm_check != 'no_delivery_modal':
+                    print(f"  [GREEN] Closed delivery modal before green button (attempt {modal_attempt+1})")
+                    await asyncio.sleep(1)
 
-            # Check if modal opened
-            modal_ready = await _js(page, """
-                (() => {
-                    const modal = document.getElementById('js-modal-cart-prods-scroll');
-                    return modal && modal.offsetParent !== null;
-                })()
-            """)
-            print(f"  [GREEN] Modal opened: {modal_ready}")
+                await _js(page, r"""
+                    (() => {
+                        const section = document.getElementById('js-Delivery__Order-green-state-not-empty');
+                        if (section) section.scrollIntoView({behavior: 'instant', block: 'center'});
+                    })()
+                """)
+                await asyncio.sleep(1)
+
+                clicked = await _js(page, r"""
+                    (() => {
+                        const btn = document.getElementById('js-Delivery__Order-green-show-all');
+                        if (btn && !btn.classList.contains('_hidden') && btn.offsetParent !== null) {
+                            btn.click();
+                            return true;
+                        }
+                        return false;
+                    })()
+                """)
+                print(f"  [GREEN] Button clicked: {clicked} (attempt {modal_attempt+1})")
+                await asyncio.sleep(3)
+
+                # Check if GREEN modal opened (not delivery modal)
+                modal_state = await _js(page, r"""
+                    (() => {
+                        const modal = document.getElementById('js-modal-cart-prods-scroll');
+                        if (!modal || modal.offsetParent === null) return 'not_open';
+
+                        // Verify no delivery modal is blocking it
+                        const deliverySelectors = ['.VV23_RWayModal', '[class*="RWayModal"]', '[class*="DeliveryModal"]'];
+                        for (const sel of deliverySelectors) {
+                            const dm = document.querySelector(sel);
+                            if (dm && dm.offsetParent !== null) return 'blocked_by_delivery';
+                        }
+                        // Also check by content
+                        const allModals = document.querySelectorAll('[class*="Modal"]');
+                        for (const m of allModals) {
+                            if (m === modal || m.contains(modal) || modal.contains(m)) continue;
+                            if (m.offsetParent === null) continue;
+                            const text = (m.innerText || '').substring(0, 200);
+                            if (text.includes('Ассортимент зависит') || text.includes('времени доставки')) {
+                                return 'blocked_by_delivery';
+                            }
+                        }
+
+                        // Verify modal has actual product cards (not empty)
+                        const cards = modal.querySelectorAll('.ProductCard');
+                        if (cards.length === 0) return 'open_but_empty';
+                        return 'ready:' + cards.length;
+                    })()
+                """) or 'not_open'
+                modal_state = str(modal_state)
+                print(f"  [GREEN] Modal state: {modal_state} (attempt {modal_attempt+1})")
+
+                if modal_state.startswith('ready:'):
+                    modal_ready = True
+                    break
+                elif modal_state == 'blocked_by_delivery':
+                    print(f"  [GREEN] ⚠️ Delivery modal blocking green modal — closing...")
+                    await _close_delivery_modal(page)
+                    await asyncio.sleep(2)
+                    # Close the green modal too (it may be in bad state)
+                    await _close_green_modal(page)
+                    await asyncio.sleep(1)
+                    continue
+                elif modal_state == 'open_but_empty':
+                    # Modal opened but empty — wait a bit, might still be loading
+                    print(f"  [GREEN] Modal open but no cards yet — waiting...")
+                    await asyncio.sleep(3)
+                    recheck = await _js(page, """
+                        (() => {
+                            const modal = document.getElementById('js-modal-cart-prods-scroll');
+                            return modal ? modal.querySelectorAll('.ProductCard').length : 0;
+                        })()
+                    """) or 0
+                    if int(recheck or 0) > 0:
+                        modal_ready = True
+                        break
+                    continue
+                else:
+                    # not_open — try again
+                    continue
+
+            print(f"  [GREEN] Modal final status: ready={modal_ready}")
 
             if modal_ready:
                 await _step_screenshot(page, "modal_opened")
@@ -1764,172 +1896,85 @@ async def scrape_green_prices_async():
         await asyncio.sleep(8)
         await _step_screenshot(page, "after_reload")
 
-        # ── STEP 6: raw_products already scraped before cart actions ──
-        # (green section is empty after reload because items moved to cart)
-        section_found = green_button != 'not_in_dom'
-        print(f"  [GREEN] Step 6: Using {len(raw_products)} items scraped from green section (pre-add)")
-
-        # ── STEP 6a: Scrape stock from cart DOM (most reliable — no API needed) ──
-        # After reload, green items are in the cart with visible stock text.
-        # Read it directly from the rendered BasketItem cards.
-        print("  [GREEN] Step 6a: Scraping stock from cart page DOM...")
-        await _js(page, 'window.scrollTo(0, document.body.scrollHeight)')
-        await asyncio.sleep(2)
-        await _js(page, 'window.scrollTo(0, 0)')
-        await asyncio.sleep(1)
-
-        dom_stock_map = await _js(page, r"""
-            (() => {
-                const stockMap = {};
-                // Cart items use .js-delivery-basket-item or .Delivery__Order__BasketItem
-                const items = document.querySelectorAll(
-                    '.js-delivery-basket-item, .Delivery__Order__BasketItem, .BasketItem, [class*="BasketItem"]'
-                );
-                items.forEach(item => {
-                    // Find product ID from link or data attribute
-                    const link = item.querySelector('a[href*="/goods/"]') || item.querySelector('a[href*=".html"]');
-                    let pid = '';
-                    if (link) {
-                        const m = (link.href || '').match(/(\d+)\.html/);
-                        if (m) pid = m[1];
-                    }
-                    if (!pid) {
-                        const dataEl = item.querySelector('[data-id]') || item.querySelector('[data-product-id]');
-                        if (dataEl) pid = dataEl.getAttribute('data-id') || dataEl.getAttribute('data-product-id') || '';
-                    }
-                    if (!pid) return;
-
-                    const text = (item.innerText || '').replace(/\u00a0/g, ' ');
-
-                    // Detect unit from text/price
-                    const isKg = text.includes('/кг') || text.includes('за кг');
-                    const unit = isKg ? 'кг' : 'шт';
-
-                    stockMap[pid] = {text, unit};
-                });
-                return stockMap;
-            })()
-        """) or {}
-
-        if dom_stock_map and isinstance(dom_stock_map, dict):
-            dom_filled = 0
+        # ── STEP 6: Enrich modal products with basket_recalc stock data ──
+        # raw_products already has ALL green items from the modal DOM.
+        # basket_recalc provides accurate stock/price — merge it IN, don't replace.
+        print("  [GREEN] Step 6: Fetching stock data from basket_recalc API...")
+        basket_products = _fetch_green_from_basket() or []
+        if basket_products:
+            print(f"  [GREEN] Basket API: {len(basket_products)} products with stock data")
+            # Build lookup by product ID
+            basket_by_id = {}
+            for bp in basket_products:
+                pid = str(bp.get('id', ''))
+                if pid:
+                    basket_by_id[pid] = bp
+            # Enrich existing raw_products with basket stock data
+            enriched = 0
             for p in raw_products:
                 pid = str(p.get('id', ''))
-                if not pid or pid not in dom_stock_map:
-                    continue
-                cart_item = dom_stock_map[pid]
-                cart_text = str(cart_item.get('text', ''))
-                cart_unit = str(cart_item.get('unit', 'шт'))
-
-                # Set stockText from cart DOM for later parse_stock() processing
-                if cart_text and not p.get('stockText', '').strip():
-                    p['stockText'] = cart_text
-                if cart_unit and cart_unit != 'шт':
-                    p['unit'] = cart_unit
-                dom_filled += 1
-            print(f"  [GREEN] Step 6a: Matched {dom_filled}/{len(raw_products)} green items to cart DOM (of {len(dom_stock_map)} cart items)")
-        else:
-            print(f"  [GREEN] Step 6a: No cart items found in DOM")
-
-        # BUG-067: Supplement DOM-scraped items with basket_recalc data
-        # The DOM may still miss items that weren't rendered despite Swiper pagination
-        print("  [GREEN] Step 6b: Fetching green items from basket_recalc (supplement)...")
-        basket_green, full_stock_map = await _fetch_green_from_basket_async(page)
-
-        # Step 6b-1: Merge IS_GREEN=1 items from basket (discover new green products)
-        if basket_green:
-            existing_ids = {str(p.get('id')): p for p in raw_products if p.get('id')}
-            added_from_basket = 0
-            updated_from_basket = 0
-            for bg in basket_green:
-                bg_id = str(bg.get('id', ''))
-                if not bg_id:
-                    continue
-                if bg_id not in existing_ids:
-                    raw_products.append(bg)
-                    existing_ids[bg_id] = bg
-                    added_from_basket += 1
+                if pid and pid in basket_by_id:
+                    bp = basket_by_id[pid]
+                    p['stock'] = bp.get('stock', p.get('stock', 99))
+                    p['unit'] = bp.get('unit', p.get('unit', 'шт'))
+                    p['can_buy'] = bp.get('can_buy', True)
+                    if bp.get('currentPrice') and bp['currentPrice'] != '0':
+                        p['currentPrice'] = bp['currentPrice']
+                    if bp.get('oldPrice') and bp['oldPrice'] != '0':
+                        p['oldPrice'] = bp['oldPrice']
+                    if bp.get('image'):
+                        p['image'] = bp['image']
+                    p['stockText'] = bp.get('stockText', '')
+                    enriched += 1
                 else:
-                    # Update existing product with basket stock data (authoritative for stock/unit/price)
-                    existing = existing_ids[bg_id]
-                    if bg.get('stockText'):
-                        existing['stockText'] = bg['stockText']
-                    if bg.get('stock') and bg['stock'] not in [0, '0']:
-                        existing['stock'] = bg['stock']
-                    if bg.get('unit'):
-                        existing['unit'] = bg['unit']
-                    if bg.get('currentPrice') and bg['currentPrice'] not in ['0', '', 'None']:
-                        existing['currentPrice'] = bg['currentPrice']
-                    if bg.get('oldPrice') and bg['oldPrice'] not in ['0', '', 'None']:
-                        existing['oldPrice'] = bg['oldPrice']
-                    updated_from_basket += 1
-            if added_from_basket > 0 or updated_from_basket > 0:
-                print(f"  [GREEN] basket_recalc: added {added_from_basket} new, updated {updated_from_basket} existing (total: {len(raw_products)})")
+                    # Not in basket — keep from DOM, mark stock as unknown
+                    if 'stock' not in p or p.get('stock') is None:
+                        p['stock'] = 99
+                    if 'can_buy' not in p:
+                        p['can_buy'] = True
+                    if 'unit' not in p or not p.get('unit'):
+                        p['unit'] = 'шт'
+                p['type'] = 'green'
+            # Add any basket items not found in raw_products (edge case)
+            existing_ids = {str(p.get('id', '')) for p in raw_products}
+            new_from_basket = 0
+            for pid, bp in basket_by_id.items():
+                if pid not in existing_ids:
+                    raw_products.append(bp)
+                    new_from_basket += 1
+            print(f"  [GREEN] Enriched {enriched}/{len(raw_products)} with basket stock, {new_from_basket} new from basket")
         else:
-            print("  [GREEN] basket_recalc returned no green items")
-
-        # Step 6b-2: For DOM-scraped products still missing stock, look up from FULL basket by product ID
-        # Root cause fix: VkusVill sometimes doesn't set IS_GREEN=1 even for green products,
-        # but the product IS in the basket with valid MAX_Q stock data
-        if full_stock_map:
-            stock_filled = 0
+            print("  [GREEN] ⚠️ Basket API returned 0 — keeping modal data without stock enrichment")
             for p in raw_products:
-                pid = str(p.get('id', ''))
-                if not pid:
-                    continue
-                # Only fill if product has no stockText yet (DOM didn't provide it)
-                has_stock = p.get('stockText', '').strip()
-                if not has_stock and pid in full_stock_map:
-                    sd = full_stock_map[pid]
-                    sv = sd.get('value')
-                    unit = sd.get('unit', 'шт')
-                    if sv is not None:
-                        p['stockText'] = f"{sv} {unit}"
-                        p['stock'] = sv  # Set numeric stock directly
-                        if not p.get('unit') or p['unit'] == 'шт':
-                            p['unit'] = unit
-                        # Also update prices if we have them
-                        if sd.get('price') and sd['price'] not in ['0', '', 'None']:
-                            p['currentPrice'] = sd['price']
-                        if sd.get('oldPrice') and sd['oldPrice'] not in ['0', '', 'None']:
-                            p['oldPrice'] = sd['oldPrice']
-                        stock_filled += 1
-            if stock_filled:
-                print(f"  [GREEN] Filled stock for {stock_filled} DOM-scraped products from full basket map")
+                if 'stock' not in p or p.get('stock') is None:
+                    p['stock'] = 99
+                if 'can_buy' not in p:
+                    p['can_buy'] = True
+                p['type'] = 'green'
+
+        section_found = green_button != 'not_in_dom'
 
         # Save stock cache for fallback in future cycles
-        if basket_green or full_stock_map:
-            try:
-                stock_cache = {}
-                # From green-filtered items
-                for bg in basket_green:
-                    bg_id = str(bg.get('id', ''))
-                    if bg_id and bg.get('stockText'):
-                        from utils import parse_stock as _ps
-                        _sv = _ps(bg['stockText'])
-                        if _sv != 99:
-                            stock_cache[bg_id] = {'stock': _sv, 'unit': bg.get('unit', 'шт')}
-                # From full stock map for DOM-scraped products
-                for p in raw_products:
-                    pid = str(p.get('id', ''))
-                    if pid and pid not in stock_cache and pid in full_stock_map:
-                        sd = full_stock_map[pid]
-                        sv = sd.get('value')
-                        if sv is not None and sv != 99:
-                            stock_cache[pid] = {'stock': sv, 'unit': sd.get('unit', 'шт')}
-                if stock_cache:
-                    cache_path = os.path.join(DATA_DIR, 'green_stock_cache.json')
-                    with open(cache_path, 'w', encoding='utf-8') as f:
-                        json.dump(stock_cache, f, ensure_ascii=False)
-                    print(f"  [GREEN] Saved {len(stock_cache)} stock values to cache")
-            except Exception as e:
-                print(f"  [GREEN] Failed to save stock cache: {e}")
+        try:
+            stock_cache = {}
+            for p in raw_products:
+                pid = str(p.get('id', ''))
+                sv = p.get('stock')
+                if pid and sv is not None and sv != 99 and sv != 0:
+                    stock_cache[pid] = {'stock': sv, 'unit': p.get('unit', 'шт')}
+            if stock_cache:
+                cache_path = os.path.join(DATA_DIR, 'green_stock_cache.json')
+                with open(cache_path, 'w', encoding='utf-8') as f:
+                    json.dump(stock_cache, f, ensure_ascii=False)
+                print(f"  [GREEN] Saved {len(stock_cache)} stock values to cache")
+        except Exception as e:
+            print(f"  [GREEN] Failed to save stock cache: {e}")
 
         if raw_products:
-            available = [p for p in raw_products
-                         if 'нет в наличии' not in p.get('stockText', '').lower()
-                         and p.get('currentPrice', '0') not in ['0', '', 'None']]
-            if not available:
+            # Only flag as unavailable if ALL items explicitly say "нет в наличии"
+            unavailable = [p for p in raw_products
+                           if 'нет в наличии' in p.get('stockText', '').lower()]
+            if len(unavailable) == len(raw_products):
                 print("⚠️ [GREEN] ALL items unavailable — green price is gone.")
                 raw_products = []
 

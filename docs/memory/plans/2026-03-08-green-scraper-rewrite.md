@@ -8,7 +8,7 @@
 The current green scraper produces mismatched data vs. the live VkusVill cart page.  
 The existing flow is overly complex (~700 lines in `scrape_green_prices_async`) with multiple fallback paths that often conflict.
 
-## New Logic (User-Defined, updated 2026-03-19)
+## New Logic (User-Defined, updated 2026-03-27)
 
 ```
 1. Go to /cart/
@@ -21,32 +21,29 @@ The existing flow is overly complex (~700 lines in `scrape_green_prices_async`) 
      - ⚠️ Do NOT use button.js-delivery__basket--clear — that clears ENTIRE cart!
      - After click: wait 2s → reload page
 3. Close delivery modal if it pops up
- from #js-Delivery__Order-green-state-not-empty section
-   - All items in this section are green by definition
-   - Extract: id (data-id attr), name (URL slug), price, oldPrice, image, url
-   - This MUST happen BEFORE add-to-cart (items disappear after add+reload)
-5. Check button #js-Delivery__Order-green-show-all:
-   5.1 Button VISIBLE → click → modal opens
-       5.1.1 Scroll modal + load more to get ALL items
-       5.1.2 Scrape products FROM MODAL (modal has all items, section Swiper only ~12)
-       5.1.3 Add all to cart
-       5.1.4 Close modal
-   5.2 Button HIDDEN (_hidden class, <5 items) → add inline items
-   5.3 Button NOT IN DOM → no new green items to add
-6. Reload page
-7. Cart scraping step uses pre-scraped data from step 4 + modal (ALWAYS runs)
-   - Green section is EMPTY after reload (items moved to regular cart)
-   - Items from this run OR from previous runs are counted
-8. If ALL items are "нет в наличии" → green price is gone (return empty)
-9. Close Chrome
+4. Add ALL green items to cart:
+   4.1 Check button #js-Delivery__Order-green-show-all:
+       - VISIBLE → click → modal opens
+         4.1.1 Scroll modal + click "load more" until all items loaded
+         4.1.2 Click "В корзину" on each card (by index, dismiss popups between clicks)
+         4.1.3 Close modal
+       - HIDDEN (_hidden class, <5 items) → add inline items from green section
+       - NOT IN DOM → if green section has items, add inline; otherwise skip
+5. Reload page
+6. Scrape from basket_recalc API (single source of truth)
+   - Call basket_recalc.php → get ALL items in cart
+   - Filter IS_GREEN=1 → these are the green products
+   - Extract: id, name, price, oldPrice, image, url, stock (MAX_Q), unit
+   - Enrich with build_basket_stock_map() for accurate stock/unit
+7. If ALL items are "нет в наличии" → green price is gone (return empty)
+8. Close Chrome
 
 📸 Screenshots saved at each step to logs/screenshots/green/
 ```
 
-> **Key insight**: After adding green items to cart + page reload, the `#js-Delivery__Order-green-state-not-empty` section becomes empty because items move to the regular cart. Therefore, scraping MUST happen before any cart modifications.
+> **Key insight**: After clicking "В корзину", items may stay in the green section OR disappear — we don't care. Our goal is that ALL "В корзину" buttons in the green section are gone (= all items added to cart). Then basket_recalc API returns everything with stock data.
 
-> Note: basket API (`basket_recalc.php`) is unreliable (times out).
-> DOM cart scraping from the green section is the primary source of green items.
+> The browser is only needed to ADD items to cart (click "В корзину"). After items are in cart, the API returns name, price, stock, image — everything.
 
 ## What Exists Already
 
