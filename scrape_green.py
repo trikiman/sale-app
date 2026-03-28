@@ -1029,7 +1029,8 @@ async def _fetch_basket_via_cdp(page) -> dict:
 
     basket = data.get('basket', {})
     if isinstance(basket, dict):
-        print(f"  [GREEN] CDP basket fetch: got {len(basket)} items")
+        pids = [str(v.get('PRODUCT_ID','')) for v in basket.values() if isinstance(v, dict)]
+        print(f"  [GREEN] CDP basket fetch: got {len(basket)} items (PIDs: {pids})")
         return basket
     return {}
 
@@ -1049,6 +1050,73 @@ async def _fetch_green_from_basket_async(page) -> tuple:
         return _extract_green_from_basket_dict(snapshot), build_basket_stock_map(snapshot)
 
     return [], {}
+
+
+async def _fetch_stock_per_product(page, products: list) -> int:
+    """Navigate to each product page and read stock from rendered DOM.
+    Returns count of products enriched."""
+    import nodriver
+    enriched = 0
+    original_url = None
+    try:
+        original_url = await _js(page, 'window.location.href')
+    except Exception:
+        pass
+
+    for p in products:
+        url = p.get('url', '')
+        if not url:
+            continue
+        try:
+            await page.get(url)
+            await asyncio.sleep(3)  # Wait for JS rendering
+            stock_text = await _js(page, r"""
+                (() => {
+                    // Priority 1: data-quantity attribute (most reliable on VkusVill)
+                    const qEl = document.querySelector('[data-quantity]');
+                    if (qEl) {
+                        const v = qEl.getAttribute('data-quantity');
+                        const elText = (qEl.innerText || '').trim();
+                        if (v && parseFloat(v) > 0) return elText || ('\u0412 \u043d\u0430\u043b\u0438\u0447\u0438\u0438 ' + v + ' \u0448\u0442');
+                    }
+                    // Priority 2: text search
+                    const text = document.body.innerText || '';
+                    const patterns = [
+                        /(?:\u0412 \u043d\u0430\u043b\u0438\u0447\u0438\u0438|\u0432 \u043d\u0430\u043b\u0438\u0447\u0438\u0438)[\s:]*([\d.,]+)\s*(\u0448\u0442|\u043a\u0433)/i,
+                        /(?:\u0417\u0430\u0432\u0442\u0440\u0430 \u0431\u0443\u0434\u0435\u0442|\u0437\u0430\u0432\u0442\u0440\u0430 \u0431\u0443\u0434\u0435\u0442)[\s:]*([\d.,]+)\s*(\u0448\u0442|\u043a\u0433)/i,
+                        /(?:\u041e\u0441\u0442\u0430\u043b\u043e\u0441\u044c|\u043e\u0441\u0442\u0430\u043b\u043e\u0441\u044c)[\s:]*([\d.,]+)\s*(\u0448\u0442|\u043a\u0433)/i
+                    ];
+                    for (const pat of patterns) {
+                        const m = text.match(pat);
+                        if (m) return m[0];
+                    }
+                    if (/\u041c\u0430\u043b\u043e|\u043c\u0430\u043b\u043e/.test(text)) return '\u041c\u0430\u043b\u043e';
+                    if (/\u0412 \u043d\u0430\u043b\u0438\u0447\u0438\u0438/i.test(text)) return '\u0412 \u043d\u0430\u043b\u0438\u0447\u0438\u0438';
+                    return null;
+                })()
+            """)
+            if stock_text:
+                parsed = parse_stock(str(stock_text))
+                if parsed and parsed not in (99,):
+                    p['stock'] = parsed
+                    enriched += 1
+                    print(f"    Page stock for {p.get('name','')[:30]}: {parsed} ('{stock_text[:40]}')")
+                elif not p.get('stock'):
+                    p['stock'] = 1
+                    print(f"    Page '{stock_text}' for {p.get('name','')[:30]} -> 1")
+            else:
+                print(f"    Page: no stock data for {p.get('name','')[:30]}")
+        except Exception as e:
+            print(f"    Page fetch failed for {p.get('name','')[:30]}: {e}")
+
+    # Navigate back to cart page
+    if original_url:
+        try:
+            await page.get(original_url)
+            await asyncio.sleep(3)
+        except Exception:
+            pass
+    return enriched
 
 
 async def scrape_green_prices_async():
@@ -1576,7 +1644,26 @@ async def scrape_green_prices_async():
                         if (idMatch) productId = idMatch[1];
                     }
 
-                    products.push({ id: productId, name, currentPrice, oldPrice, stockText: '', image, url });
+                    // Stock text: look for "В наличии X шт" or "X кг" on the card
+                    let stockText = '';
+                    const cardText = card.innerText || '';
+                    const stockPatterns = [
+                        /(?:В наличии|в наличии)[:\s]*([\d.,]+)\s*(шт|кг)/i,
+                        /(?:Осталось|осталось)\s*([\d.,]+)\s*(шт|кг)/i,
+                        /([\d.,]+)\s*(шт|кг)\s*(?:в наличии|осталось)/i
+                    ];
+                    for (const pat of stockPatterns) {
+                        const m = cardText.match(pat);
+                        if (m) {
+                            stockText = 'В наличии ' + m[1] + ' ' + m[2];
+                            break;
+                        }
+                    }
+                    if (!stockText && /(?:В наличии|Мало|мало)/i.test(cardText)) {
+                        stockText = 'В наличии';
+                    }
+
+                    products.push({ id: productId, name, currentPrice, oldPrice, stockText, image, url });
                 });
                 return products;
             })()
@@ -1584,6 +1671,9 @@ async def scrape_green_prices_async():
         if not isinstance(raw_products, list):
             raw_products = []
         print(f"  [GREEN] Green section: found {len(raw_products)} green items")
+        for rp in raw_products:
+            st = rp.get('stockText', '')
+            print(f"    → id={rp.get('id','?'):>6} {rp.get('name','')[:30]:30s} stockText='{st}'")
 
         # ── STEP 4 (button): Check green button #js-Delivery__Order-green-show-all ──
         # 3 states: VISIBLE → modal, HIDDEN → inline, NOT IN DOM → no new items
@@ -1899,8 +1989,9 @@ async def scrape_green_prices_async():
         # ── STEP 6: Enrich modal products with basket_recalc stock data ──
         # raw_products already has ALL green items from the modal DOM.
         # basket_recalc provides accurate stock/price — merge it IN, don't replace.
+        # Use async version: tries CDP (in-browser XHR) first, then falls back to httpx.
         print("  [GREEN] Step 6: Fetching stock data from basket_recalc API...")
-        basket_products = _fetch_green_from_basket() or []
+        basket_products, full_stock_map = await _fetch_green_from_basket_async(page)
         if basket_products:
             print(f"  [GREEN] Basket API: {len(basket_products)} products with stock data")
             # Build lookup by product ID
@@ -1927,7 +2018,13 @@ async def scrape_green_prices_async():
                     p['stockText'] = bp.get('stockText', '')
                     enriched += 1
                 else:
-                    # Not in basket — keep from DOM, mark stock as unknown
+                    # Not in green product list — try full stock map (all basket items)
+                    if pid and pid in full_stock_map:
+                        sm = full_stock_map[pid]
+                        if sm.get('value') and sm['value'] not in (0, 99):
+                            p['stock'] = sm['value']
+                            p['unit'] = sm.get('unit', 'шт')
+                            enriched += 1
                     if 'stock' not in p or p.get('stock') is None:
                         p['stock'] = 0
                     if 'can_buy' not in p:
@@ -1944,53 +2041,54 @@ async def scrape_green_prices_async():
                     new_from_basket += 1
             print(f"  [GREEN] Enriched {enriched}/{len(raw_products)} with basket stock, {new_from_basket} new from basket")
         else:
-            print("  [GREEN] ⚠️ Basket API returned 0 — keeping modal data without stock enrichment")
+            print("  [GREEN] ⚠️ No green items from basket — trying full stock map...")
+            sm_enriched = 0
             for p in raw_products:
+                pid = str(p.get('id', ''))
+                if pid and full_stock_map and pid in full_stock_map:
+                    sm = full_stock_map[pid]
+                    if sm.get('value') and sm['value'] not in (0, 99):
+                        p['stock'] = sm['value']
+                        p['unit'] = sm.get('unit', 'шт')
+                        sm_enriched += 1
                 if 'stock' not in p or p.get('stock') is None:
                     p['stock'] = 0
                 if 'can_buy' not in p:
                     p['can_buy'] = True
                 p['type'] = 'green'
+            if sm_enriched:
+                print(f"  [GREEN] Full stock map enriched {sm_enriched}/{len(raw_products)} items")
 
-        # ── STEP 6.5: DOM fallback for items still missing stock ──
-        # The cart page shows "В наличии X шт" for every item.
-        # Use _scrape_cart_stock_map to read stock from DOM for items basket API missed.
+        # ── STEP 6.5: Per-product stock fetch for items basket API missed ──
         missing_stock = [p for p in raw_products if not p.get('stock')]
         if missing_stock:
-            print(f"  [GREEN] Step 6.5: {len(missing_stock)} items still missing stock — trying cart DOM fallback...")
+            print(f"  [GREEN] Step 6.5: {len(missing_stock)} items missing stock — fetching per-product...")
             try:
-                # Scroll cart page to ensure all items are rendered
-                await _js(page, "window.scrollTo(0, document.body.scrollHeight)")
-                await asyncio.sleep(2)
-                dom_stock_map = await _scrape_cart_stock_map(page)
-                dom_filled = 0
-                for p in missing_stock:
-                    pid = str(p.get('id', ''))
-                    if pid and pid in dom_stock_map:
-                        sd = dom_stock_map[pid]
-                        if sd.get('value') and sd['value'] not in (99,):
-                            p['stock'] = sd['value']
-                            p['unit'] = sd.get('unit', p.get('unit', 'шт'))
-                            if sd.get('price') and sd['price'] != '1':
-                                p['currentPrice'] = sd['price']
-                            if sd.get('oldPrice'):
-                                p['oldPrice'] = sd['oldPrice']
-                            dom_filled += 1
-                            print(f"    DOM stock for {p.get('name','')[:30]}: {p['stock']} {p['unit']}")
-                print(f"  [GREEN] DOM fallback filled {dom_filled}/{len(missing_stock)} items")
+                xhr_filled = await _fetch_stock_per_product(page, missing_stock)
+                print(f"  [GREEN] Step 6.5: XHR enriched {xhr_filled}/{len(missing_stock)} items")
             except Exception as e:
-                print(f"  [GREEN] DOM fallback failed: {e}")
+                print(f"  [GREEN] Step 6.5 XHR failed: {e}")
 
-        # ── STEP 6.9: Last resort — green items on the page ARE available ──
-        # If still stock=0 after all enrichment, default to 1
-        # (being on the green page is proof the item exists and can be bought)
+        # ── STEP 6.9: Last resort — parse stockText from card, or default to 1 ──
+        # Green cards show "В наличии X шт" — parse that before defaulting
         still_missing = [p for p in raw_products if not p.get('stock')]
         if still_missing:
+            parsed_count = 0
+            default_count = 0
             for p in still_missing:
-                p['stock'] = 1
+                # Try stockText first (captured from card in Step 4)
+                st = p.get('stockText', '')
+                parsed = parse_stock(st) if st else 0
+                if parsed and parsed not in (99,):
+                    p['stock'] = parsed
+                    parsed_count += 1
+                    print(f"  [GREEN] Parsed stock from card text: {p.get('name','')[:30]} → {parsed}")
+                else:
+                    p['stock'] = 1  # being on green page = available
+                    default_count += 1
                 if not p.get('unit'):
                     p['unit'] = 'шт'
-            print(f"  [GREEN] Step 6.9: Defaulted {len(still_missing)} items to stock=1 (available on green page)")
+            print(f"  [GREEN] Step 6.9: {parsed_count} from card text, {default_count} defaulted to 1")
 
         section_found = green_button != 'not_in_dom'
 
