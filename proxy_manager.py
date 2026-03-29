@@ -26,6 +26,7 @@ except ImportError:
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 CACHE_FILE = os.path.join(DATA_DIR, "working_proxies.json")
+EVENTS_FILE = os.path.join(DATA_DIR, "proxy_events.jsonl")
 
 # SOCKS5 proxy list (proxifly has ~43% success rate for VkusVill)
 SOCKS5_LIST_URLS = [
@@ -53,6 +54,21 @@ class ProxyManager:
     def __init__(self, log_func=None):
         self._log = log_func or (lambda msg: print(f"  [PROXY] {msg}"))
         self._cache = self._load_cache()
+
+    def _track_event(self, event_type: str, data: dict | None = None):
+        """Append a proxy event to the JSONL log for historical stats."""
+        entry = {
+            "ts": datetime.now().isoformat(),
+            "event": event_type,
+        }
+        if data:
+            entry.update(data)
+        try:
+            os.makedirs(DATA_DIR, exist_ok=True)
+            with open(EVENTS_FILE, "a", encoding="utf-8") as f:
+                f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        except Exception:
+            pass  # Don't crash on stats write failure
 
     # ── Public API ──────────────────────────────────────────────
 
@@ -103,6 +119,7 @@ class ProxyManager:
         if before != after:
             self._save_cache()
             self._log(f"Removed dead proxy {addr} ({after} remaining in pool)")
+            self._track_event("removed", {"addr": addr, "pool_after": after})
         if after < MIN_HEALTHY:
             self._log(f"Pool below {MIN_HEALTHY} — will refresh on next use")
 
@@ -224,6 +241,12 @@ class ProxyManager:
             "proxies": diverse,
         }
         self._save_cache()
+        # Track the refresh event
+        self._track_event("refresh", {
+            "tested": tested,
+            "found": len(working),
+            "pool_size": len(diverse),
+        })
         # Log subnet distribution
         if subnet_counts:
             dist = ', '.join(f"{s}:×{c}" for s, c in sorted(subnet_counts.items(), key=lambda x: -x[1])[:5])
@@ -340,8 +363,12 @@ class ProxyManager:
         Returns (addr, speed) or None. Rejects MITM proxies."""
         start = time.time()
         if self._probe_vkusvill(proxy_addr, verify_ssl=True):
-            return (proxy_addr, time.time() - start)
-        return None
+            speed = time.time() - start
+            self._track_event("found", {"addr": proxy_addr, "speed": round(speed, 2)})
+            return (proxy_addr, speed)
+        else:
+            self._track_event("test_fail", {"addr": proxy_addr})
+            return None
 
     def _load_cache(self) -> dict:
         """Load cached proxies from disk."""
@@ -356,6 +383,93 @@ class ProxyManager:
         os.makedirs(DATA_DIR, exist_ok=True)
         with open(CACHE_FILE, "w", encoding="utf-8") as f:
             json.dump(self._cache, f, indent=2)
+
+    @staticmethod
+    def get_event_stats() -> dict:
+        """Aggregate proxy events from JSONL log into day/week/month stats."""
+        from collections import defaultdict
+
+        now = datetime.now()
+        periods = {
+            "today": 1,
+            "week": 7,
+            "month": 30,
+        }
+
+        # Initialize counters
+        stats = {}
+        for period in periods:
+            stats[period] = {
+                "found": 0,
+                "removed": 0,
+                "test_fail": 0,
+                "refresh": 0,
+                "refresh_tested": 0,
+            }
+
+        recent_events = []  # last 20 events for display
+
+        try:
+            with open(EVENTS_FILE, "r", encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entry = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+
+                    ts_str = entry.get("ts", "")
+                    try:
+                        ts = datetime.fromisoformat(ts_str)
+                    except (ValueError, TypeError):
+                        continue
+
+                    age_days = (now - ts).total_seconds() / 86400
+                    event = entry.get("event", "")
+
+                    for period, max_days in periods.items():
+                        if age_days <= max_days:
+                            if event == "found":
+                                stats[period]["found"] += 1
+                            elif event == "removed":
+                                stats[period]["removed"] += 1
+                            elif event == "test_fail":
+                                stats[period]["test_fail"] += 1
+                            elif event == "refresh":
+                                stats[period]["refresh"] += 1
+                                stats[period]["refresh_tested"] += entry.get("tested", 0)
+
+                    # Keep last 20 events
+                    recent_events.append({
+                        "ts": ts_str,
+                        "event": event,
+                        "addr": entry.get("addr", ""),
+                        "speed": entry.get("speed"),
+                        "pool_after": entry.get("pool_after"),
+                        "pool_size": entry.get("pool_size"),
+                    })
+
+        except FileNotFoundError:
+            pass
+        except Exception:
+            pass
+
+        # For each period, compute success rate
+        for period in periods:
+            total_tests = stats[period]["found"] + stats[period]["test_fail"]
+            if total_tests > 0:
+                stats[period]["success_rate"] = round(
+                    stats[period]["found"] / total_tests * 100, 1
+                )
+            else:
+                stats[period]["success_rate"] = None
+
+        return {
+            "periods": stats,
+            "recent": recent_events[-20:],
+        }
 
 
 # ── CLI test ──────────────────────────────────────────────────

@@ -210,10 +210,35 @@
       border: 1px solid #334155;
       border-radius: 8px;
       padding: 12px;
-      height: 300px;
+      height: 400px;
       overflow-y: auto;
       white-space: pre-wrap;
       color: #94a3b8;
+    }
+
+    /* Log filter buttons */
+    .log-filters {
+      display: flex;
+      gap: 4px;
+      flex-wrap: wrap;
+      margin-bottom: 8px;
+    }
+    .log-filter-btn {
+      padding: 3px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid #475569;
+      background: transparent;
+      color: #94a3b8;
+      transition: all .15s;
+    }
+    .log-filter-btn:hover { background: #334155; }
+    .log-filter-btn.active {
+      background: #2563eb;
+      color: #fff;
+      border-color: #2563eb;
     }
 
     /* Status row */
@@ -391,7 +416,9 @@
               <tr style="border-bottom:1px solid #334155; color:#64748b; text-align:left">
                 <th style="padding:6px 8px">#</th>
                 <th style="padding:6px 8px">IP:Port</th>
+                <th style="padding:6px 8px">Протокол</th>
                 <th style="padding:6px 8px">Скорость</th>
+                <th style="padding:6px 8px">Статус</th>
                 <th style="padding:6px 8px">Протестирован</th>
               </tr>
             </thead>
@@ -399,18 +426,50 @@
           </table>
         </div>
         <div id="proxy-empty" class="text-muted mt2 hidden" style="text-align:center">Пул пуст — прокси не найдены</div>
+
+        <!-- Proxy History Stats -->
+        <div style="margin-top:14px">
+          <h2 style="margin-bottom:8px">📊 История прокси</h2>
+          <div style="overflow-x:auto">
+            <table style="width:100%; border-collapse:collapse; font-size:12px">
+              <thead>
+                <tr style="border-bottom:1px solid #334155; color:#64748b; text-align:center">
+                  <th style="padding:6px 8px; text-align:left"></th>
+                  <th style="padding:6px 8px">✅ Найдено</th>
+                  <th style="padding:6px 8px">❌ Удалено</th>
+                  <th style="padding:6px 8px">⚠️ Провалено</th>
+                  <th style="padding:6px 8px">🔄 Обновлений</th>
+                  <th style="padding:6px 8px">📊 Успех %</th>
+                </tr>
+              </thead>
+              <tbody id="proxy-history-tbody">
+                <tr><td colspan="6" style="text-align:center; padding:12px; color:#475569">Загрузка...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </div>
 
       <!-- Logs -->
       <div class="card">
         <div class="row" style="justify-content:space-between; margin-bottom:10px">
-          <h2 style="margin:0">📋 Логи (последние 100 строк)</h2>
+          <h2 style="margin:0">📋 Логи</h2>
           <div class="row">
             <button class="btn btn-gray btn-sm" onclick="loadLogs()">🔄 Обновить</button>
             <button class="btn btn-gray btn-sm" onclick="clearLog()">🗑 Очистить</button>
           </div>
         </div>
+        <div class="log-filters">
+          <button class="log-filter-btn active" data-filter="all" onclick="setLogFilter('all', this)">📋 Все</button>
+          <button class="log-filter-btn" data-filter="green" onclick="setLogFilter('green', this)">🟢 Green</button>
+          <button class="log-filter-btn" data-filter="red" onclick="setLogFilter('red', this)">🔴 Red</button>
+          <button class="log-filter-btn" data-filter="yellow" onclick="setLogFilter('yellow', this)">🟡 Yellow</button>
+          <button class="log-filter-btn" data-filter="merge" onclick="setLogFilter('merge', this)">🔀 Merge</button>
+          <button class="log-filter-btn" data-filter="notif" onclick="setLogFilter('notif', this)">🔔 Notif</button>
+          <button class="log-filter-btn" data-filter="error" onclick="setLogFilter('error', this)">❌ Errors</button>
+        </div>
         <div id="log">Нажмите «Обновить» чтобы загрузить логи...</div>
+        <div id="log-count" class="text-muted mt2" style="text-align:right"></div>
       </div>
 
     </div><!-- /dashboard -->
@@ -445,6 +504,7 @@
           startAutoRefresh();
           loadLogs();
           loadProxyStats();
+          loadProxyHistory();
         })
         .catch(function (err) {
           var errEl = document.getElementById('auth-error');
@@ -554,24 +614,60 @@
         });
     }
 
+    var allLogLines = [];
+    var currentLogFilter = 'all';
+
     function loadLogs() {
-      fetch('/admin/logs?n=100', { headers: { 'X-Admin-Token': token } })
+      fetch('/admin/logs?n=300', { headers: { 'X-Admin-Token': token } })
         .then(function (r) {
           if (!r.ok) throw new Error(r.status);
           return r.json();
         })
         .then(function (data) {
-          var logEl = document.getElementById('log');
-          logEl.textContent = data.lines.join('\n') || '(Логов пока нет)';
-          logEl.scrollTop = logEl.scrollHeight;
+          allLogLines = data.lines || [];
+          applyLogFilter();
         })
         .catch(function (e) {
           document.getElementById('log').textContent = '⚠️ Ошибка загрузки логов: ' + e.message;
         });
     }
 
+    function setLogFilter(filter, btn) {
+      currentLogFilter = filter;
+      // Update active button
+      var btns = document.querySelectorAll('.log-filter-btn');
+      for (var i = 0; i < btns.length; i++) btns[i].classList.remove('active');
+      if (btn) btn.classList.add('active');
+      applyLogFilter();
+    }
+
+    function applyLogFilter() {
+      var logEl = document.getElementById('log');
+      var countEl = document.getElementById('log-count');
+      var filtered = allLogLines;
+      if (currentLogFilter !== 'all') {
+        var kw = currentLogFilter.toUpperCase();
+        if (currentLogFilter === 'error') {
+          filtered = allLogLines.filter(function(l) {
+            var up = l.toUpperCase();
+            return up.indexOf('ERROR') !== -1 || up.indexOf('FAIL') !== -1
+              || up.indexOf('EXCEPTION') !== -1 || up.indexOf('TIMEOUT') !== -1
+              || up.indexOf('❌') !== -1;
+          });
+        } else {
+          filtered = allLogLines.filter(function(l) {
+            return l.toUpperCase().indexOf(kw) !== -1;
+          });
+        }
+      }
+      logEl.textContent = filtered.join('\n') || '(Нет логов для этого фильтра)';
+      logEl.scrollTop = logEl.scrollHeight;
+      countEl.textContent = filtered.length + ' / ' + allLogLines.length + ' строк';
+    }
+
     function clearLog() {
       document.getElementById('log').textContent = '(очищено)';
+      document.getElementById('log-count').textContent = '';
     }
 
     function appendLog(line) {
@@ -729,9 +825,14 @@
                 ? (p.tested_ago_min < 60 ? Math.round(p.tested_ago_min) + ' мин. назад' : Math.round(p.tested_ago_min / 60) + ' ч. назад')
                 : '—';
 
+              var proto = p.protocol || 'socks5';
+              var protoColor = proto === 'socks5' ? '#818cf8' : (proto === 'http' ? '#4ade80' : '#94a3b8');
+              var statusText = p.alive !== undefined ? (p.alive ? '✅' : '❌') : '—';
               tr.innerHTML = '<td style="padding:5px 8px; color:#64748b">' + (i + 1) + '</td>'
                 + '<td style="padding:5px 8px; color:#e2e8f0">' + p.addr + '</td>'
+                + '<td style="padding:5px 8px; color:' + protoColor + '">' + proto.toUpperCase() + '</td>'
                 + '<td style="padding:5px 8px; color:' + speedColor + '; font-weight:600">' + p.speed + 's</td>'
+                + '<td style="padding:5px 8px">' + statusText + '</td>'
                 + '<td style="padding:5px 8px; color:#64748b">' + ageText + '</td>';
               tbody.appendChild(tr);
             }
@@ -739,6 +840,40 @@
         })
         .catch(function() {
           document.getElementById('proxy-count').textContent = '⚠ Ошибка загрузки';
+        });
+    }
+
+    function loadProxyHistory() {
+      fetch('/admin/proxy-history', { headers: { 'X-Admin-Token': token } })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          var tbody = document.getElementById('proxy-history-tbody');
+          tbody.innerHTML = '';
+          var periods = data.periods || {};
+          var labels = { today: '📅 Сегодня', week: '📆 Неделя', month: '🗓 Месяц' };
+          var keys = ['today', 'week', 'month'];
+          for (var i = 0; i < keys.length; i++) {
+            var k = keys[i];
+            var s = periods[k];
+            if (!s) continue;
+            var rateText = s.success_rate !== null ? s.success_rate + '%' : '—';
+            var rateColor = !s.success_rate ? '#64748b' : (s.success_rate > 30 ? '#4ade80' : (s.success_rate > 10 ? '#fbbf24' : '#f87171'));
+            var tr = document.createElement('tr');
+            tr.style.borderBottom = '1px solid #1e293b';
+            tr.innerHTML = '<td style="padding:6px 8px; color:#cbd5e1; font-weight:600">' + labels[k] + '</td>'
+              + '<td style="padding:6px 8px; text-align:center; color:#4ade80; font-weight:600">' + (s.found || 0) + '</td>'
+              + '<td style="padding:6px 8px; text-align:center; color:#f87171; font-weight:600">' + (s.removed || 0) + '</td>'
+              + '<td style="padding:6px 8px; text-align:center; color:#fbbf24">' + (s.test_fail || 0) + '</td>'
+              + '<td style="padding:6px 8px; text-align:center; color:#818cf8">' + (s.refresh || 0) + '</td>'
+              + '<td style="padding:6px 8px; text-align:center; color:' + rateColor + '; font-weight:600">' + rateText + '</td>';
+            tbody.appendChild(tr);
+          }
+          if (keys.length === 0 || !periods.today) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:12px; color:#475569">Нет данных — статистика начнёт собираться</td></tr>';
+          }
+        })
+        .catch(function() {
+          document.getElementById('proxy-history-tbody').innerHTML = '<tr><td colspan="6" style="text-align:center; padding:12px; color:#f87171">Ошибка загрузки</td></tr>';
         });
     }
 

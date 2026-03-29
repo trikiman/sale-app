@@ -3252,10 +3252,26 @@ def admin_get_logs(
     n: int = Query(100, ge=1, le=300),
     token: Optional[str] = Header(None, alias="X-Admin-Token"),
 ):
-    """Return last N log lines."""
+    """Return last N log lines from scheduler.log + in-memory buffer."""
     _require_token(token)
-    lines = list(log_buffer)[-n:]
-    return {"lines": lines, "total": len(log_buffer)}
+    lines = []
+    # Primary source: scheduler.log (where the scheduler service writes)
+    scheduler_log = os.path.join(BASE_PROJECT_DIR, "logs", "scheduler.log")
+    if os.path.exists(scheduler_log):
+        try:
+            with open(scheduler_log, "r", encoding="utf-8", errors="replace") as f:
+                # Read last N lines efficiently
+                all_lines = f.readlines()
+                lines = [l.rstrip() for l in all_lines[-n:]]
+        except Exception:
+            pass
+    # Supplement with in-memory buffer (from admin-triggered runs)
+    buffer_lines = list(log_buffer)
+    if buffer_lines:
+        lines.extend(buffer_lines[-n:])
+    # Return last N combined
+    lines = lines[-n:]
+    return {"lines": lines, "total": len(lines)}
 
 
 @app.get("/admin/proxy-stats")
@@ -3298,6 +3314,8 @@ def admin_proxy_stats(
         proxies_out.append({
             "addr": p.get("addr", "?"),
             "speed": round(p.get("speed", 0), 2),
+            "protocol": p.get("protocol", p.get("proto", "socks5")),
+            "alive": p.get("alive", True),
             "tested_ago_min": tested_ago,
             "tested_at": p.get("tested_at", "?"),
         })
@@ -3310,6 +3328,21 @@ def admin_proxy_stats(
         "last_refresh": last_refresh,
         "proxies": proxies_out,
     }
+
+
+@app.get("/admin/proxy-history")
+def admin_proxy_history(
+    token: Optional[str] = Header(None, alias="X-Admin-Token"),
+):
+    """Return historical proxy stats (found/removed/timeouts per day/week/month)."""
+    _require_token(token)
+    try:
+        import sys
+        sys.path.insert(0, BASE_PROJECT_DIR)
+        from proxy_manager import ProxyManager
+        return ProxyManager.get_event_stats()
+    except Exception as e:
+        return {"error": str(e), "periods": {}, "recent": []}
 
 
 # ─── Admin Panel (HTML served from backend/admin.html) ───────────────────────
