@@ -1105,8 +1105,12 @@ function App() {
           </div>
         )}
 
-        {/* Green staleness warning — shown when live page count differs by more than 2 */}
-        {greenLiveCount !== null && greenLiveCount > 0 && Math.abs(countGreen - greenLiveCount) > 2 && (
+        {/* Green staleness warning — shown when our green count is suspiciously low vs live site count.
+            greenLiveCount = total green items on VkusVill page (~150-200)
+            countGreen = our curated subset (filters by IS_GREEN, availability, etc.)
+            Normal ratio is 10-30%. Warn only if we have <10% OR zero when live has items. */}
+        {greenLiveCount !== null && greenLiveCount > 0 && countGreen > 0 &&
+         (countGreen / greenLiveCount) < 0.05 && (
           <motion.div
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -1114,7 +1118,7 @@ function App() {
           >
             <div className="font-bold text-sm">⚠️ Зелёные ценники могли устареть</div>
             <div className="text-xs opacity-70 mt-0.5">
-              На сайте {greenLiveCount} товаров, у нас {countGreen} — данные могли устареть
+              На сайте {greenLiveCount} товаров, у нас {countGreen} — возможно скрапер не собрал все данные
             </div>
             {scraperDone ? (
               <div className="mt-2 text-xs text-green-400 font-medium">
