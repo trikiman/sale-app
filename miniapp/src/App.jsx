@@ -6,13 +6,10 @@ import { buildCategoryRunView } from './categoryRunStatus'
 import { getCardMetaBadges, mergeResolvedWeights, shouldFetchMissingWeight } from './productMeta'
 import './index.css'
 
-// Proxy VkusVill CDN images through backend to bypass browser Private Network Access policy
+// VkusVill CDN images are public — load directly (no proxy needed).
+// referrerPolicy="no-referrer" on <img> tags prevents referer-based blocking.
 function proxyImg(url) {
-  if (!url) return url
-  if (url.includes('img.vkusvill.ru')) {
-    return `/api/img?url=${encodeURIComponent(url)}`
-  }
-  return url
+  return url || ''
 }
 
 // Emoji lookup for known categories

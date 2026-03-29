@@ -1,13 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 
-// Proxy VkusVill CDN images through backend
+// VkusVill CDN images are public — load directly
 function proxyImg(url) {
-  if (!url) return url
-  if (url.includes('img.vkusvill.ru')) {
-    return `/api/img?url=${encodeURIComponent(url)}`
-  }
-  return url
+  return url || ''
 }
 
 export default function CartPanel({ isOpen, onClose, userId }) {
