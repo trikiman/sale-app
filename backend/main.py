@@ -3216,9 +3216,26 @@ def admin_run_scraper(
     }
 
     if scraper == "all":
-        for name in ["green", "red", "yellow"]:
-            background_tasks.add_task(_run_script, name, script_map[name])
-        return {"started": ["green", "red", "yellow"], "message": "All scrapers queued"}
+        # BACK-01 / BUG-046: Run all scrapers then merge ONCE after all complete.
+        # Previously each ran independently with no merge.
+        def run_all_with_merge():
+            succeeded = []
+            for name in ["green", "red", "yellow"]:
+                _run_script(name, script_map[name])
+                # Wait for completion
+                while scraper_status[name]["running"]:
+                    _time.sleep(0.2)
+                if scraper_status[name].get("exit_code") == 0:
+                    succeeded.append(name)
+            # Merge if at least one scraper succeeded
+            if succeeded:
+                _run_script("merge", script_map["merge"])
+                log_buffer.append(f"[all] Auto-merge after {len(succeeded)}/3 scrapers: {succeeded}")
+            else:
+                log_buffer.append("[all] Skipping merge — all scrapers failed")
+
+        background_tasks.add_task(run_all_with_merge)
+        return {"started": ["green", "red", "yellow"], "message": "All scrapers queued (auto-merge on completion)"}
 
     if scraper not in script_map:
         raise HTTPException(
