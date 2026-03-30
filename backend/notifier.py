@@ -75,7 +75,11 @@ class Notifier:
         return data.get('products', [])
     
     def detect_new_products(self) -> list:
-        """Detect new products that haven't been seen before"""
+        """Detect new products that haven't been seen before.
+        
+        NOTE (BOT-04): Does NOT mark products as seen — caller must call
+        mark_all_products_seen() after all per-user notifications are sent.
+        """
         products = self.load_products()
         if not products:
             return []
@@ -83,12 +87,14 @@ class Notifier:
         product_ids = [p['id'] for p in products]
         new_ids = self.db.get_new_products(product_ids)
         
-        # Mark all products as seen
+        # Return only new products (don't mark as seen yet — BOT-04 fix)
+        return [p for p in products if p['id'] in new_ids]
+    
+    def mark_all_products_seen(self):
+        """Mark all current products as seen. Call AFTER all notifications."""
+        products = self.load_products()
         for product in products:
             self.db.mark_product_seen(product['id'])
-        
-        # Return only new products
-        return [p for p in products if p['id'] in new_ids]
     
     def get_favorite_alerts(self) -> dict:
         """Check if any user's favorites are now available"""
@@ -232,6 +238,9 @@ class Notifier:
         
         # Notify users about favorites
         fav_count = await self.notify_favorites()
+        
+        # NOW mark all products as seen (BOT-04: after all users notified)
+        self.mark_all_products_seen()
         
         # Cleanup old data
         self.db.cleanup_old_data(days=7)

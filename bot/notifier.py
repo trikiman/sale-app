@@ -136,24 +136,19 @@ class Notifier:
                 if not favorites:
                     continue
                 
-                # Get favorite category slugs
-                favorite_slugs = set()
+                # BUG-056 / BOT-05: Use exact category name matching
+                # (was fuzzy slug-word matching which caused false positives)
+                favorite_names = set()
                 for fav in favorites:
                     if fav.category_key in config.CATEGORIES:
-                        favorite_slugs.add(config.CATEGORIES[fav.category_key]['slug'])
-                        favorite_slugs.add(config.CATEGORIES[fav.category_key]['name'].lower())
+                        favorite_names.add(config.CATEGORIES[fav.category_key]['name'].lower())
                 
-                # Filter products matching user's favorites
+                # Filter products matching user's favorites (exact match)
                 matching = []
                 for product in products:
                     product_category_lower = product.category.lower()
-                    
-                    for slug in favorite_slugs:
-                        # Fuzzy match on category
-                        slug_words = slug.replace('-', ' ').split()
-                        if any(word in product_category_lower for word in slug_words):
-                            matching.append(product)
-                            break
+                    if product_category_lower in favorite_names:
+                        matching.append(product)
                 
                 if matching:
                     # Check for new products
