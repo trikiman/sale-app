@@ -15,7 +15,7 @@ Requirements for this bug fix milestone. Each maps to roadmap phases.
 
 ### Scraper Accuracy
 
-- [ ] **SCRP-07**: Green scraper captures ≥90% of items shown on live VkusVill green section (BUG-067)
+- [x] **SCRP-07**: Green scraper captures ≥90% of items shown on live VkusVill green section (BUG-067)
 - [x] **SCRP-08**: Stock data shows real quantity, not placeholder 99, for all green products (BUG-068)
 - [x] **SCRP-09**: Category scraper assigns categories deterministically (first-write-wins within a run) (BUG-053)
 
@@ -82,7 +82,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | UX-09 | Phase 5 | Complete |
 | UX-10 | Phase 5 | Complete |
 | BACK-01 | Phase 6 | Complete |
-| SCRP-07 | Phase 9 | Pending |
+| SCRP-07 | Phase 9 | Complete |
 
 **Coverage:**
 - v1 requirements: 14 total
