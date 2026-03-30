@@ -9,8 +9,8 @@ Requirements for this bug fix milestone. Each maps to roadmap phases.
 
 ### Security
 
-- [ ] **SEC-06**: Favorites endpoints validate user identity via Telegram initData HMAC or X-Telegram-User-Id header match (BUG-038)
-- [ ] **SEC-07**: Cart endpoints validate user identity via Telegram initData HMAC or X-Telegram-User-Id header match (BUG-039)
+- [x] **SEC-06**: Favorites endpoints validate user identity via Telegram initData HMAC or X-Telegram-User-Id header match (BUG-038)
+- [x] **SEC-07**: Cart endpoints validate user identity via Telegram initData HMAC or X-Telegram-User-Id header match (BUG-039)
 - [ ] **SEC-08**: Frontend sends Telegram initData in Authorization header when running as MiniApp
 
 ### Scraper Accuracy
@@ -68,8 +68,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SEC-06 | Phase 1 | Pending |
-| SEC-07 | Phase 1 | Pending |
+| SEC-06 | Phase 1 | Complete |
+| SEC-07 | Phase 1 | Complete |
 | SEC-08 | Phase 1 | Pending |
 | SCRP-07 | Phase 2 | Pending |
 | SCRP-08 | Phase 2 | Pending |
