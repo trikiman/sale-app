@@ -29,7 +29,7 @@ export default function CartPanel({ isOpen, onClose, userId }) {
                 return res.json()
             })
             .then(data => {
-                const newItems = data.items || []
+                const newItems = (data.items || []).filter(item => item.quantity > 0)
                 setItems(newItems)
                 setTotalPrice(data.total_price || 0)
                 setItemsCount(data.items_count || 0)

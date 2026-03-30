@@ -1140,7 +1140,7 @@ function App() {
                       setTokenInputValue('')
                       setScraperRunning(true)
                       fetch('/api/admin/run/green', { method: 'POST', headers: { 'X-Admin-Token': t } })
-                        .then(r => r.status === 403 ? (localStorage.removeItem('vv_admin_token'), null) : r.json())
+                        .then(r => { if (r.status === 403) { localStorage.removeItem('vv_admin_token'); setScraperRunning(false); setShowTokenInput(true); return null } return r.json() })
                         .then(data => { if (data) { setScraperRunning(false); setScraperDone(true) } })
                         .catch(() => setScraperRunning(false))
                     }
@@ -1159,7 +1159,7 @@ function App() {
                     setTokenInputValue('')
                     setScraperRunning(true)
                     fetch('/api/admin/run/green', { method: 'POST', headers: { 'X-Admin-Token': t } })
-                      .then(r => r.status === 403 ? (localStorage.removeItem('vv_admin_token'), null) : r.json())
+                      .then(r => { if (r.status === 403) { localStorage.removeItem('vv_admin_token'); setScraperRunning(false); setShowTokenInput(true); return null } return r.json() })
                       .then(data => { if (data) { setScraperRunning(false); setScraperDone(true) } })
                       .catch(() => setScraperRunning(false))
                   }}
@@ -1364,7 +1364,7 @@ function App() {
       <div className={`product-grid ${viewMode === 'list' ? 'list-view' : ''}`}>
           {filteredProducts.map((product, index) => (
             <ProductCard
-              key={product.id}
+              key={`${product.id}-${product.type}`}
               product={product}
               index={index}
               isFavorite={favorites.has(product.id)}
@@ -1381,6 +1381,7 @@ function App() {
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
+            transition={{ delay: 0.3 }}
             className="text-center py-8 opacity-60"
             style={{ gridColumn: '1 / -1' }}
           >

@@ -931,6 +931,41 @@ body {
   color: #475569;
 }
 
+/* UX-06: Light theme fixes for elements with hardcoded dark-mode colors */
+[data-theme="light"] .view-toggle-group {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+[data-theme="light"] .view-toggle-btn:hover:not(.active) {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .login-toggle-track {
+  background: rgba(0, 0, 0, 0.12);
+}
+
+[data-theme="light"] .login-info-btn {
+  background: rgba(0, 0, 0, 0.06);
+  border-color: rgba(0, 0, 0, 0.12);
+}
+
+[data-theme="light"] .login-info-btn:hover {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="light"] .login-info-tooltip {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+[data-theme="light"] .login-loading-hint {
+  color: #dc2626;
+}
+
+[data-theme="light"] .card-fav-btn {
+  background: rgba(255, 255, 255, 0.8);
+  color: #374151;
+}
+
 .min-h-screen {
   min-height: 100vh;
 }
