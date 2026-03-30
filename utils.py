@@ -335,7 +335,7 @@ def normalize_category(raw_cat, product_name, product_id=None):
 def parse_stock(text):
     """
     Extracts stock count from text like "В наличии 5 шт" or "В наличии: 0.41 кг".
-    Returns float for kg items, int for шт items, 99 if valid but no number, or 0 if OOS.
+    Returns float for kg items, int for шт items, 3 for 'мало', 1 for 'в наличии' without number, or 0 if OOS.
     """
     if not text:
         return 0

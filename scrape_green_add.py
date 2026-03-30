@@ -89,77 +89,91 @@ def _green_card_scope_expr(card_source: str) -> str:
 # ── Add to cart (batch JS) ───────────────────────────────────────────────────
 
 async def _add_green_cards_to_cart(page, card_source: str, total_cards: int):
-    """Click 'В корзину' on every green card in a single JS batch."""
+    """Click 'В корзину' on every green card in batches with delays."""
     scope_expr = _green_card_scope_expr(card_source)
+    BATCH_SIZE = 10
+    total_added = 0
+    total_already = 0
+    total_no_button = 0
+    total_no_card = 0
 
-    result_json = await js(page, f"""
-        (() => {{
-            const results = {{no_scope: 0, no_card: 0, already_in_cart: 0, added: 0, no_button: 0}};
-            const scope = {scope_expr};
-            if (!scope) return JSON.stringify({{results, added: 0}});
-            const cards = scope.querySelectorAll('.ProductCard, .ProductCards__item');
-            let addedCount = 0;
-            for (let i = 0; i < {total_cards}; i++) {{
-                const card = cards[i];
-                if (!card) {{ results.no_card++; continue; }}
-                if (card.querySelector('.ProductCard__quantityControl, [class*="quantityControl"]')) {{
-                    results.already_in_cart++;
-                    continue;
-                }}
-                card.scrollIntoView({{behavior: 'instant', block: 'center'}});
-                let clicked = false;
-                const btns = card.querySelectorAll('button');
-                for (const btn of btns) {{
-                    if (btn.disabled) continue;
-                    const text = (btn.innerText || '').toLowerCase().trim();
-                    if (text.includes('в корзину') || text.includes('корзин') || text.includes('добавить') || text.includes('доставить')) {{
-                        btn.click();
-                        clicked = true;
-                        break;
+    for batch_start in range(0, total_cards, BATCH_SIZE):
+        batch_end = min(batch_start + BATCH_SIZE, total_cards)
+        result_json = await js(page, f"""
+            (() => {{
+                const results = {{no_card: 0, already_in_cart: 0, added: 0, no_button: 0}};
+                const scope = {scope_expr};
+                if (!scope) return JSON.stringify(results);
+                const cards = scope.querySelectorAll('.ProductCard, .ProductCards__item');
+                for (let i = {batch_start}; i < {batch_end}; i++) {{
+                    const card = cards[i];
+                    if (!card) {{ results.no_card++; continue; }}
+                    if (card.querySelector('.ProductCard__quantityControl, [class*="quantityControl"]')) {{
+                        results.already_in_cart++;
+                        continue;
+                    }}
+                    card.scrollIntoView({{behavior: 'instant', block: 'center'}});
+                    let clicked = false;
+                    const btns = card.querySelectorAll('button');
+                    for (const btn of btns) {{
+                        if (btn.disabled) continue;
+                        const text = (btn.innerText || '').toLowerCase().trim();
+                        if (text.includes('в корзину') || text.includes('корзин') || text.includes('добавить') || text.includes('доставить')) {{
+                            btn.click();
+                            clicked = true;
+                            break;
+                        }}
+                    }}
+                    if (!clicked) {{
+                        const cssBtn = card.querySelector(
+                            '.js-delivery__basket--add, .CartButton__content--add, .CartButton__content, ' +
+                            '.ProductCard__add, .ProductCard__addToCart'
+                        );
+                        if (cssBtn) {{ cssBtn.click(); clicked = true; }}
+                    }}
+                    if (clicked) {{
+                        results.added++;
+                    }} else {{
+                        results.no_button++;
+                    }}
+                    // Dismiss popups inline (sync)
+                    const modals = document.querySelectorAll('[class*="Modal"]');
+                    for (const m of modals) {{
+                        if (m.id === 'js-modal-cart-prods-scroll') continue;
+                        const txt = m.innerText || '';
+                        if (txt.includes('Уже работаем') || txt.includes('похожие товары')) {{
+                            const close = m.querySelector('[class*="close"], [class*="Close"]');
+                            if (close) close.click();
+                        }}
                     }}
                 }}
-                if (!clicked) {{
-                    const cssBtn = card.querySelector(
-                        '.js-delivery__basket--add, .CartButton__content--add, .CartButton__content, ' +
-                        '.ProductCard__add, .ProductCard__addToCart'
-                    );
-                    if (cssBtn) {{ cssBtn.click(); clicked = true; }}
-                }}
-                if (clicked) {{
-                    results.added++;
-                    addedCount++;
-                }} else {{
-                    results.no_button++;
-                }}
-                // Dismiss popups inline (sync)
-                const modals = document.querySelectorAll('[class*="Modal"]');
-                for (const m of modals) {{
-                    if (m.id === 'js-modal-cart-prods-scroll') continue;
-                    const txt = m.innerText || '';
-                    if (txt.includes('Уже работаем') || txt.includes('похожие товары')) {{
-                        const close = m.querySelector('[class*="close"], [class*="Close"]');
-                        if (close) close.click();
-                    }}
-                }}
-            }}
-            return JSON.stringify({{results, added: addedCount}});
-        }})()
-    """)
+                return JSON.stringify(results);
+            }})()
+        """)
 
-    try:
-        if isinstance(result_json, str):
-            data = json.loads(result_json)
-        elif isinstance(result_json, dict):
-            data = result_json
-        else:
-            data = {'results': {'added': 0}, 'added': 0}
-        results_summary = data.get('results', {})
-        added_count = data.get('added', 0)
-    except (json.JSONDecodeError, TypeError):
-        results_summary = {'added': 0, 'error': 1}
-        added_count = 0
+        try:
+            if isinstance(result_json, str):
+                batch_data = json.loads(result_json)
+            elif isinstance(result_json, dict):
+                batch_data = result_json
+            else:
+                batch_data = {}
+        except (json.JSONDecodeError, TypeError):
+            batch_data = {}
 
-    return results_summary, added_count
+        total_added += int(batch_data.get('added', 0))
+        total_already += int(batch_data.get('already_in_cart', 0))
+        total_no_button += int(batch_data.get('no_button', 0))
+        total_no_card += int(batch_data.get('no_card', 0))
+
+        if batch_start + BATCH_SIZE < total_cards:
+            await asyncio.sleep(1.5)  # Let VkusVill process the batch
+
+    results_summary = {
+        'no_scope': 0, 'no_card': total_no_card, 'already_in_cart': total_already,
+        'added': total_added, 'no_button': total_no_button,
+    }
+    return results_summary, total_added
 
 
 # ── Main async function ─────────────────────────────────────────────────────
@@ -191,133 +205,12 @@ async def add_green_to_cart_async():
         if not await check_login(page, tag=TAG):
             return False
 
-        # ── STEP 2: Turn on "Больше товаров" switch ──
-        print(f"  [{TAG}] Step 2: Checking 'Больше товаров' toggle...")
-        modal_opened = await js(page, """
-            (() => {
-                const links = document.querySelectorAll('.js-delivery-slots-load, a[class*="delivery-slots"]');
-                for (const link of links) {
-                    if (link.offsetParent !== null || link.offsetWidth > 0) {
-                        link.click();
-                        return 'clicked_link';
-                    }
-                }
-                const allLinks = document.querySelectorAll('a, button');
-                for (const el of allLinks) {
-                    if (el.innerText.trim() === 'Изменить' && el.closest('[class*="delivery"], [class*="Delivery"]')) {
-                        el.click();
-                        return 'clicked_text';
-                    }
-                }
-                return 'not_found';
-            })()
-        """)
-        print(f"  [{TAG}] Delivery modal trigger: {modal_opened}")
-
-        if modal_opened != 'not_found':
-            await asyncio.sleep(3)
-
-            toggle_result = await js(page, """
-                (() => {
-                    const allText = document.querySelectorAll('*');
-                    let toggleContainer = null;
-                    for (const el of allText) {
-                        if (el.children.length > 3) continue;
-                        const t = (el.textContent || '').trim();
-                        if (t.includes('Больше товаров') && t.length < 100) {
-                            toggleContainer = el.closest('label') || el.closest('[class*="Toggler"]') || el.parentElement;
-                            break;
-                        }
-                    }
-                    if (!toggleContainer) return ['not_found', ''];
-                    const input = toggleContainer.querySelector('input[type="checkbox"]');
-                    const isChecked = input && input.checked;
-                    return [isChecked ? 'on' : 'off', toggleContainer.className.substring(0, 100)];
-                })()
-            """) or ['not_found', '']
-            if isinstance(toggle_result, list) and len(toggle_result) >= 2:
-                toggle_state = str(toggle_result[0])
-                toggle_class = str(toggle_result[1])
-            else:
-                toggle_state = str(toggle_result)
-                toggle_class = ''
-            print(f"  [{TAG}] 'Больше товаров' toggle: {toggle_state} (class: {toggle_class})")
-
-            if toggle_state != 'on':
-                print(f"  [{TAG}] Enabling 'Больше товаров'...")
-                clicked = await js(page, """
-                    (() => {
-                        const allText = document.querySelectorAll('*');
-                        let toggleContainer = null;
-                        for (const el of allText) {
-                            if (el.children.length > 3) continue;
-                            const t = (el.textContent || '').trim();
-                            if (t.includes('Больше товаров') && t.length < 100) {
-                                toggleContainer = el.closest('label') || el.closest('[class*="Toggler"]') || el.parentElement;
-                                break;
-                            }
-                        }
-                        if (!toggleContainer) return 'not_found';
-                        const toggler = toggleContainer.querySelector('[class*="Toggler__Btn"], [class*="toggle"], [class*="Toggle"], [class*="switch"], [class*="Switch"]');
-                        if (toggler) { toggler.click(); return 'clicked_toggler'; }
-                        const input = toggleContainer.querySelector('input[type="checkbox"]');
-                        if (input) { input.click(); return 'clicked_input'; }
-                        toggleContainer.click();
-                        return 'clicked_container';
-                    })()
-                """)
-                print(f"  [{TAG}] Toggle click: {clicked}")
-                await asyncio.sleep(5)
-
-                verify = await js(page, """
-                    (() => {
-                        const allText = document.querySelectorAll('*');
-                        for (const el of allText) {
-                            if (el.children.length > 3) continue;
-                            const t = (el.textContent || '').trim();
-                            if (t.includes('Больше товаров') && t.length < 100) {
-                                const container = el.closest('label') || el.closest('[class*="Toggler"]') || el.parentElement;
-                                if (!container) return 'no_container';
-                                const input = container.querySelector('input[type="checkbox"]');
-                                return input && input.checked ? 'on' : 'still_off';
-                            }
-                        }
-                        return 'not_found';
-                    })()
-                """)
-                print(f"  [{TAG}] Toggle verify: {verify}")
-
-                if str(verify) == 'still_off':
-                    await js(page, """
-                        (() => {
-                            const labels = document.querySelectorAll('label');
-                            for (const l of labels) {
-                                if ((l.textContent || '').includes('Больше товаров')) {
-                                    l.click();
-                                    return 'clicked_label';
-                                }
-                            }
-                        })()
-                    """)
-                    await asyncio.sleep(3)
-
-            # Close delivery modal
-            await js(page, """
-                (() => {
-                    const selectors = '.Modal__close, .js-modal-close, .VV_ModalClose, [class*="Modal"] [class*="close"], [class*="Modal"] [class*="Close"], .VV23_RWayModal button[class*="close"]';
-                    const closeBtn = document.querySelector(selectors);
-                    if (closeBtn) { closeBtn.click(); return 'clicked'; }
-                    const overlay = document.querySelector('.Modal__overlay, [class*="overlay"], [class*="Overlay"]');
-                    if (overlay) { overlay.click(); return 'overlay'; }
-                    return 'not_found';
-                })()
-            """)
-            await asyncio.sleep(1)
-            await js(page, "document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', code: 'Escape', bubbles: true}))")
-            await asyncio.sleep(1)
-
-            if toggle_state != 'on':
-                await navigate(page, GREEN_URL, wait=8)
+        # ── STEP 2: "Больше товаров" toggle — DISABLED ──
+        # BUG-067 fix: This toggle expands product visibility to include items
+        # from other delivery windows that the user doesn't see by default.
+        # Result: scraper captured 12 items when VkusVill default shows 7.
+        # Disabled so scraped data matches what users actually see on the site.
+        print(f"  [{TAG}] Step 2: 'Больше товаров' toggle SKIPPED (matches user's default view)")
 
         # ── STEP 2.5: Seed item ──
         cart_check = await js(page, r"""
@@ -563,186 +456,221 @@ async def add_green_to_cart_async():
 
             if modal_ready:
                 # ── Scroll modal to load ALL items ──
-                # Primary source: live_count from inspect_green_section() (reliable)
-                # Fallback: try parsing modal header text
-                js_expected = await js(page, r"""
-                    (() => {
-                        const modal = document.getElementById('js-modal-cart-prods-scroll');
-                        if (!modal) return [0, ''];
-                        let count = 0;
-                        let debugText = '';
-
-                        // Look for "N товаров" specifically in the modal's own header/title
-                        const modalParent = modal.closest('[class*="Modal"]') || modal.parentElement;
-                        if (modalParent) {
-                            // Only check direct title/header elements, not the full page text
-                            const headerEls = modalParent.querySelectorAll(
-                                'h2, h3, [class*="title"], [class*="Title"], [class*="header"], [class*="Header"], [class*="count"], [class*="Count"]'
-                            );
-                            for (const el of headerEls) {
-                                const t = (el.innerText || '').trim();
-                                if (t.length > 3 && t.length < 80) {
-                                    const m = t.match(/(\d+)\s*товар/i);
-                                    if (m) {
-                                        count = parseInt(m[1], 10);
-                                        debugText = 'modal_header: ' + t.substring(0, 60);
-                                        break;
-                                    }
-                                }
-                            }
-                        }
-
-                        // Fallback: green button area
-                        if (!count) {
-                            const showAllBtn = document.getElementById('js-Delivery__Order-green-show-all');
-                            if (showAllBtn) {
-                                const btnParent = showAllBtn.closest('[class*="green"]') || showAllBtn.parentElement;
-                                if (btnParent) {
-                                    const t = (btnParent.innerText || '').replace(/\s+/g, ' ').substring(0, 200);
-                                    const m = t.match(/(\d+)\s*товар/i);
-                                    if (m) {
-                                        count = parseInt(m[1], 10);
-                                        debugText = 'from_green_btn: ' + t.substring(0, 60);
-                                    }
-                                }
-                            }
-                        }
-
-                        return [count, debugText];
-                    })()
-                """) or [0, '']
-                if isinstance(js_expected, list):
-                    _debug_header = str(js_expected[1] if len(js_expected) > 1 else '')
-                    js_expected_count = int(js_expected[0] or 0)
-                else:
-                    js_expected_count = int(js_expected or 0)
-                    _debug_header = ''
-
-                # Always prefer live_count (from green section heading) over JS modal parsing
-                # live_count is the "N товаров" from the green section — most reliable
-                if live_count > 20:
-                    expected_total = live_count
-                    _debug_header = f'live_count={live_count}'
-                elif js_expected_count > 0:
-                    expected_total = js_expected_count
-                else:
-                    expected_total = 0
-                    _debug_header = 'unknown'
-                print(f"  [{TAG}] Loading all modal items... (expected: {expected_total}, src: {_debug_header})")
+                # Simple approach: scroll down + click "показать ещё" until button
+                # disappears and card count stops growing. No expected_total needed.
+                print(f"  [{TAG}] Loading all modal items (live_count={live_count})...")
 
                 prev_count = 0
                 no_change = 0
-                max_iters = 200
-                recovery_attempts = 0
-                max_recovery = 5
+                max_iters = 100
                 for i in range(max_iters):
                     state = await js(page, r"""
                         (() => {
                             const modal = document.getElementById('js-modal-cart-prods-scroll');
-                            if (!modal) return [0, false, 0];
+                            if (!modal) return [0, false, 0, false];
 
                             const cards = modal.querySelectorAll('.ProductCard');
+
+                            // Scroll to bottom to trigger lazy loading
                             if (cards.length > 0) {
                                 cards[cards.length - 1].scrollIntoView({behavior: 'instant', block: 'end'});
                             }
-
                             modal.scrollTop = modal.scrollHeight;
                             modal.dispatchEvent(new Event('scroll', {bubbles: true}));
 
+                            // Find and click "показать ещё" / "load more" button
+                            let clicked = false;
+                            let btnExists = false;
+
+                            // CSS selectors for known load-more buttons
                             const selectors = ['.js-prods-modal-load-more', '.ProductCard__more',
                                                '.ModalProds__more', '[class*="load-more"]', '[class*="show-more"]',
                                                '[class*="LoadMore"]', '[class*="ShowMore"]'];
-                            let clicked = false;
                             for (const sel of selectors) {
                                 const btn = document.querySelector(sel);
-                                if (btn && (btn.offsetParent !== null || btn.offsetWidth > 0)) { btn.click(); clicked = true; break; }
+                                if (btn && (btn.offsetParent !== null || btn.offsetWidth > 0)) {
+                                    btn.click();
+                                    clicked = true;
+                                    btnExists = true;
+                                    break;
+                                }
                             }
+
+                            // Text-based search for load-more button
                             if (!clicked) {
                                 const allBtns = modal.querySelectorAll('button, a, span, div');
                                 for (const el of allBtns) {
                                     const t = (el.innerText || '').trim().toLowerCase();
                                     if ((t.includes('показать ещё') || t.includes('загрузить ещё') ||
-                                         t.includes('показать еще') || t.includes('загрузить еще')) && t.length < 40) {
-                                        el.click();
-                                        clicked = true;
-                                        break;
+                                         t.includes('показать еще') || t.includes('загрузить еще') ||
+                                         t.includes('ещё товар') || t.includes('еще товар')) && t.length < 50) {
+                                        // Check if element is visible
+                                        if (el.offsetParent !== null || el.offsetWidth > 0) {
+                                            el.click();
+                                            clicked = true;
+                                            btnExists = true;
+                                            break;
+                                        }
                                     }
                                 }
                             }
 
-                            return [cards.length, clicked, modal.scrollHeight];
+                            return [cards.length, clicked, modal.scrollHeight, btnExists];
                         })()
-                    """) or [0, False, 0]
+                    """) or [0, False, 0, False]
                     if not isinstance(state, list) or len(state) < 2:
-                        state = [0, False, 0]
+                        state = [0, False, 0, False]
                     count = int(state[0] or 0)
                     clicked_more = bool(state[1])
                     scroll_h = int(state[2] or 0) if len(state) > 2 else 0
+                    btn_exists = bool(state[3]) if len(state) > 3 else False
 
                     if i % 10 == 0 or count != prev_count or clicked_more:
-                        print(f"    iter {i+1}: cards={count}/{expected_total}, loaded_more={clicked_more}, scrollH={scroll_h}")
+                        print(f"    iter {i+1}: cards={count}, loaded_more={clicked_more}, btn_exists={btn_exists}, scrollH={scroll_h}")
 
-                    await asyncio.sleep(2.0 if clicked_more else 1.0)
+                    if clicked_more:
+                        # Button was clicked — wait for AJAX to load new items
+                        # Poll DOM until card count increases or 6s timeout
+                        old_count = count
+                        for wait_step in range(12):
+                            await asyncio.sleep(0.5)
+                            new_count = await js(page, r"""
+                                (() => {
+                                    const m = document.getElementById('js-modal-cart-prods-scroll');
+                                    return m ? m.querySelectorAll('.ProductCard').length : 0;
+                                })()
+                            """) or 0
+                            new_count = int(new_count)
+                            if new_count > old_count:
+                                count = new_count
+                                break
+                        if count == old_count:
+                            # AJAX might be slow, give it extra time
+                            await asyncio.sleep(3)
+                    else:
+                        await asyncio.sleep(1.0)
 
-                    # Safety: if modal already has more cards than expected, our expected was wrong
-                    if expected_total > 0 and count > expected_total and i == 0:
-                        print(f"    ⚠️ Modal has {count} cards but expected only {expected_total} — bumping target to {count * 3}")
-                        expected_total = count * 3  # Keep scrolling
-
-                    if expected_total > 0 and count >= expected_total:
-                        print(f"    ✅ Reached expected total: {count}/{expected_total}")
-                        break
-
-                    if count == prev_count and not clicked_more:
+                    # Stop condition: no "показать ещё" button AND card count stopped growing
+                    if not btn_exists and not clicked_more and count == prev_count:
                         no_change += 1
-                        if no_change >= 5:
-                            if expected_total > 0 and count < expected_total and recovery_attempts < max_recovery:
-                                recovery_attempts += 1
-                                print(f"    ⚠️ Only {count}/{expected_total} loaded, recovery attempt {recovery_attempts}/{max_recovery}...")
-                                await js(page, r"""
-                                    (() => {
-                                        const modal = document.getElementById('js-modal-cart-prods-scroll');
-                                        if (modal) {
-                                            modal.scrollTop = 0;
-                                            modal.dispatchEvent(new Event('scroll', {bubbles: true}));
-                                        }
-                                    })()
-                                """)
-                                await asyncio.sleep(1.5)
-                                for step in range(10):
-                                    pct = (step + 1) / 10.0
-                                    await js(page, f"""
-                                        (() => {{
-                                            const modal = document.getElementById('js-modal-cart-prods-scroll');
-                                            if (modal) {{
-                                                modal.scrollTop = modal.scrollHeight * {pct};
-                                                modal.dispatchEvent(new Event('scroll', {{bubbles: true}}));
-                                            }}
-                                        }})()
-                                    """)
-                                    await asyncio.sleep(0.8)
-                                await js(page, r"""
-                                    (() => {
-                                        const modal = document.getElementById('js-modal-cart-prods-scroll');
-                                        if (!modal) return;
-                                        const cards = modal.querySelectorAll('.ProductCard');
-                                        if (cards.length > 0) {
-                                            cards[cards.length - 1].scrollIntoView({behavior: 'instant', block: 'end'});
-                                            modal.dispatchEvent(new Event('scroll', {bubbles: true}));
-                                        }
-                                    })()
-                                """)
-                                await asyncio.sleep(2.0)
-                                no_change = 0
-                                continue
+                        if no_change >= 3:
+                            print(f"    ✅ All items loaded: {count} cards (no more button, count stable)")
                             break
                     else:
                         no_change = 0
+
                     prev_count = count
 
-                total_in_modal = prev_count if prev_count > 0 else count
-                pct_str = f" ({total_in_modal*100//expected_total}%)" if expected_total > 0 else ""
-                print(f"  [{TAG}] Modal loaded: {total_in_modal} cards{pct_str}")
+                total_in_modal = max(prev_count, count) if (prev_count > 0 or count > 0) else 0
+                print(f"  [{TAG}] Modal loaded: {total_in_modal} cards")
+
+                # ── Scrape product data from modal DOM (BEFORE adding to cart) ──
+                # This captures ALL products even if VkusVill drops some cart clicks.
+                # Same approach as the original working scrape_green.py
+                if total_in_modal > 0:
+                    print(f"  [{TAG}] Scraping product data from modal DOM...")
+                    modal_products = await js(page, r"""
+                        (() => {
+                            const products = [];
+                            const modal = document.getElementById('js-modal-cart-prods-scroll');
+                            if (!modal) return products;
+
+                            modal.querySelectorAll('.ProductCard').forEach(card => {
+                                const nameEl = card.querySelector('.ProductCard__link');
+                                const priceEl = card.querySelector('.ProductCard__price--current, .Price__value, .ProductCard__price');
+                                const oldPriceEl = card.querySelector('.ProductCard__price--old, .ProductCard__OldPrice, .js-datalayer-catalog-list-price-old, del, s');
+                                const imgEl = card.querySelector('.ProductCard__image img, .ProductCard__imageLink img, img');
+
+                                if (!nameEl) return;
+                                const name = nameEl.innerText.trim();
+                                if (!name) return;
+
+                                const url = nameEl.href || '';
+                                const idMatch = url.match(/-(\d+)\.html/) || url.match(/(\d+)\.html/);
+                                let productId = idMatch ? idMatch[1] : '';
+
+                                // Try data-id attribute as fallback
+                                if (!productId) {
+                                    const dataIdEl = card.querySelector('[data-id]');
+                                    if (dataIdEl) productId = dataIdEl.getAttribute('data-id') || '';
+                                }
+
+                                // Image extraction
+                                let imgSrc = '';
+                                if (imgEl) {
+                                    imgSrc = imgEl.getAttribute('data-src') || imgEl.src || '';
+                                }
+                                if (!imgSrc || imgSrc.includes('data:image')) {
+                                    const source = card.querySelector('picture source[srcset]');
+                                    if (source && source.srcset) imgSrc = source.srcset.split(' ')[0];
+                                }
+                                if (!imgSrc || imgSrc.includes('data:image')) {
+                                    const bgEl = card.querySelector('.ProductCard__imageLink, .ProductCard__image');
+                                    if (bgEl) {
+                                        const bg = window.getComputedStyle(bgEl).backgroundImage;
+                                        if (bg && bg !== 'none' && bg.startsWith('url')) {
+                                            imgSrc = bg.replace(/^url\(['"]?/, '').replace(/['"]?\)$/, '');
+                                        }
+                                    }
+                                }
+                                if (imgSrc && (imgSrc.includes('no-image.svg') || imgSrc.includes('data:image') || imgSrc.includes('spacer.gif'))) {
+                                    imgSrc = '';
+                                }
+
+                                // Price extraction
+                                let currentPrice = priceEl ? priceEl.innerText.trim() : '0';
+                                let oldPrice = oldPriceEl ? oldPriceEl.innerText.trim() : '0';
+
+                                // data-max for stock
+                                let dataMax = '';
+                                const addBtn = card.querySelector('.js-delivery__basket--add, [data-max], button[class*="Cart"]');
+                                if (addBtn && addBtn.getAttribute('data-max')) {
+                                    dataMax = addBtn.getAttribute('data-max');
+                                }
+                                if (!dataMax) {
+                                    const qtyCtrl = card.querySelector('[data-max]');
+                                    if (qtyCtrl) dataMax = qtyCtrl.getAttribute('data-max') || '';
+                                }
+
+                                // Unit detection
+                                const isWeightItem = name.includes('ВЕС') ||
+                                    name.toLowerCase().includes('/кг') ||
+                                    (priceEl && priceEl.innerText.includes('/кг'));
+
+                                products.push({
+                                    id: productId,
+                                    name: name,
+                                    url: url,
+                                    currentPrice: currentPrice,
+                                    oldPrice: oldPrice,
+                                    image: imgSrc,
+                                    dataMax: dataMax,
+                                    unit: isWeightItem ? 'кг' : 'шт',
+                                    category: 'Зелёные ценники',
+                                    type: 'green'
+                                });
+                            });
+                            return products;
+                        })()
+                    """) or []
+                    if not isinstance(modal_products, list):
+                        modal_products = []
+                    print(f"  [{TAG}] Scraped {len(modal_products)} products from modal DOM")
+
+                    # Save modal products to JSON — scrape_green_data.py will use this
+                    if modal_products:
+                        modal_path = os.path.join(DATA_DIR, 'green_modal_products.json')
+                        try:
+                            os.makedirs(DATA_DIR, exist_ok=True)
+                            with open(modal_path, 'w', encoding='utf-8') as f:
+                                json.dump({
+                                    'products': modal_products,
+                                    'total_in_modal': total_in_modal,
+                                    'timestamp': time.time(),
+                                }, f, ensure_ascii=False, indent=2)
+                            print(f"  [{TAG}] ✅ Saved {len(modal_products)} modal products → {modal_path}")
+                        except Exception as e:
+                            print(f"  [{TAG}] ⚠️ Failed to save modal products: {e}")
 
                 # ── Add all to cart ──
                 if total_in_modal > 0:
