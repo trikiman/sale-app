@@ -202,7 +202,6 @@ async def scrape_all_categories_async():
 
     db = load_existing_db()
     total_new = 0
-    total_updated = 0
 
     sem = asyncio.Semaphore(MAX_CONCURRENT)
 
@@ -218,24 +217,22 @@ async def scrape_all_categories_async():
             cat_name, products = res
             results[cat_name] = products
 
-    # Merge results into DB
+    # Merge results into DB — FIRST-WRITE-WINS (BUG-053 / SCRP-09)
+    # Products appearing in multiple VkusVill categories get the first category
+    # encountered. We never overwrite existing assignments to ensure determinism
+    # across runs (asyncio.gather order is non-deterministic).
     for cat in CATEGORIES:
         cat_name = cat["name"]
         products = results.get(cat_name, [])
         for p in products:
             pid = p['id']
-            if pid in db['products']:
-                if db['products'][pid]['category'] != cat_name:
-                    db['products'][pid]['category'] = cat_name
-                    db['products'][pid]['name'] = p['name']
-                    total_updated += 1
-            else:
+            if pid not in db['products']:
                 db['products'][pid] = {'name': p['name'], 'category': cat_name}
                 total_new += 1
 
     save_db(db)
 
-    print(f"\nDone! {total_new} new products, {total_updated} updated")
+    print(f"\nDone! {total_new} new products added (first-write-wins, existing unchanged)")
     print(f"Database saved to {DB_PATH} ({len(db['products'])} total products)")
 
     return db
