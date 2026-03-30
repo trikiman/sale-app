@@ -10,7 +10,7 @@
 | # | Phase | Goal | Requirements | Success Criteria |
 |---|-------|------|--------------|------------------|
 | 1 | IDOR Security — Backend | 1/1 | Complete    | 2026-03-30 |
-| 2 | IDOR Security — Frontend | Send initData in requests from MiniApp | SEC-08 | 2 |
+| 2 | IDOR Security — Frontend | 1/1 | Complete    | 2026-03-30 |
 | 3 | Green Scraper Accuracy | Fix green item count mismatch with live site | SCRP-07 | 3 |
 | 4 | Stock Data Fix | Eliminate stock=99 placeholder on remaining product | SCRP-08 | 2 |
 | 5 | Category Scraper Fix | Deterministic category assignment | SCRP-09 | 2 |
