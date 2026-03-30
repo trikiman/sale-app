@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { getAuthHeaders } from './api'
 
 // VkusVill CDN images are public — load directly
 function proxyImg(url) {
@@ -21,7 +22,7 @@ export default function CartPanel({ isOpen, onClose, userId }) {
         if (showSpinner) setLoading(true)
         setError(null)
         fetch(`/api/cart/items/${userId}`, {
-            headers: { 'X-Telegram-User-Id': String(userId) }
+            headers: getAuthHeaders(userId)
         })
             .then(res => {
                 if (!res.ok) throw new Error(res.status === 401 ? 'Не авторизованы' : 'Ошибка загрузки')
@@ -77,7 +78,7 @@ export default function CartPanel({ isOpen, onClose, userId }) {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-Telegram-User-Id': String(userId)
+                    ...getAuthHeaders(userId)
                 },
                 body: JSON.stringify({ user_id: userId, product_id: productId })
             })
@@ -94,7 +95,7 @@ export default function CartPanel({ isOpen, onClose, userId }) {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-Telegram-User-Id': String(userId)
+                    ...getAuthHeaders(userId)
                 },
                 body: JSON.stringify({ user_id: userId, product_id: productId })
             })
@@ -120,7 +121,7 @@ export default function CartPanel({ isOpen, onClose, userId }) {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'X-Telegram-User-Id': String(userId)
+                    ...getAuthHeaders(userId)
                 },
                 body: JSON.stringify({ user_id: userId })
             })

@@ -4,6 +4,7 @@ import CartPanel from './CartPanel'
 import ProductDetail from './ProductDetail'
 import { buildCategoryRunView } from './categoryRunStatus'
 import { getCardMetaBadges, mergeResolvedWeights, shouldFetchMissingWeight } from './productMeta'
+import { getAuthHeaders } from './api'
 import './index.css'
 
 // VkusVill CDN images are public — load directly (no proxy needed).
@@ -384,7 +385,7 @@ function App() {
     // Load favorites
     setFavoritesLoading(true)
     fetch(`/api/favorites/${userId}`, {
-      headers: { 'X-Telegram-User-Id': String(userId) }
+      headers: getAuthHeaders(userId)
     })
       .then(res => res.json())
       .then(data => {
@@ -406,7 +407,7 @@ function App() {
         if (data.phone) setUserPhone(data.phone)
         if (data.authenticated) {
           fetch(`/api/cart/items/${userId}`, {
-            headers: { 'X-Telegram-User-Id': String(userId) }
+            headers: getAuthHeaders(userId)
           })
             .then(r => r.json())
             .then(cart => { if (cart.items_count != null) setCartCount(cart.items_count) })
@@ -440,7 +441,7 @@ function App() {
         // Remove
         const res = await fetch(`/api/favorites/${userId}/${product.id}`, {
           method: 'DELETE',
-          headers: { 'X-Telegram-User-Id': String(userId) }
+          headers: getAuthHeaders(userId)
         })
         if (!res.ok && res.status !== 404) throw new Error('API failed')
       } else {
@@ -449,7 +450,7 @@ function App() {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            'X-Telegram-User-Id': String(userId)
+            ...getAuthHeaders(userId)
           },
           body: JSON.stringify({
             product_id: product.id,
@@ -586,7 +587,7 @@ function App() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Telegram-User-Id': String(userId)
+          ...getAuthHeaders(userId)
         },
         body: JSON.stringify({
           user_id: userId,
