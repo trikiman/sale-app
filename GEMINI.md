@@ -249,3 +249,169 @@ Follow `/systematic-debugging` FIRST (find root cause before fixing), then verif
 - **ALWAYS use SSH** (`ssh -i "key" ubuntu@host`) for EC2 operations. NEVER use browser-based Instance Connect or AWS Console terminal — it's slower, wastes tokens/context, and risks logging out of AWS.
 - If SSH times out, retry 2-3 times before considering alternatives.
 - Browser subagent is for **UI verification only** (testing the app), never for running server commands.
+
+<!-- GSD:project-start source:PROJECT.md -->
+## Project
+
+**VkusVill Sale Monitor**
+
+A family-facing VkusVill discount aggregator that scrapes green/red/yellow price tags, sends Telegram notifications, and lets family members add products to their VkusVill cart without visiting the site. Deployed on AWS EC2 with Vercel frontend proxy at https://vkusvillsale.vercel.app/.
+
+Users only go to VkusVill.ru to finalize delivery and pay.
+
+**Core Value:** Family members see every VkusVill discount (green/red/yellow) the moment it appears, and can add items to their cart in one tap — without opening the VkusVill app or website.
+
+### Constraints
+
+- **Tech stack**: Python + React + nodriver — established, don't change
+- **Platform**: VkusVill's anti-bot measures require CDP-native browser automation
+- **Users**: Family only (up to 5 accounts + 1 technical)
+- **Server**: t3.micro (1GB RAM) — Chrome uses ~233MB, must be careful with resources
+- **SMS limits**: VkusVill allows max 4 SMS per day per phone — minimize live auth testing
+<!-- GSD:project-end -->
+
+<!-- GSD:stack-start source:codebase/STACK.md -->
+## Technology Stack
+
+## Languages
+- **Python 3.11+** — Backend API, scrapers, scheduler, bot, database
+- **JavaScript (ES2022+)** — React frontend (JSX), Vite build tooling
+- **HTML/CSS** — Admin panel (`backend/admin.html`), frontend styles (`miniapp/src/index.css`)
+## Runtime & Frameworks
+### Backend (Python)
+- **FastAPI** (`>=0.109.0`) — REST API server (`backend/main.py`, 153KB monolith)
+- **Uvicorn** (`>=0.27.0`) — ASGI server
+- **nodriver** (`>=0.38`) — Headless Chrome automation (replaced selenium/undetected-chromedriver)
+- **httpx[socks]** (`>=0.27.0`) — HTTP client with SOCKS5 proxy support
+- **python-telegram-bot** (`>=20.0`) — Telegram bot framework
+- **APScheduler** (`>=3.10.0`) — Job scheduling (used in `main.py`)
+- **aiosqlite** (`>=0.19.0`) — Async SQLite3 ORM
+- **beautifulsoup4/lxml** — HTML parsing
+- **python-dotenv** — Environment variable management
+### Frontend (JavaScript)
+- **React 19** — UI framework (`miniapp/src/`)
+- **Vite 7** — Build tool and dev server
+- **Framer Motion** — Animations
+- No state management library (vanilla React useState/useEffect)
+- No routing library (single-page app with conditional rendering)
+## Infrastructure
+- **EC2 Instance** — `13.60.174.46` (Stockholm region, MSK timezone)
+- **systemd** — Process management (`saleapp-scheduler` service)
+- **Vercel** — Frontend hosting for `miniapp/` (proxies API calls to EC2)
+- **SQLite** — Local database (`database/sale_monitor.db`)
+## Configuration
+- `config.py` — Central config (Telegram token, VkusVill URLs, CSS selectors, category mappings)
+- `.env` — Secrets (TELEGRAM_TOKEN, ADMIN_TOKEN)
+- `miniapp/.env.local` — Frontend environment variables
+- `miniapp/vercel.json` — Vercel rewrites (proxies `/api/*` and `/admin` to EC2)
+- `ruff.toml` — Python linter config
+- `pytest.ini` — Test config
+## Dependencies (root `requirements.txt`)
+## Key Technical Decisions
+- **nodriver over Selenium** — Avoids detection by VkusVill's anti-bot systems
+- **SOCKS5 proxy pool** — Managed by `proxy_manager.py` to rotate through free proxies
+- **Cookie-based auth** — `login.py` saves VkusVill session cookies to `data/cookies.json`
+- **JSON file interchange** — Scrapers write to `data/*.json`, backend reads them
+- **Monolithic backend** — `backend/main.py` is 153KB single file handling all API routes
+<!-- GSD:stack-end -->
+
+<!-- GSD:conventions-start source:CONVENTIONS.md -->
+## Conventions
+
+## Code Style
+- **Python**: No strict formatter enforced; `ruff.toml` present but light config
+- **JavaScript**: ESLint with React hooks plugin, no Prettier
+- **Line length**: Not enforced (many 120+ char lines)
+- **Encoding**: UTF-8 with Russian text (Cyrillic) in strings, comments, and log messages
+## Naming
+### Python
+- **Functions**: `snake_case` (`scrape_green_prices`, `ensure_cart_not_empty`)
+- **Constants**: `UPPER_SNAKE_CASE` (`SCRAPER_TIMEOUT`, `BASE_DIR`)
+- **Private helpers**: `_underscore_prefix` (`_add_green_cards_to_cart`, `_log_script_output`)
+- **Tags**: `TAG = "GREEN-ADD"` used for log filtering
+### JavaScript
+- **Components**: `PascalCase` (`CartPanel`, `ProductDetail`)
+- **Functions/hooks**: `camelCase` (`handleSearch`, `fetchProducts`)
+- **CSS classes**: BEM-like from VkusVill (`ProductCard__link`, `VV_TizersSection__Link`)
+## Error Handling Pattern
+### Scrapers (Python)
+- All scrapers use try/except/finally with browser cleanup
+- Failures logged with emoji prefixes: ❌ error, ⚠️ warning, ✅ success, 🔄 starting
+- Exit code 0 even on partial failure (scheduler checks file mtime)
+### Backend (FastAPI)
+- Returns empty collections on error, never raises HTTP exceptions
+## Logging
+- **Scrapers**: `print()` with `[TAG]` prefix → captured by `scheduler_service.py`
+- **Scheduler**: `log()` → writes to `logs/scheduler.log` with timestamp
+- **Backend**: Standard FastAPI/uvicorn logging
+- **No structured logging** (no JSON logs, no log levels)
+- **Emoji-rich**: 🔄 ✅ ❌ ⚠️ ⏭️ used extensively in log messages
+## Data Patterns
+### Product JSON Shape
+### File Save Pattern
+## Async Patterns
+- **Scrapers**: `async/await` with `nodriver` (`await js(page, "...")`)
+- **Backend**: FastAPI async endpoints
+- **Database**: `aiosqlite` async queries
+- **Bot**: python-telegram-bot async handlers
+- **Scheduler**: Synchronous `subprocess.run()` calling async scripts
+## Configuration Pattern
+- Centralized in `config.py` (categories, selectors, URLs)
+- Secrets in `.env` loaded via `python-dotenv`
+- No environment-based config switching (same config for dev/prod)
+<!-- GSD:conventions-end -->
+
+<!-- GSD:architecture-start source:ARCHITECTURE.md -->
+## Architecture
+
+## System Pattern
+```
+```
+## Layers
+### Layer 1: Scraping (Data Collection)
+- **Entry points**: `scheduler_service.py` (main orchestrator)
+- **Scrapers**: `scrape_red.py`, `scrape_yellow.py`, `scrape_green_add.py`, `scrape_green_data.py`
+- **Shared code**: `green_common.py` (browser management, cookie loading, basket API)
+- **Support**: `chrome_stealth.py`, `proxy_manager.py`, `utils.py`
+- **Output**: JSON files in `data/`
+### Layer 2: API Server
+- **Entry point**: `backend/main.py` (monolith, 153KB)
+- **Reads**: JSON files from `data/` directory
+- **Provides**: REST API, WebSocket, admin dashboard
+- **Auth**: Telegram HMAC signature verification, admin token
+### Layer 3: Frontend
+- **Entry point**: `miniapp/src/main.jsx` → `App.jsx`
+- **Deployment**: Vercel (auto-deploy from git)
+- **State**: React useState hooks, no external state management
+- **Data fetching**: Fetch API with polling
+### Layer 4: Bot
+- **Entry point**: `bot/handlers.py`
+- **Notifications**: `bot/notifier.py`, `backend/notifier.py`
+- **Auth**: `bot/auth.py` (Telegram user verification)
+## Data Flow
+## Key Abstractions
+- **Product object**: `{id, name, url, currentPrice, oldPrice, image, stock, unit, category, type}`
+- **Scraper pattern**: Launch Chrome → load cookies → navigate → extract → save JSON → quit Chrome
+- **Proxy rotation**: `proxy_manager.py` manages pool, scheduler retries with fresh proxy on failure
+- **Stock cache**: `data/stock_cache.json` persists stock data across scraper failures
+<!-- GSD:architecture-end -->
+
+<!-- GSD:workflow-start source:GSD defaults -->
+## GSD Workflow Enforcement
+
+Before using Edit, Write, or other file-changing tools, start work through a GSD command so planning artifacts and execution context stay in sync.
+
+Use these entry points:
+- `/gsd-quick` for small fixes, doc updates, and ad-hoc tasks
+- `/gsd-debug` for investigation and bug fixing
+- `/gsd-execute-phase` for planned phase work
+
+Do not make direct repo edits outside a GSD workflow unless the user explicitly asks to bypass it.
+<!-- GSD:workflow-end -->
+
+<!-- GSD:profile-start -->
+## Developer Profile
+
+> Profile not yet configured. Run `/gsd-profile-user` to generate your developer profile.
+> This section is managed by `generate-claude-profile` -- do not edit manually.
+<!-- GSD:profile-end -->
