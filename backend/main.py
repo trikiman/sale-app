@@ -84,6 +84,14 @@ except Exception:
 if not ADMIN_TOKEN:
     logger.warning("ADMIN_TOKEN not set! Admin endpoints will reject all requests.")
 
+# Load Telegram bot token for initData HMAC validation (BUG-038/039)
+try:
+    from config import TELEGRAM_TOKEN
+except Exception:
+    TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
+if not TELEGRAM_TOKEN:
+    logger.warning("TELEGRAM_TOKEN not set! Telegram initData validation will be disabled.")
+
 app = FastAPI(title="VkusVill Mini App API", version="1.0.0")
 
 # CORS for mini app
@@ -277,10 +285,73 @@ def _require_token(token: Optional[str]):
         raise HTTPException(status_code=403, detail="Invalid admin token")
 
 
+def validate_telegram_init_data(init_data: str, bot_token: str) -> dict | None:
+    """Validate Telegram MiniApp initData using HMAC-SHA256.
+    Returns parsed user dict if valid, None if invalid.
+    See: https://core.telegram.org/bots/webapps#validating-data-received-via-the-mini-app
+    """
+    from urllib.parse import parse_qsl
+    try:
+        params = dict(parse_qsl(init_data, keep_blank_values=True))
+        received_hash = params.pop('hash', '')
+        if not received_hash:
+            return None
+
+        # Check auth_date freshness (reject if > 5 min old)
+        auth_date = int(params.get('auth_date', '0'))
+        if abs(_time.time() - auth_date) > 300:
+            return None
+
+        # Sort and create data_check_string
+        sorted_params = sorted(params.items())
+        data_check_string = "\n".join(f"{k}={v}" for k, v in sorted_params)
+
+        # HMAC chain: WebAppData -> bot_token -> data_check_string
+        secret_key = hmac.new(
+            key=b"WebAppData",
+            msg=bot_token.encode(),
+            digestmod=hashlib.sha256
+        ).digest()
+
+        calculated_hash = hmac.new(
+            key=secret_key,
+            msg=data_check_string.encode(),
+            digestmod=hashlib.sha256
+        ).hexdigest()
+
+        if not hmac.compare_digest(calculated_hash, received_hash):
+            return None
+
+        # Parse user JSON from params
+        user_json = params.get('user', '{}')
+        user = json.loads(user_json)
+        return user
+    except Exception:
+        return None
+
+
 def _validate_user_header(request: Request, expected_user_id: str):
-    """BUG-038/039: Lightweight IDOR protection.
-    Requires X-Telegram-User-Id header to match the user_id in URL/body.
-    Prevents casual IDOR where attacker guesses another user's Telegram ID."""
+    """BUG-038/039: IDOR protection with dual auth paths.
+
+    Path 1 (Telegram MiniApp): Validate initData HMAC signature.
+    Path 2 (Guest/Browser): Fall back to X-Telegram-User-Id header match.
+
+    Either path must confirm the request is from the claimed user.
+    """
+    # Path 1: Try Telegram initData (cryptographic proof)
+    auth_header = request.headers.get("authorization", "")
+    if auth_header.startswith("tma "):
+        init_data = auth_header[4:]  # Strip "tma " prefix
+        if not TELEGRAM_TOKEN:
+            logger.warning("initData received but TELEGRAM_TOKEN not configured")
+            raise HTTPException(status_code=500, detail="Server auth not configured")
+        user = validate_telegram_init_data(init_data, TELEGRAM_TOKEN)
+        if user and str(user.get("id", "")) == str(expected_user_id):
+            return  # Valid Telegram user, authorized
+        # initData provided but invalid or user mismatch
+        raise HTTPException(status_code=403, detail="Invalid Telegram authorization")
+
+    # Path 2: Fallback to header check (guest/browser users)
     header_uid = request.headers.get("x-telegram-user-id", "")
     if not header_uid or str(header_uid) != str(expected_user_id):
         raise HTTPException(status_code=403, detail="User ID mismatch")
