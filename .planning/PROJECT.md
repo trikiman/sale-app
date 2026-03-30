@@ -1,0 +1,165 @@
+# VkusVill Sale Monitor
+
+## What This Is
+
+A family-facing VkusVill discount aggregator that scrapes green/red/yellow price tags, sends Telegram notifications, and lets family members add products to their VkusVill cart without visiting the site. Deployed on AWS EC2 with Vercel frontend proxy at https://vkusvillsale.vercel.app/.
+
+Users only go to VkusVill.ru to finalize delivery and pay.
+
+## Core Value
+
+Family members see every VkusVill discount (green/red/yellow) the moment it appears, and can add items to their cart in one tap — without opening the VkusVill app or website.
+
+## Requirements
+
+### Validated
+
+<!-- Shipped and confirmed valuable. Inferred from existing working codebase. -->
+
+- ✓ **SCRAPE-01**: System scrapes green price tags from VkusVill cart page using technical account cookies — existing (scrape_green.py)
+- ✓ **SCRAPE-02**: System scrapes red price tags from VkusVill catalog — existing (scrape_red.py)
+- ✓ **SCRAPE-03**: System scrapes yellow "купи 6+" multi-buy prices from VkusVill catalog — existing (scrape_yellow.py)
+- ✓ **SCRAPE-04**: System runs scrapers sequentially every 5 minutes via scheduler — existing (scheduler_service.py)
+- ✓ **SCRAPE-05**: System merges all scraped data into proposals.json with staleness detection — existing (scrape_merge.py)
+- ✓ **SCRAPE-06**: System scrapes VkusVill product categories via pure HTTP — existing (scrape_categories.py)
+- ✓ **AUTH-01**: User can log in with phone number + SMS code via web app — existing (backend/main.py nodriver)
+- ✓ **AUTH-02**: User can set 4-digit PIN for fast re-login without browser — existing
+- ✓ **AUTH-03**: User can log out and re-login with PIN using .bak cookies — existing
+- ✓ **CART-01**: User can add products to VkusVill cart via API (no browser) — existing (cart/vkusvill_api.py)
+- ✓ **CART-02**: User can view cart contents in CartPanel — existing (CartPanel.jsx)
+- ✓ **CART-03**: User can remove items and clear cart — existing (basket_update.php integration)
+- ✓ **FAV-01**: User can favorite/unfavorite products with instant toggle — existing
+- ✓ **FAV-02**: Favorites persist server-side in SQLite — existing
+- ✓ **UI-01**: MiniApp displays products in grid/list view with type filters (green/red/yellow) — existing
+- ✓ **UI-02**: MiniApp has dark/light theme toggle persisted in localStorage — existing
+- ✓ **UI-03**: MiniApp has category filter with horizontal scroll — existing
+- ✓ **UI-04**: Product detail drawer shows images, weight, description, nutrition — existing
+- ✓ **UI-05**: Cart button shows spinner → checkmark/X feedback (no alert popups) — existing
+- ✓ **UI-06**: Auto-refresh via SSE + 60s polling — existing
+- ✓ **UI-07**: Stale data warning banner when data is >15 min old — existing
+- ✓ **BOT-01**: Telegram bot sends notifications for new green/red prices — existing (bot/notifier.py)
+- ✓ **BOT-02**: Telegram bot has /start, /help, /categories, /favorites, /add, /remove, /check commands — existing
+- ✓ **BOT-03**: "В корзину" inline button in Telegram adds to cart — existing
+- ✓ **DEPLOY-01**: EC2 standalone with 3 systemd services (backend, bot, scheduler) — existing
+- ✓ **DEPLOY-02**: Frontend on Vercel with /api/* rewrite to EC2 — existing
+- ✓ **DEPLOY-03**: Admin panel with scraper triggers and status monitoring — existing
+- ✓ **SEC-01**: Admin endpoints require X-Admin-Token — existing
+- ✓ **SEC-02**: Image proxy rejects non-VkusVill domains — existing
+- ✓ **SEC-03**: PIN stored as salted hash, not plaintext — existing
+- ✓ **SEC-04**: Login rate limiting (4 attempts/10 min) — existing
+- ✓ **SEC-05**: Client log rate limiting (30/window) — existing
+
+### Active
+
+<!-- Bug fix milestone — current scope. -->
+
+- [ ] **BUG-038**: Favorites endpoints validate user identity (IDOR fix)
+- [ ] **BUG-039**: Cart endpoints validate user identity (IDOR fix)
+- [ ] **BUG-044**: Telegram notifications sent to ALL matching users, not just first
+- [ ] **BUG-046**: "Run All" scrapers queues merge step after all complete
+- [ ] **BUG-053**: Category scraper handles multi-category products deterministically
+- [ ] **BUG-056**: Bot category matching uses exact match, not fuzzy substring
+- [ ] **BUG-067**: Green scraper captures all green items (match live site count)
+- [ ] **BUG-068**: Stock=99 placeholder replaced with real stock for remaining product
+- [ ] **UX-01**: Theme toggle actually switches CSS variables (not just icon)
+- [ ] **UX-02**: Duplicate React keys resolved (product ID uniqueness)
+- [ ] **UX-03**: Cart 0-quantity items auto-removed from list
+- [ ] **UX-04**: Scraper trigger UI recovers from 403 (doesn't get stuck)
+- [ ] **UX-05**: "Новинки" empty state doesn't flash during AnimatePresence exit
+
+### Out of Scope
+
+<!-- Explicit boundaries for this milestone. -->
+
+- Docker containerization — not needed, systemd works fine
+- HTTPS/domain setup — Vercel handles HTTPS already
+- History page — separate feature milestone
+- Mobile app — web-first, Telegram MiniApp is the mobile experience
+- Cookie encryption at rest — low risk for family-only app
+- OAuth login — VkusVill only supports phone+SMS
+
+## Context
+
+### Architecture (3 Services)
+
+```
+┌──────────────────────────────────────────────────────────┐
+│  Telegram Bot  │  Scheduler        │  Backend (FastAPI)  │
+│  python main.py│  scheduler_svc.py │  uvicorn backend    │
+├──────────────────────────────────────────────────────────┤
+│  Notifications │  Scrape prices    │  Admin panel        │
+│  "В корзину"   │  every 5 min      │  Web app (products) │
+│  "Открыть"     │  tech account     │  Cart API           │
+│  /login        │                   │  Login API          │
+└──────────────────────────────────────────────────────────┘
+```
+
+### Tech Stack
+- **Bot**: `python-telegram-bot`
+- **Database**: SQLite (`salebot.db`) via SQLAlchemy
+- **Price Scrapers**: `nodriver` (CDP-native) + async JS evaluation
+- **Category Scraper**: `aiohttp` + `BeautifulSoup` (pure HTTP, MAX_CONCURRENT=3)
+- **Cart API**: `cart/vkusvill_api.py` (raw Cookie header, `httpx`)
+- **Login**: `nodriver` (CDP-native) for web app login
+- **Backend**: FastAPI
+- **Frontend**: React (Vite, built → served by backend)
+- **Hosting**: AWS EC2 (t3.micro) + Vercel (frontend proxy)
+
+### Two Account Types
+| | Technical Account | User Accounts |
+|---|---|---|
+| **Purpose** | Scrape prices | Add to user's cart |
+| **Cookies** | `data/cookies.json` | `data/auth/{phone}/cookies.json` |
+| **Used by** | Scheduler only | Telegram + Web app |
+
+### Known Technical Constraints
+- VkusVill bans concurrent connections (not rate), keep MAX_CONCURRENT ≤ 3
+- VkusVill masked inputs require CDP `Input.dispatchKeyEvent` (JS setters don't work)
+- `--headless=new` crashes Chrome on Win11, use offscreen window
+- nodriver swallows JS errors as ExceptionDetails dicts — always use `safe_evaluate()`
+- Green pricing depends on Chrome profile state beyond just cookies
+- All scrapers must run sequentially (Chrome port/profile conflicts)
+
+### Deployment
+- **EC2**: `13.60.174.46:8000`, 3 systemd services, Xvfb for headless Chrome
+- **Vercel**: `vkusvillsale.vercel.app`, rewrites /api/* to EC2
+- **Last verified**: 2026-03-26, 128+ tests passed
+
+## Constraints
+
+- **Tech stack**: Python + React + nodriver — established, don't change
+- **Platform**: VkusVill's anti-bot measures require CDP-native browser automation
+- **Users**: Family only (up to 5 accounts + 1 technical)
+- **Server**: t3.micro (1GB RAM) — Chrome uses ~233MB, must be careful with resources
+- **SMS limits**: VkusVill allows max 4 SMS per day per phone — minimize live auth testing
+
+## Key Decisions
+
+| Decision | Rationale | Outcome |
+|----------|-----------|---------|
+| nodriver over Playwright/undetected_chromedriver | CDP-native bypasses anti-bot, Playwright gets address-binding issues | ✓ Good |
+| Raw Cookie header for cart API | requests cookie jar can't handle __Host-PHPSESSID | ✓ Good |
+| Sequential scrapers (not parallel) | Chrome instances conflict on ports/profiles | ✓ Good |
+| Session cookies in plain JSON files | Family-only app, low risk | ⚠️ Revisit if user base grows |
+| Vercel + EC2 split | Free HTTPS/CDN via Vercel, compute on EC2 | ✓ Good |
+| SQLite over Postgres | Single-user scale, no need for concurrent writes | ✓ Good |
+
+## Evolution
+
+This document evolves at phase transitions and milestone boundaries.
+
+**After each phase transition** (via `/gsd-transition`):
+1. Requirements invalidated? → Move to Out of Scope with reason
+2. Requirements validated? → Move to Validated with phase reference
+3. New requirements emerged? → Add to Active
+4. Decisions to log? → Add to Key Decisions
+5. "What This Is" still accurate? → Update if drifted
+
+**After each milestone** (via `/gsd-complete-milestone`):
+1. Full review of all sections
+2. Core Value check — still the right priority?
+3. Audit Out of Scope — reasons still valid?
+4. Update Context with current state
+
+---
+*Last updated: 2026-03-30 after initialization*
