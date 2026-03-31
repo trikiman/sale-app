@@ -20,6 +20,7 @@ class Database:
         self.db_path = db_path or config.DATABASE_PATH
         self._ensure_directory()
         self._init_tables()
+        self._init_sale_history_tables()
     
     def _ensure_directory(self):
         """Ensure database directory exists"""
@@ -124,6 +125,61 @@ class Database:
                     telegram_id INTEGER,
                     created_at TEXT NOT NULL,
                     used INTEGER DEFAULT 0
+                )
+            """)
+    
+    def _init_sale_history_tables(self):
+        """Initialize sale history tables (Phase 13: HIST-01, HIST-02, HIST-03)"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS sale_appearances (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    product_id TEXT NOT NULL,
+                    sale_type TEXT NOT NULL,
+                    price REAL,
+                    old_price REAL,
+                    discount_pct INTEGER,
+                    seen_at TEXT NOT NULL,
+                    UNIQUE(product_id, seen_at)
+                )
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_appearances_product ON sale_appearances(product_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_appearances_seen ON sale_appearances(seen_at)")
+            
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS sale_sessions (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    product_id TEXT NOT NULL,
+                    sale_type TEXT NOT NULL,
+                    price REAL,
+                    old_price REAL,
+                    discount_pct INTEGER,
+                    first_seen TEXT NOT NULL,
+                    last_seen TEXT NOT NULL,
+                    duration_minutes INTEGER DEFAULT 0,
+                    is_active INTEGER DEFAULT 1
+                )
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_sessions_product ON sale_sessions(product_id)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_sessions_active ON sale_sessions(is_active)")
+            
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS product_catalog (
+                    product_id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    category TEXT,
+                    image_url TEXT,
+                    last_known_price REAL,
+                    total_sale_count INTEGER DEFAULT 0,
+                    last_sale_at TEXT,
+                    last_sale_type TEXT,
+                    avg_discount_pct REAL DEFAULT 0,
+                    max_discount_pct INTEGER DEFAULT 0,
+                    usual_sale_time TEXT,
+                    avg_catch_window_min REAL DEFAULT 0,
+                    updated_at TEXT NOT NULL
                 )
             """)
     

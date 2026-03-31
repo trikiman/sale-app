@@ -120,6 +120,13 @@ def merge_products():
             json.dump(output, f, ensure_ascii=False, indent=2)
         print("  ✅ Copied to miniapp")
     
+    # Record sale history (never fail the merge if this errors)
+    try:
+        from database.sale_history import record_sale_appearances
+        record_sale_appearances(all_products)
+    except Exception as e:
+        print(f"  ⚠️ Sale history recording failed: {e}")
+    
     print(f"\n{'='*60}")
     print(f"✅ MERGED TOTAL: {len(all_products)} products")
     print(f"  💚 Green: {green_count}")
