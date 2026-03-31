@@ -65,22 +65,30 @@ Family members see every VkusVill discount (green/red/yellow) the moment it appe
 
 ### Active
 
-No active requirements. Run `/gsd-new-milestone` to define next milestone.
+<!-- v1.2 Price History milestone -->
 
-## Current State
+- [ ] **HIST-01**: Sale appearance tracking (DB + scraper integration)
+- [ ] **HIST-02**: Sale session aggregation
+- [ ] **HIST-03**: Product catalog seeding (17K products)
+- [ ] **HIST-04**: Prediction engine (time/day patterns, confidence)
+- [ ] **HIST-05**: History API endpoints (paginated list + detail)
+- [ ] **HIST-06**: History list page (search, filters, infinite scroll)
+- [ ] **HIST-07**: History detail page (calendar, charts, predictions)
+- [ ] **HIST-08**: Navigation integration + polish
 
-**v1.0 and v1.1 shipped.** No active milestone.
+## Current Milestone: v1.2 Price History
 
-**Shipped features:**
-- All 14 security/scraper/UX/backend requirements from v1.0
-- 71 automated tests (6 E2E + 33 API + 32 scraper) from v1.1
-- Telegram WebApp SDK + "Open in browser" link
+**Goal:** Build a full "History" page showing all VkusVill products with sale tracking, prediction engine, and calendar visualizations.
 
-**Possible next milestones:**
-- Price history page
-- Cookie expiry detection and re-login prompt
-- CI/CD automation (run tests automatically)
-- Notification preferences UI
+**Target features:**
+- Database: sale_appearances, sale_sessions, product_catalog tables
+- Prediction engine: time-of-day + day-of-week patterns, confidence scoring
+- API: paginated history list + product detail with predictions
+- Frontend: History list page + 3-column detail page with calendar heatmap
+- Scraper integration: record appearances after each merge
+
+**Reference plan:** `docs/memory/plans/historypage.md`
+**Approved mockup:** `data/mockup_detail_combined.html`
 
 ### Out of Scope
 
@@ -175,5 +183,6 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-31 after v1.1 milestone completion*
+*Last updated: 2026-03-31 after v1.2 milestone start*
+
 
