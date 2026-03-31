@@ -3133,7 +3133,7 @@ def history_get_products(
         params = []
 
         if search:
-            conditions.append("pc.name LIKE ?")
+            conditions.append("LOWER(pc.name) LIKE LOWER(?)")
             params.append(f"%{search}%")
 
         if category:
@@ -3143,6 +3143,8 @@ def history_get_products(
         if filter and filter in ("green", "red", "yellow"):
             conditions.append("pc.last_sale_type = ?")
             params.append(filter)
+        elif filter == "predicted_soon":
+            conditions.append("pc.total_sale_count > 0 AND pc.usual_sale_time IS NOT NULL")
 
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
