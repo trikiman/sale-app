@@ -14,7 +14,7 @@ Family members see every VkusVill discount (green/red/yellow) the moment it appe
 
 ### Validated
 
-<!-- Shipped and confirmed valuable. Inferred from existing working codebase. -->
+<!-- Shipped and confirmed valuable. -->
 
 - ✓ **SCRAPE-01**: System scrapes green price tags from VkusVill cart page using technical account cookies — existing (scrape_green.py)
 - ✓ **SCRAPE-02**: System scrapes red price tags from VkusVill catalog — existing (scrape_red.py)
@@ -48,24 +48,26 @@ Family members see every VkusVill discount (green/red/yellow) the moment it appe
 - ✓ **SEC-03**: PIN stored as salted hash, not plaintext — existing
 - ✓ **SEC-04**: Login rate limiting (4 attempts/10 min) — existing
 - ✓ **SEC-05**: Client log rate limiting (30/window) — existing
+- ✓ **SEC-06**: Favorites IDOR fix — v1.0
+- ✓ **SEC-07**: Cart IDOR fix — v1.0
+- ✓ **SEC-08**: Frontend initData auth — v1.0
+- ✓ **SCRP-07**: Green scraper ≥90% accuracy (100% achieved) — v1.0
+- ✓ **SCRP-08**: No stock=99 placeholder — v1.0
+- ✓ **SCRP-09**: Category determinism — v1.0
+- ✓ **BOT-04**: All-user notifications — v1.0
+- ✓ **BOT-05**: Exact category matching — v1.0
+- ✓ **UX-06**: Light theme CSS — v1.0
+- ✓ **UX-07**: Composite keys — v1.0
+- ✓ **UX-08**: Cart qty=0 filter — v1.0
+- ✓ **UX-09**: 403 recovery — v1.0
+- ✓ **UX-10**: AnimatePresence delay — v1.0
+- ✓ **BACK-01**: Run-All merge sync — v1.0
 
 ### Active
 
-<!-- Bug fix milestone — current scope. -->
+<!-- No active requirements — v1.0 complete. Next milestone TBD. -->
 
-- [ ] **BUG-038**: Favorites endpoints validate user identity (IDOR fix)
-- [ ] **BUG-039**: Cart endpoints validate user identity (IDOR fix)
-- [ ] **BUG-044**: Telegram notifications sent to ALL matching users, not just first
-- [ ] **BUG-046**: "Run All" scrapers queues merge step after all complete
-- [ ] **BUG-053**: Category scraper handles multi-category products deterministically
-- [ ] **BUG-056**: Bot category matching uses exact match, not fuzzy substring
-- [ ] **BUG-067**: Green scraper captures all green items (match live site count)
-- [ ] **BUG-068**: Stock=99 placeholder replaced with real stock for remaining product
-- [ ] **UX-01**: Theme toggle actually switches CSS variables (not just icon)
-- [ ] **UX-02**: Duplicate React keys resolved (product ID uniqueness)
-- [ ] **UX-03**: Cart 0-quantity items auto-removed from list
-- [ ] **UX-04**: Scraper trigger UI recovers from 403 (doesn't get stuck)
-- [ ] **UX-05**: "Новинки" empty state doesn't flash during AnimatePresence exit
+(None — milestone v1.0 complete)
 
 ### Out of Scope
 
@@ -162,4 +164,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-30 after initialization*
+*Last updated: 2026-03-31 after v1.0 milestone completion*

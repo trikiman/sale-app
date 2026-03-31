@@ -17,6 +17,7 @@
 | 6 | Bot Notifications & Matching | Fix per-user notifications and exact category matching | Complete    | 2026-03-30 |
 | 7 | Frontend UX Fixes | Theme toggle, React keys, cart display, admin UI, animations | Complete    | 2026-03-30 |
 | 8 | Run-All Merge Sync | Fix merge race condition on "Run All" | Complete    | 2026-03-30 |
+| 9 | Green Scraper Accuracy Fix | Fix 3 bugs causing site-vs-scraper mismatch | Pending | — |
 
 ---
 
@@ -143,3 +144,27 @@
 **Files likely affected:**
 - `backend/main.py` — run-all handler, merge task queue
 - Possibly `scheduler_service.py` — synchronization logic
+
+---
+
+### Phase 9: Green Scraper Accuracy Fix (Gap Closure)
+**Goal:** Fix 3 bugs causing green scraper to report 8 items when VkusVill site shows 2
+**Requirements:** SCRP-07
+**Gap Closure:** Closes gaps from v1.0 audit
+**UI hint:** no
+
+**Success criteria:**
+1. `greenLiveCount` in output reflects actual DOM-detected count, not inflated by `max(live_count, len(products))`
+2. Basket API items only included if cross-validated against current modal/DOM scrape
+3. Stale `green_modal_products.json` (>15 min) rejected as primary source
+4. Green product count matches live VkusVill site count (±1 item tolerance for timing)
+
+**Root causes:**
+1. `scrape_green_data.py:515` — `live_count = max(live_count, len(products))` inflates live_count to always match scraped count
+2. `basket_recalc` returns ALL cart items including former green items with stale `IS_GREEN=1`
+3. `green_modal_products.json` used even when stale, preserving phantom items across runs
+
+**Files likely affected:**
+- `scrape_green_data.py` — remove live_count inflation, add basket cross-validation, add modal age guard
+- `green_common.py` — possibly improve `inspect_green_section()` live_count detection
+- `scrape_green_add.py` — ensure modal products file has reliable timestamps
