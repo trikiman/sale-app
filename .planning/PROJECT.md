@@ -65,24 +65,24 @@ Family members see every VkusVill discount (green/red/yellow) the moment it appe
 
 ### Active
 
-<!-- v1.1 Testing & QA milestone -->
+No active requirements. Run `/gsd-new-milestone` to define next milestone.
 
-- [ ] **TEST-01**: Browser E2E tests cover all main user flows
-- [ ] **TEST-02**: API unit tests cover all backend endpoints
-- [ ] **TEST-03**: Scraper output verification tests ensure data accuracy
+## Current State
 
-## Current Milestone: v1.1 Testing & QA
+**v1.0 and v1.1 shipped.** No active milestone.
 
-**Goal:** Comprehensive test coverage — browser E2E for every user flow + backend pytest for all API endpoints to prevent regressions.
+**Shipped features:**
+- All 14 security/scraper/UX/backend requirements from v1.0
+- 71 automated tests (6 E2E + 33 API + 32 scraper) from v1.1
+- Telegram WebApp SDK + "Open in browser" link
 
-**Target features:**
-- Browser E2E tests (product grid, filters, cart, favorites, theme, product detail)
-- API unit tests (products, cart, favorites, auth, admin endpoints)
-- Scraper verification tests (green/red/yellow data accuracy)
+**Possible next milestones:**
+- Price history page
+- Cookie expiry detection and re-login prompt
+- CI/CD automation (run tests automatically)
+- Notification preferences UI
 
 ### Out of Scope
-
-<!-- Explicit boundaries for this milestone. -->
 
 - Docker containerization — not needed, systemd works fine
 - HTTPS/domain setup — Vercel handles HTTPS already
@@ -175,4 +175,5 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-31 after v1.1 milestone start*
+*Last updated: 2026-03-31 after v1.1 milestone completion*
+
