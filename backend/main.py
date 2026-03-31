@@ -3109,6 +3109,142 @@ def cart_clear_endpoint(req: CartClearRequest, request: Request):
         raise HTTPException(status_code=500, detail="Ошибка очистки корзины")
 
 
+# ─── History Endpoints (Phase 15: HIST-07, HIST-08) ──────────────────────────
+
+@app.get("/api/history/products")
+def history_get_products(
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=200),
+    search: Optional[str] = Query(None),
+    category: Optional[str] = Query(None),
+    filter: Optional[str] = Query(None),  # "all", "green", "red", "yellow", "predicted_soon"
+    sort: Optional[str] = Query("last_seen"),  # "last_seen", "most_frequent", "alphabetical"
+    x_telegram_user_id: Optional[str] = Header(None, alias="X-Telegram-User-Id"),
+):
+    """Paginated list of all products with sale history and predictions."""
+    import sqlite3 as _sqlite3
+    try:
+        conn = _sqlite3.connect(config.DATABASE_PATH, timeout=10)
+        conn.row_factory = _sqlite3.Row
+        c = conn.cursor()
+
+        # Build query
+        conditions = []
+        params = []
+
+        if search:
+            conditions.append("pc.name LIKE ?")
+            params.append(f"%{search}%")
+
+        if category:
+            conditions.append("pc.category = ?")
+            params.append(category)
+
+        if filter and filter in ("green", "red", "yellow"):
+            conditions.append("pc.last_sale_type = ?")
+            params.append(filter)
+
+        where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
+
+        # Sort
+        order_map = {
+            "last_seen": "pc.last_sale_at DESC NULLS LAST",
+            "most_frequent": "pc.total_sale_count DESC",
+            "alphabetical": "pc.name ASC",
+            "predicted_soonest": "pc.last_sale_at DESC NULLS LAST",
+        }
+        order = order_map.get(sort, "pc.last_sale_at DESC NULLS LAST")
+
+        # Count total
+        c.execute(f"SELECT COUNT(*) FROM product_catalog pc {where}", params)
+        total = c.fetchone()[0]
+
+        # Get page
+        offset = (page - 1) * per_page
+        c.execute(f"""
+            SELECT pc.product_id, pc.name, pc.category, pc.image_url,
+                   pc.last_known_price, pc.total_sale_count, pc.last_sale_at,
+                   pc.last_sale_type, pc.avg_discount_pct, pc.max_discount_pct,
+                   pc.usual_sale_time, pc.avg_catch_window_min
+            FROM product_catalog pc
+            {where}
+            ORDER BY {order}
+            LIMIT ? OFFSET ?
+        """, params + [per_page, offset])
+
+        products = []
+        for row in c.fetchall():
+            products.append({
+                "id": row["product_id"],
+                "name": row["name"],
+                "category": row["category"],
+                "image_url": row["image_url"],
+                "last_known_price": row["last_known_price"],
+                "total_sale_count": row["total_sale_count"] or 0,
+                "last_sale_at": row["last_sale_at"],
+                "last_sale_type": row["last_sale_type"],
+                "avg_discount_pct": row["avg_discount_pct"] or 0,
+                "max_discount_pct": row["max_discount_pct"] or 0,
+                "usual_time": row["usual_sale_time"],
+                "avg_window_min": row["avg_catch_window_min"] or 0,
+                "is_currently_on_sale": False,  # Will be enriched below
+            })
+
+        # Check which products are currently on sale
+        if products:
+            pids = [p["id"] for p in products]
+            placeholders = ",".join("?" * len(pids))
+            c.execute(f"""
+                SELECT DISTINCT product_id FROM sale_sessions
+                WHERE product_id IN ({placeholders}) AND is_active = 1
+            """, pids)
+            active_ids = {row["product_id"] for row in c.fetchall()}
+            for p in products:
+                p["is_currently_on_sale"] = p["id"] in active_ids
+
+        conn.close()
+
+        # Get categories for filter
+        conn2 = _sqlite3.connect(config.DATABASE_PATH, timeout=10)
+        conn2.row_factory = _sqlite3.Row
+        c2 = conn2.cursor()
+        c2.execute("""
+            SELECT DISTINCT category, COUNT(*) as cnt
+            FROM product_catalog
+            WHERE category IS NOT NULL AND category != ''
+            GROUP BY category
+            ORDER BY cnt DESC
+        """)
+        categories = [{"id": r["category"], "label": r["category"], "count": r["cnt"]} for r in c2.fetchall()]
+        conn2.close()
+
+        pages = (total + per_page - 1) // per_page
+
+        return {
+            "products": products,
+            "total": total,
+            "page": page,
+            "pages": pages,
+            "per_page": per_page,
+            "categories": categories,
+        }
+    except Exception as e:
+        logger.error(f"History products error: {e}")
+        return {"products": [], "total": 0, "page": 1, "pages": 0, "per_page": per_page, "categories": []}
+
+
+@app.get("/api/history/product/{product_id}")
+def history_get_product_detail(product_id: str):
+    """Full detail for one product: info + prediction + session history."""
+    try:
+        from backend.prediction import get_product_history_detail
+        detail = get_product_history_detail(product_id)
+        return detail
+    except Exception as e:
+        logger.error(f"History detail error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ─── Admin Endpoints ──────────────────────────────────────────────────────────
 
 @app.get("/admin/status")
