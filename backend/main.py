@@ -3124,7 +3124,7 @@ def history_get_products(
     """Paginated list of all products with sale history and predictions."""
     import sqlite3 as _sqlite3
     try:
-        conn = _sqlite3.connect(config.DATABASE_PATH, timeout=10)
+        conn = _sqlite3.connect(db.db_path, timeout=10)
         conn.row_factory = _sqlite3.Row
         c = conn.cursor()
 
@@ -3205,7 +3205,7 @@ def history_get_products(
         conn.close()
 
         # Get categories for filter
-        conn2 = _sqlite3.connect(config.DATABASE_PATH, timeout=10)
+        conn2 = _sqlite3.connect(db.db_path, timeout=10)
         conn2.row_factory = _sqlite3.Row
         c2 = conn2.cursor()
         c2.execute("""
