@@ -251,7 +251,8 @@ export default function HistoryDetail({ productId, onBack }) {
     )
   }
 
-  const { product, prediction, sessions, calendar } = data
+  const { product, prediction, sessions } = data
+  const calendar = prediction?.calendar || []
   const typeColor = TYPE_COLORS[product?.last_sale_type] || TYPE_COLORS.green
   const typeName = product?.last_sale_type === 'green' ? 'Green' :
     product?.last_sale_type === 'red' ? 'Red' : 'Yellow'
