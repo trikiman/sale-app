@@ -6,17 +6,22 @@ const API_BASE = '/api'
 
 const DAY_NAMES = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 const TYPE_COLORS = {
-  green: '#22c55e',
+  green: '#4ade80',
   red: '#ef4444',
-  yellow: '#eab308',
+  yellow: '#facc15',
+}
+const TYPE_BG = {
+  green: 'rgba(74, 222, 128, .2)',
+  red: 'rgba(239, 68, 68, .2)',
+  yellow: 'rgba(250, 204, 21, .2)',
 }
 
-// Confidence gauge SVG
+// ─── Confidence gauge SVG ────────────────────────────────
 function ConfidenceGauge({ pct, label }) {
   const r = 40
   const circ = 2 * Math.PI * r
   const offset = circ - (pct / 100) * circ
-  const color = pct >= 70 ? '#22c55e' : pct >= 40 ? '#eab308' : '#ef4444'
+  const color = pct >= 70 ? '#4ade80' : pct >= 40 ? '#facc15' : '#ef4444'
 
   return (
     <div className="hd-gauge">
@@ -41,12 +46,12 @@ function ConfidenceGauge({ pct, label }) {
   )
 }
 
-// Day-of-week pattern bars
+// ─── Day-of-week pattern bars ────────────────────────────
 function DayPattern({ pattern }) {
   if (!pattern) return null
   return (
     <div className="hd-day-pattern">
-      <div className="hd-section-title">📅 Дни недели</div>
+      <div className="hd-section-title">📅 Паттерн по дням недели</div>
       <div className="hd-day-bars">
         {DAY_NAMES.map((name, i) => {
           const prob = pattern[String(i)] || 0
@@ -59,7 +64,7 @@ function DayPattern({ pattern }) {
                   initial={{ height: 0 }}
                   animate={{ height: `${Math.max(pct, 2)}%` }}
                   transition={{ delay: i * 0.05, duration: 0.4 }}
-                  style={{ background: pct > 50 ? '#22c55e' : pct > 20 ? '#eab308' : 'rgba(255,255,255,0.15)' }}
+                  style={{ background: pct > 50 ? '#4ade80' : pct > 20 ? '#facc15' : 'rgba(255,255,255,0.15)' }}
                 />
               </div>
               <div className="hd-day-label">{name}</div>
@@ -72,14 +77,78 @@ function DayPattern({ pattern }) {
   )
 }
 
-// Hour distribution chart
+// ─── Calendar heatmap (monthly grid) ─────────────────────
+function CalendarHeatmap({ calendar, sessions }) {
+  if (!calendar || calendar.length === 0) return null
+
+  // Build a month view from calendar data
+  // calendar = [{date: "2026-03-16", sale_type: "green", time: "16:15", duration_min: 7, price: 289}, ...]
+  const saleByDate = {}
+  calendar.forEach(entry => {
+    const d = entry.date
+    if (!saleByDate[d]) saleByDate[d] = []
+    saleByDate[d].push(entry)
+  })
+
+  // Get current month or use the most recent sale date's month
+  const latestDate = calendar.length > 0 ? new Date(calendar[0].date) : new Date()
+  const year = latestDate.getFullYear()
+  const month = latestDate.getMonth()
+  const monthNames = ['Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+    'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь']
+
+  // Build grid: first day of month, days in month
+  const firstDay = (new Date(year, month, 1).getDay() + 6) % 7 // Mon=0
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+
+  const cells = []
+  // Empty cells for offset
+  for (let i = 0; i < firstDay; i++) cells.push(null)
+  // Day cells
+  for (let d = 1; d <= daysInMonth; d++) {
+    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+    const sales = saleByDate[dateStr]
+    cells.push({ day: d, dateStr, sales: sales || null })
+  }
+
+  return (
+    <div className="hd-calendar">
+      <div className="hd-section-title">📅 Календарь скидок — {monthNames[month]} {year}</div>
+      <div className="hd-cal-header">
+        {DAY_NAMES.map(d => <span key={d}>{d}</span>)}
+      </div>
+      <div className="hd-cal-grid">
+        {cells.map((cell, i) => {
+          if (!cell) return <div key={i} className="hd-cal-cell hd-cal-empty" />
+          const type = cell.sales?.[0]?.sale_type
+          const time = cell.sales?.[0]?.time
+          const cls = type ? `hd-cal-cell hd-cal-${type}` : 'hd-cal-cell hd-cal-none'
+          return (
+            <div key={i} className={cls} title={cell.sales ? `${cell.dateStr}: ${type} в ${time}` : ''}>
+              <span className="hd-cal-day">{cell.day}</span>
+              {time && <span className="hd-cal-time">{time}</span>}
+            </div>
+          )
+        })}
+      </div>
+      <div className="hd-cal-legend">
+        <span><i style={{ background: TYPE_COLORS.green }} /> Green</span>
+        <span><i style={{ background: TYPE_COLORS.red }} /> Red</span>
+        <span><i style={{ background: TYPE_COLORS.yellow }} /> Yellow</span>
+        <span><i style={{ background: 'rgba(255,255,255,0.06)' }} /> Нет скидки</span>
+      </div>
+    </div>
+  )
+}
+
+// ─── Hour distribution chart ─────────────────────────────
 function HourChart({ distribution }) {
   if (!distribution || Object.keys(distribution).length === 0) return null
   const maxVal = Math.max(...Object.values(distribution), 1)
 
   return (
     <div className="hd-hour-chart">
-      <div className="hd-section-title">🕐 Время суток</div>
+      <div className="hd-section-title">📈 Частота по времени суток</div>
       <div className="hd-hour-bars">
         {Array.from({ length: 24 }, (_, h) => {
           const count = distribution[String(h)] || 0
@@ -103,22 +172,23 @@ function HourChart({ distribution }) {
   )
 }
 
-// Sale history log
+// ─── Sale history log ────────────────────────────────────
 function SaleLog({ sessions }) {
   if (!sessions || sessions.length === 0) return null
   return (
     <div className="hd-sale-log">
-      <div className="hd-section-title">📋 История появлений</div>
+      <div className="hd-section-title">📜 Последние появления ({sessions.length} записей)</div>
       <div className="hd-log-list">
         {sessions.map((s, i) => (
           <div key={i} className={`hd-log-item ${s.is_active ? 'hd-log-active' : ''}`}>
+            <span className="hd-log-dot" style={{ background: TYPE_COLORS[s.type] || '#666' }} />
             <div className="hd-log-date">{s.date}</div>
             <div className="hd-log-time">{s.time}</div>
             <span
               className="hd-log-type"
               style={{ background: (TYPE_COLORS[s.type] || '#666') + '33', color: TYPE_COLORS[s.type] || '#999' }}
             >
-              {s.type === 'green' ? '💚' : s.type === 'red' ? '🔴' : '🟡'} -{s.discount}%
+              -{s.discount}%
             </span>
             <div className="hd-log-window">{s.window}</div>
             <div className="hd-log-price">{s.price}₽</div>
@@ -129,6 +199,7 @@ function SaleLog({ sessions }) {
   )
 }
 
+// ─── Main detail page ────────────────────────────────────
 export default function HistoryDetail({ productId, onBack }) {
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -160,7 +231,7 @@ export default function HistoryDetail({ productId, onBack }) {
           <h2 className="hd-title">Загрузка...</h2>
         </div>
         <div className="hd-loading">
-          {[...Array(4)].map((_, i) => <div key={i} className="history-skeleton" style={{ height: 120 }} />)}
+          {[...Array(4)].map((_, i) => <div key={i} className="hcard-skeleton" style={{ height: 120 }} />)}
         </div>
       </div>
     )
@@ -180,60 +251,74 @@ export default function HistoryDetail({ productId, onBack }) {
     )
   }
 
-  const { product, prediction, sessions } = data
+  const { product, prediction, sessions, calendar } = data
+  const typeColor = TYPE_COLORS[product?.last_sale_type] || TYPE_COLORS.green
+  const typeName = product?.last_sale_type === 'green' ? 'Green' :
+    product?.last_sale_type === 'red' ? 'Red' : 'Yellow'
 
   return (
     <div className="hd-page">
-      {/* Header */}
-      <div className="hd-header">
-        <button className="history-back-btn" onClick={onBack}>← Назад</button>
-        <h2 className="hd-title">{product?.name || 'Товар'}</h2>
+      {/* Top bar */}
+      <div className="hd-topbar">
+        <button className="history-back-btn" onClick={onBack}>← Назад к списку</button>
       </div>
 
-      {/* Product info row */}
-      <div className="hd-product-row">
-        {product?.image_url && (
-          <img
-            src={product.image_url}
-            alt=""
-            className="hd-product-img"
-            referrerPolicy="no-referrer"
-          />
+      {/* Hero — product info */}
+      <div className="hd-hero">
+        {product?.image_url ? (
+          <img src={product.image_url} alt="" className="hd-hero-img" referrerPolicy="no-referrer" />
+        ) : (
+          <div className="hd-hero-emoji">📦</div>
         )}
-        <div className="hd-product-info">
-          <div className="hd-product-category">{product?.category || ''}</div>
-          {product?.last_known_price > 0 && (
-            <div className="hd-product-price">{product.last_known_price}₽</div>
-          )}
-          {product?.total_sale_count > 0 && (
-            <div className="hd-product-stat">
-              Был на скидке {product.total_sale_count} раз
-            </div>
+        <div className="hd-hero-info">
+          <div className="hd-hero-name">{product?.name || 'Товар'}</div>
+          <div className="hd-hero-cat">{product?.category || ''}</div>
+          <div className="hd-hero-prices">
+            {product?.last_known_price > 0 && (
+              <span className="hd-hero-price" style={{ color: typeColor }}>
+                {product.last_known_price} ₽
+              </span>
+            )}
+            {product?.last_old_price > 0 && (
+              <span className="hd-hero-old">{product.last_old_price} ₽</span>
+            )}
+            {prediction?.max_discount > 0 && (
+              <span className="hd-hero-pct" style={{ background: typeColor + '22', color: typeColor }}>
+                -{prediction.max_discount}%
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="hd-hero-right">
+          {product?.last_sale_type && (
+            <span className="hd-type-pill" style={{ background: typeColor + '22', color: typeColor }}>
+              {typeName} {prediction?.max_discount || ''}%
+            </span>
           )}
         </div>
       </div>
 
-      {/* 3-column layout */}
-      <div className="hd-grid">
-        {/* Left column: Stats + Prediction */}
+      {/* ─── 3-column layout ─── */}
+      <div className="hd-main-3col">
+        {/* LEFT: Stats + Prediction + Day Pattern */}
         <div className="hd-col">
-          {/* Stats boxes */}
+          <div className="hd-section-title">📊 Статистика</div>
           <div className="hd-stats-grid">
             <div className="hd-stat-box">
               <div className="hd-stat-value">{prediction?.total_appearances || 0}</div>
-              <div className="hd-stat-label">Появлений</div>
+              <div className="hd-stat-label">раз в скидке</div>
             </div>
             <div className="hd-stat-box">
               <div className="hd-stat-value">{prediction?.usual_time || '—'}</div>
-              <div className="hd-stat-label">Обычное время</div>
+              <div className="hd-stat-label">обычное время</div>
             </div>
             <div className="hd-stat-box">
               <div className="hd-stat-value">{prediction?.avg_window_min || 0}м</div>
-              <div className="hd-stat-label">Ср. окно</div>
+              <div className="hd-stat-label">окно ловли</div>
             </div>
             <div className="hd-stat-box">
               <div className="hd-stat-value">-{prediction?.max_discount || 0}%</div>
-              <div className="hd-stat-label">Макс. скидка</div>
+              <div className="hd-stat-label">макс. скидка</div>
             </div>
           </div>
 
@@ -249,9 +334,7 @@ export default function HistoryDetail({ productId, onBack }) {
                 />
                 {prediction.predicted_at && (
                   <div className="hd-prediction-text">
-                    <div className="hd-prediction-next">
-                      Следующая скидка:
-                    </div>
+                    <div className="hd-prediction-next">Следующая скидка:</div>
                     <div className="hd-prediction-date">
                       {new Date(prediction.predicted_at).toLocaleDateString('ru-RU', {
                         weekday: 'short', day: 'numeric', month: 'short'
@@ -264,7 +347,6 @@ export default function HistoryDetail({ productId, onBack }) {
                 )}
               </div>
 
-              {/* Wait advice */}
               {prediction.wait_advice && (
                 <div className="hd-wait-advice">
                   ⚠️ {prediction.wait_advice}
@@ -273,13 +355,17 @@ export default function HistoryDetail({ productId, onBack }) {
             </div>
           )}
 
-          {/* Day pattern */}
           <DayPattern pattern={prediction?.day_pattern} />
         </div>
 
-        {/* Right column: Hour chart + Sale log */}
-        <div className="hd-col">
+        {/* CENTER: Calendar + Hour chart */}
+        <div className="hd-col hd-col-center">
+          <CalendarHeatmap calendar={calendar} sessions={sessions} />
           <HourChart distribution={prediction?.hour_distribution} />
+        </div>
+
+        {/* RIGHT: Sale log */}
+        <div className="hd-col">
           <SaleLog sessions={sessions} />
         </div>
       </div>
