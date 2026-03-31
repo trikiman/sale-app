@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef, useCallback, memo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import CartPanel from './CartPanel'
 import ProductDetail from './ProductDetail'
+import HistoryPage from './HistoryPage'
 import { buildCategoryRunView } from './categoryRunStatus'
 import { getCardMetaBadges, mergeResolvedWeights, shouldFetchMissingWeight } from './productMeta'
 import { getAuthHeaders } from './api'
@@ -288,6 +289,7 @@ function App() {
   const [categorizingRunning, setCategorizingRunning] = useState(false)
   const [categorizingDone, setCategorizingDone] = useState(false)
   const [categorizingStatus, setCategorizingStatus] = useState(null)
+  const [currentPage, setCurrentPage] = useState('main') // 'main' | 'history'
 
   // Telegram account linking
   const isGuest = typeof userId === 'string' && userId.startsWith('guest_')
@@ -923,6 +925,21 @@ function App() {
     </div>
   )
 
+  // If on history page, render it instead
+  if (currentPage === 'history') {
+    return (
+      <div className="app-container" data-theme={theme}>
+        <HistoryPage
+          onBack={() => setCurrentPage('main')}
+          onOpenDetail={(productId) => {
+            // Could navigate to detail — for now just log
+            console.log('Open detail:', productId)
+          }}
+        />
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen p-4 app-container">
       {/* Header */}
@@ -1063,6 +1080,13 @@ function App() {
               </button>
             </>
           )}
+          <button
+            onClick={() => setCurrentPage('history')}
+            className="header-pill header-pill-action"
+            title="История скидок"
+          >
+            📊 История
+          </button>
           <button
             onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
             className="header-pill header-pill-action"
