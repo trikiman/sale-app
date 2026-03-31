@@ -1,110 +1,139 @@
 import { useState, useEffect, useCallback, useRef, memo } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { getAuthHeaders } from './api'
 
 const API_BASE = '/api'
 
-// Sale type colors
 const TYPE_COLORS = {
-  green: { bg: 'rgba(34, 197, 94, 0.15)', border: 'rgba(34, 197, 94, 0.4)', text: '#4ade80', dot: '#22c55e' },
-  red: { bg: 'rgba(239, 68, 68, 0.15)', border: 'rgba(239, 68, 68, 0.4)', text: '#f87171', dot: '#ef4444' },
-  yellow: { bg: 'rgba(234, 179, 8, 0.15)', border: 'rgba(234, 179, 8, 0.4)', text: '#fbbf24', dot: '#eab308' },
+  green: { bg: 'rgba(34, 197, 94, 0.08)', border: 'rgba(34, 197, 94, 0.25)', text: '#4ade80', dot: '#22c55e', badge: 'rgba(34, 197, 94, 0.9)' },
+  red: { bg: 'rgba(239, 68, 68, 0.08)', border: 'rgba(239, 68, 68, 0.25)', text: '#f87171', dot: '#ef4444', badge: 'rgba(239, 68, 68, 0.9)' },
+  yellow: { bg: 'rgba(234, 179, 8, 0.08)', border: 'rgba(234, 179, 8, 0.25)', text: '#fbbf24', dot: '#eab308', badge: 'rgba(234, 179, 8, 0.9)' },
 }
 
-// Format relative time in Russian
-function timeAgo(dateStr) {
-  if (!dateStr) return null
-  const diff = Date.now() - new Date(dateStr).getTime()
-  const mins = Math.floor(diff / 60000)
-  if (mins < 1) return 'только что'
-  if (mins < 60) return `${mins} мин назад`
-  const hours = Math.floor(mins / 60)
-  if (hours < 24) return `${hours} ч назад`
-  const days = Math.floor(hours / 24)
-  if (days === 1) return 'вчера'
-  if (days < 7) return `${days} дн назад`
-  return new Date(dateStr).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short' })
+const DAY_LABELS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
+
+// 7-day mini timeline bar (like the mockup)
+function MiniTimeline({ dayPattern, saleType }) {
+  const color = TYPE_COLORS[saleType] || TYPE_COLORS.green
+  return (
+    <div className="hcard-timeline">
+      <div className="hcard-timeline-label">Последние 7 дней</div>
+      <div className="hcard-timeline-row">
+        {DAY_LABELS.map((day, i) => {
+          const prob = dayPattern ? (dayPattern[String(i)] || 0) : 0
+          const hasData = prob > 0
+          return (
+            <div key={i} className="hcard-timeline-col">
+              <div className="hcard-timeline-day">{day}</div>
+              <div
+                className={`hcard-timeline-bar ${hasData ? '' : 'empty'}`}
+                style={hasData ? { background: color.dot, opacity: 0.3 + prob * 0.7 } : {}}
+              />
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
 }
 
-// History card for the list
+// Confidence dots
+function ConfidenceDots({ level }) {
+  const colors = level === 'high' ? ['#22c55e', '#22c55e', '#22c55e'] :
+    level === 'medium' ? ['#eab308', '#eab308', 'rgba(255,255,255,0.15)'] :
+      ['#ef4444', 'rgba(255,255,255,0.15)', 'rgba(255,255,255,0.15)']
+  return (
+    <span className="hcard-dots">
+      {colors.map((c, i) => <span key={i} className="hcard-dot" style={{ background: c }} />)}
+    </span>
+  )
+}
+
+// History card — vertical layout matching mockup
 const HistoryCard = memo(function HistoryCard({ product, onClick }) {
-  const typeColor = TYPE_COLORS[product.last_sale_type] || TYPE_COLORS.green
+  const type = product.last_sale_type || 'green'
+  const tc = TYPE_COLORS[type] || TYPE_COLORS.green
   const hasSales = product.total_sale_count > 0
   const isGhost = !hasSales && !product.is_currently_on_sale
 
   return (
     <motion.div
-      className={`history-card ${isGhost ? 'history-card-ghost' : ''}`}
+      className={`hcard ${isGhost ? 'hcard-ghost' : ''}`}
       onClick={() => onClick(product)}
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
-      whileHover={{ y: -2 }}
-      style={hasSales ? { borderLeft: `3px solid ${typeColor.dot}` } : {}}
+      whileHover={{ y: -3, boxShadow: '0 8px 28px rgba(0,0,0,0.25)' }}
+      style={hasSales ? {
+        background: tc.bg,
+        borderColor: tc.border,
+      } : {}}
     >
-      {/* Product image */}
-      <div className="history-card-img-wrap">
+      {/* Image section */}
+      <div className="hcard-image-wrap">
         {product.image_url ? (
           <img
             src={product.image_url}
             alt=""
-            className="history-card-img"
+            className="hcard-img"
             loading="lazy"
             referrerPolicy="no-referrer"
           />
         ) : (
-          <div className="history-card-img-placeholder">📦</div>
+          <div className="hcard-img-placeholder">📦</div>
         )}
+
+        {/* Type badge — top left */}
+        {hasSales && product.avg_discount_pct > 0 && (
+          <span className="hcard-type-badge" style={{ background: tc.badge }}>
+            {type === 'green' ? 'Green' : type === 'red' ? 'Red' : 'Yellow'} {Math.round(product.avg_discount_pct)}%
+          </span>
+        )}
+
+        {/* Live indicator */}
         {product.is_currently_on_sale && (
-          <span className="history-card-live-badge">● LIVE</span>
+          <span className="hcard-live-dot">●</span>
         )}
       </div>
 
-      {/* Card body */}
-      <div className="history-card-body">
-        <div className="history-card-name">{product.name}</div>
+      {/* Info section */}
+      <div className="hcard-body">
+        <div className="hcard-name">{product.name}</div>
 
         {hasSales ? (
           <>
-            {/* Stats row */}
-            <div className="history-card-stats">
-              <span className="history-card-stat">
-                🔄 {product.total_sale_count}×
+            {/* Price row */}
+            <div className="hcard-price-row">
+              <span className="hcard-price" style={{ color: tc.text }}>
+                {product.last_known_price > 0 ? `${product.last_known_price} ₽` : ''}
               </span>
-              {product.avg_discount_pct > 0 && (
-                <span className="history-card-stat">
-                  💰 -{Math.round(product.avg_discount_pct)}%
-                </span>
+              {product.last_old_price > 0 && (
+                <span className="hcard-old-price">{product.last_old_price} ₽</span>
               )}
+            </div>
+
+            {/* Stats */}
+            <div className="hcard-stats">
+              <span>🔥 {product.total_sale_count}×</span>
               {product.avg_window_min > 0 && (
-                <span className="history-card-stat">
-                  ⏱ {Math.round(product.avg_window_min)}м
-                </span>
+                <span>⏱ {Math.round(product.avg_window_min)}м</span>
               )}
             </div>
 
-            {/* Last sale + usual time */}
-            <div className="history-card-meta">
-              {product.last_sale_at && (
-                <span style={{ color: typeColor.text }}>
-                  {timeAgo(product.last_sale_at)}
-                </span>
-              )}
-              {product.usual_time && (
-                <span style={{ opacity: 0.5 }}>
-                  обычно в {product.usual_time}
-                </span>
-              )}
-            </div>
+            {/* 7-day mini timeline */}
+            <MiniTimeline dayPattern={product.day_pattern} saleType={type} />
 
-            {/* Price */}
-            {product.last_known_price > 0 && (
-              <div className="history-card-price">
-                {product.last_known_price}₽
+            {/* Prediction */}
+            {product.usual_time && (
+              <div className="hcard-prediction">
+                <span>🔮 обычно ~{product.usual_time}</span>
+                <ConfidenceDots level={product.confidence || 'low'} />
               </div>
             )}
           </>
         ) : (
-          <div className="history-card-no-sales">Ещё не было на скидке</div>
+          <div className="hcard-no-data">
+            <span style={{ opacity: 0.4 }}>📊 Нет данных</span>
+          </div>
         )}
       </div>
     </motion.div>
@@ -114,9 +143,9 @@ const HistoryCard = memo(function HistoryCard({ product, onClick }) {
 // Filter chips
 const FILTERS = [
   { id: 'all', label: '🔍 Все', color: null },
-  { id: 'green', label: '💚 Зелёные', color: '#22c55e' },
-  { id: 'red', label: '🔴 Красные', color: '#ef4444' },
-  { id: 'yellow', label: '🟡 Жёлтые', color: '#eab308' },
+  { id: 'green', label: '🟢 Green', color: '#22c55e' },
+  { id: 'red', label: '🔴 Red', color: '#ef4444' },
+  { id: 'yellow', label: '🟡 Yellow', color: '#eab308' },
 ]
 
 const SORTS = [
@@ -129,6 +158,7 @@ export default function HistoryPage({ onBack, onOpenDetail }) {
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
+  const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
   const [sort, setSort] = useState('last_seen')
@@ -172,7 +202,6 @@ export default function HistoryPage({ onBack, onOpenDetail }) {
     }
   }, [search, filter, sort])
 
-  // Initial load + refetch on filter/sort/search change
   useEffect(() => {
     fetchProducts(1, false)
   }, [fetchProducts])
@@ -180,15 +209,20 @@ export default function HistoryPage({ onBack, onOpenDetail }) {
   // Debounced search
   const handleSearchChange = (e) => {
     const val = e.target.value
-    setSearch(val)
+    setSearchInput(val)
+    if (searchTimeout.current) clearTimeout(searchTimeout.current)
+    searchTimeout.current = setTimeout(() => setSearch(val), 300)
+  }
+
+  const clearSearch = () => {
+    setSearchInput('')
+    setSearch('')
+    if (searchTimeout.current) clearTimeout(searchTimeout.current)
   }
 
   // Infinite scroll
   const handleScroll = useCallback(() => {
     if (loadingMore || page >= totalPages) return
-    const el = listRef.current
-    if (!el) return
-    // Check if near bottom of page
     if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 400) {
       fetchProducts(page + 1, true)
     }
@@ -204,10 +238,8 @@ export default function HistoryPage({ onBack, onOpenDetail }) {
       {/* Header */}
       <div className="history-header">
         <div className="history-header-top">
-          <button className="history-back-btn" onClick={onBack}>
-            ← Назад
-          </button>
-          <h1 className="history-title">📊 История скидок</h1>
+          <button className="history-back-btn" onClick={onBack}>← Назад</button>
+          <h1 className="history-title">📊 Sale History</h1>
           <div className="history-total">
             {total > 0 && <span>{total.toLocaleString()} товаров</span>}
           </div>
@@ -215,21 +247,20 @@ export default function HistoryPage({ onBack, onOpenDetail }) {
 
         {/* Search */}
         <div className="history-search-wrap">
+          <span className="history-search-icon">🔍</span>
           <input
             type="text"
             className="history-search"
-            placeholder="Поиск по названию..."
-            value={search}
+            placeholder="Поиск по товарам и категориям..."
+            value={searchInput}
             onChange={handleSearchChange}
           />
-          {search && (
-            <button className="history-search-clear" onClick={() => setSearch('')}>
-              ✕
-            </button>
+          {searchInput && (
+            <button className="history-search-clear" onClick={clearSearch}>✕</button>
           )}
         </div>
 
-        {/* Filter chips */}
+        {/* Filters + sort */}
         <div className="history-filters">
           <div className="history-filter-chips">
             {FILTERS.map(f => (
@@ -247,8 +278,6 @@ export default function HistoryPage({ onBack, onOpenDetail }) {
               </button>
             ))}
           </div>
-
-          {/* Sort */}
           <div className="history-sort">
             {SORTS.map(s => (
               <button
@@ -263,32 +292,28 @@ export default function HistoryPage({ onBack, onOpenDetail }) {
         </div>
       </div>
 
-      {/* Product list */}
+      {/* Product grid */}
       <div className="history-list" ref={listRef}>
         {loading ? (
-          <div className="history-loading">
-            {[...Array(8)].map((_, i) => (
-              <div key={i} className="history-skeleton" />
+          <div className="hcard-grid">
+            {[...Array(6)].map((_, i) => (
+              <div key={i} className="hcard-skeleton" />
             ))}
           </div>
         ) : products.length === 0 ? (
           <div className="history-empty">
             <div style={{ fontSize: 48, marginBottom: 12 }}>🔍</div>
             <div>Ничего не найдено</div>
-            {search && (
-              <button
-                className="history-chip active"
-                onClick={() => setSearch('')}
-                style={{ marginTop: 12 }}
-              >
+            {searchInput && (
+              <button className="history-chip active" onClick={clearSearch} style={{ marginTop: 12 }}>
                 Сбросить поиск
               </button>
             )}
           </div>
         ) : (
           <>
-            <div className="history-grid">
-              {products.map((p, i) => (
+            <div className="hcard-grid">
+              {products.map(p => (
                 <HistoryCard
                   key={p.id}
                   product={p}
@@ -297,11 +322,8 @@ export default function HistoryPage({ onBack, onOpenDetail }) {
               ))}
             </div>
 
-            {/* Load more indicator */}
             {loadingMore && (
-              <div className="history-loading-more">
-                Загрузка...
-              </div>
+              <div className="history-loading-more">Загрузка...</div>
             )}
 
             {page >= totalPages && products.length > 0 && (
