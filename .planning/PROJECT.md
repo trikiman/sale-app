@@ -65,9 +65,20 @@ Family members see every VkusVill discount (green/red/yellow) the moment it appe
 
 ### Active
 
-<!-- No active requirements — v1.0 complete. Next milestone TBD. -->
+<!-- v1.1 Testing & QA milestone -->
 
-(None — milestone v1.0 complete)
+- [ ] **TEST-01**: Browser E2E tests cover all main user flows
+- [ ] **TEST-02**: API unit tests cover all backend endpoints
+- [ ] **TEST-03**: Scraper output verification tests ensure data accuracy
+
+## Current Milestone: v1.1 Testing & QA
+
+**Goal:** Comprehensive test coverage — browser E2E for every user flow + backend pytest for all API endpoints to prevent regressions.
+
+**Target features:**
+- Browser E2E tests (product grid, filters, cart, favorites, theme, product detail)
+- API unit tests (products, cart, favorites, auth, admin endpoints)
+- Scraper verification tests (green/red/yellow data accuracy)
 
 ### Out of Scope
 
@@ -164,4 +175,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-31 after v1.0 milestone completion*
+*Last updated: 2026-03-31 after v1.1 milestone start*

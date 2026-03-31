@@ -1,95 +1,73 @@
-# Requirements: VkusVill Sale Monitor — Bug Fix Milestone
+# Requirements: VkusVill Sale Monitor — Testing & QA Milestone
 
-**Defined:** 2026-03-30
-**Core Value:** Family members see every VkusVill discount and can add to cart in one tap
+**Defined:** 2026-03-31
+**Core Value:** Prevent regressions and ensure every feature works as expected
 
-## v1 Requirements
+## v1.1 Requirements
 
-Requirements for this bug fix milestone. Each maps to roadmap phases.
+### Browser E2E Testing
 
-### Security
+- [ ] **TEST-01**: Browser E2E test verifies product grid loads with green/red/yellow items and images
+- [ ] **TEST-02**: Browser E2E test verifies category filter shows/hides products correctly
+- [ ] **TEST-03**: Browser E2E test verifies product detail drawer opens with price, image, and description
+- [ ] **TEST-04**: Browser E2E test verifies cart add button works and shows feedback (spinner → checkmark)
+- [ ] **TEST-05**: Browser E2E test verifies favorites toggle (heart icon) works
+- [ ] **TEST-06**: Browser E2E test verifies theme toggle switches between dark and light mode
+- [ ] **TEST-07**: Browser E2E test verifies search/filter by product name works
 
-- [x] **SEC-06**: Favorites endpoints validate user identity via Telegram initData HMAC or X-Telegram-User-Id header match (BUG-038)
-- [x] **SEC-07**: Cart endpoints validate user identity via Telegram initData HMAC or X-Telegram-User-Id header match (BUG-039)
-- [x] **SEC-08**: Frontend sends Telegram initData in Authorization header when running as MiniApp
+### API Unit Testing
 
-### Scraper Accuracy
+- [ ] **TEST-08**: Pytest covers /api/products endpoint (returns products with correct schema)
+- [ ] **TEST-09**: Pytest covers /api/cart endpoints (add, remove, list — auth required)
+- [ ] **TEST-10**: Pytest covers /api/favorites endpoints (add, remove, list — auth required)
+- [ ] **TEST-11**: Pytest covers admin endpoints (scraper triggers, status — admin token required)
+- [ ] **TEST-12**: Pytest covers auth flow (login state, session validation)
 
-- [x] **SCRP-07**: Green scraper captures ≥90% of items shown on live VkusVill green section (BUG-067)
-- [x] **SCRP-08**: Stock data shows real quantity, not placeholder 99, for all green products (BUG-068)
-- [x] **SCRP-09**: Category scraper assigns categories deterministically (first-write-wins within a run) (BUG-053)
+### Scraper Verification
 
-### Telegram Bot
+- [ ] **TEST-13**: Automated verification script confirms green scraper accuracy ≥90% vs live site
+- [ ] **TEST-14**: Automated verification confirms red/yellow scraper output matches expected schema
+- [ ] **TEST-15**: Automated verification confirms no phantom items (products not on live site)
 
-- [x] **BOT-04**: Notifications for new products sent to ALL users with matching favorites, not just the first (BUG-044)
-- [x] **BOT-05**: Category matching uses exact category name, not fuzzy substring (BUG-056)
+## Future Requirements
 
-### Frontend UX
-
-- [x] **UX-06**: Light mode theme correctly applies all CSS variables — no hardcoded dark colors remain (UX-01)
-- [x] **UX-07**: Product list uses composite keys (id-type) — no duplicate key warnings in console (UX-02)
-- [x] **UX-08**: Cart items with quantity 0 are automatically filtered from display (UX-03)
-- [x] **UX-09**: Scraper trigger button recovers from 403 error — shows error state, not infinite spinner (UX-04)
-- [x] **UX-10**: Empty state message delayed until AnimatePresence exit completes (UX-05)
-
-### Backend Logic
-
-- [x] **BACK-01**: "Run All" scrapers queues merge task after all 3 scrapers complete (BUG-046)
-
-## v2 Requirements
-
-Deferred to future milestone. Tracked but not in current roadmap.
-
-### Polish
+Deferred to next milestone:
+- **FEAT-01**: Price history page
 - **POL-01**: Cookie expiry detection and re-login prompt
-- **POL-02**: Test file cleanup (remove test_*.py)
-- **POL-03**: Improved logging and monitoring dashboard
-
-### Features
-- **FEAT-01**: Price history page (design doc exists in docs/memory/plans/historypage.md)
-- **FEAT-02**: "Открыть" web app button in Telegram notifications
-- **FEAT-03**: Admin panel remote access improvements
+- **POL-02**: Test file cleanup
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| Docker containerization | systemd works fine, not needed for single-server family app |
-| HTTPS/domain setup | Vercel handles HTTPS already |
-| Cookie encryption at rest | Low risk for family-only app, adds complexity |
-| OAuth login | VkusVill only supports phone+SMS |
-| Mobile native app | Telegram MiniApp IS the mobile experience |
-| Category scraper eviction of old products | Nice-to-have, not a bug — defer to polish milestone |
-| Database schema migration to ORM | Works fine as-is, risk of regression |
+| Load/stress testing | Family app, 5 users max |
+| CI/CD pipeline setup | Manual deploy works fine for family scale |
+| Mobile-specific testing | Telegram MiniApp handles mobile, desktop browser sufficient |
 
 ## Traceability
 
-Which phases cover which requirements. Updated during roadmap creation.
-
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| SEC-06 | Phase 1 | Complete |
-| SEC-07 | Phase 1 | Complete |
-| SEC-08 | Phase 1 | Complete |
-| SCRP-07 | Phase 2 | Complete |
-| SCRP-08 | Phase 2 | Complete |
-| SCRP-09 | Phase 3 | Complete |
-| BOT-04 | Phase 4 | Complete |
-| BOT-05 | Phase 4 | Complete |
-| UX-06 | Phase 5 | Complete |
-| UX-07 | Phase 5 | Complete |
-| UX-08 | Phase 5 | Complete |
-| UX-09 | Phase 5 | Complete |
-| UX-10 | Phase 5 | Complete |
-| BACK-01 | Phase 6 | Complete |
-| SCRP-07 | Phase 9 | Complete |
+| TEST-01 | Phase 10 | Pending |
+| TEST-02 | Phase 10 | Pending |
+| TEST-03 | Phase 10 | Pending |
+| TEST-04 | Phase 10 | Pending |
+| TEST-05 | Phase 10 | Pending |
+| TEST-06 | Phase 10 | Pending |
+| TEST-07 | Phase 10 | Pending |
+| TEST-08 | Phase 11 | Pending |
+| TEST-09 | Phase 11 | Pending |
+| TEST-10 | Phase 11 | Pending |
+| TEST-11 | Phase 11 | Pending |
+| TEST-12 | Phase 11 | Pending |
+| TEST-13 | Phase 12 | Pending |
+| TEST-14 | Phase 12 | Pending |
+| TEST-15 | Phase 12 | Pending |
 
 **Coverage:**
-- v1 requirements: 14 total
-- Mapped to phases: 14
+- v1.1 requirements: 15 total
+- Mapped to phases: 15
 - Unmapped: 0 ✓
-- Satisfied: 14/14 ✓ (all requirements met)
 
 ---
-*Requirements defined: 2026-03-30*
-*Last updated: 2026-03-31 after v1.0 re-audit — all gaps closed*
+*Requirements defined: 2026-03-31*
