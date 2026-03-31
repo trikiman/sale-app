@@ -933,6 +933,36 @@ function App() {
       >
         <h1 className="text-2xl font-bold mb-2">{headerEmoji} {headerTitle}</h1>
 
+        {/* Open in browser link — only shown inside Telegram WebApp */}
+        {window.Telegram?.WebApp && (
+          <div
+            onClick={() => {
+              const url = 'https://vkusvillsale.vercel.app'
+              if (window.Telegram?.WebApp?.openLink) {
+                window.Telegram.WebApp.openLink(url)
+              } else {
+                window.open(url, '_blank')
+              }
+            }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '4px',
+              marginBottom: '6px',
+              fontSize: '11px',
+              color: '#2AABEE',
+              cursor: 'pointer',
+              opacity: 0.8,
+            }}
+          >
+            <span>🌐</span>
+            <span style={{ textDecoration: 'underline', textUnderlineOffset: '2px' }}>
+              Открыть сайт в браузере
+            </span>
+          </div>
+        )}
+
         {/* Small Telegram link for guest users */}
         {isGuest && linkUrl && !linkDismissed && (
           <div style={{
