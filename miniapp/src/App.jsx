@@ -952,6 +952,9 @@ function App() {
             setHistoryDetailId(productId)
             setCurrentPage('history-detail')
           }}
+          favorites={favorites}
+          onToggleFavorite={handleToggleFavorite}
+          userId={userId}
         />
       </div>
     )

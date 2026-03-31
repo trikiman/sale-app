@@ -12,7 +12,7 @@ const TYPE_COLORS = {
 
 const DAY_LABELS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс']
 
-// 7-day mini timeline bar (like the mockup)
+// 7-day mini timeline bar
 function MiniTimeline({ dayPattern, saleType }) {
   const color = TYPE_COLORS[saleType] || TYPE_COLORS.green
   return (
@@ -50,11 +50,16 @@ function ConfidenceDots({ level }) {
 }
 
 // History card — vertical layout matching mockup
-const HistoryCard = memo(function HistoryCard({ product, onClick }) {
+const HistoryCard = memo(function HistoryCard({ product, onClick, isFavorite, onToggleFavorite }) {
   const type = product.last_sale_type || 'green'
   const tc = TYPE_COLORS[type] || TYPE_COLORS.green
   const hasSales = product.total_sale_count > 0
   const isGhost = !hasSales && !product.is_currently_on_sale
+
+  const handleFavClick = (e) => {
+    e.stopPropagation()
+    if (onToggleFavorite) onToggleFavorite(product)
+  }
 
   return (
     <motion.div
@@ -89,9 +94,18 @@ const HistoryCard = memo(function HistoryCard({ product, onClick }) {
           </span>
         )}
 
+        {/* Favorite heart — top right */}
+        <button
+          className={`hcard-fav-btn ${isFavorite ? 'active' : ''}`}
+          onClick={handleFavClick}
+          aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+        >
+          {isFavorite ? '❤️' : '🤍'}
+        </button>
+
         {/* Live indicator */}
         {product.is_currently_on_sale && (
-          <span className="hcard-live-dot">●</span>
+          <span className="hcard-live-dot" style={isFavorite ? { top: 36 } : {}}>●</span>
         )}
       </div>
 
@@ -138,14 +152,19 @@ const HistoryCard = memo(function HistoryCard({ product, onClick }) {
       </div>
     </motion.div>
   )
-})
+}, (prev, next) =>
+  prev.product === next.product &&
+  prev.isFavorite === next.isFavorite
+)
 
-// Filter chips
+// Filter chips — full set from mockup
 const FILTERS = [
   { id: 'all', label: '🔍 Все', color: null },
   { id: 'green', label: '🟢 Green', color: '#22c55e' },
   { id: 'red', label: '🔴 Red', color: '#ef4444' },
   { id: 'yellow', label: '🟡 Yellow', color: '#eab308' },
+  { id: 'favorites', label: '⭐ Избранное', color: '#f97316' },
+  { id: 'predicted_soon', label: '🔮 Скоро', color: '#818cf8' },
 ]
 
 const SORTS = [
@@ -154,7 +173,7 @@ const SORTS = [
   { id: 'alphabetical', label: 'А-Я' },
 ]
 
-export default function HistoryPage({ onBack, onOpenDetail }) {
+export default function HistoryPage({ onBack, onOpenDetail, favorites = new Set(), onToggleFavorite, userId }) {
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -168,6 +187,9 @@ export default function HistoryPage({ onBack, onOpenDetail }) {
   const searchTimeout = useRef(null)
   const listRef = useRef(null)
 
+  // For client-side favorites filtering
+  const isClientFilter = filter === 'favorites'
+
   const fetchProducts = useCallback(async (pageNum = 1, append = false) => {
     if (pageNum === 1) setLoading(true)
     else setLoadingMore(true)
@@ -179,7 +201,10 @@ export default function HistoryPage({ onBack, onOpenDetail }) {
         sort,
       })
       if (search) params.set('search', search)
-      if (filter && filter !== 'all') params.set('filter', filter)
+      // Only send server-side filters (not favorites — that's client-side)
+      if (filter && filter !== 'all' && filter !== 'favorites') {
+        params.set('filter', filter)
+      }
 
       const res = await fetch(`${API_BASE}/history/products?${params}`, {
         headers: getAuthHeaders(),
@@ -233,6 +258,11 @@ export default function HistoryPage({ onBack, onOpenDetail }) {
     return () => window.removeEventListener('scroll', handleScroll)
   }, [handleScroll])
 
+  // Apply client-side favorites filter
+  const displayProducts = isClientFilter
+    ? products.filter(p => favorites.has(p.id))
+    : products
+
   return (
     <div className="history-page">
       {/* Header */}
@@ -275,6 +305,9 @@ export default function HistoryPage({ onBack, onOpenDetail }) {
                 } : {}}
               >
                 {f.label}
+                {f.id === 'favorites' && favorites.size > 0 && (
+                  <span className="history-chip-count">{favorites.size}</span>
+                )}
               </button>
             ))}
           </div>
@@ -300,24 +333,36 @@ export default function HistoryPage({ onBack, onOpenDetail }) {
               <div key={i} className="hcard-skeleton" />
             ))}
           </div>
-        ) : products.length === 0 ? (
+        ) : displayProducts.length === 0 ? (
           <div className="history-empty">
-            <div style={{ fontSize: 48, marginBottom: 12 }}>🔍</div>
-            <div>Ничего не найдено</div>
-            {searchInput && (
-              <button className="history-chip active" onClick={clearSearch} style={{ marginTop: 12 }}>
-                Сбросить поиск
+            <div style={{ fontSize: 48, marginBottom: 12 }}>
+              {filter === 'favorites' ? '⭐' : '🔍'}
+            </div>
+            <div>
+              {filter === 'favorites'
+                ? 'Нет избранных товаров'
+                : 'Ничего не найдено'}
+            </div>
+            {(searchInput || filter !== 'all') && (
+              <button
+                className="history-chip active"
+                onClick={() => { clearSearch(); setFilter('all') }}
+                style={{ marginTop: 12 }}
+              >
+                Сбросить фильтры
               </button>
             )}
           </div>
         ) : (
           <>
             <div className="hcard-grid">
-              {products.map(p => (
+              {displayProducts.map(p => (
                 <HistoryCard
                   key={p.id}
                   product={p}
                   onClick={() => onOpenDetail(p.id)}
+                  isFavorite={favorites.has(p.id)}
+                  onToggleFavorite={onToggleFavorite}
                 />
               ))}
             </div>
@@ -326,9 +371,9 @@ export default function HistoryPage({ onBack, onOpenDetail }) {
               <div className="history-loading-more">Загрузка...</div>
             )}
 
-            {page >= totalPages && products.length > 0 && (
+            {page >= totalPages && displayProducts.length > 0 && (
               <div className="history-end">
-                Показано {products.length} из {total}
+                Показано {displayProducts.length} из {total}
               </div>
             )}
           </>
