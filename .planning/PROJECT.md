@@ -73,9 +73,23 @@ Family members see every VkusVill discount (green/red/yellow) the moment it appe
 
 ### Active
 
-<!-- Next milestone -->
+<!-- v1.6 Green Scraper Robustness -->
 
-(None — define in next milestone)
+- [ ] **SCRP-10**: Green scraper captures 100% of green items (modal loads ALL items before adding to cart)
+- [ ] **SCRP-11**: CDP Network interception detects when modal AJAX pagination is complete (no timing guesses)
+- [ ] **SCRP-12**: Inline path handles <6 green items without modal (button hidden/not in DOM)
+- [ ] **SCRP-13**: live_count vs scraped_count validation gate — refuse to save if gap >10%
+- [ ] **SCRP-14**: Scheduler logs count-mismatch alerts when scraper result diverges from live badge
+
+## Current Milestone: v1.6 Green Scraper Robustness
+
+**Goal:** Make the green scraper capture 100% of green items every time by replacing fragile DOM polling with CDP Network interception for modal load completion detection.
+
+**Target features:**
+- CDP Network interception to detect modal AJAX pagination completion
+- Robust modal loading that gets ALL items (e.g., 190/190)
+- Inline path for <6 items (no modal)
+- Count validation gate and mismatch alerting
 
 ## Shipped: v1.5 History Search & Polish (2026-04-01)
 
@@ -181,6 +195,6 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-01 after v1.5 milestone complete*
+*Last updated: 2026-04-02 after v1.6 milestone started*
 
 
