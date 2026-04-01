@@ -13,7 +13,7 @@ import sys
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(SCRIPT_DIR)  # Go up from scripts/ to project root
 DATA_DIR = os.path.join(PROJECT_DIR, "data")
-DB_PATH = os.path.join(PROJECT_DIR, "database", "sale_monitor.db")
+DB_PATH = os.path.join(DATA_DIR, "salebot.db")  # per config.py: DATABASE_PATH
 
 # Files that contain product images
 IMAGE_SOURCE_FILES = [
