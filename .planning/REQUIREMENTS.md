@@ -9,24 +9,24 @@ Requirements for Proxy Centralization milestone. Each maps to roadmap phases.
 
 ### Image Proxy
 
-- [ ] **IMG-01**: `/api/img` endpoint uses ProxyManager rotation instead of `SOCKS_PROXY` env var
-- [ ] **IMG-02**: Detail gallery images route through `/api/img` backend proxy (not loaded directly by browser)
+- [x] **IMG-01**: `/api/img` endpoint uses ProxyManager rotation instead of `SOCKS_PROXY` env var
+- [x] **IMG-02**: Detail gallery images route through `/api/img` backend proxy (not loaded directly by browser)
 
 ### Cart API
 
-- [ ] **CART-04**: Cart API (`vkusvill_api.py`) uses ProxyManager for VkusVill API calls
+- [x] **CART-04**: Cart API (`vkusvill_api.py`) uses ProxyManager for VkusVill API calls
 
 ### Login
 
-- [ ] **LOGIN-01**: Login flow uses ProxyManager for Chrome `--proxy-server` flag
+- [x] **LOGIN-01**: Login flow uses ProxyManager for Chrome `--proxy-server` flag
 
 ### Product Detail
 
-- [ ] **DETAIL-01**: Product detail HTML fetch uses ProxyManager as primary (not fallback)
+- [x] **DETAIL-01**: Product detail HTML fetch uses ProxyManager as primary (not fallback)
 
 ### Infrastructure
 
-- [ ] **INFRA-01**: ProxyManager is the single gateway abstraction — new VkusVill-facing code uses it by default
+- [x] **INFRA-01**: ProxyManager is the single gateway abstraction — new VkusVill-facing code uses it by default
 
 ## Future Requirements
 
@@ -52,12 +52,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| IMG-01 | Phase 21 | Pending |
-| IMG-02 | Phase 22 | Pending |
-| CART-04 | Phase 23 | Pending |
-| LOGIN-01 | Phase 23 | Pending |
-| DETAIL-01 | Phase 21 | Pending |
-| INFRA-01 | Phase 21 | Pending |
+| IMG-01 | Phase 21 | ✅ Complete |
+| IMG-02 | Phase 22 | ✅ Complete |
+| CART-04 | Phase 23 | ✅ Complete |
+| LOGIN-01 | Phase 23 | ✅ Complete |
+| DETAIL-01 | Phase 21 | ✅ Complete |
+| INFRA-01 | Phase 21 | ✅ Complete |
 
 **Coverage:**
 - v1.4 requirements: 6 total
