@@ -688,37 +688,52 @@ async def proxy_image(url: str = ""):
         content = None
         ct = "image/webp"
 
-        # Use ProxyManager rotation (always proxy, no direct — D-01)
-        proxy_addr = _proxy_manager.get_working_proxy()
-        if proxy_addr:
-            proxy_url = f"socks5://{proxy_addr}"
+        # Smart routing: CDN domains work direct from EC2, non-CDN need proxy
+        is_cdn = "cdn" in parsed.hostname
+        
+        if is_cdn:
+            # CDN images (cdn1-img.vkusvill.ru) — direct works, proxy gets 403
             try:
-                async with httpx.AsyncClient(timeout=8, proxy=proxy_url, follow_redirects=True) as client:
+                async with httpx.AsyncClient(timeout=6, follow_redirects=True) as client:
                     resp = await client.get(url, headers=_headers)
                     if resp.status_code == 200 and len(resp.content) > 100:
                         content = resp.content
                         ct = resp.headers.get("content-type", "image/webp")
-                    else:
-                        logger.warning(f"[IMG-PROXY] {proxy_addr} returned status {resp.status_code} for {url}")
-            except httpx.ConnectError:
-                _proxy_manager.remove_proxy(proxy_addr)
-                logger.warning(f"[IMG-PROXY] {proxy_addr} dead (ConnectError)")
-                # Try next proxy
-                next_addr = _proxy_manager.get_working_proxy()
-                if next_addr:
-                    try:
-                        async with httpx.AsyncClient(timeout=8, proxy=f"socks5://{next_addr}", follow_redirects=True) as client:
-                            resp = await client.get(url, headers=_headers)
-                            if resp.status_code == 200 and len(resp.content) > 100:
-                                content = resp.content
-                                ct = resp.headers.get("content-type", "image/webp")
-                    except Exception:
-                        pass
             except Exception as e:
-                logger.warning(f"[IMG-PROXY] {proxy_addr} failed: {e}")
+                logger.warning(f"[IMG-PROXY] CDN direct failed: {e}")
+        
+        # Non-CDN images (img.vkusvill.ru) — geo-blocked, needs proxy rotation
+        if not content:
+            proxy_addr = _proxy_manager.get_working_proxy()
+            if proxy_addr:
+                proxy_url = f"socks5://{proxy_addr}"
+                try:
+                    async with httpx.AsyncClient(timeout=8, proxy=proxy_url, follow_redirects=True) as client:
+                        resp = await client.get(url, headers=_headers)
+                        if resp.status_code == 200 and len(resp.content) > 100:
+                            content = resp.content
+                            ct = resp.headers.get("content-type", "image/webp")
+                        else:
+                            logger.warning(f"[IMG-PROXY] {proxy_addr} returned status {resp.status_code} for {url}")
+                except httpx.ConnectError:
+                    _proxy_manager.remove_proxy(proxy_addr)
+                    logger.warning(f"[IMG-PROXY] {proxy_addr} dead (ConnectError)")
+                    # Try next proxy
+                    next_addr = _proxy_manager.get_working_proxy()
+                    if next_addr:
+                        try:
+                            async with httpx.AsyncClient(timeout=8, proxy=f"socks5://{next_addr}", follow_redirects=True) as client:
+                                resp = await client.get(url, headers=_headers)
+                                if resp.status_code == 200 and len(resp.content) > 100:
+                                    content = resp.content
+                                    ct = resp.headers.get("content-type", "image/webp")
+                        except Exception:
+                            pass
+                except Exception as e:
+                    logger.warning(f"[IMG-PROXY] {proxy_addr} failed: {e}")
 
         if not content:
-            raise HTTPException(status_code=502, detail="Image fetch failed (proxy)")
+            raise HTTPException(status_code=502, detail="Image fetch failed")
 
         # Store in cache (evict oldest if full)
         if len(_img_cache) >= _IMG_CACHE_MAX:
