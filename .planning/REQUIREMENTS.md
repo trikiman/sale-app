@@ -1,69 +1,49 @@
-# Requirements: VkusVill Sale Monitor
+# Requirements: v1.6 Green Scraper Robustness
 
-**Defined:** 2026-04-01
-**Core Value:** Family members see every VkusVill discount and can add to cart in one tap
+## Green Scraper Accuracy
 
-## v1.4 Requirements
+- [ ] **SCRP-10**: Green scraper captures 100% of green items (modal loads ALL items before adding to cart)
+  - Current: 120/190 (63%) — modal scroll loop exits before "показать ещё" disappears
+  - Target: 190/190 (100%) — or whatever the live count is
+  
+- [ ] **SCRP-11**: CDP Network interception detects when modal AJAX pagination is complete
+  - Enable `cdp.network` on the page before opening modal
+  - Intercept XHR responses from "показать ещё" clicks
+  - Use response data to deterministically know when all pages are loaded (no timing guesses)
+  - Fallback: if CDP interception fails, fall back to robust DOM polling with live_count target
 
-Requirements for Proxy Centralization milestone. Each maps to roadmap phases.
+- [ ] **SCRP-12**: Inline path handles <6 green items without modal (button hidden/not in DOM)
+  - When `#js-Delivery__Order-green-show-all` is hidden or absent, add inline items directly
+  - This path already works but must be preserved and tested
 
-### Image Proxy
+## Validation & Alerting
 
-- [x] **IMG-01**: `/api/img` endpoint uses ProxyManager rotation instead of `SOCKS_PROXY` env var
-- [x] **IMG-02**: Detail gallery images route through `/api/img` backend proxy (not loaded directly by browser)
+- [ ] **SCRP-13**: live_count vs scraped_count validation gate — refuse to save if gap >10%
+  - Compare badge count ("190 товаров") with actual scraped products
+  - If gap exceeds 10%, log warning and preserve existing snapshot (don't overwrite with bad data)
+  - If gap is ≤10%, save normally (small variations are acceptable)
 
-### Cart API
-
-- [x] **CART-04**: Cart API (`vkusvill_api.py`) uses ProxyManager for VkusVill API calls
-
-### Login
-
-- [x] **LOGIN-01**: Login flow uses ProxyManager for Chrome `--proxy-server` flag
-
-### Product Detail
-
-- [x] **DETAIL-01**: Product detail HTML fetch uses ProxyManager as primary (not fallback)
-
-### Infrastructure
-
-- [x] **INFRA-01**: ProxyManager is the single gateway abstraction — new VkusVill-facing code uses it by default
+- [ ] **SCRP-14**: Scheduler logs count-mismatch alerts when scraper result diverges from live badge
+  - Log clear `⚠️ COUNT MISMATCH` entries in scheduler.log
+  - Include: expected (live_count), actual (scraped_count), gap percentage
 
 ## Future Requirements
 
-Deferred. Tracked but not in current roadmap.
-
-### Proxy Pool Scaling
-
-- **POOL-01**: Add multiple proxy sources (not just proxifly)
-- **POOL-02**: More aggressive refresh scheduling
-- **POOL-03**: Paid proxy provider as fallback option
+- Clean up monolithic scrape_green.py (2277 lines) — defer to separate milestone
+- Automated green scraper accuracy test in CI — defer to v1.7
 
 ## Out of Scope
 
-| Feature | Reason |
-|---------|--------|
-| Proxy pool scaling | 8 IPs sufficient for 5-user family app, handle separately if needed |
-| Switching proxy providers | Current free proxifly source works, optimize later |
-| HTTPS proxy support | SOCKS5 covers all current needs |
+- Changing the add-to-cart → basket_recalc flow — this is fundamental (stock data only in cart)
+- Red/yellow scraper changes — different scraper, different issues
+- Frontend changes — scraper-only milestone
 
 ## Traceability
 
-Which phases cover which requirements. Updated during roadmap creation.
-
-| Requirement | Phase | Status |
-|-------------|-------|--------|
-| IMG-01 | Phase 21 | ✅ Complete |
-| IMG-02 | Phase 22 | ✅ Complete |
-| CART-04 | Phase 23 | ✅ Complete |
-| LOGIN-01 | Phase 23 | ✅ Complete |
-| DETAIL-01 | Phase 21 | ✅ Complete |
-| INFRA-01 | Phase 21 | ✅ Complete |
-
-**Coverage:**
-- v1.4 requirements: 6 total
-- Mapped to phases: 6
-- Unmapped: 0 ✓
-
----
-*Requirements defined: 2026-04-01*
-*Last updated: 2026-04-01 after initial definition*
+| REQ-ID | Phase | Status |
+|--------|-------|--------|
+| SCRP-10 | TBD | Pending |
+| SCRP-11 | TBD | Pending |
+| SCRP-12 | TBD | Pending |
+| SCRP-13 | TBD | Pending |
+| SCRP-14 | TBD | Pending |
