@@ -89,6 +89,6 @@ See: `.planning/milestones/v1.3-ROADMAP.md`
 | 10-12 | v1.1 | ✅ Complete | 2026-03-31 |
 | 13-18 | v1.2 | ✅ Complete | 2026-04-01 |
 | 19-20 | v1.3 | ✅ Complete | 2026-04-01 |
-| 21 | v1.4 | ○ Pending | — |
-| 22 | v1.4 | ○ Pending | — |
+| 21 | v1.4 | ✅ Complete | 2026-04-01 |
+| 22 | v1.4 | ✅ Complete | 2026-04-01 |
 | 23 | v1.4 | ○ Pending | — |
