@@ -102,4 +102,4 @@ See: `.planning/milestones/v1.4-ROADMAP.md`
 | 23 | v1.4 | ✅ Complete | 2026-04-01 |
 | 24 | v1.5 | ✅ Complete | 2026-04-01 |
 | 25 | v1.5 | ✅ Complete | 2026-04-01 |
-| 26 | v1.5 | Pending | - |
+| 26 | v1.5 | ✅ Complete | 2026-04-01 |
