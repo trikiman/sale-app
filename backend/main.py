@@ -3221,11 +3221,14 @@ def _fuzzy_search_fallback(search_norm: str, category, filter_val, cursor):
         if category:
             conditions.append("pc.category = ?")
             params.append(category)
-        if filter_val and filter_val in ("green", "red", "yellow"):
-            conditions.append("pc.last_sale_type = ?")
-            params.append(filter_val)
-        elif filter_val == "predicted_soon":
-            conditions.append("pc.total_sale_count > 0 AND pc.usual_sale_time IS NOT NULL")
+        if filter_val and filter_val != 'all':
+            filter_types_fb = [f.strip() for f in filter_val.split(',') if f.strip() in ('green', 'red', 'yellow')]
+            if filter_types_fb:
+                placeholders_fb = ','.join('?' * len(filter_types_fb))
+                conditions.append(f"pc.last_sale_type IN ({placeholders_fb})")
+                params.extend(filter_types_fb)
+            elif filter_val == 'predicted_soon':
+                conditions.append("pc.total_sale_count > 0 AND pc.usual_sale_time IS NOT NULL")
         where = f"WHERE {' AND '.join(conditions)}"
         return 0, where, params
     
@@ -3242,11 +3245,14 @@ def _fuzzy_search_fallback(search_norm: str, category, filter_val, cursor):
     if category:
         conditions.append("pc.category = ?")
         params.append(category)
-    if filter_val and filter_val in ("green", "red", "yellow"):
-        conditions.append("pc.last_sale_type = ?")
-        params.append(filter_val)
-    elif filter_val == "predicted_soon":
-        conditions.append("pc.total_sale_count > 0 AND pc.usual_sale_time IS NOT NULL")
+    if filter_val and filter_val != 'all':
+        filter_types = [f.strip() for f in filter_val.split(',') if f.strip() in ('green', 'red', 'yellow')]
+        if filter_types:
+            placeholders_f = ','.join('?' * len(filter_types))
+            conditions.append(f"pc.last_sale_type IN ({placeholders_f})")
+            params.extend(filter_types)
+        elif filter_val == 'predicted_soon':
+            conditions.append("pc.total_sale_count > 0 AND pc.usual_sale_time IS NOT NULL")
     
     where = f"WHERE {' AND '.join(conditions)}"
     
@@ -3261,7 +3267,7 @@ def history_get_products(
     per_page: int = Query(50, ge=1, le=200),
     search: Optional[str] = Query(None),
     category: Optional[str] = Query(None),
-    filter: Optional[str] = Query(None),  # "all", "green", "red", "yellow", "predicted_soon"
+    filter: Optional[str] = Query(None),  # "all", "green", "red", "yellow", "green,red", "predicted_soon"
     sort: Optional[str] = Query("last_seen"),  # "last_seen", "most_frequent", "alphabetical"
     x_telegram_user_id: Optional[str] = Header(None, alias="X-Telegram-User-Id"),
 ):
@@ -3294,11 +3300,15 @@ def history_get_products(
             conditions.append("pc.category = ?")
             params.append(category)
 
-        if filter and filter in ("green", "red", "yellow"):
-            conditions.append("pc.last_sale_type = ?")
-            params.append(filter)
-        elif filter == "predicted_soon":
-            conditions.append("pc.total_sale_count > 0 AND pc.usual_sale_time IS NOT NULL")
+        if filter and filter != 'all':
+            # Support comma-separated multi-select: "green,red" → IN ('green', 'red')
+            filter_types = [f.strip() for f in filter.split(',') if f.strip() in ('green', 'red', 'yellow')]
+            if filter_types:
+                placeholders_f = ','.join('?' * len(filter_types))
+                conditions.append(f"pc.last_sale_type IN ({placeholders_f})")
+                params.extend(filter_types)
+            elif filter == 'predicted_soon':
+                conditions.append("pc.total_sale_count > 0 AND pc.usual_sale_time IS NOT NULL")
 
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 

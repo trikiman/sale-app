@@ -151,7 +151,8 @@ const HistoryCard = memo(function HistoryCard({ product, onClick, isFavorite, on
   prev.isFavorite === next.isFavorite
 )
 
-// Filter chips — full set from mockup
+// Filter chips — type filters are multi-selectable, special filters are exclusive
+const TYPE_FILTERS = ['green', 'red', 'yellow']
 const FILTERS = [
   { id: 'all', label: '🔍 Все', color: null },
   { id: 'green', label: '🟢 Green', color: '#22c55e' },
@@ -173,7 +174,9 @@ export default function HistoryPage({ onBack, onOpenDetail, favorites = new Set(
   const [loadingMore, setLoadingMore] = useState(false)
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
-  const [filter, setFilter] = useState('all')
+  // Multi-select: Set of active type filters; empty = all. Special filters stored separately.
+  const [activeTypes, setActiveTypes] = useState(new Set())
+  const [specialFilter, setSpecialFilter] = useState(null) // 'favorites' | 'predicted_soon' | null
   const [sort, setSort] = useState('last_seen')
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(0)
@@ -181,8 +184,48 @@ export default function HistoryPage({ onBack, onOpenDetail, favorites = new Set(
   const searchTimeout = useRef(null)
   const listRef = useRef(null)
 
+  // Derived filter state for API
+  const filterParam = specialFilter === 'predicted_soon'
+    ? 'predicted_soon'
+    : activeTypes.size > 0
+      ? [...activeTypes].join(',')
+      : null
+
   // For client-side favorites filtering
-  const isClientFilter = filter === 'favorites'
+  const isClientFilter = specialFilter === 'favorites'
+
+  // Handle chip clicks: type filters toggle, special filters are exclusive
+  const handleFilterClick = (id) => {
+    if (id === 'all') {
+      setActiveTypes(new Set())
+      setSpecialFilter(null)
+    } else if (TYPE_FILTERS.includes(id)) {
+      setSpecialFilter(null)
+      setActiveTypes(prev => {
+        const next = new Set(prev)
+        if (next.has(id)) {
+          next.delete(id)
+        } else {
+          next.add(id)
+        }
+        return next
+      })
+    } else {
+      // Special filters (favorites, predicted_soon) — exclusive
+      setActiveTypes(new Set())
+      setSpecialFilter(prev => prev === id ? null : id)
+    }
+  }
+
+  // Check if a chip is active
+  const isChipActive = (id) => {
+    if (id === 'all') return activeTypes.size === 0 && !specialFilter
+    if (TYPE_FILTERS.includes(id)) return activeTypes.has(id)
+    return specialFilter === id
+  }
+
+  // Check if any filter is active (for reset button)
+  const hasActiveFilter = activeTypes.size > 0 || specialFilter !== null
 
   const fetchProducts = useCallback(async (pageNum = 1, append = false) => {
     if (pageNum === 1) setLoading(true)
@@ -195,9 +238,9 @@ export default function HistoryPage({ onBack, onOpenDetail, favorites = new Set(
         sort,
       })
       if (search) params.set('search', search)
-      // Only send server-side filters (not favorites — that's client-side)
-      if (filter && filter !== 'all' && filter !== 'favorites') {
-        params.set('filter', filter)
+      // Send server-side filter (not favorites — that's client-side)
+      if (filterParam) {
+        params.set('filter', filterParam)
       }
 
       const res = await fetch(`${API_BASE}/history/products?${params}`, {
@@ -219,7 +262,7 @@ export default function HistoryPage({ onBack, onOpenDetail, favorites = new Set(
       setLoading(false)
       setLoadingMore(false)
     }
-  }, [search, filter, sort])
+  }, [search, filterParam, sort])
 
   useEffect(() => {
     fetchProducts(1, false)
@@ -287,23 +330,26 @@ export default function HistoryPage({ onBack, onOpenDetail, favorites = new Set(
         {/* Filters + sort */}
         <div className="history-filters">
           <div className="history-filter-chips">
-            {FILTERS.map(f => (
-              <button
-                key={f.id}
-                className={`history-chip ${filter === f.id ? 'active' : ''}`}
-                onClick={() => setFilter(f.id)}
-                style={filter === f.id && f.color ? {
-                  background: f.color + '33',
-                  borderColor: f.color + '66',
-                  color: f.color
-                } : {}}
-              >
-                {f.label}
-                {f.id === 'favorites' && favorites.size > 0 && (
-                  <span className="history-chip-count">{favorites.size}</span>
-                )}
-              </button>
-            ))}
+            {FILTERS.map(f => {
+              const active = isChipActive(f.id)
+              return (
+                <button
+                  key={f.id}
+                  className={`history-chip ${active ? 'active' : ''}`}
+                  onClick={() => handleFilterClick(f.id)}
+                  style={active && f.color ? {
+                    background: f.color + '33',
+                    borderColor: f.color + '66',
+                    color: f.color
+                  } : {}}
+                >
+                  {f.label}
+                  {f.id === 'favorites' && favorites.size > 0 && (
+                    <span className="history-chip-count">{favorites.size}</span>
+                  )}
+                </button>
+              )
+            })}
           </div>
           <div className="history-sort">
             {SORTS.map(s => (
@@ -330,17 +376,17 @@ export default function HistoryPage({ onBack, onOpenDetail, favorites = new Set(
         ) : displayProducts.length === 0 ? (
           <div className="history-empty">
             <div style={{ fontSize: 48, marginBottom: 12 }}>
-              {filter === 'favorites' ? '⭐' : '🔍'}
+              {specialFilter === 'favorites' ? '⭐' : '🔍'}
             </div>
             <div>
-              {filter === 'favorites'
+              {specialFilter === 'favorites'
                 ? 'Нет избранных товаров'
                 : 'Ничего не найдено'}
             </div>
-            {(searchInput || filter !== 'all') && (
+            {(searchInput || hasActiveFilter) && (
               <button
                 className="history-chip active"
-                onClick={() => { clearSearch(); setFilter('all') }}
+                onClick={() => { clearSearch(); setActiveTypes(new Set()); setSpecialFilter(null) }}
                 style={{ marginTop: 12 }}
               >
                 Сбросить фильтры
