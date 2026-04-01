@@ -51,6 +51,15 @@ function getCategoryEmoji(category) {
   return '📦'
 }
 
+// Type badge config — defined once outside component (not re-created per card render)
+const TYPE_CONFIG = {
+  green: { bg: 'bg-green-500/20', text: 'text-green-400', label: '🟢 Зелёная', border: 'border-green-500/30', priceColor: '#4ade80', tint: 'card-tint-green' },
+  red: { bg: 'bg-red-500/20', text: 'text-red-400', label: '🔴 Красная', border: 'border-red-500/30', priceColor: '#f87171', tint: 'card-tint-red' },
+  yellow: { bg: 'bg-yellow-500/20', text: 'text-yellow-400', label: '🟡 Жёлтая', border: 'border-yellow-500/30', priceColor: '#facc15', tint: 'card-tint-yellow' },
+  _default: { bg: 'bg-gray-500/20', text: 'text-gray-400', label: '📦 Другое', border: 'border-gray-500/30', priceColor: '#9ca3af', tint: '' }
+}
+const CARDS_PER_PAGE = 24
+
 const ProductCard = memo(function ProductCard({ product, index, isFavorite, onToggleFavorite, favoritesLoading, onAddToCart, viewMode, cartState, onOpenDetail }) {
   const [imageLoaded, setImageLoaded] = useState(false)
   const [imageError, setImageError] = useState(false)
@@ -64,14 +73,7 @@ const ProductCard = memo(function ProductCard({ product, index, isFavorite, onTo
     ? Math.round(((oldPriceVal - currentPriceVal) / oldPriceVal) * 100)
     : 0
 
-  // Type badge config
-  const typeConfig = {
-    green: { bg: 'bg-green-500/20', text: 'text-green-400', label: '🟢 Зелёная', border: 'border-green-500/30', priceColor: '#4ade80', tint: 'card-tint-green' },
-    red: { bg: 'bg-red-500/20', text: 'text-red-400', label: '🔴 Красная', border: 'border-red-500/30', priceColor: '#f87171', tint: 'card-tint-red' },
-    yellow: { bg: 'bg-yellow-500/20', text: 'text-yellow-400', label: '🟡 Жёлтая', border: 'border-yellow-500/30', priceColor: '#facc15', tint: 'card-tint-yellow' },
-    _default: { bg: 'bg-gray-500/20', text: 'text-gray-400', label: '📦 Другое', border: 'border-gray-500/30', priceColor: '#9ca3af', tint: '' }
-  }
-  const config = typeConfig[product.type] || typeConfig._default
+  const config = TYPE_CONFIG[product.type] || TYPE_CONFIG._default
 
   return (
     <div
@@ -293,6 +295,8 @@ function App() {
   const [categorizingStatus, setCategorizingStatus] = useState(null)
   const [currentPage, setCurrentPage] = useState('main') // 'main' | 'history' | 'history-detail'
   const [historyDetailId, setHistoryDetailId] = useState(null)
+  const [visibleCount, setVisibleCount] = useState(CARDS_PER_PAGE)
+  const loadMoreRef = useRef(null)
 
   // Telegram account linking
   const isGuest = typeof userId === 'string' && userId.startsWith('guest_')
@@ -763,6 +767,24 @@ function App() {
 
     return filtered
   }, [enrichedProducts, typeFilters, selectedCategory, showFavoritesOnly, favorites, soldOutIds])
+
+  // Reset visible count when filters change
+  useEffect(() => {
+    setVisibleCount(CARDS_PER_PAGE)
+  }, [typeFilters, selectedCategory, showFavoritesOnly])
+
+  // Infinite scroll — load more cards when sentinel is visible
+  useEffect(() => {
+    const ref = loadMoreRef.current
+    if (!ref) return
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        setVisibleCount(prev => Math.min(prev + CARDS_PER_PAGE, filteredProducts.length))
+      }
+    }, { rootMargin: '200px' })
+    observer.observe(ref)
+    return () => observer.disconnect()
+  }, [filteredProducts.length])
 
   useEffect(() => {
     const productsNeedingWeight = filteredProducts
@@ -1442,7 +1464,7 @@ function App() {
 
       {/* Product Grid */}
       <div className={`product-grid ${viewMode === 'list' ? 'list-view' : ''}`}>
-          {filteredProducts.map((product, index) => (
+          {filteredProducts.slice(0, visibleCount).map((product, index) => (
             <ProductCard
               key={`${product.id}-${product.type}`}
               product={product}
@@ -1456,6 +1478,13 @@ function App() {
               viewMode={viewMode}
             />
           ))}
+
+          {/* Infinite scroll sentinel */}
+          {visibleCount < filteredProducts.length && (
+            <div ref={loadMoreRef} style={{ gridColumn: '1/-1', textAlign: 'center', padding: '20px', opacity: 0.5, fontSize: '14px' }}>
+              Загружаем ещё {Math.min(CARDS_PER_PAGE, filteredProducts.length - visibleCount)} из {filteredProducts.length - visibleCount}…
+            </div>
+          )}
 
         {filteredProducts.length === 0 && !loading && !error && (
           <motion.div
