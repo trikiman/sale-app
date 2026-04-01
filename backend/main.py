@@ -1445,16 +1445,25 @@ async def _run_login_job(job_id: str, user_id: str, phone_raw: str, force_sms: b
         _user_data_dir = tempfile.mkdtemp(prefix='uc_login_')
 
         if sys.platform != 'win32':
+            # Get proxy for Chrome login (all VkusVill traffic must be proxied)
+            _login_proxy = _proxy_manager.get_working_proxy()
+            _chrome_args = [
+                '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage',
+                '--disable-software-rasterizer',
+                '--disable-blink-features=AutomationControlled',
+                '--disable-features=IsolateOrigins,site-per-process',
+                '--window-size=1280,720', '--lang=ru-RU,ru',
+            ]
+            if _login_proxy:
+                _chrome_args.append(f'--proxy-server=socks5://{_login_proxy}')
+                logger.info(f"[LOGIN] Chrome using proxy: {_login_proxy}")
+            else:
+                logger.warning("[LOGIN] No proxy available — Chrome launching without proxy")
+
             browser = await uc.start(
                 headless=True,
                 user_data_dir=_user_data_dir,
-                browser_args=[
-                    '--no-sandbox', '--disable-gpu', '--disable-dev-shm-usage',
-                    '--disable-software-rasterizer',
-                    '--disable-blink-features=AutomationControlled',
-                    '--disable-features=IsolateOrigins,site-per-process',
-                    '--window-size=1280,720', '--lang=ru-RU,ru',
-                ],
+                browser_args=_chrome_args,
             )
             _chrome_proc = None
         else:
