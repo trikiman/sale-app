@@ -88,6 +88,7 @@ const ProductCard = memo(function ProductCard({ product, index, isFavorite, onTo
             alt={product.name}
             referrerPolicy="no-referrer"
             loading="lazy"
+            decoding="async"
             className={`card-hero-img ${imageLoaded ? 'loaded' : ''}`}
             onLoad={() => setImageLoaded(true)}
             onError={() => setImageError(true)}

@@ -3260,3 +3260,81 @@ body.cart-open {
 [data-theme="light"] .hd-hour-bar-bg {
   background: rgba(0, 0, 0, 0.03);
 }
+
+/* ============================================================
+   PERFORMANCE OPTIMIZATIONS — Tablets & Mobile Only
+   Desktop (mouse + wide screen) is completely unchanged.
+   ============================================================ */
+
+/* === PERF-12: Disable backdrop-filter on tablets/mobile (GPU bottleneck) === */
+@media (max-width: 1024px), (pointer: coarse) {
+  .card-vertical,
+  .card-fav-btn,
+  .card-type-badge,
+  .login-card,
+  .login-prompt-overlay,
+  .glass-card,
+  .hcard,
+  .hcard-fav-btn {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+}
+
+/* === PERF-05: Respect prefers-reduced-motion (accessibility) === */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* === PERF-10: Tablet-optimized grid layout (2 columns) === */
+@media (min-width: 481px) and (max-width: 1024px), (pointer: coarse) and (min-width: 481px) {
+  .product-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 12px !important;
+  }
+}
+
+/* === PERF-11: Full-page product detail on tablets (no janky drawer) === */
+@media (max-width: 1024px), (pointer: coarse) {
+  .detail-drawer {
+    position: fixed !important;
+    inset: 0 !important;
+    bottom: 0 !important;
+    max-height: 100vh !important;
+    max-height: 100dvh !important;
+    border-radius: 0 !important;
+    background: var(--tg-theme-bg-color, #0a0e18) !important;
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  [data-theme="light"] .detail-drawer {
+    background: var(--tg-theme-bg-color, #f5f5f7) !important;
+  }
+
+  .detail-handle-row {
+    position: sticky !important;
+    top: 0;
+    z-index: 10;
+    background: inherit;
+  }
+}
+
+/* === PERF-09: Image optimization on tablets/mobile === */
+@media (max-width: 1024px), (pointer: coarse) {
+  .card-hero-img {
+    content-visibility: auto;
+    contain: layout style paint;
+  }
+
+  .card-image-wrap {
+    contain: layout style paint;
+  }
+}

@@ -28,6 +28,7 @@ except Exception:
     pass  # nodriver not installed or different version
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Header, Query, Body, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -109,6 +110,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["Content-Type", "X-Admin-Token", "Authorization"],
 )
+
+# GZip compression for API responses (PERF-08)
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 # Initialize database
 db = Database()
