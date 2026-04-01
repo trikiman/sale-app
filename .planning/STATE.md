@@ -3,9 +3,9 @@ gsd_state_version: 1.0
 milestone: v1.4
 milestone_name: Proxy Centralization
 status: Defining requirements
-last_updated: "2026-04-01T09:33:00.000Z"
+last_updated: "2026-04-01T10:26:00.000Z"
 progress:
-  total_phases: 0
+  total_phases: 3
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -25,8 +25,16 @@ See: .planning/PROJECT.md (updated 2026-04-01)
 
 **Name:** Proxy Centralization
 **Started:** 2026-04-01
-**Phases:** TBD (defining requirements)
+**Phases:** 3 total (21-23)
 **Progress:** 0%
+
+## Phase Status
+
+| # | Phase | Status |
+|---|-------|--------|
+| 21 | Backend Proxy Unification | ○ Pending |
+| 22 | Frontend Image Routing | ○ Pending |
+| 23 | Cart & Login Proxy Integration | ○ Pending |
 
 ## Current Position
 
