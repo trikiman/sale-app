@@ -3171,6 +3171,10 @@ def history_get_products(
         if search:
             conditions.append("LOWER(pc.name) LIKE LOWER(?)")
             params.append(f"%{search}%")
+        else:
+            # When not searching, only show products that have been on sale at least once
+            # (hides 16K+ seeded-only products that clutter the list with no data)
+            conditions.append("pc.total_sale_count > 0")
 
         if category:
             conditions.append("pc.category = ?")
