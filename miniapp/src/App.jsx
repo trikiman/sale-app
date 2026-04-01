@@ -1,9 +1,9 @@
-import { useState, useEffect, useMemo, useRef, useCallback, memo } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback, memo, lazy, Suspense } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import CartPanel from './CartPanel'
 import ProductDetail from './ProductDetail'
-import HistoryPage from './HistoryPage'
-import HistoryDetail from './HistoryDetail'
+const HistoryPage = lazy(() => import('./HistoryPage'))
+const HistoryDetail = lazy(() => import('./HistoryDetail'))
 import { buildCategoryRunView } from './categoryRunStatus'
 import { getCardMetaBadges, mergeResolvedWeights, shouldFetchMissingWeight } from './productMeta'
 import { getAuthHeaders } from './api'
@@ -932,13 +932,15 @@ function App() {
   if (currentPage === 'history-detail' && historyDetailId) {
     return (
       <div className="app-container" data-theme={theme}>
-        <HistoryDetail
-          productId={historyDetailId}
-          onBack={() => {
-            setCurrentPage('history')
-            setHistoryDetailId(null)
-          }}
-        />
+        <Suspense fallback={<div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',opacity:0.5}}>Загружаем…</div>}>
+          <HistoryDetail
+            productId={historyDetailId}
+            onBack={() => {
+              setCurrentPage('history')
+              setHistoryDetailId(null)
+            }}
+          />
+        </Suspense>
       </div>
     )
   }
@@ -947,16 +949,18 @@ function App() {
   if (currentPage === 'history') {
     return (
       <div className="app-container" data-theme={theme}>
-        <HistoryPage
-          onBack={() => setCurrentPage('main')}
-          onOpenDetail={(productId) => {
-            setHistoryDetailId(productId)
-            setCurrentPage('history-detail')
-          }}
-          favorites={favorites}
-          onToggleFavorite={handleToggleFavorite}
-          userId={userId}
-        />
+        <Suspense fallback={<div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',opacity:0.5}}>Загружаем…</div>}>
+          <HistoryPage
+            onBack={() => setCurrentPage('main')}
+            onOpenDetail={(productId) => {
+              setHistoryDetailId(productId)
+              setCurrentPage('history-detail')
+            }}
+            favorites={favorites}
+            onToggleFavorite={handleToggleFavorite}
+            userId={userId}
+          />
+        </Suspense>
       </div>
     )
   }
