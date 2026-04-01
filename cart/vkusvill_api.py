@@ -1,6 +1,6 @@
 """
 VkusVill Cart API — добавление товаров в корзину через HTTP API.
-Без Chrome/Selenium — чистый httpx с SOCKS5 proxy.
+Без Chrome/Selenium — чистый httpx с ProxyManager rotation.
 
 Usage:
     from cart.vkusvill_api import VkusVillCart
@@ -25,7 +25,6 @@ BASKET_UPDATE_URL = "https://vkusvill.ru/ajax/delivery_order/basket_update.php"
 BASKET_RECALC_URL = "https://vkusvill.ru/ajax/delivery_order/basket_recalc.php"
 BASKET_CLEAR_URL = "https://vkusvill.ru/ajax/delivery_order/basket_clear.php"
 VKUSVILL_BASE = "https://vkusvill.ru"
-SOCKS_PROXY = os.environ.get("SOCKS_PROXY", "")  # Empty = direct connection (no proxy)
 
 
 class VkusVillCart:
@@ -35,7 +34,7 @@ class VkusVillCart:
     __Host-PHPSESSID cookies are not handled correctly by requests.
     """
     
-    def __init__(self, cookies_path: str, user_id: int = 0, sessid: str = ""):
+    def __init__(self, cookies_path: str, user_id: int = 0, sessid: str = "", proxy_manager=None):
         """
         Args:
             cookies_path: Path to cookies JSON file (exported from browser).
@@ -43,10 +42,13 @@ class VkusVillCart:
                      If 0, will try to load from cookie file metadata.
             sessid: CSRF token. If empty, will try to load from cookie file
                     metadata or extract from warmup page.
+            proxy_manager: ProxyManager instance for proxy rotation.
+                          If None, connects directly (no proxy).
         """
         self.cookies_path = cookies_path
         self.user_id = user_id
         self.sessid = sessid
+        self._proxy_manager = proxy_manager
         self._cookie_str = ""
         self._initialized = False
     
@@ -89,6 +91,14 @@ class VkusVillCart:
         self._initialized = True
         logger.info(f"Session ready (user_id={self.user_id}, sessid={self.sessid[:8]}...)")
     
+    def _get_proxy_url(self):
+        """Get a proxy URL from ProxyManager, or None for direct connection."""
+        if self._proxy_manager:
+            addr = self._proxy_manager.get_working_proxy()
+            if addr:
+                return f"socks5://{addr}"
+        return None
+
     def _extract_session_params(self):
         """GET the main page to extract sessid and user_id.
         
@@ -98,8 +108,9 @@ class VkusVillCart:
         """
         try:
             client_kwargs = dict(timeout=15)
-            if SOCKS_PROXY:
-                client_kwargs['proxy'] = SOCKS_PROXY
+            proxy_url = self._get_proxy_url()
+            if proxy_url:
+                client_kwargs['proxy'] = proxy_url
             with httpx.Client(**client_kwargs) as client:
                 r = client.get(VKUSVILL_BASE, headers={
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36',
@@ -130,7 +141,7 @@ class VkusVillCart:
             logger.warning(f"Failed to extract session params: {e}")
     
     def _request(self, url: str, data: dict, referer: str = '/') -> dict:
-        """Make a POST request using raw Cookie header via SOCKS5 proxy."""
+        """Make a POST request using raw Cookie header via ProxyManager rotation."""
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36',
             'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
@@ -141,8 +152,9 @@ class VkusVillCart:
         }
 
         client_kwargs = dict(timeout=15)
-        if SOCKS_PROXY:
-            client_kwargs['proxy'] = SOCKS_PROXY
+        proxy_url = self._get_proxy_url()
+        if proxy_url:
+            client_kwargs['proxy'] = proxy_url
         with httpx.Client(**client_kwargs) as client:
             r = client.post(url, data=data, headers=headers)
         try:
@@ -156,8 +168,9 @@ class VkusVillCart:
         self._ensure_session()
         try:
             client_kwargs = dict(timeout=15)
-            if SOCKS_PROXY:
-                client_kwargs['proxy'] = SOCKS_PROXY
+            proxy_url = self._get_proxy_url()
+            if proxy_url:
+                client_kwargs['proxy'] = proxy_url
             with httpx.Client(**client_kwargs) as client:
                 r = client.get(
                     f"{VKUSVILL_BASE}/personal/",

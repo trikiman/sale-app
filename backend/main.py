@@ -2992,7 +2992,7 @@ def cart_add_endpoint(req: CartAddRequest, request: Request):
         raise HTTPException(status_code=401, detail="Вы не авторизованы. Войдите в аккаунт.")
 
     try:
-        cart = VkusVillCart(cookies_path=cookies_path)
+        cart = VkusVillCart(cookies_path=cookies_path, proxy_manager=_proxy_manager)
         try:
             result = cart.add(product_id=req.product_id, price_type=req.price_type, is_green=req.is_green)
         finally:
@@ -3030,7 +3030,7 @@ def cart_items_endpoint(user_id: str, request: Request):
         return _fallback_cart_items("VkusVill temporarily unreachable")
 
     try:
-        cart = VkusVillCart(cookies_path=cookies_path)
+        cart = VkusVillCart(cookies_path=cookies_path, proxy_manager=_proxy_manager)
         try:
             data = cart.get_cart()
         finally:
@@ -3096,7 +3096,7 @@ def cart_remove_endpoint(req: CartRemoveRequest, request: Request):
         raise HTTPException(status_code=401, detail="Не авторизованы")
 
     try:
-        cart = VkusVillCart(cookies_path=cookies_path)
+        cart = VkusVillCart(cookies_path=cookies_path, proxy_manager=_proxy_manager)
         try:
             result = cart.remove(product_id=req.product_id)
         finally:
@@ -3125,7 +3125,7 @@ def cart_clear_endpoint(req: CartClearRequest, request: Request):
         raise HTTPException(status_code=401, detail="Не авторизованы")
 
     try:
-        cart = VkusVillCart(cookies_path=cookies_path)
+        cart = VkusVillCart(cookies_path=cookies_path, proxy_manager=_proxy_manager)
         try:
             result = cart.clear_all()
         finally:

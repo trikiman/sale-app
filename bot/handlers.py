@@ -513,12 +513,14 @@ async def handle_cart_add(update: Update, context: ContextTypes.DEFAULT_TYPE):
         cart = None
         try:
             from cart.vkusvill_api import VkusVillCart
+            from proxy_manager import ProxyManager
 
             if not os.path.exists(cookies_path):
                 await query.answer("❌ Вы не авторизованы! Войдите через веб-приложение.", show_alert=True)
                 return
 
-            cart = VkusVillCart(cookies_path=cookies_path)
+            pm = ProxyManager(log_func=lambda msg: logger.info(f"[PROXY] {msg}"))
+            cart = VkusVillCart(cookies_path=cookies_path, proxy_manager=pm)
             result = cart.add(product_id=product_id, price_type=price_type, is_green=is_green)
 
             if result.get('success'):
