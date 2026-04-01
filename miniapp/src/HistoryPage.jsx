@@ -268,10 +268,15 @@ export default function HistoryPage({ onBack, onOpenDetail, favorites = new Set(
     fetchProducts(1, false)
   }, [fetchProducts])
 
-  // Debounced search
+  // Debounced search — auto-clear type filters so search isn't silently restricted
   const handleSearchChange = (e) => {
     const val = e.target.value
     setSearchInput(val)
+    // Clear type filters when searching — users expect search to find across all types
+    if (val && (activeTypes.size > 0 || specialFilter)) {
+      setActiveTypes(new Set())
+      setSpecialFilter(null)
+    }
     if (searchTimeout.current) clearTimeout(searchTimeout.current)
     searchTimeout.current = setTimeout(() => setSearch(val), 300)
   }
