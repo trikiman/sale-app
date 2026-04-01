@@ -3590,6 +3590,68 @@ def admin_panel_page():
     return HTMLResponse("<h2>admin.html not found next to main.py</h2>", status_code=500)
 
 
+# ── GitHub Webhook: auto-pull on push ──────────────────────────
+import subprocess as _subprocess
+
+@app.post("/api/github-webhook")
+async def github_webhook(request: Request):
+    """Receive GitHub push webhook, pull latest code, restart if backend changed."""
+    body = await request.body()
+
+    # Verify signature if GITHUB_WEBHOOK_SECRET is set
+    webhook_secret = os.environ.get("GITHUB_WEBHOOK_SECRET", "")
+    if webhook_secret:
+        sig_header = request.headers.get("x-hub-signature-256", "")
+        expected = "sha256=" + hmac.new(
+            webhook_secret.encode(), body, hashlib.sha256
+        ).hexdigest()
+        if not hmac.compare_digest(sig_header, expected):
+            return {"error": "invalid signature"}
+
+    try:
+        payload = json.loads(body)
+    except Exception:
+        return {"error": "invalid json"}
+
+    # Only act on pushes to main
+    ref = payload.get("ref", "")
+    if ref != "refs/heads/main":
+        return {"status": "ignored", "ref": ref}
+
+    # Git pull
+    result = _subprocess.run(
+        ["git", "pull", "--ff-only", "origin", "main"],
+        cwd="/home/ubuntu/saleapp",
+        capture_output=True, text=True, timeout=30
+    )
+
+    # Check if backend files changed
+    changed_files = []
+    commits = payload.get("commits", [])
+    for c in commits:
+        changed_files.extend(c.get("modified", []))
+        changed_files.extend(c.get("added", []))
+
+    backend_changed = any(
+        f.startswith("backend/") or f.startswith("bot/") or f == "config.py"
+        for f in changed_files
+    )
+
+    if backend_changed:
+        # Restart self after a short delay
+        _subprocess.Popen(
+            ["sudo", "systemctl", "restart", "saleapp-backend"],
+            cwd="/home/ubuntu/saleapp"
+        )
+
+    return {
+        "status": "updated",
+        "pull_output": result.stdout[:200],
+        "backend_restart": backend_changed,
+        "files_changed": len(changed_files)
+    }
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000, loop="asyncio")
