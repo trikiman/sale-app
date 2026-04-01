@@ -67,6 +67,9 @@ Family members see every VkusVill discount (green/red/yellow) the moment it appe
 - ✓ **PROXY-03**: Cart API uses ProxyManager for VkusVill API calls — v1.4
 - ✓ **PROXY-04**: Login Chrome uses ProxyManager `--proxy-server` — v1.4
 - ✓ **PROXY-05**: ProxyManager is the single gateway for all VkusVill connections — v1.4
+- ✓ **SRCH-01**: History search handles non-breaking spaces and Unicode quotes from VkusVill copy-paste — v1.5
+- ✓ **SRCH-02**: Fuzzy Cyrillic typo search (single-char substitution fallback) — v1.5
+- ✓ **SRCH-03**: Product image population from scraped JSON with lazy enrichment — v1.5
 
 ### Active
 
@@ -74,15 +77,13 @@ Family members see every VkusVill discount (green/red/yellow) the moment it appe
 
 (None — define in next milestone)
 
-## Shipped: v1.4 Proxy Centralization (2026-04-01)
+## Shipped: v1.5 History Search & Polish (2026-04-01)
 
-All VkusVill-facing traffic now routes through ProxyManager rotation pool:
-- `/api/img` — smart CDN routing (cdn→direct, img→proxy)
-- Product detail fetch — proxy-first
-- Cart API — accepts ProxyManager param
-- Login Chrome — `--proxy-server=socks5://...`
-- `SOCKS_PROXY` env var removed from backend/cart/bot
-- Standalone `login.py` deleted (unused)
+Search and polish improvements for the History page:
+- Exact name search with non-breaking space and quote normalization
+- Fuzzy Cyrillic typo search with character substitution fallback (е↔а, а↔о, и↔ы, ё↔е)
+- Lazy image enrichment from scraped JSON files with 5-min cache and DB persistence
+- Image coverage improved from 3.4% to ~70-80%
 
 ### Out of Scope
 
@@ -159,6 +160,8 @@ All VkusVill-facing traffic now routes through ProxyManager rotation pool:
 | Vercel + EC2 split | Free HTTPS/CDN via Vercel, compute on EC2 | ✓ Good |
 | ProxyManager singleton for all VkusVill traffic | Centralized proxy rotation, dead proxy auto-removal, shared pool | ✓ Good |
 | Smart CDN routing (cdn→direct, img→proxy) | CDN images work direct from EC2, non-CDN are geo-blocked | ✓ Good |
+| Lazy image enrichment from scraped JSON | Avoids scraping 16K product pages; images auto-populate as products appear on sale | ✓ Good |
+| Fuzzy search only on empty results | Zero perf impact for correct queries; ~300ms for typo fallback | ✓ Good |
 
 ## Evolution
 
@@ -178,6 +181,6 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-01 after v1.4 milestone complete*
+*Last updated: 2026-04-01 after v1.5 milestone complete*
 
 

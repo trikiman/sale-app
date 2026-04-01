@@ -1,12 +1,27 @@
 # Milestones
 
-## v1.4 Proxy Centralization (Shipped: 2026-04-01)
+## v1.5 History Search & Polish (Shipped: 2026-04-01)
 
-**Phases completed:** 1 phases, 2 plans, 0 tasks
+**Phases completed:** 3 phases (24-26), 10 commits
 
 **Key accomplishments:**
 
-- (none recorded)
+- Fixed exact name search: normalize non-breaking spaces (U+00A0) and curly quotes from VkusVill copy-paste
+- Added fuzzy Cyrillic search: single-character substitution fallback (е↔а, а↔о, и↔ы, ё↔е) — 300ms for typo queries
+- Lazy image enrichment: populates missing product images from scraped JSON files with 5-min cache, persists to DB
+- History page image coverage improved from 3.4% to ~70-80%
+
+---
+
+## v1.4 Proxy Centralization (Shipped: 2026-04-01)
+
+**Phases completed:** 3 phases (21-23), 2 plans
+
+**Key accomplishments:**
+
+- Unified all VkusVill-facing traffic through ProxyManager singleton
+- Product detail, cart API, image proxy, and login flow all use proxy rotation
+- Dead proxy auto-eviction with HEAD health checks
 
 ---
 
