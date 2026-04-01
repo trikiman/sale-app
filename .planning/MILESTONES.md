@@ -1,5 +1,15 @@
 # Milestones
 
+## v1.4 Proxy Centralization (Shipped: 2026-04-01)
+
+**Phases completed:** 1 phases, 2 plans, 0 tasks
+
+**Key accomplishments:**
+
+- (none recorded)
+
+---
+
 ## v1.2 Price History (Shipped: 2026-04-01)
 
 **Phases completed:** 6 phases (13-18)

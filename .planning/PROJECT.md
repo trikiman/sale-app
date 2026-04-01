@@ -62,27 +62,27 @@ Family members see every VkusVill discount (green/red/yellow) the moment it appe
 - ✓ **UX-09**: 403 recovery — v1.0
 - ✓ **UX-10**: AnimatePresence delay — v1.0
 - ✓ **BACK-01**: Run-All merge sync — v1.0
+- ✓ **PROXY-01**: `/api/img` uses ProxyManager rotation instead of SOCKS_PROXY — v1.4
+- ✓ **PROXY-02**: Detail gallery images route through backend proxy — v1.4
+- ✓ **PROXY-03**: Cart API uses ProxyManager for VkusVill API calls — v1.4
+- ✓ **PROXY-04**: Login Chrome uses ProxyManager `--proxy-server` — v1.4
+- ✓ **PROXY-05**: ProxyManager is the single gateway for all VkusVill connections — v1.4
 
 ### Active
 
-<!-- v1.4 Proxy Centralization milestone -->
+<!-- Next milestone -->
 
-- [ ] **PROXY-01**: Upgrade `/api/img` to use ProxyManager instead of SOCKS_PROXY env var
-- [ ] **PROXY-02**: Route detail gallery images through backend proxy (not direct browser load)
-- [ ] **PROXY-03**: Integrate ProxyManager into Cart API
-- [ ] **PROXY-04**: Integrate ProxyManager into Login flow
-- [ ] **PROXY-05**: Make ProxyManager the default gateway for any VkusVill-facing connection
+(None — define in next milestone)
 
-## Current Milestone: v1.4 Proxy Centralization
+## Shipped: v1.4 Proxy Centralization (2026-04-01)
 
-**Goal:** Route all VkusVill connections through ProxyManager rotation pool for robustness and easy extensibility.
-
-**Target features:**
-- Upgrade `/api/img` to use ProxyManager instead of `SOCKS_PROXY` env var
-- Route detail gallery images through backend proxy (not direct browser load)
-- Integrate ProxyManager into Cart API
-- Integrate ProxyManager into Login flow
-- Make ProxyManager the default for any new VkusVill-facing feature
+All VkusVill-facing traffic now routes through ProxyManager rotation pool:
+- `/api/img` — smart CDN routing (cdn→direct, img→proxy)
+- Product detail fetch — proxy-first
+- Cart API — accepts ProxyManager param
+- Login Chrome — `--proxy-server=socks5://...`
+- `SOCKS_PROXY` env var removed from backend/cart/bot
+- Standalone `login.py` deleted (unused)
 
 ### Out of Scope
 
@@ -157,7 +157,8 @@ Family members see every VkusVill discount (green/red/yellow) the moment it appe
 | Sequential scrapers (not parallel) | Chrome instances conflict on ports/profiles | ✓ Good |
 | Session cookies in plain JSON files | Family-only app, low risk | ⚠️ Revisit if user base grows |
 | Vercel + EC2 split | Free HTTPS/CDN via Vercel, compute on EC2 | ✓ Good |
-| SQLite over Postgres | Single-user scale, no need for concurrent writes | ✓ Good |
+| ProxyManager singleton for all VkusVill traffic | Centralized proxy rotation, dead proxy auto-removal, shared pool | ✓ Good |
+| Smart CDN routing (cdn→direct, img→proxy) | CDN images work direct from EC2, non-CDN are geo-blocked | ✓ Good |
 
 ## Evolution
 
@@ -177,6 +178,6 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-01 after v1.4 milestone start*
+*Last updated: 2026-04-01 after v1.4 milestone complete*
 
 
