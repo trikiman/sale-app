@@ -65,36 +65,30 @@ Family members see every VkusVill discount (green/red/yellow) the moment it appe
 
 ### Active
 
-<!-- v1.2 Price History milestone -->
+<!-- v1.4 Proxy Centralization milestone -->
 
-- [ ] **HIST-01**: Sale appearance tracking (DB + scraper integration)
-- [ ] **HIST-02**: Sale session aggregation
-- [ ] **HIST-03**: Product catalog seeding (17K products)
-- [ ] **HIST-04**: Prediction engine (time/day patterns, confidence)
-- [ ] **HIST-05**: History API endpoints (paginated list + detail)
-- [ ] **HIST-06**: History list page (search, filters, infinite scroll)
-- [ ] **HIST-07**: History detail page (calendar, charts, predictions)
-- [ ] **HIST-08**: Navigation integration + polish
+- [ ] **PROXY-01**: Upgrade `/api/img` to use ProxyManager instead of SOCKS_PROXY env var
+- [ ] **PROXY-02**: Route detail gallery images through backend proxy (not direct browser load)
+- [ ] **PROXY-03**: Integrate ProxyManager into Cart API
+- [ ] **PROXY-04**: Integrate ProxyManager into Login flow
+- [ ] **PROXY-05**: Make ProxyManager the default gateway for any VkusVill-facing connection
 
-## Current Milestone: v1.2 Price History
+## Current Milestone: v1.4 Proxy Centralization
 
-**Goal:** Build a full "History" page showing all VkusVill products with sale tracking, prediction engine, and calendar visualizations.
+**Goal:** Route all VkusVill connections through ProxyManager rotation pool for robustness and easy extensibility.
 
 **Target features:**
-- Database: sale_appearances, sale_sessions, product_catalog tables
-- Prediction engine: time-of-day + day-of-week patterns, confidence scoring
-- API: paginated history list + product detail with predictions
-- Frontend: History list page + 3-column detail page with calendar heatmap
-- Scraper integration: record appearances after each merge
-
-**Reference plan:** `docs/memory/plans/historypage.md`
-**Approved mockup:** `data/mockup_detail_combined.html`
+- Upgrade `/api/img` to use ProxyManager instead of `SOCKS_PROXY` env var
+- Route detail gallery images through backend proxy (not direct browser load)
+- Integrate ProxyManager into Cart API
+- Integrate ProxyManager into Login flow
+- Make ProxyManager the default for any new VkusVill-facing feature
 
 ### Out of Scope
 
 - Docker containerization — not needed, systemd works fine
 - HTTPS/domain setup — Vercel handles HTTPS already
-- History page — separate feature milestone
+- Proxy pool scaling — handle separately if needed (8 IPs sufficient for 5-user family app)
 - Mobile app — web-first, Telegram MiniApp is the mobile experience
 - Cookie encryption at rest — low risk for family-only app
 - OAuth login — VkusVill only supports phone+SMS
@@ -183,6 +177,6 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-03-31 after v1.2 milestone start*
+*Last updated: 2026-04-01 after v1.4 milestone start*
 
 

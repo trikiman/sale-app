@@ -1,15 +1,15 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.3
-milestone_name: Performance & Optimization
-status: Complete
-last_updated: "2026-04-01T05:13:00.000Z"
+milestone: v1.4
+milestone_name: Proxy Centralization
+status: Defining requirements
+last_updated: "2026-04-01T09:33:00.000Z"
 progress:
-  total_phases: 2
-  completed_phases: 2
-  total_plans: 3
-  completed_plans: 3
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -19,22 +19,21 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-01)
 
 **Core value:** Family members see every VkusVill discount and can add to cart in one tap
-**Current focus:** v1.3 Performance & Optimization — SHIPPED
+**Current focus:** v1.4 Proxy Centralization — defining requirements
 
 ## Current Milestone
 
-**Name:** Performance & Optimization
+**Name:** Proxy Centralization
 **Started:** 2026-04-01
-**Shipped:** 2026-04-01
-**Phases:** 2 total (19-20) — ALL COMPLETE
-**Progress:** 100%
+**Phases:** TBD (defining requirements)
+**Progress:** 0%
 
-## Phase Status
+## Current Position
 
-| # | Phase | Status | Completed |
-|---|-------|--------|-----------|
-| 19 | Rendering & Load Speed | ✅ | 2026-04-01 |
-| 20 | Bundle & Animation | ✅ (pre-done) | 2026-04-01 |
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-04-01 — Milestone v1.4 started
 
 ## Accumulated Context
 
@@ -48,6 +47,7 @@ See: .planning/PROJECT.md (updated 2026-04-01)
 - GitHub webhook on trikiman/sale-app → http://13.60.174.46:8000/api/github-webhook
 - Detail images load directly from img.vkusvill.ru (EC2 is geo-blocked from that domain)
 - Card thumbnails proxy through EC2 /api/img from cdn1-img.vkusvill.ru
+- Proxy pool: 8 IPs on EC2, ~8% discovery success rate, MIN_HEALTHY=7
 
 ## Timeline
 
@@ -59,6 +59,7 @@ See: .planning/PROJECT.md (updated 2026-04-01)
 | v1.2 milestone completed | 2026-04-01 |
 | v1.3 milestone started | 2026-04-01 |
 | v1.3 milestone completed | 2026-04-01 |
+| v1.4 milestone started | 2026-04-01 |
 
 ---
-*Last updated: 2026-04-01 after v1.3 milestone completion*
+*Last updated: 2026-04-01 after v1.4 milestone start*
