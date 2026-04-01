@@ -1,11 +1,10 @@
 import { useState, useEffect } from 'react'
 
-// Proxy only cdn1-img thumbnails (need referrer spoofing on EC2).
-// Full-size img.vkusvill.ru images load directly in the browser —
-// EC2 is geo-blocked from that domain but user browsers are not.
+// Route all VkusVill images through backend proxy.
+// Backend handles smart CDN routing (cdn1-img → direct, img → proxy rotation).
 function proxyImg(url) {
   if (!url) return url
-  if (url.includes('cdn1-img.vkusvill.ru')) {
+  if (url.includes('vkusvill.ru')) {
     return `/api/img?url=${encodeURIComponent(url)}`
   }
   return url
