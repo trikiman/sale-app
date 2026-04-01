@@ -3169,8 +3169,14 @@ def history_get_products(
         params = []
 
         if search:
-            conditions.append("LOWER(pc.name) LIKE LOWER(?)")
-            params.append(f"%{search}%")
+            # Normalize search input: replace non-breaking spaces, curly quotes
+            search_norm = search.replace('\xa0', ' ').replace('\u00a0', ' ')
+            search_norm = search_norm.replace('\u201c', '"').replace('\u201d', '"')  # curly quotes
+            search_norm = search_norm.replace('\u00ab', '"').replace('\u00bb', '"')  # guillemets
+            search_norm = search_norm.strip()
+            # Also normalize DB column: replace char(160) nbsp with space
+            conditions.append("LOWER(REPLACE(pc.name, char(160), ' ')) LIKE LOWER(?)")
+            params.append(f"%{search_norm}%")
         else:
             # When not searching, only show products that have been on sale at least once
             # (hides 16K+ seeded-only products that clutter the list with no data)
