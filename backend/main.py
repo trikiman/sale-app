@@ -702,28 +702,49 @@ async def proxy_image(url: str = ""):
         )
     try:
         _proxy = os.environ.get("SOCKS_PROXY", "")
-        client_kwargs: dict = {"timeout": 10}
-        if _proxy:
-            client_kwargs["proxy"] = _proxy
-        async with httpx.AsyncClient(**client_kwargs) as client:
-            resp = await client.get(url, headers={
-                "Referer": "https://vkusvill.ru/",
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            })
-            if resp.status_code != 200:
-                raise HTTPException(status_code=resp.status_code, detail="Image fetch failed")
-            ct = resp.headers.get("content-type", "image/webp")
-            content = resp.content
-            # Store in cache (evict oldest if full)
-            if len(_img_cache) >= _IMG_CACHE_MAX:
-                oldest_key = min(_img_cache, key=lambda k: _img_cache[k][2])
-                del _img_cache[oldest_key]
-            _img_cache[url] = (content, ct, now)
-            return Response(
-                content=content,
-                media_type=ct,
-                headers={"Cache-Control": "public, max-age=86400", "X-Cache": "MISS"},
-            )
+        _headers = {
+            "Referer": "https://vkusvill.ru/",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        }
+        content = None
+        ct = "image/webp"
+
+        # Try direct first (fast, no proxy overhead)
+        try:
+            async with httpx.AsyncClient(timeout=6, follow_redirects=True) as client:
+                resp = await client.get(url, headers=_headers)
+                if resp.status_code == 200 and len(resp.content) > 100:
+                    content = resp.content
+                    ct = resp.headers.get("content-type", "image/webp")
+        except Exception:
+            pass  # Direct failed, try proxy
+
+        # Fallback to SOCKS proxy if direct failed
+        if not content and _proxy:
+            try:
+                async with httpx.AsyncClient(timeout=8, proxy=_proxy, follow_redirects=True) as client:
+                    resp = await client.get(url, headers=_headers)
+                    if resp.status_code == 200 and len(resp.content) > 100:
+                        content = resp.content
+                        ct = resp.headers.get("content-type", "image/webp")
+            except Exception:
+                pass  # Proxy also failed
+
+        if not content:
+            raise HTTPException(status_code=502, detail="Image fetch failed (direct + proxy)")
+
+        # Store in cache (evict oldest if full)
+        if len(_img_cache) >= _IMG_CACHE_MAX:
+            oldest_key = min(_img_cache, key=lambda k: _img_cache[k][2])
+            del _img_cache[oldest_key]
+        _img_cache[url] = (content, ct, now)
+        return Response(
+            content=content,
+            media_type=ct,
+            headers={"Cache-Control": "public, max-age=86400", "X-Cache": "MISS"},
+        )
+    except HTTPException:
+        raise
     except httpx.TimeoutException:
         raise HTTPException(status_code=504, detail="Image fetch timeout")
     except Exception as e:
