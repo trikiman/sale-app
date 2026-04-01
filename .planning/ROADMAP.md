@@ -9,7 +9,7 @@
 - ✅ **v1.1 Testing & QA** — Phases 10-12, 71 tests (shipped 2026-03-31)
 - ✅ **v1.2 Price History** — Phases 13-18 (shipped 2026-04-01)
 - ✅ **v1.3 Performance & Optimization** — Phases 19-20 (shipped 2026-04-01)
-- ◆ **v1.4 Proxy Centralization** — Phases 21-23
+- ✅ **v1.4 Proxy Centralization** — Phases 21-23 (shipped 2026-04-01)
 
 ## Phases
 
@@ -91,4 +91,4 @@ See: `.planning/milestones/v1.3-ROADMAP.md`
 | 19-20 | v1.3 | ✅ Complete | 2026-04-01 |
 | 21 | v1.4 | ✅ Complete | 2026-04-01 |
 | 22 | v1.4 | ✅ Complete | 2026-04-01 |
-| 23 | v1.4 | ○ Pending | — |
+| 23 | v1.4 | ✅ Complete | 2026-04-01 |
