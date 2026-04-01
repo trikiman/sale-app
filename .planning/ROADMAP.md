@@ -1,7 +1,7 @@
 # Roadmap: VkusVill Sale Monitor
 
 **Created:** 2026-03-30
-**Current Milestone:** v1.4 Proxy Centralization
+**Current Milestone:** v1.5 History Search & Polish
 
 ## Milestones
 
@@ -10,6 +10,7 @@
 - ✅ **v1.2 Price History** — Phases 13-18 (shipped 2026-04-01)
 - ✅ **v1.3 Performance & Optimization** — Phases 19-20 (shipped 2026-04-01)
 - ✅ **v1.4 Proxy Centralization** — Phases 21-23 (shipped 2026-04-01)
+- 🚧 **v1.5 History Search & Polish** — Phases 24-26 (in progress)
 
 ## Phases
 
@@ -41,45 +42,52 @@ See: `.planning/milestones/v1.3-ROADMAP.md`
 
 </details>
 
-### Phase 21: Backend Proxy Unification
+<details>
+<summary>✅ v1.4 Proxy Centralization (Phases 21-23) — SHIPPED 2026-04-01</summary>
 
-**Goal:** Make ProxyManager the single gateway for all backend VkusVill HTTP requests.
+See: `.planning/milestones/v1.4-ROADMAP.md`
 
-**Requirements:** IMG-01, DETAIL-01, INFRA-01
+</details>
+
+### Phase 24: History Search — Exact Name Fix
+
+**Goal:** Fix search to handle special characters (non-breaking spaces, Unicode quotes) so copy-pasted product names from VkusVill work.
+
+**Requirements:** SRCH-01
 
 **Success criteria:**
-1. `/api/img` uses ProxyManager rotation (no more `SOCKS_PROXY` env var)
-2. Product detail fetch uses ProxyManager as primary path (direct → proxy fallback preserved)
-3. ProxyManager is imported and used consistently across all backend VkusVill-facing code
-4. Existing functionality works unchanged (images load, details load)
+1. Copying exact product name from VkusVill.ru and pasting into search returns the product
+2. Non-breaking spaces (U+00A0) treated as regular spaces in search
+3. All quote variants (`"` `"` `«` `»`) treated equivalently
+4. Search works for all products (including those with 0 sale count)
 
 ---
 
-### Phase 22: Frontend Image Routing
+### Phase 25: History Search — Fuzzy/Typo-Tolerant
 
-**Goal:** Route detail gallery images through backend proxy instead of direct browser load.
+**Goal:** Add fuzzy search so misspellings like "цезерь" still find "Цезарь" products.
 
-**Requirements:** IMG-02
+**Requirements:** SRCH-02
 
 **Success criteria:**
-1. `ProductDetail.jsx` routes all `img.vkusvill.ru` images through `/api/img` proxy
-2. Gallery thumbnails and main image both proxy correctly
-3. Fallback behavior preserved (if proxy fails, image hides gracefully)
-4. No visible performance regression for users
+1. Misspelled Cyrillic queries return relevant results (e.g. "цезерь" → "Цезарь")
+2. Search performance stays under 500ms for 16K product catalog
+3. Single-character typos always find the correct product
+4. Partial word matching works (e.g. "цезар" finds "Цезарь")
 
 ---
 
-### Phase 23: Cart & Login Proxy Integration
+### Phase 26: History Cards — Product Image Population
 
-**Goal:** Integrate ProxyManager into Cart API and Login flow.
+**Goal:** Populate missing product images for catalog products so search results show real photos instead of 📦 placeholders.
 
-**Requirements:** CART-04, LOGIN-01
+**Requirements:** SRCH-03
 
 **Success criteria:**
-1. Cart API (`vkusvill_api.py`) uses ProxyManager for all VkusVill API calls
-2. Login flow passes ProxyManager proxy to Chrome `--proxy-server`
-3. Cart add/remove operations work through proxy rotation
-4. Login SMS flow works through proxy (test with caution — 4 SMS/day limit)
+1. Products found via search show actual product images, not 📦 placeholder
+2. Image URLs are cached in product_catalog for subsequent loads
+3. No scraping required — use VkusVill CDN URL pattern if possible
+4. Graceful fallback to 📦 if image cannot be resolved
 
 ## Progress
 
@@ -92,3 +100,6 @@ See: `.planning/milestones/v1.3-ROADMAP.md`
 | 21 | v1.4 | ✅ Complete | 2026-04-01 |
 | 22 | v1.4 | ✅ Complete | 2026-04-01 |
 | 23 | v1.4 | ✅ Complete | 2026-04-01 |
+| 24 | v1.5 | Pending | - |
+| 25 | v1.5 | Pending | - |
+| 26 | v1.5 | Pending | - |
