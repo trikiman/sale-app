@@ -1,9 +1,11 @@
 import { useState, useEffect } from 'react'
 
-// Proxy VkusVill CDN images through backend
+// Proxy only cdn1-img thumbnails (need referrer spoofing on EC2).
+// Full-size img.vkusvill.ru images load directly in the browser —
+// EC2 is geo-blocked from that domain but user browsers are not.
 function proxyImg(url) {
   if (!url) return url
-  if (url.includes('img.vkusvill.ru')) {
+  if (url.includes('cdn1-img.vkusvill.ru')) {
     return `/api/img?url=${encodeURIComponent(url)}`
   }
   return url
@@ -63,6 +65,7 @@ export default function ProductDetail({ product, onClose, onAddToCart, cartState
                 src={proxyImg(images[imgIndex])}
                 alt={product.name}
                 className="detail-main-img"
+                referrerPolicy="no-referrer"
                 onError={e => {
                   if (!e.target.dataset.fallbackAttempted && product.image && e.target.src !== product.image) {
                     e.target.dataset.fallbackAttempted = 'true';
@@ -80,7 +83,7 @@ export default function ProductDetail({ product, onClose, onAddToCart, cartState
                       className={`detail-thumb ${i === imgIndex ? 'active' : ''}`}
                       onClick={() => setImgIndex(i)}
                     >
-                      <img src={proxyImg(img)} alt={`${product?.name || 'Product'} image`} onError={e => { e.target.parentElement.style.display = 'none' }} />
+                      <img src={proxyImg(img)} alt={`${product?.name || 'Product'} image`} referrerPolicy="no-referrer" onError={e => { e.target.parentElement.style.display = 'none' }} />
                     </button>
                   ))}
                 </div>

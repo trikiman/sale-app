@@ -246,7 +246,7 @@ Follow `/systematic-debugging` FIRST (find root cause before fixing), then verif
 
 ## EC2 / Server Operations
 
-- **ALWAYS use SSH** (`ssh -i "key" ubuntu@host`) for EC2 operations. NEVER use browser-based Instance Connect or AWS Console terminal — it's slower, wastes tokens/context, and risks logging out of AWS.
+- **ALWAYS use SSH** (`ssh -i "e:\Projects\saleapp\scraper-ec2-new" ubuntu@13.60.174.46`) for EC2 operations. NEVER use browser-based Instance Connect or AWS Console terminal — it's slower, wastes tokens/context, and risks logging out of AWS.
 - If SSH times out, retry 2-3 times before considering alternatives.
 - Browser subagent is for **UI verification only** (testing the app), never for running server commands.
 
