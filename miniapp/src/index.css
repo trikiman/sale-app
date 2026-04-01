@@ -4,6 +4,36 @@
   box-sizing: border-box;
 }
 
+/* === CSS animations replacing framer-motion === */
+@keyframes fadeIn { from { opacity: 0 } to { opacity: 1 } }
+@keyframes slideDown { from { opacity: 0; transform: translateY(-20px) } to { opacity: 1; transform: translateY(0) } }
+@keyframes scaleIn { from { opacity: 0; transform: scale(0.95) } to { opacity: 1; transform: scale(1) } }
+@keyframes popIn { from { opacity: 0; transform: scale(0.9) translateY(20px) } to { opacity: 1; transform: scale(1) translateY(0) } }
+@keyframes toastIn { from { opacity: 0; transform: translate(-50%, -30px) } to { opacity: 1; transform: translate(-50%, 0) } }
+@keyframes toastOut { from { opacity: 1; transform: translate(-50%, 0) } to { opacity: 0; transform: translate(-50%, -30px) } }
+
+.anim-fade { animation: fadeIn 0.3s ease-out both }
+.anim-slide-down { animation: slideDown 0.4s ease-out both }
+.anim-scale { animation: scaleIn 0.3s ease-out both }
+.anim-pop { animation: popIn 0.3s ease-out both }
+.anim-delay-1 { animation-delay: 0.15s }
+.anim-delay-2 { animation-delay: 0.2s }
+.anim-delay-3 { animation-delay: 0.3s }
+
+/* Tap scale — replaces whileTap={{ scale: X }} */
+.tap-scale { transition: transform 0.1s ease; cursor: pointer }
+.tap-scale:active { transform: scale(0.95) }
+.tap-scale-sm:active { transform: scale(0.85) }
+.tap-scale-xs:active { transform: scale(0.8) }
+
+/* Toast animation */
+.toast-enter { animation: toastIn 0.3s ease-out both }
+.toast-exit { animation: toastOut 0.3s ease-in both }
+
+/* Cart panel slide-up */
+@keyframes cartSlideUp { from { transform: translateY(100%) } to { transform: translateY(0) } }
+.cart-panel-enter { animation: cartSlideUp 0.3s cubic-bezier(0.32, 0.72, 0, 1) both }
+
 :root {
   --tg-theme-bg-color: #1a1a2e;
   --tg-theme-text-color: #ffffff;

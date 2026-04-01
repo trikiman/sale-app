@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
 
 // Proxy VkusVill CDN images through backend
 function proxyImg(url) {
@@ -42,20 +41,13 @@ export default function ProductDetail({ product, onClose, onAddToCart, cartState
   const weight = details?.weight || product.weight || ''
 
   return (
-    <AnimatePresence>
-      <motion.div
-        className="detail-backdrop"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        exit={{ opacity: 0 }}
+    <>
+      <div
+        className="detail-backdrop anim-fade"
         onClick={onClose}
       />
-      <motion.div
-        className="detail-drawer"
-        initial={{ y: '100%' }}
-        animate={{ y: 0 }}
-        exit={{ y: '100%' }}
-        transition={{ type: 'spring', damping: 32, stiffness: 300 }}
+      <div
+        className="detail-drawer cart-panel-enter"
       >
         {/* Handle + close */}
         <div className="detail-handle-row">
@@ -219,7 +211,7 @@ export default function ProductDetail({ product, onClose, onAddToCart, cartState
             </div>
           )}
         </div>
-      </motion.div>
-    </AnimatePresence>
+      </div>
+    </>
   )
 }

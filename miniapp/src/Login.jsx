@@ -1,5 +1,4 @@
 import { useState, useRef, useEffect } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
 
 // Auth endpoints: Vercel proxy (30s timeout) — verify returns in ~16s now (v2)
 const AUTH_BASE = ''
@@ -284,7 +283,7 @@ export default function Login({ userId, onLoginSuccess }) {
     switch (step) {
       case 'phone':
         return (
-          <motion.form key="phone" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} onSubmit={handlePhoneSubmit} className="login-form">
+          <form key="phone" className="login-form anim-fade" onSubmit={handlePhoneSubmit}>
             <input type="tel" placeholder="+7 900 123 45 67" value={phone} onChange={(e) => setPhone(e.target.value.replace(/[^\d+\s()-]/g, ''))} className="login-input" disabled={loading} autoFocus />
             <div className="login-option-row">
               <label className="login-toggle">
@@ -299,14 +298,14 @@ export default function Login({ userId, onLoginSuccess }) {
             {loading ? <><Spinner /> {statusText || 'Получаем код…'}</> : 'Получить код'}
             </button>
             {loading && <div className="login-loading-hint">{statusText || 'Разгадываем капчу и отправляем SMS...'}</div>}
-          </motion.form>
+          </form>
         )
 
 
 
       case 'pin':
         return (
-          <motion.form key="pin" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} onSubmit={(e) => { e.preventDefault(); doPinSubmit(pin) }} className="login-form">
+          <form key="pin" className="login-form anim-fade" onSubmit={(e) => { e.preventDefault(); doPinSubmit(pin) }}>
             <div className="login-hint">Введите PIN для {phone}</div>
             <input type="password" inputMode="numeric" placeholder="● ● ● ●" value={pin} onChange={(e) => handlePinChange(e.target.value)} maxLength={4} className="login-input login-input-code" disabled={loading} autoFocus />
             <button type="submit" disabled={loading || pin.length !== 4} className="login-btn">
@@ -315,12 +314,12 @@ export default function Login({ userId, onLoginSuccess }) {
             <button type="button" onClick={() => { setForceSms(true); setStep('phone'); setPin(''); setError(null) }} className="login-back-btn" disabled={loading}>
               Войти через SMS
             </button>
-          </motion.form>
+          </form>
         )
 
       case 'code':
         return (
-          <motion.form key="code" initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }} onSubmit={(e) => { e.preventDefault(); doCodeSubmit(code) }} className="login-form">
+          <form key="code" className="login-form anim-fade" onSubmit={(e) => { e.preventDefault(); doCodeSubmit(code) }}>
             <div className="login-hint">Код отправлен на {phone}</div>
             <input type="text" inputMode="numeric" placeholder="Код из SMS" value={code} onChange={(e) => handleCodeChange(e.target.value)} maxLength={6} className="login-input login-input-code" disabled={loading} autoFocus />
             <button type="submit" disabled={loading || code.length < 4} className="login-btn">
@@ -328,12 +327,12 @@ export default function Login({ userId, onLoginSuccess }) {
             </button>
             {loading && <div className="login-loading-hint">{statusText || 'Проверяем код...'}</div>}
             <button type="button" onClick={() => { setStep('phone'); setCode(''); setForceSms(false); setError(null) }} className="login-back-btn" disabled={loading}>Изменить номер</button>
-          </motion.form>
+          </form>
         )
 
       case 'set_pin':
         return (
-          <motion.form key={`setpin-${setPinStep}`} initial={{ opacity: 0, x: setPinStep === 1 ? -20 : 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: setPinStep === 1 ? 20 : -20 }} onSubmit={handleSetPin} className="login-form">
+          <form key={`setpin-${setPinStep}`} className="login-form anim-fade" onSubmit={handleSetPin}>
             <div className="login-hint">{setPinStep === 1 ? 'Придумайте 4-значный PIN' : 'Повторите PIN'}</div>
             <div className="login-pin-info">
               🔐 PIN нужен чтобы входить без SMS в следующий раз. Без него вам придётся каждый раз запрашивать код.
@@ -355,22 +354,22 @@ export default function Login({ userId, onLoginSuccess }) {
                 Назад
               </button>
             )}
-          </motion.form>
+          </form>
         )
     }
   }
 
   return (
     <div className="login-wrapper">
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="login-card">
+      <div className="login-card anim-pop">
         <div className="login-icon">🛒</div>
         <h2 className="login-title">Вход во ВкусВилл</h2>
         <p className="login-subtitle">
           {step === 'set_pin' ? 'PIN позволит входить без SMS в следующий раз' : 'Авторизуйтесь, чтобы добавлять товары со скидками прямо в корзину ВкусВилл.'}
         </p>
         {error && <div className="login-error">{error}</div>}
-        <AnimatePresence mode="wait">{renderStep()}</AnimatePresence>
-      </motion.div>
+        {renderStep()}
+      </div>
 
     </div>
   )

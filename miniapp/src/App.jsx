@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo, useRef, useCallback, memo, lazy, Suspense } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
 import CartPanel from './CartPanel'
 import ProductDetail from './ProductDetail'
 const HistoryPage = lazy(() => import('./HistoryPage'))
@@ -105,21 +104,20 @@ const ProductCard = memo(function ProductCard({ product, index, isFavorite, onTo
         )}
 
         {/* Favorite button on image */}
-        <motion.button
-          whileTap={{ scale: 0.8 }}
+        <button
+          className={`card-fav-btn tap-scale-xs ${isFavorite ? 'active' : ''} ${favoritesLoading ? 'loading' : ''}`}
           onClick={(e) => {
             e.stopPropagation()
             if (!favoritesLoading) onToggleFavorite(product)
           }}
           disabled={favoritesLoading}
-          className={`card-fav-btn ${isFavorite ? 'active' : ''} ${favoritesLoading ? 'loading' : ''}`}
         >
           {favoritesLoading ? (
             <div className="w-5 h-5 border-2 border-white/50 border-t-transparent rounded-full animate-spin" />
           ) : (
             isFavorite ? '❤️' : '🤍'
           )}
-        </motion.button>
+        </button>
 
         {/* Type badge on image */}
         <span className={`card-type-badge ${config.bg} ${config.text}`}>
@@ -138,13 +136,12 @@ const ProductCard = memo(function ProductCard({ product, index, isFavorite, onTo
               <span className="card-old-price">{product.oldPrice}₽</span>
             )}
           </div>
-          <motion.button
-            whileTap={{ scale: 0.85 }}
+          <button
+            className={`cart-btn tap-scale-sm ${cartState === 'success' ? 'cart-btn-success' : ''} ${cartState === 'error' ? 'cart-btn-error' : ''}`}
             onClick={(e) => {
               e.stopPropagation()
               if (cartState !== 'loading') onAddToCart(product)
             }}
-            className={`cart-btn ${cartState === 'success' ? 'cart-btn-success' : ''} ${cartState === 'error' ? 'cart-btn-error' : ''}`}
             aria-label="Добавить в корзину"
             disabled={cartState === 'loading'}
           >
@@ -163,7 +160,7 @@ const ProductCard = memo(function ProductCard({ product, index, isFavorite, onTo
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 100 4 2 2 0 000-4z" />
               </svg>
             )}
-          </motion.button>
+          </button>
         </div>
 
         <div className="card-meta-row">
@@ -226,14 +223,13 @@ function CategoryFilter({ selected, onSelect, categories }) {
         onScroll={checkScroll}
       >
         {categories.map((cat) => (
-          <motion.button
+          <button
             key={cat.id}
             onClick={() => onSelect(cat.id)}
-            className={`category-chip ${selected === cat.id ? 'active' : ''}`}
-            whileTap={{ scale: 0.95 }}
+            className={`category-chip tap-scale ${selected === cat.id ? 'active' : ''}`}
           >
             {cat.label}
-          </motion.button>
+          </button>
         ))}
       </div>
     </div>
@@ -923,10 +919,8 @@ function App() {
   // Login prompt overlay (shows when unauthenticated user tries to add to cart)
   const loginPromptOverlay = showLoginPrompt && (
     <div className="login-prompt-overlay" onClick={() => setShowLoginPrompt(false)}>
-      <motion.div
-        className="login-prompt-card"
-        initial={{ opacity: 0, scale: 0.9, y: 20 }}
-        animate={{ opacity: 1, scale: 1, y: 0 }}
+      <div
+        className="login-prompt-card anim-pop"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="login-prompt-icon">🛒</div>
@@ -946,7 +940,7 @@ function App() {
         >
           Не сейчас
         </button>
-      </motion.div>
+      </div>
     </div>
   )
 
@@ -991,10 +985,8 @@ function App() {
   return (
     <div className="min-h-screen p-4 app-container">
       {/* Header */}
-      <motion.div
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="text-center mb-6"
+      <div
+        className="text-center mb-6 anim-slide-down"
       >
         <h1 className="text-2xl font-bold mb-2">{headerEmoji} {headerTitle}</h1>
 
@@ -1181,24 +1173,20 @@ function App() {
 
         {/* Stale data warning — shown when merge detected old files */}
         {dataStale && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="mt-2 px-4 py-2 rounded-xl bg-yellow-500/20 border border-yellow-500/50 text-yellow-300 text-center text-xs"
+          <div
+            className="mt-2 px-4 py-2 rounded-xl bg-yellow-500/20 border border-yellow-500/50 text-yellow-300 text-center text-xs anim-scale"
           >
             ⚠️ Данные устарели — товары и цены могут не совпадать с сайтом
-          </motion.div>
+          </div>
         )}
 
         {/* Green products missing warning */}
         {greenMissing && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="mt-2 px-4 py-2 rounded-xl bg-green-500/10 border border-green-500/30 text-green-400 text-center text-xs"
+          <div
+            className="mt-2 px-4 py-2 rounded-xl bg-green-500/10 border border-green-500/30 text-green-400 text-center text-xs anim-scale"
           >
             🟢 Зелёные ценники недоступны — требуется авторизация тех. аккаунта
-          </motion.div>
+          </div>
         )}
 
         {/* Client-side time check — if data is older than 15 min */}
@@ -1214,10 +1202,8 @@ function App() {
             Normal ratio is 10-30%. Warn only if we have <10% OR zero when live has items. */}
         {greenLiveCount !== null && greenLiveCount > 0 && countGreen > 0 &&
          (countGreen / greenLiveCount) < 0.05 && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="mt-3 px-4 py-2 rounded-xl bg-red-500/20 border border-red-500/50 text-red-400 text-center"
+          <div
+            className="mt-3 px-4 py-2 rounded-xl bg-red-500/20 border border-red-500/50 text-red-400 text-center anim-scale"
           >
             <div className="font-bold text-sm">⚠️ Зелёные ценники могли устареть</div>
             <div className="text-xs opacity-70 mt-0.5">
@@ -1274,13 +1260,15 @@ function App() {
                 >✕</button>
               </div>
             ) : (
-              <motion.button
-                whileTap={{ scale: 0.95 }}
+              <button
+                className={`mt-2 px-4 py-1.5 rounded-lg text-xs font-bold border transition-all tap-scale ${scraperRunning
+                  ? 'bg-red-500/10 border-red-500/30 opacity-60 cursor-wait'
+                  : 'bg-red-500/30 border-red-500/50 hover:bg-red-500/40 cursor-pointer'
+                  }`}
                 disabled={scraperRunning}
                 onClick={() => {
                   const storedToken = localStorage.getItem('vv_admin_token')
                   if (storedToken) {
-                    // Token already stored — fire immediately
                     setScraperRunning(true)
                     fetch('/api/admin/run/green', { method: 'POST', headers: { 'X-Admin-Token': storedToken } })
                       .then(r => {
@@ -1295,28 +1283,20 @@ function App() {
                       .then(data => { if (data) { setScraperRunning(false); setScraperDone(true) } })
                       .catch(() => setScraperRunning(false))
                   } else {
-                    // No token — show inline input (prompt() is blocked in Telegram WebApp)
                     setShowTokenInput(true)
                   }
                 }}
-                className={`mt-2 px-4 py-1.5 rounded-lg text-xs font-bold border transition-all ${scraperRunning
-                  ? 'bg-red-500/10 border-red-500/30 opacity-60 cursor-wait'
-                  : 'bg-red-500/30 border-red-500/50 hover:bg-red-500/40 cursor-pointer'
-                  }`}
               >
                 {scraperRunning ? '⏳ Запускаем…' : '🔄 Обновить данные'}
-              </motion.button>
+              </button>
             )}
-          </motion.div>
+          </div>
         )}
-      </motion.div>
+      </div>
 
       {/* Type Filter Toggles */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.15 }}
-        className="flex gap-2 mb-3 justify-center relative z-20 flex-wrap items-center"
+      <div
+        className="flex gap-2 mb-3 justify-center relative z-20 flex-wrap items-center anim-fade anim-delay-1"
       >
         {/* Select All Button if any are unchecked */}
         {!Object.values(typeFilters).every(v => v) && (
@@ -1388,28 +1368,23 @@ function App() {
             ⊞
           </button>
         </div>
-      </motion.div>
+      </div>
 
       {/* Category Filter */}
-      <motion.div
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.2 }}
-        className="mb-4"
+      <div
+        className="mb-4 anim-fade anim-delay-2"
       >
         <CategoryFilter
           selected={selectedCategory}
           onSelect={setSelectedCategory}
           categories={categories}
         />
-      </motion.div>
+      </div>
 
       {/* Новинки banner — shown when user selects uncategorized products chip */}
       {selectedCategory === 'Новинки' && (
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          className="mb-4 px-4 py-3 rounded-xl bg-yellow-500/10 border border-yellow-500/30 text-center"
+        <div
+          className="mb-4 px-4 py-3 rounded-xl bg-yellow-500/10 border border-yellow-500/30 text-center anim-scale"
         >
           <div className="text-xs opacity-70 mb-2">
             {filteredProducts.length} товаров ещё не распределены по категориям
@@ -1420,14 +1395,13 @@ function App() {
             </div>
           ) : (
             <>
-              <motion.button
-                whileTap={{ scale: 0.95 }}
+              <button
+                className={`header-pill header-pill-action tap-scale ${categorizingRunning ? 'opacity-60 cursor-wait' : ''}`}
                 disabled={categorizingRunning}
                 onClick={triggerCategoryScraper}
-                className={`header-pill header-pill-action ${categorizingRunning ? 'opacity-60 cursor-wait' : ''}`}
               >
                 {categorizingRunning ? '⏳ Определяем...' : '🔄 Определить категории'}
-              </motion.button>
+              </button>
               {categoryRunView.summary && (
                 <div className={`mt-2 text-xs ${categoryRunView.isError ? 'text-red-400' : 'opacity-70'}`}>
                   {categoryRunView.summary}
@@ -1443,7 +1417,7 @@ function App() {
               )}
             </>
           )}
-        </motion.div>
+        </div>
       )}
 
       {/* Loading state */}
@@ -1487,15 +1461,12 @@ function App() {
           )}
 
         {filteredProducts.length === 0 && !loading && !error && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.3 }}
-            className="text-center py-8 opacity-60"
+          <div
+            className="text-center py-8 opacity-60 anim-fade anim-delay-3"
             style={{ gridColumn: '1 / -1' }}
           >
             В этой категории пока нет товаров. Попробуйте другой фильтр
-          </motion.div>
+          </div>
         )}
       </div>
 
@@ -1522,19 +1493,14 @@ function App() {
       {loginPromptOverlay}
 
       {/* Floating Toast Notification */}
-      <AnimatePresence>
-        {toastMessage && (
-          <motion.div
-            initial={{ opacity: 0, y: -30 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -30 }}
-            className={`fixed top-16 left-1/2 -translate-x-1/2 px-4 py-2.5 rounded-xl shadow-[0_0_20px_rgba(0,0,0,0.3)] z-[200] text-sm font-medium whitespace-nowrap border ${toastMessage.type === 'error' ? 'bg-[#2a1313] text-red-400 border-red-500/30' : 'bg-[#132a18] text-green-400 border-green-500/30'
-              }`}
-          >
-            {toastMessage.text}
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {toastMessage && (
+        <div
+          className={`fixed top-16 left-1/2 -translate-x-1/2 px-4 py-2.5 rounded-xl shadow-[0_0_20px_rgba(0,0,0,0.3)] z-[200] text-sm font-medium whitespace-nowrap border toast-enter ${toastMessage.type === 'error' ? 'bg-[#2a1313] text-red-400 border-red-500/30' : 'bg-[#132a18] text-green-400 border-green-500/30'
+            }`}
+        >
+          {toastMessage.text}
+        </div>
+      )}
     </div>
   )
 }

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { motion } from 'framer-motion'
+
 import { getAuthHeaders } from './api'
 
 const API_BASE = '/api'
@@ -59,12 +59,9 @@ function DayPattern({ pattern }) {
           return (
             <div key={i} className="hd-day-bar-wrap">
               <div className="hd-day-bar-bg">
-                <motion.div
+                <div
                   className="hd-day-bar-fill"
-                  initial={{ height: 0 }}
-                  animate={{ height: `${Math.max(pct, 2)}%` }}
-                  transition={{ delay: i * 0.05, duration: 0.4 }}
-                  style={{ background: pct > 50 ? '#4ade80' : pct > 20 ? '#facc15' : 'rgba(255,255,255,0.15)' }}
+                  style={{ height: `${Math.max(pct, 2)}%`, background: pct > 50 ? '#4ade80' : pct > 20 ? '#facc15' : 'rgba(255,255,255,0.15)', transition: `height 0.4s ease ${i * 0.05}s` }}
                 />
               </div>
               <div className="hd-day-label">{name}</div>
@@ -156,11 +153,9 @@ function HourChart({ distribution }) {
           return (
             <div key={h} className="hd-hour-bar-wrap" title={`${h}:00 — ${count} раз`}>
               <div className="hd-hour-bar-bg">
-                <motion.div
+                <div
                   className="hd-hour-bar-fill"
-                  initial={{ height: 0 }}
-                  animate={{ height: `${Math.max(pct, count > 0 ? 8 : 0)}%` }}
-                  transition={{ delay: h * 0.02, duration: 0.3 }}
+                  style={{ height: `${Math.max(pct, count > 0 ? 8 : 0)}%`, transition: `height 0.3s ease ${h * 0.02}s` }}
                 />
               </div>
               {h % 3 === 0 && <div className="hd-hour-label">{h}</div>}

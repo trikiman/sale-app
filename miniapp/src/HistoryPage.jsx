@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, memo } from 'react'
-import { motion } from 'framer-motion'
+
 import { getAuthHeaders } from './api'
 
 const API_BASE = '/api'
@@ -62,16 +62,10 @@ const HistoryCard = memo(function HistoryCard({ product, onClick, isFavorite, on
   }
 
   return (
-    <motion.div
-      className={`hcard ${isGhost ? 'hcard-ghost' : ''}`}
+    <div
+      className={`hcard ${isGhost ? 'hcard-ghost' : ''} anim-fade`}
       onClick={() => onClick(product)}
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      whileHover={{ y: -3, boxShadow: '0 8px 28px rgba(0,0,0,0.25)' }}
-      style={hasSales ? {
-        background: tc.bg,
-        borderColor: tc.border,
-      } : {}}
+      style={{ cursor: 'pointer', transition: 'transform 0.2s, box-shadow 0.2s', ...(hasSales ? { background: tc.bg, borderColor: tc.border } : {}) }}
     >
       {/* Image section */}
       <div className="hcard-image-wrap">
@@ -150,7 +144,7 @@ const HistoryCard = memo(function HistoryCard({ product, onClick, isFavorite, on
           </div>
         )}
       </div>
-    </motion.div>
+    </div>
   )
 }, (prev, next) =>
   prev.product === next.product &&
