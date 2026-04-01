@@ -3145,6 +3145,41 @@ def cart_clear_endpoint(req: CartClearRequest, request: Request):
         raise HTTPException(status_code=500, detail="Ошибка очистки корзины")
 
 
+# ─── Scraped Image Map (lazy cache for Phase 26 image enrichment) ────────────
+
+_scraped_image_cache = {"map": {}, "ts": 0}
+
+def _get_scraped_image_map():
+    """Load product images from scraped JSON files, cached for 5 minutes."""
+    import time
+    now = time.time()
+    if now - _scraped_image_cache["ts"] < 300 and _scraped_image_cache["map"]:
+        return _scraped_image_cache["map"]
+    
+    img_map = {}
+    files = ["green_products.json", "red_products.json", "yellow_products.json", "products.json"]
+    for fname in files:
+        fpath = os.path.join(DATA_DIR, fname)
+        if not os.path.exists(fpath):
+            continue
+        try:
+            with open(fpath, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            items = data if isinstance(data, list) else data.get("products", [])
+            if isinstance(items, dict):
+                items = list(items.values())
+            for p in items:
+                pid = str(p.get("id", ""))
+                img = p.get("image", "") or p.get("image_url", "")
+                if pid and img and img.startswith("http"):
+                    img_map[pid] = img
+        except Exception:
+            pass
+    
+    _scraped_image_cache["map"] = img_map
+    _scraped_image_cache["ts"] = now
+    return img_map
+
 # ─── History Endpoints (Phase 15: HIST-07, HIST-08) ──────────────────────────
 
 # Common Cyrillic character confusables for fuzzy search
@@ -3361,6 +3396,30 @@ def history_get_products(
                             p["confidence_pct"] = pred.get("confidence_pct", 0)
                 except Exception as pred_err:
                     logger.warning(f"History batch predictions error: {pred_err}")
+
+        # Enrich products missing images from scraped JSON files (Phase 26)
+        missing_img = [p for p in products if not p.get("image_url")]
+        if missing_img:
+            img_map = _get_scraped_image_map()
+            update_pairs = []  # (image_url, product_id) for DB update
+            for p in missing_img:
+                img = img_map.get(p["id"])
+                if img:
+                    p["image_url"] = img
+                    update_pairs.append((img, p["id"]))
+            # Persist images to DB so they're available next time
+            if update_pairs:
+                try:
+                    conn3 = _sqlite3.connect(db.db_path, timeout=5)
+                    c3 = conn3.cursor()
+                    c3.executemany(
+                        "UPDATE product_catalog SET image_url = ? WHERE product_id = ? AND (image_url IS NULL OR image_url = '')",
+                        update_pairs
+                    )
+                    conn3.commit()
+                    conn3.close()
+                except Exception:
+                    pass  # Non-critical, will retry next request
 
         # Get categories for filter
         conn2 = _sqlite3.connect(db.db_path, timeout=10)
