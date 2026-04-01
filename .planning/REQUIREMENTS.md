@@ -42,8 +42,8 @@
 
 | REQ-ID | Phase | Status |
 |--------|-------|--------|
-| SCRP-10 | TBD | Pending |
-| SCRP-11 | TBD | Pending |
-| SCRP-12 | TBD | Pending |
-| SCRP-13 | TBD | Pending |
-| SCRP-14 | TBD | Pending |
+| SCRP-10 | Phase 27 | Pending |
+| SCRP-11 | Phase 27 | Pending |
+| SCRP-12 | Phase 27 | Pending |
+| SCRP-13 | Phase 28 | Pending |
+| SCRP-14 | Phase 28 | Pending |

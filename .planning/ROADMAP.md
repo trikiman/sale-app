@@ -1,7 +1,7 @@
 # Roadmap: VkusVill Sale Monitor
 
 **Created:** 2026-03-30
-**Status:** All milestones complete through v1.5
+**Status:** v1.6 in progress
 
 ## Milestones
 
@@ -11,6 +11,7 @@
 - ✅ **v1.3 Performance & Optimization** — Phases 19-20 (shipped 2026-04-01)
 - ✅ **v1.4 Proxy Centralization** — Phases 21-23 (shipped 2026-04-01)
 - ✅ **v1.5 History Search & Polish** — Phases 24-26 (shipped 2026-04-01)
+- 🔄 **v1.6 Green Scraper Robustness** — Phases 27-28 (in progress)
 
 ## Phases
 
@@ -56,6 +57,50 @@ See: `.planning/milestones/v1.5-ROADMAP.md`
 
 </details>
 
+### v1.6 Green Scraper Robustness
+
+#### Phase 27: CDP Network-Aware Modal Loading
+**Goal:** Replace fragile DOM-polling scroll loop with CDP Network interception to deterministically load all green modal items.
+
+**Requirements:** SCRP-10, SCRP-11, SCRP-12
+
+**Changes:**
+1. Enable `cdp.network` before opening the green modal
+2. Add response handler to intercept XHR responses from "показать ещё" pagination
+3. Parse each AJAX response to track total items loaded vs total available
+4. Click "показать ещё" and wait for the AJAX response (not arbitrary timeout)
+5. Stop only when: AJAX returns no more items OR loaded count matches response total
+6. Preserve inline path (<6 items, no modal)
+7. After all items loaded, click "В корзину" on each card
+8. Fallback: if CDP interception detects no AJAX (site changed), fall back to aggressive DOM polling with live_count target + longer timeouts
+
+**Success Criteria:**
+1. With 190 green items on VkusVill, scraper captures ≥185 (97%+)
+2. Modal "показать ещё" is clicked until it disappears — verified via network response, not DOM timing
+3. Inline path still works when <6 green items (no modal)
+4. Scraper completes within 120s timeout
+5. No regression in red/yellow scrapers
+
+---
+
+#### Phase 28: Count Validation & Mismatch Alerting
+**Goal:** Add safety gates to detect and alert on scraper accuracy regressions.
+
+**Requirements:** SCRP-13, SCRP-14
+
+**Changes:**
+1. After scraping, compare `live_count` (from badge) vs `scraped_count`
+2. If gap >10%: log `⚠️ COUNT MISMATCH`, preserve existing snapshot, return failure
+3. If gap ≤10%: save normally
+4. Add mismatch logging in scheduler_service.py with structured format
+5. Track consecutive mismatch count — if 3+ cycles in a row, log as critical
+
+**Success Criteria:**
+1. When scraper gets 120/190, it refuses to overwrite and logs mismatch warning
+2. When scraper gets 188/190, it saves normally (within 10% tolerance)
+3. Scheduler log shows clear `COUNT MISMATCH` entries with expected vs actual
+4. Existing snapshot preserved when validation fails
+
 ## Progress
 
 | Phase | Milestone | Status | Completed |
@@ -66,4 +111,5 @@ See: `.planning/milestones/v1.5-ROADMAP.md`
 | 19-20 | v1.3 | ✅ Complete | 2026-04-01 |
 | 21-23 | v1.4 | ✅ Complete | 2026-04-01 |
 | 24-26 | v1.5 | ✅ Complete | 2026-04-01 |
-
+| 27 | v1.6 | ⬜ Pending | — |
+| 28 | v1.6 | ⬜ Pending | — |
