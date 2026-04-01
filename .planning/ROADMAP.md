@@ -10,7 +10,7 @@
 - ✅ **v1.2 Price History** — Phases 13-18 (shipped 2026-04-01)
 - ✅ **v1.3 Performance & Optimization** — Phases 19-20 (shipped 2026-04-01)
 - ✅ **v1.4 Proxy Centralization** — Phases 21-23 (shipped 2026-04-01)
-- 🚧 **v1.5 History Search & Polish** — Phases 24-26 (in progress)
+- ✅ **v1.5 History Search & Polish** — Phases 24-26 (shipped 2026-04-01)
 
 ## Phases
 
