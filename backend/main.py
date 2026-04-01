@@ -126,6 +126,13 @@ TECH_PROFILE_DIR = os.path.join(DATA_DIR, "tech_profile")
 VKUSVILL_BACKOFF_SECONDS = 60
 _vkusvill_backoff_until = 0.0
 
+# Singleton ProxyManager for all VkusVill connections (v1.4 PROXY-01)
+import sys as _sys
+if BASE_PROJECT_DIR not in _sys.path:
+    _sys.path.insert(0, BASE_PROJECT_DIR)
+from proxy_manager import ProxyManager
+_proxy_manager = ProxyManager(log_func=lambda msg: logger.info(f"[PROXY] {msg}"))
+
 # Mount assets directory if it exists
 assets_dir = os.path.join(MINIAPP_DIST, "assets")
 if os.path.exists(assets_dir):
@@ -497,106 +504,79 @@ async def product_details(product_id: str):
     if cached:
         return cached
 
-    # Fetch HTML via direct HTTP (fast: ~2-3s) — VkusVill pages are server-rendered
+    # Fetch HTML via ProxyManager rotation (always proxy — D-01)
     html = None
     ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36"
 
-    # Try direct connection first
-    try:
-        import httpx
-        async with httpx.AsyncClient(timeout=4, follow_redirects=True) as client:
-            resp = await client.get(url, headers={
-                "User-Agent": ua,
-                "Accept": "text/html,application/xhtml+xml",
-            })
-            if resp.status_code == 200 and len(resp.text) > 500:
-                html = resp.text
-                logger.info(f"Product {product_id}: fetched {len(html)} bytes via direct in {resp.elapsed.total_seconds():.1f}s")
-    except Exception as e:
-        logger.warning(f"Product {product_id}: direct HTTP failed ({e})")
+    import httpx
+    pm = _proxy_manager
 
-    # If direct failed, use ProxyManager with smart retry
-    # Strategy: 1s HEAD check per proxy → first that passes → full fetch (5s)
-    # ConnectError → proxy dead → remove. Timeout → VkusVill slow → keep proxy.
-    if not html:
+    # Get all proxies in pool
+    pool = pm._cache.get("proxies", [])
+    if not pool:
+        pm.ensure_pool()
+        pool = pm._cache.get("proxies", [])
+
+    dead_proxies = []
+    working_proxy = None
+
+    # Phase 1: Quick 1s HEAD check to find a live proxy
+    for entry in pool:
+        addr = entry["addr"]
+        proxy_url = f"socks5://{addr}"
         try:
-            import sys, httpx
-            if os.path.dirname(os.path.dirname(__file__)) not in sys.path:
-                sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
-            from proxy_manager import ProxyManager
-            pm = ProxyManager(log_func=lambda msg: logger.info(f"[PROXY] {msg}"))
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(connect=1.0, read=1.0, write=1.0, pool=1.0),
+                proxy=proxy_url
+            ) as client:
+                await client.head("https://vkusvill.ru/", headers={"User-Agent": ua})
+            # HEAD succeeded — this proxy is alive
+            working_proxy = addr
+            logger.info(f"[DETAIL-PROXY] Product {product_id}: proxy {addr} passed 1s health check")
+            break
+        except httpx.ConnectError:
+            logger.info(f"[DETAIL-PROXY] Product {product_id}: proxy {addr} dead (ConnectError)")
+            dead_proxies.append(addr)
+        except httpx.TimeoutException:
+            logger.info(f"[DETAIL-PROXY] Product {product_id}: proxy {addr} timeout, trying next")
+        except Exception:
+            logger.info(f"[DETAIL-PROXY] Product {product_id}: proxy {addr} check failed, trying next")
 
-            # Get all proxies in pool
-            pool = pm._cache.get("proxies", [])
-            if not pool:
-                pm.ensure_pool()
-                pool = pm._cache.get("proxies", [])
+    # Remove confirmed dead proxies
+    for addr in dead_proxies:
+        pm.remove_proxy(addr)
 
-            dead_proxies = []
-            working_proxy = None
-
-            # Phase 1: Quick 1s HEAD check to find a live proxy
-            for entry in pool:
-                addr = entry["addr"]
-                proxy_url = f"socks5://{addr}"
-                try:
-                    async with httpx.AsyncClient(
-                        timeout=httpx.Timeout(connect=1.0, read=1.0, write=1.0, pool=1.0),
-                        proxy=proxy_url
-                    ) as client:
-                        await client.head("https://vkusvill.ru/", headers={"User-Agent": ua})
-                    # HEAD succeeded — this proxy is alive
-                    working_proxy = addr
-                    logger.info(f"Product {product_id}: proxy {addr} passed 1s health check")
-                    break
-                except httpx.ConnectError:
-                    # Proxy is dead — can't even connect
-                    logger.info(f"Product {product_id}: proxy {addr} dead (ConnectError)")
-                    dead_proxies.append(addr)
-                except httpx.TimeoutException:
-                    # Connected but VkusVill slow — proxy might be fine, skip to next
-                    logger.info(f"Product {product_id}: proxy {addr} timeout (VkusVill slow?), trying next")
-                except Exception:
-                    # Other error — skip but don't remove
-                    logger.info(f"Product {product_id}: proxy {addr} check failed, trying next")
-
-            # Remove confirmed dead proxies
-            for addr in dead_proxies:
-                pm.remove_proxy(addr)
-
-            # Phase 2: If we found a working proxy, do the full page fetch
-            if working_proxy:
-                proxy_url = f"socks5://{working_proxy}"
-                try:
-                    async with httpx.AsyncClient(
-                        timeout=httpx.Timeout(connect=3.0, read=5.0, write=3.0, pool=3.0),
-                        follow_redirects=True, proxy=proxy_url
-                    ) as client:
-                        resp = await client.get(url, headers={
-                            "User-Agent": ua,
-                            "Accept": "text/html,application/xhtml+xml",
-                        })
-                        if resp.status_code == 200 and len(resp.text) > 500:
-                            html = resp.text
-                            logger.info(f"Product {product_id}: fetched {len(html)} bytes via proxy {working_proxy} in {resp.elapsed.total_seconds():.1f}s")
-                        else:
-                            logger.warning(f"Product {product_id}: proxy {working_proxy} returned status {resp.status_code}")
-                except httpx.ConnectError:
-                    pm.remove_proxy(working_proxy)
-                    logger.warning(f"Product {product_id}: proxy {working_proxy} died during fetch")
-                except Exception as e:
-                    logger.warning(f"Product {product_id}: fetch via {working_proxy} failed ({e})")
-            else:
-                if dead_proxies:
-                    logger.info(f"Product {product_id}: removed {len(dead_proxies)} dead proxies, none working")
+    # Phase 2: If we found a working proxy, do the full page fetch
+    if working_proxy:
+        proxy_url = f"socks5://{working_proxy}"
+        try:
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(connect=3.0, read=5.0, write=3.0, pool=3.0),
+                follow_redirects=True, proxy=proxy_url
+            ) as client:
+                resp = await client.get(url, headers={
+                    "User-Agent": ua,
+                    "Accept": "text/html,application/xhtml+xml",
+                })
+                if resp.status_code == 200 and len(resp.text) > 500:
+                    html = resp.text
+                    logger.info(f"[DETAIL-PROXY] Product {product_id}: fetched {len(html)} bytes via proxy {working_proxy} in {resp.elapsed.total_seconds():.1f}s")
                 else:
-                    logger.info(f"Product {product_id}: all proxies timed out — VkusVill may be down")
-        except ImportError:
-            logger.warning(f"Product {product_id}: proxy_manager not available")
+                    logger.warning(f"[DETAIL-PROXY] Product {product_id}: proxy {working_proxy} returned status {resp.status_code}")
+        except httpx.ConnectError:
+            pm.remove_proxy(working_proxy)
+            logger.warning(f"[DETAIL-PROXY] Product {product_id}: proxy {working_proxy} died during fetch")
+        except Exception as e:
+            logger.warning(f"[DETAIL-PROXY] Product {product_id}: fetch via {working_proxy} failed ({e})")
+    else:
+        if dead_proxies:
+            logger.info(f"[DETAIL-PROXY] Product {product_id}: removed {len(dead_proxies)} dead proxies, none working")
+        else:
+            logger.info(f"[DETAIL-PROXY] Product {product_id}: all proxies timed out — VkusVill may be down")
 
     if not html:
-        logger.info(f"Product {product_id}: all attempts failed, returning fallback")
-        return _fallback_product_details(product_id, product, "HTTP fetch failed (direct blocked, proxy unavailable)")
+        logger.info(f"[DETAIL-PROXY] Product {product_id}: all attempts failed, returning fallback")
+        return _fallback_product_details(product_id, product, "Proxy fetch failed")
 
     if not html or len(html) < 500:
         return _fallback_product_details(product_id, product, "Empty HTML response")
@@ -701,7 +681,6 @@ async def proxy_image(url: str = ""):
             headers={"Cache-Control": "public, max-age=86400", "X-Cache": "HIT"},
         )
     try:
-        _proxy = os.environ.get("SOCKS_PROXY", "")
         _headers = {
             "Referer": "https://vkusvill.ru/",
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
@@ -709,29 +688,37 @@ async def proxy_image(url: str = ""):
         content = None
         ct = "image/webp"
 
-        # Try direct first (fast, no proxy overhead)
-        try:
-            async with httpx.AsyncClient(timeout=6, follow_redirects=True) as client:
-                resp = await client.get(url, headers=_headers)
-                if resp.status_code == 200 and len(resp.content) > 100:
-                    content = resp.content
-                    ct = resp.headers.get("content-type", "image/webp")
-        except Exception:
-            pass  # Direct failed, try proxy
-
-        # Fallback to SOCKS proxy if direct failed
-        if not content and _proxy:
+        # Use ProxyManager rotation (always proxy, no direct — D-01)
+        proxy_addr = _proxy_manager.get_working_proxy()
+        if proxy_addr:
+            proxy_url = f"socks5://{proxy_addr}"
             try:
-                async with httpx.AsyncClient(timeout=8, proxy=_proxy, follow_redirects=True) as client:
+                async with httpx.AsyncClient(timeout=8, proxy=proxy_url, follow_redirects=True) as client:
                     resp = await client.get(url, headers=_headers)
                     if resp.status_code == 200 and len(resp.content) > 100:
                         content = resp.content
                         ct = resp.headers.get("content-type", "image/webp")
-            except Exception:
-                pass  # Proxy also failed
+                    else:
+                        logger.warning(f"[IMG-PROXY] {proxy_addr} returned status {resp.status_code} for {url}")
+            except httpx.ConnectError:
+                _proxy_manager.remove_proxy(proxy_addr)
+                logger.warning(f"[IMG-PROXY] {proxy_addr} dead (ConnectError)")
+                # Try next proxy
+                next_addr = _proxy_manager.get_working_proxy()
+                if next_addr:
+                    try:
+                        async with httpx.AsyncClient(timeout=8, proxy=f"socks5://{next_addr}", follow_redirects=True) as client:
+                            resp = await client.get(url, headers=_headers)
+                            if resp.status_code == 200 and len(resp.content) > 100:
+                                content = resp.content
+                                ct = resp.headers.get("content-type", "image/webp")
+                    except Exception:
+                        pass
+            except Exception as e:
+                logger.warning(f"[IMG-PROXY] {proxy_addr} failed: {e}")
 
         if not content:
-            raise HTTPException(status_code=502, detail="Image fetch failed (direct + proxy)")
+            raise HTTPException(status_code=502, detail="Image fetch failed (proxy)")
 
         # Store in cache (evict oldest if full)
         if len(_img_cache) >= _IMG_CACHE_MAX:
@@ -3588,9 +3575,6 @@ def admin_proxy_history(
     """Return historical proxy stats (found/removed/timeouts per day/week/month)."""
     _require_token(token)
     try:
-        import sys
-        sys.path.insert(0, BASE_PROJECT_DIR)
-        from proxy_manager import ProxyManager
         return ProxyManager.get_event_stats()
     except Exception as e:
         return {"error": str(e), "periods": {}, "recent": []}
