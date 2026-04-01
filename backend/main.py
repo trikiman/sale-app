@@ -3147,6 +3147,79 @@ def cart_clear_endpoint(req: CartClearRequest, request: Request):
 
 # ─── History Endpoints (Phase 15: HIST-07, HIST-08) ──────────────────────────
 
+# Common Cyrillic character confusables for fuzzy search
+_CYRILLIC_CONFUSABLES = {
+    'а': ['о', 'е'],
+    'о': ['а'],
+    'е': ['а', 'и', 'ё'],
+    'и': ['е', 'ы'],
+    'ы': ['и'],
+    'ё': ['е'],
+}
+
+def _fuzzy_search_fallback(search_norm: str, category, filter_val, cursor):
+    """Generate Cyrillic typo variants and rebuild WHERE clause.
+    
+    Only called when exact search returns 0 results.
+    For a 6-char word, generates ~20-30 variants — fast on 16K rows.
+    """
+    search_lower = search_norm.lower()
+    variants = set()
+    
+    # Generate single-character substitution variants
+    for i, ch in enumerate(search_lower):
+        if ch in _CYRILLIC_CONFUSABLES:
+            for replacement in _CYRILLIC_CONFUSABLES[ch]:
+                variant = search_lower[:i] + replacement + search_lower[i+1:]
+                variants.add(variant)
+    
+    # Also try ё→е normalization (very common: "зелёный" vs "зеленый")
+    if 'ё' in search_lower:
+        variants.add(search_lower.replace('ё', 'е'))
+    if 'е' in search_lower:
+        variants.add(search_lower.replace('е', 'ё'))
+    
+    if not variants:
+        # No possible variants — return original empty result
+        conditions = ["LOWER(REPLACE(pc.name, char(160), ' ')) LIKE LOWER(?)"]
+        params = [f"%{search_norm}%"]
+        if category:
+            conditions.append("pc.category = ?")
+            params.append(category)
+        if filter_val and filter_val in ("green", "red", "yellow"):
+            conditions.append("pc.last_sale_type = ?")
+            params.append(filter_val)
+        elif filter_val == "predicted_soon":
+            conditions.append("pc.total_sale_count > 0 AND pc.usual_sale_time IS NOT NULL")
+        where = f"WHERE {' AND '.join(conditions)}"
+        return 0, where, params
+    
+    # Build OR query for all variants
+    like_clauses = []
+    params = []
+    for variant in variants:
+        like_clauses.append("LOWER(REPLACE(pc.name, char(160), ' ')) LIKE LOWER(?)")
+        params.append(f"%{variant}%")
+    
+    search_condition = f"({' OR '.join(like_clauses)})"
+    conditions = [search_condition]
+    
+    if category:
+        conditions.append("pc.category = ?")
+        params.append(category)
+    if filter_val and filter_val in ("green", "red", "yellow"):
+        conditions.append("pc.last_sale_type = ?")
+        params.append(filter_val)
+    elif filter_val == "predicted_soon":
+        conditions.append("pc.total_sale_count > 0 AND pc.usual_sale_time IS NOT NULL")
+    
+    where = f"WHERE {' AND '.join(conditions)}"
+    
+    cursor.execute(f"SELECT COUNT(*) FROM product_catalog pc {where}", params)
+    total = cursor.fetchone()[0]
+    
+    return total, where, params
+
 @app.get("/api/history/products")
 def history_get_products(
     page: int = Query(1, ge=1),
@@ -3206,6 +3279,12 @@ def history_get_products(
         # Count total
         c.execute(f"SELECT COUNT(*) FROM product_catalog pc {where}", params)
         total = c.fetchone()[0]
+
+        # Fuzzy search fallback: when exact match returns 0, try common Cyrillic typo variants
+        if total == 0 and search:
+            total, where, params = _fuzzy_search_fallback(
+                search_norm, category, filter, c
+            )
 
         # Get page
         offset = (page - 1) * per_page
