@@ -3228,7 +3228,7 @@ def history_get_products(
                 "is_currently_on_sale": False,  # Will be enriched below
             })
 
-        # Check which products are currently on sale
+        # Check which products are currently on sale + get old_price
         if products:
             pids = [p["id"] for p in products]
             placeholders = ",".join("?" * len(pids))
@@ -3237,10 +3237,41 @@ def history_get_products(
                 WHERE product_id IN ({placeholders}) AND is_active = 1
             """, pids)
             active_ids = {row["product_id"] for row in c.fetchall()}
+
+            # Get last old_price from most recent session per product
+            c.execute(f"""
+                SELECT product_id, old_price FROM sale_sessions
+                WHERE product_id IN ({placeholders})
+                AND id IN (
+                    SELECT MAX(id) FROM sale_sessions
+                    WHERE product_id IN ({placeholders})
+                    GROUP BY product_id
+                )
+            """, pids + pids)
+            old_prices = {row["product_id"]: row["old_price"] for row in c.fetchall()}
+
             for p in products:
                 p["is_currently_on_sale"] = p["id"] in active_ids
+                p["last_old_price"] = old_prices.get(p["id"]) or 0
 
         conn.close()
+
+        # Enrich products with prediction data (day_pattern, confidence)
+        # Only for products that have sale history (avoid wasting time on 16K no-sale products)
+        if products:
+            sale_pids = [p["id"] for p in products if p.get("total_sale_count", 0) > 0]
+            if sale_pids:
+                try:
+                    from backend.prediction import get_batch_predictions
+                    predictions = get_batch_predictions(sale_pids)
+                    for p in products:
+                        pred = predictions.get(p["id"])
+                        if pred:
+                            p["day_pattern"] = pred.get("day_pattern")
+                            p["confidence"] = pred.get("confidence")
+                            p["confidence_pct"] = pred.get("confidence_pct", 0)
+                except Exception as pred_err:
+                    logger.warning(f"History batch predictions error: {pred_err}")
 
         # Get categories for filter
         conn2 = _sqlite3.connect(db.db_path, timeout=10)
