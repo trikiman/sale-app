@@ -70,13 +70,36 @@ def merge_products():
     # Count by type
     all_products = deduplicate_products(all_products)
 
-    # Normalize categories and extract weight from name
+    # Normalize categories, extract weight, and add group/subgroup from category_db
+    catdb = {}
+    catdb_path = os.path.join(DATA_DIR, "category_db.json")
+    if os.path.exists(catdb_path):
+        try:
+            with open(catdb_path, 'r', encoding='utf-8') as f:
+                catdb_data = json.load(f)
+                catdb = catdb_data.get('products', {})
+            print(f"  📚 Loaded category_db with {len(catdb)} products")
+        except Exception as e:
+            print(f"  ⚠️ Failed to load category_db: {e}")
+    
     for p in all_products:
         raw_cat = p.get('category', '')
         p['category'] = normalize_category(raw_cat, p.get('name', ''), p.get('id'))
         if not p.get('weight'):
             p['weight'] = extract_weight(p.get('name', ''))
         p['unit'] = normalize_stock_unit(p.get('unit'), p.get('stock'))
+        
+        # Add group/subgroup from category_db
+        pid = str(p.get('id', ''))
+        if pid and pid in catdb:
+            info = catdb[pid]
+            # Support both old format (category) and new format (group/subgroups)
+            p['group'] = info.get('group', info.get('category', ''))
+            subgroups = info.get('subgroups', [])
+            p['subgroup'] = subgroups[0] if subgroups else None
+        else:
+            p['group'] = p.get('category', '') or 'Без категории'
+            p['subgroup'] = None
 
     green_count = len([p for p in all_products if p['type'] == 'green'])
     red_count = len([p for p in all_products if p['type'] == 'red'])

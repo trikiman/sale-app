@@ -85,6 +85,8 @@ def init_sale_history_tables():
                 product_id TEXT PRIMARY KEY,
                 name TEXT NOT NULL,
                 category TEXT,
+                group_name TEXT,
+                subgroup TEXT,
                 image_url TEXT,
                 last_known_price REAL,
                 total_sale_count INTEGER DEFAULT 0,
@@ -97,6 +99,16 @@ def init_sale_history_tables():
                 updated_at TEXT NOT NULL
             )
         """)
+
+        # Migration: add group_name and subgroup columns to existing DBs
+        for col in ['group_name TEXT', 'subgroup TEXT']:
+            try:
+                c.execute(f"ALTER TABLE product_catalog ADD COLUMN {col}")
+            except Exception:
+                pass  # Column already exists
+
+        c.execute("CREATE INDEX IF NOT EXISTS idx_catalog_group ON product_catalog(group_name)")
+        c.execute("CREATE INDEX IF NOT EXISTS idx_catalog_subgroup ON product_catalog(subgroup)")
 
         print("✅ Sale history tables initialized")
 
@@ -113,6 +125,27 @@ def calc_discount(current_price, old_price) -> int:
     return 0
 
 
+def _load_category_db_groups() -> Dict[str, Dict]:
+    """Load category_db.json and return a map of product_id -> {group, subgroup}."""
+    catdb_path = os.path.join(config.DATA_DIR, "category_db.json")
+    if not os.path.exists(catdb_path):
+        return {}
+    try:
+        with open(catdb_path, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+        result = {}
+        for pid, info in data.get('products', {}).items():
+            group = info.get('group', info.get('category', ''))
+            subgroups = info.get('subgroups', [])
+            result[str(pid)] = {
+                'group': group or '',
+                'subgroup': subgroups[0] if subgroups else '',
+            }
+        return result
+    except Exception:
+        return {}
+
+
 def record_sale_appearances(current_products: List[Dict[str, Any]]):
     """
     Record current sale products and manage sessions.
@@ -120,12 +153,15 @@ def record_sale_appearances(current_products: List[Dict[str, Any]]):
     
     Args:
         current_products: list of product dicts from proposals.json
-                          Each has: id, name, type, currentPrice, oldPrice, image, category
+                          Each has: id, name, type, currentPrice, oldPrice, image, category, group, subgroup
     """
     if not current_products:
         return
 
     now = datetime.now(timezone.utc).isoformat()
+    
+    # Load group/subgroup data from category_db
+    catdb_groups = _load_category_db_groups()
     
     with get_connection() as conn:
         c = conn.cursor()
@@ -224,7 +260,7 @@ def record_sale_appearances(current_products: List[Dict[str, Any]]):
                 """, (pid, sale_type, price, old_price, discount, now, now))
                 sessions_opened += 1
 
-        # 3. Update product catalog with latest info
+        # 3. Update product catalog with latest info (including group/subgroup)
         for p in current_products:
             pid = str(p.get("id", ""))
             if not pid:
@@ -239,18 +275,28 @@ def record_sale_appearances(current_products: List[Dict[str, Any]]):
             except (ValueError, TypeError):
                 price = 0
 
+            # Get group/subgroup from product dict or fall back to category_db
+            group_name = p.get("group", "")
+            subgroup = p.get("subgroup", "")
+            if not group_name:
+                catdb_info = catdb_groups.get(pid, {})
+                group_name = catdb_info.get('group', '')
+                subgroup = catdb_info.get('subgroup', '')
+
             c.execute("""
-                INSERT INTO product_catalog (product_id, name, category, image_url, last_known_price, last_sale_at, last_sale_type, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO product_catalog (product_id, name, category, group_name, subgroup, image_url, last_known_price, last_sale_at, last_sale_type, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(product_id) DO UPDATE SET
                     name = excluded.name,
                     category = CASE WHEN excluded.category != '' THEN excluded.category ELSE product_catalog.category END,
+                    group_name = CASE WHEN excluded.group_name != '' THEN excluded.group_name ELSE product_catalog.group_name END,
+                    subgroup = CASE WHEN excluded.subgroup != '' THEN excluded.subgroup ELSE product_catalog.subgroup END,
                     image_url = CASE WHEN excluded.image_url != '' THEN excluded.image_url ELSE product_catalog.image_url END,
                     last_known_price = excluded.last_known_price,
                     last_sale_at = excluded.last_sale_at,
                     last_sale_type = excluded.last_sale_type,
                     updated_at = excluded.updated_at
-            """, (pid, name, category, image, price, now, sale_type, now))
+            """, (pid, name, category, group_name, subgroup, image, price, now, sale_type, now))
 
         print(f"📊 Sale history: +{appearances_added} appearances, "
               f"{sessions_opened} opened, {sessions_extended} extended, {sessions_closed} closed")
@@ -322,6 +368,7 @@ def seed_product_catalog():
     """
     Seed product_catalog from category_db.json.
     Only inserts products not already in catalog.
+    Now also populates group_name and subgroup columns.
     """
     catdb_path = os.path.join(config.DATA_DIR, "category_db.json")
     if not os.path.exists(catdb_path):
@@ -343,17 +390,23 @@ def seed_product_catalog():
         c = conn.cursor()
         for pid, info in products.items():
             name = info.get("name", "")
-            category = info.get("category", "")
+            # Support both old format (category) and new format (group/subgroups)
+            category = info.get("category", info.get("group", ""))
+            group_name = info.get("group", info.get("category", ""))
+            subgroups = info.get("subgroups", [])
+            subgroup = subgroups[0] if subgroups else ""
             if not name:
                 continue
             try:
                 c.execute("""
-                    INSERT INTO product_catalog (product_id, name, category, updated_at)
-                    VALUES (?, ?, ?, ?)
+                    INSERT INTO product_catalog (product_id, name, category, group_name, subgroup, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?)
                     ON CONFLICT(product_id) DO UPDATE SET
                         category = CASE WHEN excluded.category != '' AND product_catalog.category IS NULL 
-                                        THEN excluded.category ELSE product_catalog.category END
-                """, (str(pid), name, category, now))
+                                        THEN excluded.category ELSE product_catalog.category END,
+                        group_name = CASE WHEN excluded.group_name != '' THEN excluded.group_name ELSE product_catalog.group_name END,
+                        subgroup = CASE WHEN excluded.subgroup != '' THEN excluded.subgroup ELSE product_catalog.subgroup END
+                """, (str(pid), name, category, group_name, subgroup, now))
                 inserted += 1
             except sqlite3.IntegrityError:
                 pass

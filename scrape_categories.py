@@ -2,6 +2,8 @@
 Category scraper - builds product ID to category mapping from VkusVill catalog
 Run daily to keep the category database updated.
 Uses aiohttp + asyncio for fast parallel fetching of all categories and pages.
+
+v1.7: Now discovers and scrapes subgroups within each category.
 """
 import re
 import json
@@ -11,6 +13,7 @@ import asyncio
 import aiohttp
 from bs4 import BeautifulSoup
 from datetime import datetime
+from urllib.parse import urljoin
 
 # Fix Windows console encoding
 if sys.platform == 'win32':
@@ -122,6 +125,77 @@ def _parse_products(html: str):
     return products
 
 
+def _discover_subgroups(html: str, category_url: str) -> list[dict]:
+    """
+    Parse subgroup links from category page sidebar/navigation.
+    Returns list of {name, url} for each subgroup.
+    
+    VkusVill structure: category page has a sidebar with subgroup links like:
+    /goods/gotovaya-eda/salaty/
+    /goods/gotovaya-eda/supy/
+    We need links that are direct children of the category URL path.
+    """
+    soup = BeautifulSoup(html, 'lxml')
+    subgroups = []
+    seen_urls = set()
+    
+    # Normalize category URL for comparison
+    cat_path = category_url.rstrip('/')
+    
+    # Find all links in the page that are subgroup links
+    # Subgroup links are under the category, one level deeper
+    for link in soup.find_all('a', href=True):
+        href = link.get('href', '').strip()
+        
+        # Skip empty or anchor-only links
+        if not href or href == '#':
+            continue
+        
+        # Make absolute URL
+        if href.startswith('/'):
+            full_url = f"https://vkusvill.ru{href}"
+        elif href.startswith('http'):
+            full_url = href
+        else:
+            continue
+        
+        full_path = full_url.rstrip('/')
+        
+        # Must start with category URL path but be one level deeper
+        # e.g., /goods/gotovaya-eda/salaty/ is valid for /goods/gotovaya-eda/
+        if not full_path.startswith(cat_path + '/'):
+            continue
+        
+        # Get the remaining path after category URL
+        remaining = full_path[len(cat_path) + 1:]
+        
+        # Must be exactly one more path segment (no further nesting)
+        if '/' in remaining or not remaining:
+            continue
+        
+        # Skip pagination links
+        if '?' in href or 'PAGEN' in href:
+            continue
+        
+        # Skip "Все товары категории" (that's the main category page itself)
+        link_text = link.get_text(strip=True)
+        if 'все товары' in link_text.lower():
+            continue
+        
+        # Deduplicate
+        if full_url in seen_urls:
+            continue
+        seen_urls.add(full_url)
+        
+        if link_text:
+            subgroups.append({
+                'name': link_text,
+                'url': full_url.rstrip('/') + '/',
+            })
+    
+    return subgroups
+
+
 def load_existing_db():
     """Load existing database if it exists"""
     if os.path.exists(DB_PATH):
@@ -164,44 +238,140 @@ async def fetch_page(session: aiohttp.ClientSession, url: str) -> str | None:
         return None
 
 
-async def scrape_category(session: aiohttp.ClientSession, sem: asyncio.Semaphore,
-                          cat: dict, max_pages: int = 200) -> tuple[str, list]:
-    """Scrape all pages of a single category using async HTTP."""
+async def scrape_subgroup_pages(session: aiohttp.ClientSession, sem: asyncio.Semaphore,
+                                 subgroup: dict, max_pages: int = 200) -> list[dict]:
+    """Scrape all pages of a single subgroup, return list of {id, name}."""
     all_products = []
-    category_url = cat["url"]
-    category_name = cat["name"]
-
+    sg_url = subgroup["url"]
+    sg_name = subgroup["name"]
+    
     for page_num in range(1, max_pages + 1):
-        url = category_url if page_num == 1 else f"{category_url}?PAGEN_1={page_num}"
-
+        url = sg_url if page_num == 1 else f"{sg_url}?PAGEN_1={page_num}"
+        
         async with sem:
             html = await fetch_page(session, url)
-
+        
         if html is None:
             if page_num == 1:
-                print(f"   [{category_name}] page 1: failed to load, skipping category")
+                print(f"      [{sg_name}] page 1: failed to load, skipping subgroup")
             break
-
+        
         products = _parse_products(html)
         if not products:
             break
-
+        
         all_products.extend(products)
-        print(f"   [{category_name}] page {page_num}: {len(products)} products (total: {len(all_products)})")
-
-        # Brief delay between pages (concurrency, not rate, is the limiter)
+        
+        # Brief delay between pages
         await asyncio.sleep(0.3)
+    
+    return all_products
+
+
+async def scrape_category(session: aiohttp.ClientSession, sem: asyncio.Semaphore,
+                          cat: dict, max_pages: int = 200) -> tuple[str, list, list]:
+    """
+    Scrape a category and its subgroups.
+    Returns (category_name, all_products_with_subgroup, discovered_subgroups).
+    Each product: {id, name, subgroup: str|None}
+    """
+    all_products = []
+    category_url = cat["url"]
+    category_name = cat["name"]
+    
+    # Step 1: Fetch main category page to discover subgroups
+    async with sem:
+        main_html = await fetch_page(session, category_url)
+    
+    if main_html is None:
+        print(f"   [{category_name}] page 1: failed to load, skipping category")
+        return category_name, [], []
+    
+    # Discover subgroups from sidebar
+    subgroups = _discover_subgroups(main_html, category_url)
+    
+    if subgroups:
+        print(f"   [{category_name}] found {len(subgroups)} subgroups: {', '.join(sg['name'] for sg in subgroups[:5])}{'...' if len(subgroups) > 5 else ''}")
+        
+        # Step 2: Scrape each subgroup's pages
+        subgroup_product_ids = set()  # Track all products found in subgroups
+        
+        for sg in subgroups:
+            sg_products = await scrape_subgroup_pages(session, sem, sg, max_pages)
+            for p in sg_products:
+                p['subgroup'] = sg['name']
+                subgroup_product_ids.add(p['id'])
+            all_products.extend(sg_products)
+            if sg_products:
+                print(f"      [{sg['name']}]: {len(sg_products)} products")
+        
+        # Step 3: Also scrape the main category page to catch products not in any subgroup
+        main_products = _parse_products(main_html)
+        # Paginate through main category page
+        for page_num in range(2, max_pages + 1):
+            url = f"{category_url}?PAGEN_1={page_num}"
+            async with sem:
+                html = await fetch_page(session, url)
+            if html is None:
+                break
+            products = _parse_products(html)
+            if not products:
+                break
+            main_products.extend(products)
+            await asyncio.sleep(0.3)
+        
+        # Products from main page that weren't in any subgroup
+        for p in main_products:
+            if p['id'] not in subgroup_product_ids:
+                p['subgroup'] = None
+                all_products.append(p)
+    else:
+        # No subgroups — scrape main category as before
+        main_products = _parse_products(main_html)
+        for p in main_products:
+            p['subgroup'] = None
+        all_products.extend(main_products)
+        print(f"   [{category_name}] page 1: {len(main_products)} products (no subgroups)")
+        
+        # Continue pagination
+        for page_num in range(2, max_pages + 1):
+            url = f"{category_url}?PAGEN_1={page_num}"
+            async with sem:
+                html = await fetch_page(session, url)
+            if html is None:
+                break
+            products = _parse_products(html)
+            if not products:
+                break
+            for p in products:
+                p['subgroup'] = None
+            all_products.extend(products)
+            print(f"   [{category_name}] page {page_num}: {len(products)} products (total: {len(all_products)})")
+            await asyncio.sleep(0.3)
 
     print(f"   -> {category_name}: {len(all_products)} total products")
-    return category_name, all_products
+    return category_name, all_products, subgroups
 
 
 async def scrape_all_categories_async():
     """Main async function to scrape all categories concurrently."""
-    print("Starting category scraper (async, all categories in parallel)...")
+    print("Starting category scraper (async, with subgroup discovery)...")
 
     db = load_existing_db()
+    
+    # Migrate old format: convert {name, category} → {name, group, subgroups}
+    migrated = 0
+    for pid, info in db.get("products", {}).items():
+        if "category" in info and "group" not in info:
+            info["group"] = info.pop("category")
+            info["subgroups"] = []
+            migrated += 1
+    if migrated:
+        print(f"   Migrated {migrated} products from old format (category → group/subgroups)")
+    
     total_new = 0
+    total_subgroup_updates = 0
+    all_subgroups_map = {}  # group -> [subgroup_names]
 
     sem = asyncio.Semaphore(MAX_CONCURRENT)
 
@@ -209,31 +379,56 @@ async def scrape_all_categories_async():
         tasks = [scrape_category(session, sem, cat) for cat in CATEGORIES]
         results_list = await asyncio.gather(*tasks, return_exceptions=True)
 
-    results: dict[str, list] = {}
+    results: dict[str, tuple[list, list]] = {}
     for i, res in enumerate(results_list):
         if isinstance(res, Exception):
             print(f"   Error scraping {CATEGORIES[i]['name']}: {res}")
         else:
-            cat_name, products = res
-            results[cat_name] = products
+            cat_name, products, subgroups = res
+            results[cat_name] = (products, subgroups)
+            if subgroups:
+                all_subgroups_map[cat_name] = [sg['name'] for sg in subgroups]
 
-    # Merge results into DB — FIRST-WRITE-WINS (BUG-053 / SCRP-09)
+    # Merge results into DB — FIRST-WRITE-WINS for group (BUG-053 / SCRP-09)
     # Products appearing in multiple VkusVill categories get the first category
-    # encountered. We never overwrite existing assignments to ensure determinism
+    # encountered. We never overwrite existing group assignments to ensure determinism
     # across runs (asyncio.gather order is non-deterministic).
+    # BUT for subgroups: APPEND new subgroups (a product can be in multiple subgroups)
     for cat in CATEGORIES:
         cat_name = cat["name"]
-        products = results.get(cat_name, [])
+        cat_data = results.get(cat_name)
+        if not cat_data:
+            continue
+        products, _ = cat_data
         for p in products:
             pid = p['id']
+            subgroup = p.get('subgroup')
+            
             if pid not in db['products']:
-                db['products'][pid] = {'name': p['name'], 'category': cat_name}
+                # New product
+                db['products'][pid] = {
+                    'name': p['name'],
+                    'group': cat_name,
+                    'subgroups': [subgroup] if subgroup else [],
+                }
                 total_new += 1
+            else:
+                # Existing product — append new subgroup if not already there
+                existing = db['products'][pid]
+                if subgroup and subgroup not in existing.get('subgroups', []):
+                    if 'subgroups' not in existing:
+                        existing['subgroups'] = []
+                    existing['subgroups'].append(subgroup)
+                    total_subgroup_updates += 1
 
+    # Store subgroups metadata
+    db["subgroups_map"] = all_subgroups_map
+    
     save_db(db)
 
-    print(f"\nDone! {total_new} new products added (first-write-wins, existing unchanged)")
+    print(f"\nDone! {total_new} new products added, {total_subgroup_updates} subgroup updates")
     print(f"Database saved to {DB_PATH} ({len(db['products'])} total products)")
+    print(f"Subgroups discovered: {sum(len(v) for v in all_subgroups_map.values())} across {len(all_subgroups_map)} categories")
 
     return db
 

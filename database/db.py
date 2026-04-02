@@ -170,6 +170,8 @@ class Database:
                     product_id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
                     category TEXT,
+                    group_name TEXT,
+                    subgroup TEXT,
                     image_url TEXT,
                     last_known_price REAL,
                     total_sale_count INTEGER DEFAULT 0,
@@ -182,6 +184,17 @@ class Database:
                     updated_at TEXT NOT NULL
                 )
             """)
+            
+            # Migration: add group_name and subgroup columns to existing DBs
+            for col in ['group_name TEXT', 'subgroup TEXT']:
+                try:
+                    cursor.execute(f"ALTER TABLE product_catalog ADD COLUMN {col}")
+                except Exception:
+                    pass  # Column already exists
+            
+            # Indices for group/subgroup filtering
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_catalog_group ON product_catalog(group_name)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_catalog_subgroup ON product_catalog(subgroup)")
     
     # User operations
     

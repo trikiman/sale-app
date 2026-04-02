@@ -329,8 +329,8 @@ def normalize_category(raw_cat, product_name, product_id=None):
         if kw_result and kw_result != 'Другое':
             return _apply_category_alias(kw_result)
 
-    # Tier 4: Not in DB, no meaningful raw category, no keyword match → 'Новинки'
-    return 'Новинки'
+    # Tier 4: Not in DB, no meaningful raw category, no keyword match → 'Без категории'
+    return 'Без категории'
 
 def parse_stock(text):
     """

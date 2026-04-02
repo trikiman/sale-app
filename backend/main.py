@@ -3300,6 +3300,16 @@ def history_get_products(
             conditions.append("pc.category = ?")
             params.append(category)
 
+        # Group/subgroup filters (v1.7)
+        group = query_params.get("group")
+        subgroup = query_params.get("subgroup")
+        if group:
+            conditions.append("pc.group_name = ?")
+            params.append(group)
+        if subgroup:
+            conditions.append("pc.subgroup = ?")
+            params.append(subgroup)
+
         if filter and filter != 'all':
             # Support comma-separated multi-select: "green,red" → IN ('green', 'red')
             filter_types = [f.strip() for f in filter.split(',') if f.strip() in ('green', 'red', 'yellow')]
@@ -3334,7 +3344,7 @@ def history_get_products(
         # Get page
         offset = (page - 1) * per_page
         c.execute(f"""
-            SELECT pc.product_id, pc.name, pc.category, pc.image_url,
+            SELECT pc.product_id, pc.name, pc.category, pc.group_name, pc.subgroup, pc.image_url,
                    pc.last_known_price, pc.total_sale_count, pc.last_sale_at,
                    pc.last_sale_type, pc.avg_discount_pct, pc.max_discount_pct,
                    pc.usual_sale_time, pc.avg_catch_window_min
@@ -3350,6 +3360,8 @@ def history_get_products(
                 "id": row["product_id"],
                 "name": row["name"],
                 "category": row["category"],
+                "group": row["group_name"] or "",
+                "subgroup": row["subgroup"] or "",
                 "image_url": row["image_url"],
                 "last_known_price": row["last_known_price"],
                 "total_sale_count": row["total_sale_count"] or 0,
@@ -3443,6 +3455,27 @@ def history_get_products(
             ORDER BY cnt DESC
         """)
         categories = [{"id": r["category"], "label": r["category"], "count": r["cnt"]} for r in c2.fetchall()]
+        
+        # Get groups with subgroups for hierarchical filtering (v1.7)
+        c2.execute("""
+            SELECT group_name, subgroup, COUNT(*) as cnt
+            FROM product_catalog
+            WHERE group_name IS NOT NULL AND group_name != ''
+            GROUP BY group_name, subgroup
+            ORDER BY COUNT(*) DESC
+        """)
+        groups_raw = c2.fetchall()
+        groups_dict = {}
+        for r in groups_raw:
+            gname = r["group_name"]
+            sg = r["subgroup"]
+            cnt = r["cnt"]
+            if gname not in groups_dict:
+                groups_dict[gname] = {"name": gname, "count": 0, "subgroups": []}
+            groups_dict[gname]["count"] += cnt
+            if sg:
+                groups_dict[gname]["subgroups"].append({"name": sg, "count": cnt})
+        groups = sorted(groups_dict.values(), key=lambda x: x["count"], reverse=True)
         conn2.close()
 
         pages = (total + per_page - 1) // per_page
@@ -3454,10 +3487,66 @@ def history_get_products(
             "pages": pages,
             "per_page": per_page,
             "categories": categories,
+            "groups": groups,
         }
     except Exception as e:
         logger.error(f"History products error: {e}")
         return {"products": [], "total": 0, "page": 1, "pages": 0, "per_page": per_page, "categories": []}
+
+
+@app.get("/api/groups")
+def get_groups(request: Request):
+    """
+    Return all available groups with their subgroup lists.
+    Used by frontend to populate filter chips.
+    Supports ?scope=active (only groups with currently-on-sale products) or ?scope=all (full catalog).
+    """
+    try:
+        scope = request.query_params.get("scope", "all")
+        db = get_database()
+        conn = _sqlite3.connect(db.db_path, timeout=10)
+        conn.row_factory = _sqlite3.Row
+        c = conn.cursor()
+
+        if scope == "active":
+            # Only groups/subgroups that have products currently on sale
+            c.execute("""
+                SELECT pc.group_name, pc.subgroup, COUNT(*) as cnt
+                FROM product_catalog pc
+                INNER JOIN sale_sessions ss ON ss.product_id = pc.product_id AND ss.is_active = 1
+                WHERE pc.group_name IS NOT NULL AND pc.group_name != ''
+                GROUP BY pc.group_name, pc.subgroup
+                ORDER BY COUNT(*) DESC
+            """)
+        else:
+            # All groups from catalog
+            c.execute("""
+                SELECT group_name, subgroup, COUNT(*) as cnt
+                FROM product_catalog
+                WHERE group_name IS NOT NULL AND group_name != ''
+                GROUP BY group_name, subgroup
+                ORDER BY COUNT(*) DESC
+            """)
+
+        rows = c.fetchall()
+        conn.close()
+
+        groups_dict = {}
+        for r in rows:
+            gname = r["group_name"]
+            sg = r["subgroup"]
+            cnt = r["cnt"]
+            if gname not in groups_dict:
+                groups_dict[gname] = {"name": gname, "count": 0, "subgroups": []}
+            groups_dict[gname]["count"] += cnt
+            if sg:
+                groups_dict[gname]["subgroups"].append({"name": sg, "count": cnt})
+
+        groups = sorted(groups_dict.values(), key=lambda x: x["count"], reverse=True)
+        return {"groups": groups}
+    except Exception as e:
+        logger.error(f"Groups endpoint error: {e}")
+        return {"groups": []}
 
 
 @app.get("/api/history/product/{product_id}")
