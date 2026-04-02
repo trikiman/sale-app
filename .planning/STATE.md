@@ -1,9 +1,9 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.6
-milestone_name: Green Scraper Robustness
+milestone: v1.7
+milestone_name: Categories & Subgroups
 status: Defining requirements
-last_updated: "2026-04-02T00:00:00.000Z"
+last_updated: "2026-04-02T03:17:00.000Z"
 progress:
   total_phases: 0
   completed_phases: 0
@@ -18,7 +18,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-02)
 
 **Core value:** Family members see every VkusVill discount and can add to cart in one tap
-**Current focus:** v1.6 Green Scraper Robustness — fix recurring green scraper accuracy gap
+**Current focus:** v1.7 Categories & Subgroups — add group/subgroup filtering with favorite shortcuts
+
+## Current Position
+
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-04-02 — Milestone v1.7 started
 
 ## Completed Milestones
 
@@ -30,6 +37,7 @@ See: .planning/PROJECT.md (updated 2026-04-02)
 | v1.3 Performance & Optimization | 19-20 | 2026-04-01 |
 | v1.4 Proxy Centralization | 21-23 | 2026-04-01 |
 | v1.5 History Search & Polish | 24-26 | 2026-04-01 |
+| v1.6 Green Scraper Robustness | 27-28 | 2026-04-02 |
 
 ## Accumulated Context
 
@@ -39,6 +47,7 @@ See: .planning/PROJECT.md (updated 2026-04-02)
 - v1.3 shipped: GZip compression, tablet UX (2-col grid, full-page detail), framer-motion removed (bundle 116KB→77KB), backdrop-filter removal, reduced-motion support
 - v1.4 shipped: Proxy centralization (all VkusVill traffic routed through ProxyManager)
 - v1.5 shipped: Search normalization (nbsp/quotes), fuzzy Cyrillic typo search, image enrichment from scraped JSON
+- v1.6 shipped: Green scraper robustness (CDP network interception, count validation gate)
 - Auto-deploy: GitHub webhook → EC2 (~3s), Vercel auto-deploy (~15s)
 - SSH key for EC2: `ssh -i "e:\Projects\saleapp\scraper-ec2-new" ubuntu@13.60.174.46`
 - Vercel: vkusvillsale.vercel.app (rust9gold-5606 account)
@@ -46,11 +55,12 @@ See: .planning/PROJECT.md (updated 2026-04-02)
 - Card thumbnails proxy through EC2 /api/img from cdn1-img.vkusvill.ru
 - Green section: ≥6 items → modal with "показать все" button; <6 items → inline only (no modal)
 - Stock data only available after items are in cart (via basket_recalc API)
-- Green scraper accuracy has regressed 3 times — scroll loop exits before all modal items loaded
+- category_db.json has 16,373 products with 47 flat categories — no subgroup level yet
+- VkusVill catalog pages have clear subgroup structure (e.g., /goods/gotovaya-eda/salaty/)
 
 ## Known Bugs
 
-- **GREEN-BUG**: Green scraper captures 120/190 items — modal scroll loop exits too early before "показать ещё" disappears
+(none currently)
 
 ## Timeline
 
@@ -62,7 +72,8 @@ See: .planning/PROJECT.md (updated 2026-04-02)
 | v1.3 milestone completed | 2026-04-01 |
 | v1.4 milestone completed | 2026-04-01 |
 | v1.5 milestone completed | 2026-04-01 |
-| v1.6 milestone started | 2026-04-02 |
+| v1.6 milestone completed | 2026-04-02 |
+| v1.7 milestone started | 2026-04-02 |
 
 ---
-*Last updated: 2026-04-02 after v1.6 milestone started*
+*Last updated: 2026-04-02 after v1.7 milestone started*
