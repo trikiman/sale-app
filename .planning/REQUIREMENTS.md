@@ -44,19 +44,19 @@
 
 | Requirement | Phase |
 |-------------|-------|
-| DATA-01     | TBD   |
-| DATA-02     | TBD   |
-| DATA-03     | TBD   |
-| UI-08       | TBD   |
-| UI-09       | TBD   |
-| UI-10       | TBD   |
-| UI-11       | TBD   |
-| UI-12       | TBD   |
-| UI-13       | TBD   |
-| HIST-01     | TBD   |
-| HIST-02     | TBD   |
-| HIST-03     | TBD   |
-| HIST-04     | TBD   |
-| FAV-03      | TBD   |
-| FAV-04      | TBD   |
-| BOT-06      | TBD   |
+| DATA-01     | 29    |
+| DATA-02     | 29    |
+| DATA-03     | 29    |
+| UI-08       | 30    |
+| UI-09       | 30    |
+| UI-10       | 30    |
+| UI-11       | 30    |
+| UI-12       | 31    |
+| UI-13       | 30    |
+| HIST-01     | 32    |
+| HIST-02     | 32    |
+| HIST-03     | 32    |
+| HIST-04     | 32    |
+| FAV-03      | 31    |
+| FAV-04      | 31    |
+| BOT-06      | 33    |

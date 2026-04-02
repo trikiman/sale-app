@@ -5,7 +5,7 @@ milestone_name: Categories & Subgroups
 status: Defining requirements
 last_updated: "2026-04-02T03:17:00.000Z"
 progress:
-  total_phases: 0
+  total_phases: 5
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -22,10 +22,10 @@ See: .planning/PROJECT.md (updated 2026-04-02)
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-04-02 — Milestone v1.7 started
+Phase: 29 — Subgroup Data Layer
+Plan: Not yet planned
+Status: Ready to plan
+Last activity: 2026-04-02 — Roadmap created (5 phases: 29-33)
 
 ## Completed Milestones
 
