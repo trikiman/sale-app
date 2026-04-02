@@ -381,6 +381,8 @@ class Product(BaseModel):
     unit: str
     category: str
     type: str  # green, red, yellow
+    group: Optional[str] = None
+    subgroup: Optional[str] = None
 
 
 class ProductsResponse(BaseModel):
