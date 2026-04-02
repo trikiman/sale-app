@@ -1273,6 +1273,36 @@ body {
   background: rgba(255, 255, 255, 0.2);
 }
 
+/* Subgroup drill-down chips (v1.7) */
+.subgroup-chips .category-chip {
+  font-size: 12px;
+  padding: 5px 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.subgroup-chips .category-chip.active {
+  background: rgba(77, 171, 247, 0.25);
+  color: #93c5fd;
+  border-color: rgba(77, 171, 247, 0.4);
+}
+
+.subgroup-chips .category-chip:hover:not(.active) {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+[data-theme="light"] .subgroup-chips .category-chip {
+  background: rgba(0, 0, 0, 0.04);
+  border-color: rgba(0, 0, 0, 0.08);
+  color: #475569;
+}
+
+[data-theme="light"] .subgroup-chips .category-chip.active {
+  background: rgba(37, 99, 235, 0.15);
+  color: #1d4ed8;
+  border-color: rgba(37, 99, 235, 0.3);
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar {
   width: 4px;

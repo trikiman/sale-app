@@ -186,7 +186,7 @@ const ProductCard = memo(function ProductCard({ product, index, isFavorite, onTo
     && prev.viewMode === next.viewMode
 })
 
-function CategoryFilter({ selected, onSelect, categories }) {
+function ScrollableChips({ selected, onSelect, items, className = '' }) {
   const scrollRef = useRef(null)
   const [canScrollLeft, setCanScrollLeft] = useState(false)
   const [canScrollRight, setCanScrollRight] = useState(true)
@@ -210,7 +210,7 @@ function CategoryFilter({ selected, onSelect, categories }) {
   }
 
   return (
-    <div className="relative group">
+    <div className={`relative group ${className}`}>
       {canScrollLeft && (
         <div className="absolute left-0 top-0 bottom-2 w-8 z-10 pointer-events-none rounded-l-xl scroll-indicator-left bg-gradient-to-r from-black/50 to-transparent" />
       )}
@@ -223,13 +223,13 @@ function CategoryFilter({ selected, onSelect, categories }) {
         className="flex gap-2 overflow-x-auto pb-2 px-4 -mx-4 scrollbar-hide relative"
         onScroll={checkScroll}
       >
-        {categories.map((cat) => (
+        {items.map((item) => (
           <button
-            key={cat.id}
-            onClick={() => onSelect(cat.id)}
-            className={`category-chip tap-scale ${selected === cat.id ? 'active' : ''}`}
+            key={item.id}
+            onClick={() => onSelect(item.id)}
+            className={`category-chip tap-scale ${selected === item.id ? 'active' : ''}`}
           >
-            {cat.label}
+            {item.label}
           </button>
         ))}
       </div>
@@ -237,10 +237,15 @@ function CategoryFilter({ selected, onSelect, categories }) {
   )
 }
 
+function CategoryFilter({ selected, onSelect, categories }) {
+  return <ScrollableChips selected={selected} onSelect={onSelect} items={categories} />
+}
+
 function App() {
   const [products, setProducts] = useState([])
   const [resolvedWeights, setResolvedWeights] = useState({})
   const [selectedCategory, setSelectedCategory] = useState('all')
+  const [selectedSubgroup, setSelectedSubgroup] = useState(null)
   const [loading, setLoading] = useState(true)
   const [favoritesLoading, setFavoritesLoading] = useState(true)
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
@@ -742,10 +747,14 @@ function App() {
 
     const filtered = enrichedProducts.filter(p => {
       if (soldOutIds.has(p.id)) return false
-      const categoryMatch = selectedCategory === 'all' || p.category === selectedCategory
+      // Use group field for category matching (v1.7), fallback to category
+      const productGroup = p.group || p.category || ''
+      const categoryMatch = selectedCategory === 'all' || productGroup === selectedCategory
+      // Subgroup filter (only when a subgroup is selected)
+      const subgroupMatch = !selectedSubgroup || p.subgroup === selectedSubgroup
       const typeMatch = activeTypes.includes(p.type)
       const favMatch = !showFavoritesOnly || favorites.has(p.id)
-      return categoryMatch && typeMatch && favMatch
+      return categoryMatch && subgroupMatch && typeMatch && favMatch
     })
 
     // Sort yellow products by discount % (highest first) when yellow-only is active
@@ -763,12 +772,12 @@ function App() {
     }
 
     return filtered
-  }, [enrichedProducts, typeFilters, selectedCategory, showFavoritesOnly, favorites, soldOutIds])
+  }, [enrichedProducts, typeFilters, selectedCategory, selectedSubgroup, showFavoritesOnly, favorites, soldOutIds])
 
   // Reset visible count when filters change
   useEffect(() => {
     setVisibleCount(CARDS_PER_PAGE)
-  }, [typeFilters, selectedCategory, showFavoritesOnly])
+  }, [typeFilters, selectedCategory, selectedSubgroup, showFavoritesOnly])
 
   // Infinite scroll — load more cards when sentinel is visible
   useEffect(() => {
@@ -844,24 +853,51 @@ function App() {
     [categorizingStatus],
   )
 
-  // Build dynamic categories from products (after type filtering)
+  // Build dynamic group categories from products (after type filtering)
+  // v1.7: Uses group field (VkusVill hierarchy) instead of flat category
   const categories = useMemo(() => {
     const activeTypes = Object.entries(typeFilters).filter(([, active]) => active).map(([k]) => k)
     const productsAfterTypeFilter = enrichedProducts.filter(p => activeTypes.includes(p.type))
-    const noveltyCount = productsAfterTypeFilter.filter(p => p.category === 'Новинки').length
-    // Sort all categories except 'Новинки' (pinned to position 1)
-    const uniqueCategories = [...new Set(
-      productsAfterTypeFilter.filter(p => p.category !== 'Новинки').map(p => p.category)
-    )].sort()
-    const chips = [
-      { id: 'all', label: '🏷️ Все' },
-      ...uniqueCategories.map(cat => ({ id: cat, label: `${getCategoryEmoji(cat)} ${cat}` }))
-    ]
-    if (noveltyCount > 0) {
-      chips.splice(1, 0, { id: 'Новинки', label: `🆕 Новинки (${noveltyCount})` })
+    // Use group field, fallback to category for backwards compatibility
+    const getGroup = (p) => p.group || p.category || ''
+    const groupCounts = {}
+    for (const p of productsAfterTypeFilter) {
+      const g = getGroup(p)
+      if (g) groupCounts[g] = (groupCounts[g] || 0) + 1
     }
+    // Без категории-type groups go last
+    const sortedGroups = Object.entries(groupCounts)
+      .sort((a, b) => b[1] - a[1]) // sort by count descending
+      .map(([g]) => g)
+    const chips = [
+      { id: 'all', label: `🏷️ Все` },
+      ...sortedGroups.map(g => ({ id: g, label: `${getCategoryEmoji(g)} ${g}` }))
+    ]
     return chips
   }, [enrichedProducts, typeFilters])
+
+  // Build subgroup chips for the selected group (v1.7)
+  const subgroupChips = useMemo(() => {
+    if (selectedCategory === 'all') return []
+    const activeTypes = Object.entries(typeFilters).filter(([, active]) => active).map(([k]) => k)
+    const groupProducts = enrichedProducts.filter(p => {
+      const g = p.group || p.category || ''
+      return g === selectedCategory && activeTypes.includes(p.type)
+    })
+    const subCounts = {}
+    for (const p of groupProducts) {
+      const sg = p.subgroup
+      if (sg) subCounts[sg] = (subCounts[sg] || 0) + 1
+    }
+    const sorted = Object.entries(subCounts)
+      .sort((a, b) => b[1] - a[1])
+    // Only show subgroup chips if there are 2+ subgroups
+    if (sorted.length < 2) return []
+    return [
+      { id: null, label: 'Все' },
+      ...sorted.map(([sg, cnt]) => ({ id: sg, label: `${sg} (${cnt})` }))
+    ]
+  }, [selectedCategory, enrichedProducts, typeFilters])
 
   // Calculate counts for header
   const totalCount = enrichedProducts.length
@@ -1371,16 +1407,31 @@ function App() {
         </div>
       </div>
 
-      {/* Category Filter */}
+      {/* Category Filter (Groups) */}
       <div
-        className="mb-4 anim-fade anim-delay-2"
+        className="mb-2 anim-fade anim-delay-2"
       >
         <CategoryFilter
           selected={selectedCategory}
-          onSelect={setSelectedCategory}
+          onSelect={(id) => {
+            setSelectedCategory(id)
+            setSelectedSubgroup(null) // Reset subgroup when group changes
+          }}
           categories={categories}
         />
       </div>
+
+      {/* Subgroup Filter (v1.7 drill-down) */}
+      {subgroupChips.length > 0 && (
+        <div className="mb-4 anim-fade">
+          <ScrollableChips
+            selected={selectedSubgroup}
+            onSelect={setSelectedSubgroup}
+            items={subgroupChips}
+            className="subgroup-chips"
+          />
+        </div>
+      )}
 
       {/* Новинки banner — shown when user selects uncategorized products chip */}
       {selectedCategory === 'Новинки' && (
