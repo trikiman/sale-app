@@ -253,42 +253,33 @@ async def fetch_page(session: aiohttp.ClientSession, url: str, retries: int = 2)
     return None
 
 
-async def scrape_subgroup_pages(session: aiohttp.ClientSession, sem: asyncio.Semaphore,
-                                 subgroup: dict, max_pages: int = 200) -> list[dict]:
-    """Scrape all pages of a single subgroup, return list of {id, name}."""
-    all_products = []
+async def scrape_subgroup_page1(session: aiohttp.ClientSession, sem: asyncio.Semaphore,
+                                 subgroup: dict) -> list[dict]:
+    """Scrape just page 1 of a subgroup to discover products in it.
+    Returns list of {id, name}. We only need representative samples
+    to tag products with their subgroup — full pagination is too slow."""
     sg_url = subgroup["url"]
     sg_name = subgroup["name"]
     
-    for page_num in range(1, max_pages + 1):
-        url = sg_url if page_num == 1 else f"{sg_url}?PAGEN_1={page_num}"
-        
-        async with sem:
-            html = await fetch_page(session, url)
-        
-        if html is None:
-            if page_num == 1:
-                print(f"      [{sg_name}] page 1: failed to load, skipping subgroup")
-            break
-        
-        products = _parse_products(html)
-        if not products:
-            break
-        
-        all_products.extend(products)
-        
-        # Brief delay between pages
-        await asyncio.sleep(0.3)
+    async with sem:
+        html = await fetch_page(session, sg_url)
     
-    return all_products
+    if html is None:
+        return []
+    
+    return _parse_products(html)
 
 
 async def scrape_category(session: aiohttp.ClientSession, sem: asyncio.Semaphore,
-                          cat: dict, max_pages: int = 200) -> tuple[str, list, list]:
+                          cat: dict, max_pages: int = 50) -> tuple[str, list, list]:
     """
     Scrape a category and its subgroups.
     Returns (category_name, all_products_with_subgroup, discovered_subgroups).
     Each product: {id, name, subgroup: str|None}
+    
+    Strategy: fetch page 1 of each subgroup to tag products, then paginate
+    the main category page for full product list. Products found in subgroup
+    pages get tagged; products only on main page get subgroup=None.
     """
     all_products = []
     category_url = cat["url"]
@@ -308,11 +299,11 @@ async def scrape_category(session: aiohttp.ClientSession, sem: asyncio.Semaphore
     if subgroups:
         print(f"   [{category_name}] found {len(subgroups)} subgroups: {', '.join(sg['name'] for sg in subgroups[:5])}{'...' if len(subgroups) > 5 else ''}")
         
-        # Step 2: Scrape each subgroup's pages
-        subgroup_product_ids = set()  # Track all products found in subgroups
+        # Step 2: Fetch page 1 of each subgroup to tag products
+        subgroup_product_ids = set()
         
         for sg in subgroups:
-            sg_products = await scrape_subgroup_pages(session, sem, sg, max_pages)
+            sg_products = await scrape_subgroup_page1(session, sem, sg)
             for p in sg_products:
                 p['subgroup'] = sg['name']
                 subgroup_product_ids.add(p['id'])
@@ -320,9 +311,8 @@ async def scrape_category(session: aiohttp.ClientSession, sem: asyncio.Semaphore
             if sg_products:
                 print(f"      [{sg['name']}]: {len(sg_products)} products")
         
-        # Step 3: Also scrape the main category page to catch products not in any subgroup
+        # Step 3: Paginate main category for full product list
         main_products = _parse_products(main_html)
-        # Paginate through main category page
         for page_num in range(2, max_pages + 1):
             url = f"{category_url}?PAGEN_1={page_num}"
             async with sem:
@@ -335,7 +325,7 @@ async def scrape_category(session: aiohttp.ClientSession, sem: asyncio.Semaphore
             main_products.extend(products)
             await asyncio.sleep(0.3)
         
-        # Products from main page that weren't in any subgroup
+        # Products from main page not already tagged via subgroup scraping
         for p in main_products:
             if p['id'] not in subgroup_product_ids:
                 p['subgroup'] = None
@@ -348,7 +338,6 @@ async def scrape_category(session: aiohttp.ClientSession, sem: asyncio.Semaphore
         all_products.extend(main_products)
         print(f"   [{category_name}] page 1: {len(main_products)} products (no subgroups)")
         
-        # Continue pagination
         for page_num in range(2, max_pages + 1):
             url = f"{category_url}?PAGEN_1={page_num}"
             async with sem:
