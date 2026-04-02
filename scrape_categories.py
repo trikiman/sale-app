@@ -15,6 +15,14 @@ from bs4 import BeautifulSoup
 from datetime import datetime
 from urllib.parse import urljoin
 
+try:
+    from aiohttp_socks import ProxyConnector
+    HAS_AIOHTTP_SOCKS = True
+except ImportError:
+    HAS_AIOHTTP_SOCKS = False
+
+from proxy_manager import ProxyManager
+
 # Fix Windows console encoding
 if sys.platform == 'win32':
     sys.stdout.reconfigure(encoding='utf-8')
@@ -221,21 +229,28 @@ def save_db(db):
 MAX_CONCURRENT = 3
 
 
-async def fetch_page(session: aiohttp.ClientSession, url: str) -> str | None:
+async def fetch_page(session: aiohttp.ClientSession, url: str, retries: int = 2) -> str | None:
     """Fetch a single page, return HTML or None on error."""
-    try:
-        # Brief delay to stagger concurrent requests
-        await asyncio.sleep(0.2)
-        async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
-            if resp.status == 429:  # Rate limited
-                print("   ⚠ Rate limited (429), waiting 30s...")
-                await asyncio.sleep(30)
-                return None
-            if resp.status != 200:
-                return None
-            return await resp.text()
-    except Exception:
-        return None
+    for attempt in range(retries + 1):
+        try:
+            await asyncio.sleep(0.2)
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+                if resp.status == 429:
+                    print("   ⚠ Rate limited (429), waiting 30s...")
+                    await asyncio.sleep(30)
+                    continue
+                if resp.status != 200:
+                    if attempt < retries:
+                        await asyncio.sleep(1)
+                        continue
+                    return None
+                return await resp.text()
+        except Exception:
+            if attempt < retries:
+                await asyncio.sleep(1)
+                continue
+            return None
+    return None
 
 
 async def scrape_subgroup_pages(session: aiohttp.ClientSession, sem: asyncio.Semaphore,
@@ -375,7 +390,20 @@ async def scrape_all_categories_async():
 
     sem = asyncio.Semaphore(MAX_CONCURRENT)
 
-    async with aiohttp.ClientSession(headers=HEADERS) as session:
+    # Setup proxy for aiohttp
+    pm = ProxyManager()
+    proxy_addr = pm.get_working_proxy()
+    connector = None
+    if proxy_addr and HAS_AIOHTTP_SOCKS:
+        proxy_url = f"socks5://{proxy_addr}"
+        connector = ProxyConnector.from_url(proxy_url)
+        print(f"   🔌 Using SOCKS5 proxy: {proxy_addr}")
+    elif proxy_addr:
+        print(f"   ⚠ Proxy available ({proxy_addr}) but aiohttp_socks not installed, using direct")
+    else:
+        print("   ⚠ No proxy available, using direct connection")
+
+    async with aiohttp.ClientSession(headers=HEADERS, connector=connector) as session:
         tasks = [scrape_category(session, sem, cat) for cat in CATEGORIES]
         results_list = await asyncio.gather(*tasks, return_exceptions=True)
 
