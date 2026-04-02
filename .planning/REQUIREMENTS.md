@@ -1,49 +1,62 @@
-# Requirements: v1.6 Green Scraper Robustness
+# Requirements: v1.7 Categories & Subgroups
 
-## Green Scraper Accuracy
+**Milestone:** v1.7
+**Created:** 2026-04-02
+**Goal:** Add proper group/subgroup category structure across the app with favorite groups/subgroups and notifications.
 
-- [ ] **SCRP-10**: Green scraper captures 100% of green items (modal loads ALL items before adding to cart)
-  - Current: 120/190 (63%) — modal scroll loop exits before "показать ещё" disappears
-  - Target: 190/190 (100%) — or whatever the live count is
-  
-- [ ] **SCRP-11**: CDP Network interception detects when modal AJAX pagination is complete
-  - Enable `cdp.network` on the page before opening modal
-  - Intercept XHR responses from "показать ещё" clicks
-  - Use response data to deterministically know when all pages are loaded (no timing guesses)
-  - Fallback: if CDP interception fails, fall back to robust DOM polling with live_count target
+## Data / Scraping
 
-- [ ] **SCRP-12**: Inline path handles <6 green items without modal (button hidden/not in DOM)
-  - When `#js-Delivery__Order-green-show-all` is hidden or absent, add inline items directly
-  - This path already works but must be preserved and tested
+- [ ] **DATA-01**: Category scraper stores `{group, subgroup}` for each product (not just flat category name)
+- [ ] **DATA-02**: Existing 16K products in `category_db.json` are re-scraped with subgroup data
+- [ ] **DATA-03**: Product catalog DB (`product_catalog` table) has group and subgroup columns populated from category_db
 
-## Validation & Alerting
+## Main Page UI
 
-- [ ] **SCRP-13**: live_count vs scraped_count validation gate — refuse to save if gap >10%
-  - Compare badge count ("190 товаров") with actual scraped products
-  - If gap exceeds 10%, log warning and preserve existing snapshot (don't overwrite with bad data)
-  - If gap is ≤10%, save normally (small variations are acceptable)
+- [ ] **UI-08**: Group category chips displayed on main page (existing behavior, preserved)
+- [ ] **UI-09**: Selecting a group shows a second row of subgroup chips for that group
+- [ ] **UI-10**: Subgroup row hidden when no group is selected
+- [ ] **UI-11**: Subgroup row hidden when the selected group has only 1 subgroup
+- [ ] **UI-12**: User can tap ⭐ on a group/subgroup chip to favorite the group/subgroup itself (not individual products)
+- [ ] **UI-13**: Products correctly filtered by selected group and subgroup
 
-- [ ] **SCRP-14**: Scheduler logs count-mismatch alerts when scraper result diverges from live badge
-  - Log clear `⚠️ COUNT MISMATCH` entries in scheduler.log
-  - Include: expected (live_count), actual (scraped_count), gap percentage
+## History Page
 
-## Future Requirements
+- [ ] **HIST-01**: History page shows group filter chips (category groups)
+- [ ] **HIST-02**: Selecting a group on history page shows subgroup chips (same drill-down UX as main page)
+- [ ] **HIST-03**: Same subgroup hide rules apply (no group selected → no subgroups, 1 subgroup → no row)
+- [ ] **HIST-04**: Group/subgroup ⭐ favorite works on history page too
 
-- Clean up monolithic scrape_green.py (2277 lines) — defer to separate milestone
-- Automated green scraper accuracy test in CI — defer to v1.7
+## Favorites
+
+- [ ] **FAV-03**: Group/subgroup favorites stored per-user in DB (separate from product favorites)
+- [ ] **FAV-04**: Favorites view shows group/subgroup favorites as single entries (e.g., "⭐ Торты") alongside individual product ⭐s
+
+## Notifications
+
+- [ ] **BOT-06**: Telegram notifier checks group/subgroup favorites — when ANY product in a favorited group/subgroup goes on sale, user gets notified
 
 ## Out of Scope
 
-- Changing the add-to-cart → basket_recalc flow — this is fundamental (stock data only in cart)
-- Red/yellow scraper changes — different scraper, different issues
-- Frontend changes — scraper-only milestone
+- Search completeness for non-sale products (tracked as todo)
+- Subgroup scraping for VkusVill "Супермаркет" sub-categories (already flat)
 
 ## Traceability
 
-| REQ-ID | Phase | Status |
-|--------|-------|--------|
-| SCRP-10 | Phase 27 | Pending |
-| SCRP-11 | Phase 27 | Pending |
-| SCRP-12 | Phase 27 | Pending |
-| SCRP-13 | Phase 28 | Pending |
-| SCRP-14 | Phase 28 | Pending |
+| Requirement | Phase |
+|-------------|-------|
+| DATA-01     | TBD   |
+| DATA-02     | TBD   |
+| DATA-03     | TBD   |
+| UI-08       | TBD   |
+| UI-09       | TBD   |
+| UI-10       | TBD   |
+| UI-11       | TBD   |
+| UI-12       | TBD   |
+| UI-13       | TBD   |
+| HIST-01     | TBD   |
+| HIST-02     | TBD   |
+| HIST-03     | TBD   |
+| HIST-04     | TBD   |
+| FAV-03      | TBD   |
+| FAV-04      | TBD   |
+| BOT-06      | TBD   |
