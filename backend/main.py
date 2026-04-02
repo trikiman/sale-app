@@ -3267,6 +3267,8 @@ def history_get_products(
     per_page: int = Query(50, ge=1, le=200),
     search: Optional[str] = Query(None),
     category: Optional[str] = Query(None),
+    group: Optional[str] = Query(None),
+    subgroup: Optional[str] = Query(None),
     filter: Optional[str] = Query(None),  # "all", "green", "red", "yellow", "green,red", "predicted_soon"
     sort: Optional[str] = Query("last_seen"),  # "last_seen", "most_frequent", "alphabetical"
     x_telegram_user_id: Optional[str] = Header(None, alias="X-Telegram-User-Id"),
@@ -3301,8 +3303,6 @@ def history_get_products(
             params.append(category)
 
         # Group/subgroup filters (v1.7)
-        group = query_params.get("group")
-        subgroup = query_params.get("subgroup")
         if group:
             conditions.append("pc.group_name = ?")
             params.append(group)
@@ -3502,8 +3502,8 @@ def get_groups(request: Request):
     Supports ?scope=active (only groups with currently-on-sale products) or ?scope=all (full catalog).
     """
     try:
+        import sqlite3 as _sqlite3
         scope = request.query_params.get("scope", "all")
-        db = get_database()
         conn = _sqlite3.connect(db.db_path, timeout=10)
         conn.row_factory = _sqlite3.Row
         c = conn.cursor()
