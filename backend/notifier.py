@@ -7,6 +7,8 @@ import os
 import sys
 import asyncio
 import logging
+from collections import defaultdict
+from typing import Optional
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -63,6 +65,82 @@ class Notifier:
         
         if not self.bot:
             logger.warning("Telegram bot not initialized — notifications will be dry-run only")
+
+    def _normalize_category_value(self, value: Optional[str]) -> str:
+        """Normalize whitespace without changing the meaning of the category name."""
+        if not value:
+            return ""
+        return " ".join(str(value).replace('\xa0', ' ').split())
+
+    def _enrich_product_categories(self, products: list) -> list:
+        """Fill group/subgroup from product_catalog when proposals.json lacks them."""
+        metadata_by_id = self.db.get_product_catalog_metadata([p.get('id') for p in products if p.get('id')])
+        enriched = []
+
+        for raw_product in products:
+            product = dict(raw_product)
+            meta = metadata_by_id.get(str(product.get('id')), {})
+            group = (
+                product.get('group')
+                or meta.get('group')
+                or product.get('category')
+                or meta.get('category')
+                or ''
+            )
+            subgroup = product.get('subgroup') or meta.get('subgroup') or ''
+            product['group'] = self._normalize_category_value(group)
+            product['subgroup'] = self._normalize_category_value(subgroup)
+            enriched.append(product)
+
+        return enriched
+
+    def _parse_category_key(self, category_key: str) -> Optional[dict]:
+        """Parse favorite category keys from the existing group:X / subgroup:X/Y format."""
+        if not category_key:
+            return None
+
+        if category_key.startswith('group:'):
+            group = self._normalize_category_value(category_key.split(':', 1)[1])
+            if not group:
+                return None
+            return {"kind": "group", "group": group}
+
+        if category_key.startswith('subgroup:'):
+            value = category_key.split(':', 1)[1]
+            if '/' not in value:
+                return None
+            group, subgroup = value.split('/', 1)
+            group = self._normalize_category_value(group)
+            subgroup = self._normalize_category_value(subgroup)
+            if not group or not subgroup:
+                return None
+            return {"kind": "subgroup", "group": group, "subgroup": subgroup}
+
+        return None
+
+    def _build_match_reason(self, kind: str, group: str = '', subgroup: str = '') -> dict:
+        if kind == 'subgroup':
+            return {
+                "kind": "subgroup",
+                "priority": 3,
+                "text": f"🎯 Подгруппа: {group} -> {subgroup}",
+            }
+        if kind == 'group':
+            return {
+                "kind": "group",
+                "priority": 2,
+                "text": f"🎯 Категория: {group}",
+            }
+        return {
+            "kind": "product",
+            "priority": 1,
+            "text": "❤️ Товар у вас в избранном",
+        }
+
+    def _select_primary_reason(self, reasons: list) -> Optional[dict]:
+        if not reasons:
+            return None
+        return max(reasons, key=lambda reason: reason["priority"])
     
     def load_products(self) -> list:
         """Load current products from JSON"""
@@ -98,39 +176,88 @@ class Notifier:
     
     def get_favorite_alerts(self) -> dict:
         """Check if any user's favorites are now available"""
-        products = self.load_products()
-        product_ids = {p['id']: p for p in products}
+        products = self._enrich_product_categories(self.load_products())
+        products_by_id = {str(p['id']): p for p in products if p.get('id')}
+        products_by_group = defaultdict(list)
+        products_by_subgroup = defaultdict(list)
+
+        for product in products:
+            group = self._normalize_category_value(product.get('group') or product.get('category'))
+            subgroup = self._normalize_category_value(product.get('subgroup'))
+            if group:
+                products_by_group[group].append(product)
+                if subgroup:
+                    products_by_subgroup[(group, subgroup)].append(product)
         
-        alerts = {}  # user_id -> [products]
+        alerts = {}  # user_id -> [{product, reasons, match_reason}]
         
         # Get all users
         users = self.db.get_all_users()
         
         for user in users:
+            user_alerts = {}
             user_favorites = self.db.get_user_favorite_products(user.telegram_id)
             
             for fav in user_favorites:
-                if fav.product_id in product_ids:
-                    product = product_ids[fav.product_id]
-                    
-                    # Only notify if not already notified recently
-                    if not self.db.was_notification_sent(user.telegram_id, fav.product_id, hours=24):
-                        if user.telegram_id not in alerts:
-                            alerts[user.telegram_id] = []
-                        alerts[user.telegram_id].append(product)
+                product_id = str(fav.product_id)
+                product = products_by_id.get(product_id)
+                if not product:
+                    continue
+                if self.db.was_notification_sent(user.telegram_id, product_id, hours=24):
+                    continue
+
+                entry = user_alerts.setdefault(product_id, {"product": product, "reasons": []})
+                if not any(reason["kind"] == "product" for reason in entry["reasons"]):
+                    entry["reasons"].append(self._build_match_reason("product"))
+
+            category_favorites = self.db.get_user_favorite_categories(user.telegram_id)
+            for favorite in category_favorites:
+                parsed = self._parse_category_key(favorite.category_key)
+                if not parsed:
+                    continue
+
+                if parsed["kind"] == "group":
+                    matched_products = products_by_group.get(parsed["group"], [])
+                    reason = self._build_match_reason("group", group=parsed["group"])
+                else:
+                    matched_products = products_by_subgroup.get((parsed["group"], parsed["subgroup"]), [])
+                    reason = self._build_match_reason(
+                        "subgroup",
+                        group=parsed["group"],
+                        subgroup=parsed["subgroup"],
+                    )
+
+                for product in matched_products:
+                    product_id = str(product.get('id'))
+                    if self.db.was_notification_sent(user.telegram_id, product_id, hours=24):
+                        continue
+
+                    entry = user_alerts.setdefault(product_id, {"product": product, "reasons": []})
+                    if not any(existing["text"] == reason["text"] for existing in entry["reasons"]):
+                        entry["reasons"].append(reason)
+
+            if user_alerts:
+                compiled = []
+                for product_id, entry in user_alerts.items():
+                    entry["match_reason"] = self._select_primary_reason(entry["reasons"])
+                    compiled.append(entry)
+                alerts[user.telegram_id] = compiled
         
         return alerts
     
-    def format_product_message(self, product: dict) -> str:
+    def format_product_message(self, product: dict, reason_text: Optional[str] = None) -> str:
         """Format a product for Telegram message"""
         type_emoji = {'green': '🟢', 'red': '🔴', 'yellow': '🟡'}.get(product['type'], '🏷️')
         discount = round((1 - float(product['currentPrice']) / float(product['oldPrice'])) * 100) if product.get('oldPrice') else 0
-        
-        return (
+
+        lines = [
             f"{type_emoji} *{product['name']}*\n"
             f"💰 {product['currentPrice']}₽ ~~{product.get('oldPrice','')}₽~~ (-{discount}%)\n"
             f"📦 В наличии: {product.get('stock','?')} {product.get('unit','шт')}"
-        )
+        ]
+        if reason_text:
+            lines.append(reason_text)
+        return "\n".join(lines)
     
     def get_product_keyboard(self, product: dict):
         """Build inline keyboard buttons for a product notification"""
@@ -206,25 +333,27 @@ class Notifier:
         
         total_sent = 0
         
-        for user_id, products in alerts.items():
+        for user_id, entries in alerts.items():
             # Send header
-            header = f"❤️ *Ваши избранные товары в наличии!* ({len(products)} шт.)"
+            header = f"❤️ *Нашлись товары из вашего избранного!* ({len(entries)} шт.)"
             await self.send_telegram_message(user_id, header)
             
             # Send each product with inline buttons (limit 10)
-            for product in products[:10]:
-                msg = self.format_product_message(product)
+            for entry in entries[:10]:
+                product = entry["product"]
+                reason_text = (entry.get("match_reason") or {}).get("text")
+                msg = self.format_product_message(product, reason_text=reason_text)
                 keyboard = self.get_product_keyboard(product)
                 await self.send_telegram_message(user_id, msg, reply_markup=keyboard)
                 self.db.record_notification(user_id, product['id'])
             
-            if len(products) > 10:
+            if len(entries) > 10:
                 await self.send_telegram_message(
                     user_id,
-                    f"...и ещё {len(products) - 10} товаров"
+                    f"...и ещё {len(entries) - 10} товаров"
                 )
             
-            total_sent += len(products)
+            total_sent += len(entries)
         
         logger.info(f"Sent {total_sent} favorite alerts to {len(alerts)} users.")
         return total_sent

@@ -304,6 +304,40 @@ class Database:
                 SELECT * FROM favorite_products WHERE user_id = ?
             """, (user_id,))
             return [FavoriteProduct.from_row(tuple(row)) for row in cursor.fetchall()]
+
+    def get_product_catalog_metadata(self, product_ids: List[str]) -> dict[str, dict]:
+        """Get product catalog metadata for a batch of product IDs.
+
+        Returns a mapping keyed by string product_id with category/group/subgroup fields.
+        Gracefully falls back to an empty mapping if the history/catalog tables do not exist yet.
+        """
+        if not product_ids:
+            return {}
+
+        normalized_ids = [str(pid) for pid in product_ids if str(pid)]
+        if not normalized_ids:
+            return {}
+
+        try:
+            with self.get_connection() as conn:
+                cursor = conn.cursor()
+                placeholders = ','.join('?' * len(normalized_ids))
+                cursor.execute(f"""
+                    SELECT product_id, category, group_name, subgroup
+                    FROM product_catalog
+                    WHERE product_id IN ({placeholders})
+                """, normalized_ids)
+
+                return {
+                    str(row["product_id"]): {
+                        "category": row["category"] or "",
+                        "group": row["group_name"] or "",
+                        "subgroup": row["subgroup"] or "",
+                    }
+                    for row in cursor.fetchall()
+                }
+        except sqlite3.OperationalError:
+            return {}
     
     # Seen products operations
     
