@@ -1,5 +1,31 @@
 # Milestones
 
+## v1.7 Categories & Subgroups (Shipped: 2026-04-03)
+
+**Phases completed:** 5 phases (29-33), shipped across 18 commits
+
+**Key accomplishments:**
+
+- Scraped and persisted VkusVill group/subgroup hierarchy for 16.4K products, including 524 subgroups across 46 groups
+- Added main-page group → subgroup drill-down with correct product filtering
+- Added exact group/subgroup favorites backed by `favorite_categories` keys like `group:X` and `subgroup:X/Y`
+- Added history-page group/subgroup filters and fixed the live empty-subgroup mismatch by aligning chips with history-backed data
+- Added Telegram notifications for favorited groups/subgroups with per-product dedupe and visible match reasons
+
+---
+
+## v1.6 Green Scraper Robustness (Shipped: 2026-04-02)
+
+**Phases completed:** 2 phases (27-28), implemented ad-hoc
+
+**Key accomplishments:**
+
+- Replaced fragile green-modal loading with CDP network-aware pagination tracking
+- Added live_count vs scraped_count validation gates to preserve good snapshots on bad runs
+- Surfaced mismatch warnings in scheduler logs while keeping the green pipeline resilient on EC2
+
+---
+
 ## v1.5 History Search & Polish (Shipped: 2026-04-01)
 
 **Phases completed:** 3 phases (24-26), 10 commits
@@ -60,5 +86,3 @@
 
 - No code changes needed.
 - No functional code changes needed.
-
----

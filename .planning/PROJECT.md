@@ -70,24 +70,31 @@ Family members see every VkusVill discount (green/red/yellow) the moment it appe
 - ✓ **SRCH-01**: History search handles non-breaking spaces and Unicode quotes from VkusVill copy-paste — v1.5
 - ✓ **SRCH-02**: Fuzzy Cyrillic typo search (single-char substitution fallback) — v1.5
 - ✓ **SRCH-03**: Product image population from scraped JSON with lazy enrichment — v1.5
+- ✓ **DATA-01..03**: Group/subgroup hierarchy scraped and stored across category DB, merge pipeline, and product catalog — v1.7
+- ✓ **UI-08..13**: Main page group/subgroup drill-down and favorites shipped — v1.7
+- ✓ **HIST-01..04**: History page group/subgroup filtering and favorites shipped — v1.7
+- ✓ **FAV-03..04**: Group/subgroup favorites stored server-side and exposed in UI — v1.7
+- ✓ **BOT-06**: Telegram notifier sends alerts for favorited groups/subgroups with dedupe and match reasons — v1.7
 
 ### Active
 
-<!-- v1.7 Categories & Subgroups -->
+No active milestone is defined yet.
 
-(Defined in REQUIREMENTS.md)
+See `.planning/REQUIREMENTS.md` to start the next planning cycle.
 
-## Current Milestone: v1.7 Categories & Subgroups
+## Latest Shipped Milestone: v1.7 Categories & Subgroups (2026-04-03)
 
-**Goal:** Add proper group/subgroup category structure across the app with favorite groups as quick-filter shortcuts.
+Shipped across phases 29-33:
+- Group/subgroup hierarchy scraped for 16K+ products
+- Main page drill-down filters and category favorites
+- History page drill-down filters with history-aligned chip scope
+- Telegram notifications for favorited groups/subgroups
 
-**Target features:**
-- Scrape VkusVill subgroups and store {group, subgroup} in category_db
-- Main page group → subgroup drill-down (second chip row)
-- Favorite groups/subgroups as quick-filter shortcuts
-- History page group/subgroup filters
-- Correct item categorization from VkusVill catalog
-- Search completeness — show ALL matching products, not just sale-history ones
+## Next Milestone Candidates
+
+- Search completeness for non-sale products on the History page
+- Deeper subgroup pagination / multi-subgroup fidelity in the catalog pipeline
+- Scraper and notifier cleanup plus broader automated regression coverage
 
 ## Shipped: v1.6 Green Scraper Robustness (2026-04-02)
 
@@ -155,7 +162,7 @@ Search and polish improvements for the History page:
 ### Deployment
 - **EC2**: `13.60.174.46:8000`, 3 systemd services, Xvfb for headless Chrome
 - **Vercel**: `vkusvillsale.vercel.app`, rewrites /api/* to EC2
-- **Last verified**: 2026-03-26, 128+ tests passed
+- **Last verified**: 2026-04-03, live history filter fix + notifier dry-run confirmed on EC2/Vercel
 
 ## Constraints
 
@@ -178,6 +185,9 @@ Search and polish improvements for the History page:
 | Smart CDN routing (cdn→direct, img→proxy) | CDN images work direct from EC2, non-CDN are geo-blocked | ✓ Good |
 | Lazy image enrichment from scraped JSON | Avoids scraping 16K product pages; images auto-populate as products appear on sale | ✓ Good |
 | Fuzzy search only on empty results | Zero perf impact for correct queries; ~300ms for typo fallback | ✓ Good |
+| Exact category favorite keys (`group:X`, `subgroup:X/Y`) | Shared contract across main page, history page, and notifier | ✓ Good |
+| History chip scope follows history dataset | Prevent empty subgroup chips when the history list only shows products with sale history | ✓ Good |
+| Notifier falls back to `product_catalog` metadata | `proposals.json` sale snapshot does not always carry group/subgroup fields yet | ✓ Good |
 
 ## Evolution
 
@@ -197,6 +207,5 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-02 after v1.7 milestone started*
-
+*Last updated: 2026-04-03 after v1.7 milestone completion*
 
