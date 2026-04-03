@@ -63,6 +63,7 @@ miniapp/public/data.json
 chrome_portable/
 
 # Claude/Agent workspaces
+.codex/
 .claude/
 .agent/
 .agents/
