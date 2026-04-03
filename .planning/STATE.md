@@ -1,14 +1,14 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.7
-milestone_name: Categories & Subgroups
-status: Milestone complete
-last_updated: "2026-04-03T09:55:00+03:00"
+milestone: v1.8
+milestone_name: History Search Completeness
+status: Milestone initialized
+last_updated: "2026-04-03T13:20:00+03:00"
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 1
-  completed_plans: 1
+  total_phases: 2
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State
@@ -18,42 +18,26 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-03)
 
 **Core value:** Family members see every VkusVill discount and can add to cart in one tap
-**Current focus:** Planning the next milestone after shipping v1.7 Categories & Subgroups
+**Current focus:** Phase 34 planning for History Search Backend Semantics
 
 ## Current Position
 
-Milestone: v1.7 — Categories & Subgroups
-Status: ✅ Shipped
-Last activity: 2026-04-03 — finished Phase 33 notifications, verified deploy, and archived milestone
+Milestone: v1.8 — History Search Completeness
+Phase: 34 — History Search Backend Semantics
+Plan: Not started
+Status: Ready for phase discussion/planning
+Last activity: 2026-04-03 — initialized milestone v1.8, defined requirements, and created roadmap
 
-## What Was Done (this session)
+## Milestone Goal
 
-### Phase 29: Subgroup Data Layer ✅
-- Scraper discovers 524 subgroups across 46 categories
-- DB schema migrated: `group_name` and `subgroup` columns in `product_catalog`
-- API endpoints updated to serve/filter by group/subgroup
+- Make History search return the full local catalog for a query, not just history-backed products
+- Preserve clear live/history/ghost cues when search results mix different product states
+- Lock the behavior down with regression coverage before broader catalog-search work
 
-### Phase 30: Main Page Group/Subgroup UI ✅
-- `ScrollableChips` reusable component for filter chips
-- Two-tier filter: group chips → subgroup drill-down chips
-- Product filtering by `p.group` and `p.subgroup`
-- Fixed backend response issue where `group` / `subgroup` were missing from the product schema
+## Next Up
 
-### Phase 31: Group/Subgroup Favorites ✅
-- Backend: `/api/favorites/{user_id}/categories` GET/POST/DELETE endpoints
-- Frontend: heart toggle on group/subgroup chips with optimistic updates
-- Favorites stored as exact keys like `group:X` and `subgroup:X/Y`
-
-### Phase 32: History Page Groups & Subgroups ✅
-- History page added group/subgroup chips and server-side `group` / `subgroup` filtering
-- Live follow-up fix aligned history chips with history-backed results to remove empty subgroup rows
-- Deployed fix required cleaning up a stale manual backend process on EC2
-
-### Phase 33: Group/Subgroup Notifications ✅
-- Notifier now checks product favorites together with group/subgroup favorites
-- Notification messages show the most specific visible match reason
-- Added `product_catalog` fallback so notifications still work while sale JSON lacks hierarchy fields
-- Added regression test coverage for category alerts and dedupe behavior
+- `$gsd-discuss-phase 34` — gather context and clarify the backend search contract
+- `$gsd-plan-phase 34` — skip discussion and draft the execution plan directly
 
 ## Completed Milestones
 
@@ -81,7 +65,7 @@ Last activity: 2026-04-03 — finished Phase 33 notifications, verified deploy, 
 
 ## Known Bugs
 
-- No open milestone-blocking bugs
+- History search completeness is still open until v1.8 phases 34-35 ship
 
 ## Timeline
 
@@ -92,6 +76,7 @@ Last activity: 2026-04-03 — finished Phase 33 notifications, verified deploy, 
 | v1.7 phases 29-32 completed | 2026-04-03 |
 | v1.7 phase 33 completed | 2026-04-03 |
 | v1.7 milestone archived | 2026-04-03 |
+| v1.8 milestone started | 2026-04-03 |
 
 ---
-*Last updated: 2026-04-03 after v1.7 milestone completion*
+*Last updated: 2026-04-03 after v1.8 milestone initialization*

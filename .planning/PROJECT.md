@@ -78,9 +78,23 @@ Family members see every VkusVill discount (green/red/yellow) the moment it appe
 
 ### Active
 
-No active milestone is defined yet.
+<!-- Current scope. Building toward these. -->
 
-See `.planning/REQUIREMENTS.md` to start the next planning cycle.
+- [ ] History search returns matching products even when they are currently on sale now
+- [ ] History search returns matching catalog products even when they have no recorded sale history yet
+- [ ] Search results clearly show whether a match is live on sale, historical-only, or has no sale data yet
+- [ ] Search-mode group/subgroup/filter behavior does not hide matching catalog products
+- [ ] Automated regression coverage protects mixed history-search results
+
+## Current Milestone: v1.8 History Search Completeness
+
+**Goal:** Make History search show the full local catalog for a query, including products that are live on sale now and products that have never had a recorded sale.
+
+**Target features:**
+- Search-mode query semantics that do not fall back to history-only restrictions
+- Mixed-result cards that clearly distinguish live sale, historical-only, and no-history catalog matches
+- Search-mode chips and filters that do not silently hide otherwise matching products
+- Regression coverage for mixed history-search cases before broader catalog-search work lands
 
 ## Latest Shipped Milestone: v1.7 Categories & Subgroups (2026-04-03)
 
@@ -89,12 +103,6 @@ Shipped across phases 29-33:
 - Main page drill-down filters and category favorites
 - History page drill-down filters with history-aligned chip scope
 - Telegram notifications for favorited groups/subgroups
-
-## Next Milestone Candidates
-
-- Search completeness for non-sale products on the History page
-- Deeper subgroup pagination / multi-subgroup fidelity in the catalog pipeline
-- Scraper and notifier cleanup plus broader automated regression coverage
 
 ## Shipped: v1.6 Green Scraper Robustness (2026-04-02)
 
@@ -116,6 +124,12 @@ Search and polish improvements for the History page:
 - Mobile app — web-first, Telegram MiniApp is the mobile experience
 - Cookie encryption at rest — low risk for family-only app
 - OAuth login — VkusVill only supports phone+SMS
+
+## Next Milestone Candidates
+
+- Deeper subgroup pagination / multi-subgroup fidelity in the catalog pipeline
+- Scraper and notifier cleanup plus broader automated regression coverage
+- Remote-search parity beyond the local `product_catalog` snapshot
 
 ## Context
 
@@ -207,5 +221,5 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-03 after v1.7 milestone completion*
+*Last updated: 2026-04-03 after starting v1.8 milestone*
 
