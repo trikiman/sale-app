@@ -2432,6 +2432,28 @@ body.cart-open {
   border-color: transparent;
 }
 
+/* v1.7: History group/subgroup chips */
+.history-group-chips {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.history-group-chips .history-filter-chips {
+  padding-bottom: 4px;
+}
+
+.history-chip-sub {
+  font-size: 11px !important;
+  padding: 4px 10px !important;
+  opacity: 0.9;
+}
+
+.subgroup-row {
+  padding-left: 8px;
+}
+
 .history-sort {
   display: flex;
   gap: 4px;

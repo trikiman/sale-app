@@ -1,8 +1,24 @@
-import { useState, useEffect, useCallback, useRef, memo } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react'
 
 import { getAuthHeaders } from './api'
 
 const API_BASE = '/api'
+
+// Category emoji map (shared with App.jsx)
+const CATEGORY_EMOJI = {
+  'Хлеб, хлебные изделия': '🥖', 'Хлеб и выпечка': '🥖',
+  'Молоко, молочные продукты': '🥛', 'Молочные продукты': '🥛',
+  'Овощи, фрукты, ягоды, зелень': '🥬', 'Овощи и фрукты': '🥬',
+  'Мясо, птица': '🥩', 'Рыба, икра и морепродукты': '🐟',
+  'Готовая еда': '🍱', 'Сладости и десерты': '🍰',
+  'Напитки': '🥤', 'Сыры': '🧀',
+  'Замороженные продукты': '🧊', 'Масло, соусы, специи': '🫒',
+  'Консервация': '🥫', 'Снеки и орехи': '🥜',
+  'Особое питание': '🌿', 'Чай и кофе': '☕',
+  'Товары для дома и кухни': '🏠', 'Товары для детей': '👶',
+  'Кафе': '☕', 'Новинки': '✨',
+}
+const getCategoryEmoji = (c) => CATEGORY_EMOJI[c] || '📦'
 
 const TYPE_COLORS = {
   green: { bg: 'rgba(34, 197, 94, 0.08)', border: 'rgba(34, 197, 94, 0.25)', text: '#4ade80', dot: '#22c55e', badge: 'rgba(34, 197, 94, 0.9)' },
@@ -184,6 +200,11 @@ export default function HistoryPage({ onBack, onOpenDetail, favorites = new Set(
   const searchTimeout = useRef(null)
   const listRef = useRef(null)
 
+  // v1.7: Group/subgroup drill-down
+  const [allGroups, setAllGroups] = useState([]) // from /api/groups
+  const [selectedGroup, setSelectedGroup] = useState(null)
+  const [selectedSubgroup, setSelectedSubgroup] = useState(null)
+
   // Derived filter state for API
   const filterParam = specialFilter === 'predicted_soon'
     ? 'predicted_soon'
@@ -242,6 +263,9 @@ export default function HistoryPage({ onBack, onOpenDetail, favorites = new Set(
       if (filterParam) {
         params.set('filter', filterParam)
       }
+      // v1.7: group/subgroup server-side filter
+      if (selectedGroup) params.set('group', selectedGroup)
+      if (selectedSubgroup) params.set('subgroup', selectedSubgroup)
 
       const res = await fetch(`${API_BASE}/history/products?${params}`, {
         headers: getAuthHeaders(),
@@ -262,11 +286,39 @@ export default function HistoryPage({ onBack, onOpenDetail, favorites = new Set(
       setLoading(false)
       setLoadingMore(false)
     }
-  }, [search, filterParam, sort])
+  }, [search, filterParam, sort, selectedGroup, selectedSubgroup])
 
   useEffect(() => {
     fetchProducts(1, false)
   }, [fetchProducts])
+
+  // v1.7: Fetch groups list on mount
+  useEffect(() => {
+    fetch(`${API_BASE}/groups?scope=all`)
+      .then(r => r.json())
+      .then(data => setAllGroups(data.groups || []))
+      .catch(() => {})
+  }, [])
+
+  // v1.7: Build group chips from allGroups
+  const groupChips = useMemo(() => {
+    if (!allGroups.length) return []
+    return [
+      { id: null, label: '🏷️ Все' },
+      ...allGroups.map(g => ({ id: g.name, label: `${getCategoryEmoji(g.name)} ${g.name}` }))
+    ]
+  }, [allGroups])
+
+  // v1.7: Build subgroup chips for selected group
+  const subgroupChips = useMemo(() => {
+    if (!selectedGroup) return []
+    const g = allGroups.find(g => g.name === selectedGroup)
+    if (!g || !g.subgroups || g.subgroups.length < 2) return []
+    return [
+      { id: null, label: 'Все' },
+      ...g.subgroups.map(sg => ({ id: sg.name, label: `${sg.name} (${sg.count})` }))
+    ]
+  }, [selectedGroup, allGroups])
 
   // Debounced search — auto-clear type filters so search isn't silently restricted
   const handleSearchChange = (e) => {
@@ -368,6 +420,39 @@ export default function HistoryPage({ onBack, onOpenDetail, favorites = new Set(
             ))}
           </div>
         </div>
+
+        {/* v1.7: Group/Subgroup chips */}
+        {groupChips.length > 0 && (
+          <div className="history-group-chips">
+            <div className="history-filter-chips">
+              {groupChips.map(g => (
+                <button
+                  key={g.id ?? 'all'}
+                  className={`history-chip ${selectedGroup === g.id ? 'active' : ''}`}
+                  onClick={() => {
+                    setSelectedGroup(g.id)
+                    setSelectedSubgroup(null)
+                  }}
+                >
+                  {g.label}
+                </button>
+              ))}
+            </div>
+            {subgroupChips.length > 0 && (
+              <div className="history-filter-chips subgroup-row">
+                {subgroupChips.map(sg => (
+                  <button
+                    key={sg.id ?? 'all-sg'}
+                    className={`history-chip history-chip-sub ${selectedSubgroup === sg.id ? 'active' : ''}`}
+                    onClick={() => setSelectedSubgroup(sg.id)}
+                  >
+                    {sg.label}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Product grid */}
