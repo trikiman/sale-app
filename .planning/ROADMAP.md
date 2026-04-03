@@ -22,26 +22,33 @@
 
 **2 phases** | **6 requirements mapped** | All covered ✓
 
+- [ ] **Phase 34: History Search Backend Semantics** — Make search intentionally query across the local catalog without history-only exclusions.
+- [ ] **Phase 35: Search Result UX & Regression Coverage** — Make mixed-result states obvious and keep them protected by tests.
+
 | # | Phase | Goal | Requirements | Success Criteria |
 |---|-------|------|--------------|------------------|
 | 34 | History Search Backend Semantics | Make search intentionally query across the local catalog without history-only exclusions. | HIST-05, HIST-06, HIST-07 | 4 |
 | 35 | Search Result UX & Regression Coverage | Make mixed-result states obvious and keep them protected by tests. | UI-14, UI-15, QA-01 | 4 |
 
-### Phase Details
+### Phase 34: History Search Backend Semantics
 
-**Phase 34: History Search Backend Semantics**
-Goal: Make the History API and search-mode filtering behave like an intentional catalog search instead of a history-only list with a text box.
-Requirements: HIST-05, HIST-06, HIST-07
-Success criteria:
+**Goal:** Make the History API and search-mode filtering behave like an intentional catalog search instead of a history-only list with a text box.
+**Requirements:** HIST-05, HIST-06, HIST-07
+**Depends on:** —
+**Plans:** 0 plans
+**Success Criteria**:
 1. Searching for a product that is currently on sale returns that product in History results.
 2. Searching for a catalog product with zero sale history returns a result card instead of disappearing.
 3. Search-mode filters and chip scope do not reintroduce `total_sale_count > 0`-style restrictions.
 4. The search-mode contract is verified against mixed live-sale, history-only, and catalog-only fixtures.
 
-**Phase 35: Search Result UX & Regression Coverage**
-Goal: Make mixed search results understandable to users and hard to regress.
-Requirements: UI-14, UI-15, QA-01
-Success criteria:
+### Phase 35: Search Result UX & Regression Coverage
+
+**Goal:** Make mixed search results understandable to users and hard to regress.
+**Requirements:** UI-14, UI-15, QA-01
+**Depends on:** Phase 34
+**Plans:** 0 plans
+**Success Criteria**:
 1. Search results clearly distinguish live sale, history-only, and no-history catalog matches.
 2. Catalog-only search matches render with intentional "no data yet" presentation instead of looking broken.
 3. Automated coverage exercises live-sale, history-only, and catalog-only search cases.
