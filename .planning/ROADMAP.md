@@ -127,8 +127,8 @@ See: `.planning/milestones/v1.6-ROADMAP.md`
 | 21-23 | v1.4 | ✅ Complete | 2026-04-01 |
 | 24-26 | v1.5 | ✅ Complete | 2026-04-01 |
 | 27-28 | v1.6 | ✅ Complete | 2026-04-02 |
-| 29 | v1.7 | ⬜ Pending | — |
-| 30 | v1.7 | ⬜ Pending | — |
-| 31 | v1.7 | ⬜ Pending | — |
-| 32 | v1.7 | ⬜ Pending | — |
+| 29 | v1.7 | ✅ Complete | 2026-04-02 |
+| 30 | v1.7 | ✅ Complete | 2026-04-02 |
+| 31 | v1.7 | ✅ Complete | 2026-04-03 |
+| 32 | v1.7 | ✅ Complete | 2026-04-03 |
 | 33 | v1.7 | ⬜ Pending | — |
