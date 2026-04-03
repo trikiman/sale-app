@@ -3538,7 +3538,10 @@ def get_groups(request: Request):
     """
     Return all available groups with their subgroup lists.
     Used by frontend to populate filter chips.
-    Supports ?scope=active (only groups with currently-on-sale products) or ?scope=all (full catalog).
+    Supports:
+    - ?scope=active: only groups with currently-on-sale products
+    - ?scope=history: only groups with any recorded sale history
+    - ?scope=all: full catalog
     """
     try:
         import sqlite3 as _sqlite3
@@ -3555,6 +3558,18 @@ def get_groups(request: Request):
                 INNER JOIN sale_sessions ss ON ss.product_id = pc.product_id AND ss.is_active = 1
                 WHERE pc.group_name IS NOT NULL AND pc.group_name != ''
                 GROUP BY pc.group_name, pc.subgroup
+                ORDER BY COUNT(*) DESC
+            """)
+        elif scope == "history":
+            # Only groups/subgroups that have at least one historical sale.
+            # This matches the default history page dataset (pc.total_sale_count > 0).
+            c.execute("""
+                SELECT group_name, subgroup, COUNT(*) as cnt
+                FROM product_catalog
+                WHERE group_name IS NOT NULL
+                  AND group_name != ''
+                  AND total_sale_count > 0
+                GROUP BY group_name, subgroup
                 ORDER BY COUNT(*) DESC
             """)
         else:

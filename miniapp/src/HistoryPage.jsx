@@ -214,6 +214,7 @@ export default function HistoryPage({ onBack, onOpenDetail, favorites = new Set(
 
   // For client-side favorites filtering
   const isClientFilter = specialFilter === 'favorites'
+  const groupsScope = search ? 'all' : 'history'
 
   // Handle chip clicks: type filters toggle, special filters are exclusive
   const handleFilterClick = (id) => {
@@ -292,13 +293,30 @@ export default function HistoryPage({ onBack, onOpenDetail, favorites = new Set(
     fetchProducts(1, false)
   }, [fetchProducts])
 
-  // v1.7: Fetch groups list on mount
+  // Keep group chips aligned with the current history dataset.
+  // When searching we expose the full catalog; otherwise show only groups with history.
   useEffect(() => {
-    fetch(`${API_BASE}/groups?scope=all`)
+    fetch(`${API_BASE}/groups?scope=${groupsScope}`)
       .then(r => r.json())
       .then(data => setAllGroups(data.groups || []))
       .catch(() => {})
-  }, [])
+  }, [groupsScope])
+
+  useEffect(() => {
+    if (!selectedGroup) return
+    const groupExists = allGroups.some(g => g.name === selectedGroup)
+    if (!groupExists) {
+      setSelectedGroup(null)
+      setSelectedSubgroup(null)
+      return
+    }
+    if (!selectedSubgroup) return
+    const group = allGroups.find(g => g.name === selectedGroup)
+    const subgroupExists = group?.subgroups?.some(sg => sg.name === selectedSubgroup)
+    if (!subgroupExists) {
+      setSelectedSubgroup(null)
+    }
+  }, [allGroups, selectedGroup, selectedSubgroup])
 
   // v1.7: Build group chips from allGroups
   const groupChips = useMemo(() => {
