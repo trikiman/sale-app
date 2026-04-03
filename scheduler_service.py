@@ -56,7 +56,7 @@ def _log_script_output(script_name, output_text, tag=None):
             f.write(entry)
 
 
-SCRAPER_TIMEOUT = 120  # ultimate safety net (seconds)
+SCRAPER_TIMEOUT = 300  # seconds — green scraper: modal(40s) + add-to-cart(60s) + basket(40s) ≈ 140s
 
 # Lines matching these → instant kill + retry with proxy
 KILL_TRIGGERS = [

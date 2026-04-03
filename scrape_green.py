@@ -12,6 +12,7 @@ import tempfile
 import subprocess
 import shutil
 from chrome_stealth import launch_stealth_browser, find_chrome
+from nodriver import cdp
 
 from utils import normalize_category, parse_stock, clean_price, deduplicate_products, synthesize_discount, save_products_safe, check_vkusvill_available, normalize_stock_unit
 
@@ -355,20 +356,25 @@ async def _inspect_green_section(page) -> tuple[bool, bool, int]:
 
             let liveCount = 0;
 
-            // Method 1: count swiper slides with aria-label (most reliable)
             const greenSection = document.getElementById('js-Delivery__Order-green-state-not-empty');
+
+            // Method 1 (PRIORITY): Text-based "N товаров" from green section header
+            // The green section shows "184 товара →" or similar text.
+            // This is the authoritative count — NOT the swiper slide count.
             if (greenSection) {
-                const ariaSlides = greenSection.querySelectorAll('.swiper-slide[aria-label]');
-                if (ariaSlides.length > 0) {
-                    // aria-label is like "3 / 12" — the total is in the second number
-                    const lastLabel = ariaSlides[ariaSlides.length - 1].getAttribute('aria-label') || '';
-                    const totalMatch = lastLabel.match(/\/\s*(\d+)/);
-                    if (totalMatch) liveCount = parseInt(totalMatch[1], 10);
-                    if (!liveCount) liveCount = ariaSlides.length;
+                // Look for small text elements with "N товар" (the header link)
+                const candidates = greenSection.querySelectorAll('a, span, div, p, h2, h3');
+                for (const el of candidates) {
+                    // Only direct text, not deeply nested containers
+                    const ownText = normalize(el.textContent || '');
+                    if (ownText.length < 50 && /\d+\s*товар/i.test(ownText)) {
+                        const count = extractCount(ownText);
+                        if (count > liveCount) liveCount = count;
+                    }
                 }
             }
 
-            // Method 2: text-based count from container nodes
+            // Method 2: Search broader containers for "Зелёные ценники" + "N товар"
             if (!liveCount) {
                 const containers = document.querySelectorAll('section, article, div');
                 for (const node of containers) {
@@ -381,7 +387,18 @@ async def _inspect_green_section(page) -> tuple[bool, bool, int]:
                 }
             }
 
-            // Method 3: walk up from button
+            // Method 3: Swiper slide count (FALLBACK only — gives carousel size, not total items)
+            if (!liveCount && greenSection) {
+                const ariaSlides = greenSection.querySelectorAll('.swiper-slide[aria-label]');
+                if (ariaSlides.length > 0) {
+                    const lastLabel = ariaSlides[ariaSlides.length - 1].getAttribute('aria-label') || '';
+                    const totalMatch = lastLabel.match(/\/\s*(\d+)/);
+                    if (totalMatch) liveCount = parseInt(totalMatch[1], 10);
+                    if (!liveCount) liveCount = ariaSlides.length;
+                }
+            }
+
+            // Method 4: Walk up from GreenLabels button
             if (!liveCount && buttonVisible) {
                 let current = greenButton;
                 for (let depth = 0; depth < 6 && current; depth += 1) {
@@ -660,60 +677,59 @@ async def _close_delivery_modal(page):
     Must be called before any green section interaction."""
     result = await _js(page, r"""
         (() => {
-            // Check if delivery modal is visible
-            const deliverySelectors = [
-                '.VV23_RWayModal',
-                '[class*="RWayModal"]',
-                '[class*="DeliveryModal"]',
-                '[class*="delivery-modal"]'
-            ];
-            let deliveryModal = null;
-            for (const sel of deliverySelectors) {
-                const el = document.querySelector(sel);
-                if (el && el.offsetParent !== null) {
-                    deliveryModal = el;
-                    break;
-                }
-            }
-            // Also check by content — modal containing "Ассортимент зависит"
-            if (!deliveryModal) {
-                const allModals = document.querySelectorAll('[class*="Modal"]');
-                for (const m of allModals) {
-                    if (m.offsetParent === null) continue;
-                    const text = (m.innerText || '').substring(0, 200);
-                    if (text.includes('Ассортимент зависит') || text.includes('Больше товаров') || text.includes('времени доставки')) {
-                        deliveryModal = m;
-                        break;
+            // Strategy 1: Find any visible modal with delivery text and close it
+            const allModals = document.querySelectorAll('[class*="Modal"], [class*="modal"], .js-modal');
+            for (const m of allModals) {
+                const style = window.getComputedStyle(m);
+                if (style.display === 'none' || style.visibility === 'hidden') continue;
+                const text = (m.innerText || '').substring(0, 300);
+                if (text.includes('Ассортимент зависит') || text.includes('Больше товаров') || text.includes('времени доставки')) {
+                    // Found the delivery modal — try close buttons inside it
+                    const closeBtns = m.querySelectorAll('[class*="close"], [class*="Close"], button[aria-label="close"], button[aria-label="Close"], .Modal__close');
+                    for (const btn of closeBtns) {
+                        btn.click();
+                        return 'closed_button';
+                    }
+                    // Try any SVG close icon inside
+                    const svgClose = m.querySelector('svg');
+                    if (svgClose && svgClose.closest('button, a, div[role="button"]')) {
+                        svgClose.closest('button, a, div[role="button"]').click();
+                        return 'closed_svg';
                     }
                 }
             }
-            if (!deliveryModal) return 'no_delivery_modal';
 
-            // Try to close it
-            const closeSelectors = '.Modal__close, .js-modal-close, .VV_ModalClose, [class*="Modal"] [class*="close"], [class*="Modal"] [class*="Close"]';
-            // Prefer close button INSIDE the delivery modal
-            let closeBtn = deliveryModal.querySelector('[class*="close"], [class*="Close"], button[class*="close"]');
-            if (!closeBtn) {
-                closeBtn = document.querySelector(closeSelectors);
+            // Strategy 2: Click any generic close button on visible modals
+            const closeButtons = document.querySelectorAll('.Modal__close, .js-modal-close, .VV_ModalClose, [class*="Modal"] [class*="close"], [class*="Modal"] [class*="Close"]');
+            for (const btn of closeButtons) {
+                const rect = btn.getBoundingClientRect();
+                if (rect.width > 0 && rect.height > 0) {
+                    btn.click();
+                    return 'closed_generic';
+                }
             }
-            if (closeBtn) {
-                closeBtn.click();
-                return 'closed_button';
+
+            // Strategy 3: Click overlay
+            const overlays = document.querySelectorAll('.Modal__overlay, [class*="overlay"], [class*="Overlay"]');
+            for (const ov of overlays) {
+                const rect = ov.getBoundingClientRect();
+                if (rect.width > 0 && rect.height > 0) {
+                    ov.click();
+                    return 'closed_overlay';
+                }
             }
-            // Fallback: click overlay behind modal
-            const overlay = document.querySelector('.Modal__overlay, [class*="overlay"], [class*="Overlay"]');
-            if (overlay) {
-                overlay.click();
-                return 'closed_overlay';
-            }
-            return 'no_close_button';
+
+            return 'no_delivery_modal';
         })()
     """)
     if result and result != 'no_delivery_modal':
         print(f"  [GREEN] Delivery modal: {result}")
         await asyncio.sleep(1)
-    # Always send Escape as backup
+    # Always send Escape as backup (works for most modals)
     await _js(page, "document.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', code: 'Escape', bubbles: true}))")
+    await asyncio.sleep(0.5)
+    # Double-tap Escape on the active element too
+    await _js(page, "document.activeElement && document.activeElement.dispatchEvent(new KeyboardEvent('keydown', {key: 'Escape', code: 'Escape', bubbles: true}))")
     await asyncio.sleep(0.5)
     return result
 
@@ -1381,8 +1397,9 @@ async def scrape_green_prices_async():
                     (el.textContent || '').trim().length < 30
                 );
                 if (clearBtn) {
-                    // Clear button exists but no items detected — page may still be loading
-                    return {empty: false, reason: 'clear_btn_exists_but_0_items'};
+                    // Clear button exists but no items detected — treat as empty
+                    // (the button may persist in DOM even with empty cart)
+                    return {empty: true, reason: 'clear_btn_exists_but_0_items'};
                 }
                 return {empty: true, reason: 'no_items_no_clear'};
             })()
@@ -1813,40 +1830,223 @@ async def scrape_green_prices_async():
             if modal_ready:
                 await _step_screenshot(page, "modal_opened")
 
-                # ── STEP 3.1.1: Scroll modal to load ALL items ──
-                print("  [GREEN] Step 3.1.1: Loading all modal items...")
+                # ── STEP 3.1.1: Scroll modal to load ALL items (CDP Network-aware) ──
+                # Instead of fragile DOM polling with arbitrary timeouts, we use CDP
+                # Network interception to watch AJAX responses from "показать ещё" clicks.
+                # This tells us deterministically when all items have been loaded.
+                print("  [GREEN] Step 3.1.1: Loading all modal items (CDP Network-aware)...")
+
+                # Enable CDP Network monitoring to watch for AJAX pagination responses
+                ajax_responses = []  # Collected AJAX response data
+                ajax_event = asyncio.Event()  # Signaled when a new AJAX response arrives
+
+                async def _on_response(event: cdp.network.ResponseReceived):
+                    """Intercept XHR/Fetch responses from modal pagination."""
+                    try:
+                        url = event.response.url or ''
+                        res_type = str(event.type_) if hasattr(event, 'type_') else str(getattr(event, 'type', ''))
+                        # Look for AJAX calls related to modal product loading
+                        is_ajax = 'xhr' in res_type.lower() or 'fetch' in res_type.lower()
+                        is_modal_ajax = is_ajax and (
+                            'ajax' in url.lower()
+                            or 'cart' in url.lower()
+                            or 'prods' in url.lower()
+                            or 'green' in url.lower()
+                            or 'load' in url.lower()
+                            or 'modal' in url.lower()
+                        )
+                        if is_modal_ajax:
+                            try:
+                                body_result = await page.send(
+                                    cdp.network.get_response_body(request_id=event.request_id)
+                                )
+                                body_text = body_result[0] if isinstance(body_result, tuple) else str(body_result)
+                                ajax_responses.append({
+                                    'url': url,
+                                    'body_len': len(body_text) if body_text else 0,
+                                    'time': time.time(),
+                                })
+                                print(f"    [CDP] AJAX response: {url[:80]} ({len(body_text)} bytes)")
+                            except Exception:
+                                ajax_responses.append({'url': url, 'body_len': 0, 'time': time.time()})
+                            ajax_event.set()
+                    except Exception as e:
+                        pass  # Don't crash the scraper for CDP monitoring errors
+
+                try:
+                    await page.send(cdp.network.enable())
+                    page.add_handler(cdp.network.ResponseReceived, _on_response)
+                    cdp_enabled = True
+                    print("    [CDP] Network monitoring enabled")
+                except Exception as e:
+                    cdp_enabled = False
+                    print(f"    [CDP] Network monitoring failed: {e} — using DOM fallback")
+
                 prev_count = 0
                 no_change = 0
-                for i in range(50):
+                max_iters = 100  # Safety limit
+                for i in range(max_iters):
+                    ajax_event.clear()  # Reset before scroll/click
+
+                    # First: scroll modal to bottom
+                    await _js(page, r"""
+                        (() => {
+                            const modal = document.getElementById('js-modal-cart-prods-scroll');
+                            if (!modal) return;
+                            const cards = modal.querySelectorAll('.ProductCard');
+                            if (cards.length > 0) {
+                                cards[cards.length - 1].scrollIntoView({behavior: 'instant', block: 'end'});
+                            }
+                            modal.scrollTop = modal.scrollHeight;
+                            modal.dispatchEvent(new Event('scroll', {bubbles: true}));
+                        })()
+                    """)
+                    # Wait for "показать ещё" button to appear after scroll
+                    await asyncio.sleep(0.5)
+
+                    # Then: check card count and find/click button
                     state = await _js(page, r"""
                         (() => {
                             const modal = document.getElementById('js-modal-cart-prods-scroll');
-                            if (!modal) return [0, false];
-                            modal.scrollTop = modal.scrollHeight;
-                            // Try multiple selectors for "load more" button
-                            const selectors = ['.js-prods-modal-load-more', '.ProductCard__more', 
-                                               '.ModalProds__more', '[class*="load-more"]', '[class*="show-more"]'];
+                            if (!modal) return [0, false, 0, false];
+
+                            const cards = modal.querySelectorAll('.ProductCard');
+
+                            // Find and click "показать ещё" / "load more" button
                             let clicked = false;
+                            let btnExists = false;
+
+                            // CSS selectors for known load-more buttons
+                            // Search INSIDE the modal, not globally
+                            const selectors = [
+                                '.js-prods-modal-load-more', '.ProductCard__more',
+                                '.ModalProds__more', '[class*="load-more"]', '[class*="show-more"]',
+                                '[class*="LoadMore"]', '[class*="ShowMore"]',
+                                '[class*="loadMore"]', '[class*="showMore"]'
+                            ];
                             for (const sel of selectors) {
-                                const btn = document.querySelector(sel);
-                                if (btn && btn.offsetParent !== null) { btn.click(); clicked = true; break; }
+                                // Search inside modal AND globally (button might be outside)
+                                let btn = modal.querySelector(sel) || document.querySelector(sel);
+                                if (btn && (btn.offsetParent !== null || btn.offsetWidth > 0)) {
+                                    btn.click();
+                                    clicked = true;
+                                    btnExists = true;
+                                    break;
+                                }
                             }
-                            return [modal.querySelectorAll('.ProductCard').length, clicked];
+
+                            // Text-based search for load-more button — search in modal AND its parent
+                            if (!clicked) {
+                                const searchScope = modal.closest('.Modal, [class*="Modal"]') || modal;
+                                const allBtns = searchScope.querySelectorAll('button, a, span, div');
+                                for (const el of allBtns) {
+                                    const t = (el.innerText || '').trim().toLowerCase();
+                                    // Match various Russian "load more" texts
+                                    if ((t.includes('показать ещё') || t.includes('загрузить ещё') ||
+                                         t.includes('показать еще') || t.includes('загрузить еще') ||
+                                         t.includes('ещё товар') || t.includes('еще товар') ||
+                                         t === 'ещё' || t === 'еще' || t === 'ещё ►' || t === 'еще ►' ||
+                                         t.includes('показать всё') || t.includes('показать все') ||
+                                         t.includes('больше товар')) && t.length < 80) {
+                                        if (el.offsetParent !== null || el.offsetWidth > 0) {
+                                            el.click();
+                                            clicked = true;
+                                            btnExists = true;
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Log what's at the bottom of the modal for debugging
+                            let bottomText = '';
+                            const lastCards = Array.from(cards).slice(-2);
+                            if (lastCards.length > 0) {
+                                const lastCard = lastCards[lastCards.length - 1];
+                                // Check what's right after the last card
+                                let sibling = lastCard.nextElementSibling;
+                                while (sibling && bottomText.length < 200) {
+                                    bottomText += (sibling.innerText || '').trim().substring(0, 100) + ' | ';
+                                    sibling = sibling.nextElementSibling;
+                                }
+                            }
+
+                            return [cards.length, clicked, modal.scrollHeight, btnExists, bottomText.substring(0, 200)];
                         })()
-                    """) or [0, False]
+                    """) or [0, False, 0, False, '']
                     if not isinstance(state, list) or len(state) < 2:
-                        state = [0, False]
+                        state = [0, False, 0, False]
                     count = int(state[0] or 0)
                     clicked_more = bool(state[1])
-                    print(f"    iter {i+1}: cards={count}, loaded_more={clicked_more}")
-                    await asyncio.sleep(2.5 if clicked_more else 1.5)
-                    if count == prev_count and not clicked_more:
+                    scroll_h = int(state[2] or 0) if len(state) > 2 else 0
+                    btn_exists = bool(state[3]) if len(state) > 3 else False
+                    bottom_text = str(state[4])[:200] if len(state) > 4 and state[4] else ''
+
+                    if i % 5 == 0 or count != prev_count or clicked_more:
+                        print(f"    iter {i+1}: cards={count}, clicked_more={clicked_more}, btn_exists={btn_exists}, scrollH={scroll_h}")
+                        if bottom_text and i < 3:
+                            print(f"    bottom_text: {bottom_text[:100]}")
+
+                    if clicked_more:
+                        # Button was clicked — wait for AJAX response or DOM change
+                        old_count = count
+                        if cdp_enabled:
+                            # Wait up to 5s for AJAX response via CDP
+                            try:
+                                await asyncio.wait_for(ajax_event.wait(), timeout=5.0)
+                                print(f"    [CDP] AJAX response received after click")
+                            except asyncio.TimeoutError:
+                                print(f"    [CDP] No AJAX response in 5s — checking DOM")
+                        # Poll DOM until card count increases or timeout (5s max)
+                        for wait_step in range(10):
+                            await asyncio.sleep(0.5)
+                            new_count = await _js(page, r"""
+                                (() => {
+                                    const m = document.getElementById('js-modal-cart-prods-scroll');
+                                    return m ? m.querySelectorAll('.ProductCard').length : 0;
+                                })()
+                            """) or 0
+                            new_count = int(new_count)
+                            if new_count > old_count:
+                                count = new_count
+                                print(f"    DOM updated: {old_count} → {new_count} cards")
+                                break
+                        if count == old_count:
+                            # Last chance — one more quick check
+                            await asyncio.sleep(1)
+                            count = int(await _js(page, r"""
+                                (() => {
+                                    const m = document.getElementById('js-modal-cart-prods-scroll');
+                                    return m ? m.querySelectorAll('.ProductCard').length : 0;
+                                })()
+                            """) or 0)
+                    else:
+                        await asyncio.sleep(0.5)
+
+                    # Stop condition: no "показать ещё" button AND card count stopped growing
+                    if not btn_exists and not clicked_more and count == prev_count:
                         no_change += 1
-                        if no_change >= 3:
+                        # With CDP: if no AJAX AND no button AND count stable for 3 iters → done
+                        threshold = 3
+                        if no_change >= threshold:
+                            print(f"    ✅ All items loaded: {count} cards (no button, count stable for {threshold} iters)")
                             break
                     else:
                         no_change = 0
+
+                    # Extra check: if we've reached live_count and no button, we're done
+                    if live_count > 0 and count >= live_count and not btn_exists:
+                        print(f"    ✅ All items loaded: {count} cards (matches live_count={live_count})")
+                        break
+
                     prev_count = count
+
+                # Disable CDP Network monitoring
+                try:
+                    if cdp_enabled:
+                        await page.send(cdp.network.disable())
+                except Exception:
+                    pass
 
                 total_in_modal = prev_count
                 print(f"  [GREEN] Modal loaded: {total_in_modal} cards")
@@ -2001,17 +2201,39 @@ async def scrape_green_prices_async():
                 print("  [GREEN] Step 3.3: Button not in DOM — no green items to add")
 
         # ── STEP 5: Reload page ──
+        # Page reload with 150+ items in cart can OOM on t3.micro.
+        # If it hangs, skip it — we already have all data from the modal.
         print("  [GREEN] Reloading page...")
-        page = await browser.get(GREEN_URL)
-        await asyncio.sleep(8)
-        await _step_screenshot(page, "after_reload")
+        reload_ok = False
+        try:
+            page = await asyncio.wait_for(browser.get(GREEN_URL), timeout=30)
+            await asyncio.sleep(8)
+            await _step_screenshot(page, "after_reload")
+            reload_ok = True
+        except asyncio.TimeoutError:
+            print("  [GREEN] ⚠️ Page reload timed out after 30s — skipping basket_recalc (using modal data + data-max)")
+        except Exception as e:
+            print(f"  [GREEN] ⚠️ Page reload failed: {e} — skipping basket_recalc")
 
         # ── STEP 6: Enrich modal products with basket_recalc stock data ──
         # raw_products already has ALL green items from the modal DOM.
         # basket_recalc provides accurate stock/price — merge it IN, don't replace.
         # Use async version: tries CDP (in-browser XHR) first, then falls back to httpx.
-        print("  [GREEN] Step 6: Fetching stock data from basket_recalc API...")
-        basket_products, full_stock_map = await _fetch_green_from_basket_async(page)
+        basket_products, full_stock_map = [], {}
+        if reload_ok:
+            print("  [GREEN] Step 6: Fetching stock data from basket_recalc API...")
+            try:
+                basket_products, full_stock_map = await asyncio.wait_for(
+                    _fetch_green_from_basket_async(page), timeout=60
+                )
+            except asyncio.TimeoutError:
+                print("  [GREEN] ⚠️ basket_recalc timed out after 60s — proceeding with modal data + data-max stock")
+                basket_products, full_stock_map = [], {}
+            except Exception as e:
+                print(f"  [GREEN] ⚠️ basket_recalc error: {e} — proceeding with modal data")
+                basket_products, full_stock_map = [], {}
+        else:
+            print("  [GREEN] Step 6: Skipped basket_recalc (page reload failed)")
         if basket_products:
             print(f"  [GREEN] Basket API: {len(basket_products)} products with stock data")
             # Build lookup by product ID
@@ -2244,8 +2466,25 @@ async def scrape_green_prices_async():
             except Exception:
                 pass
 
-        # Save results
+        # Save results with count validation gate (SCRP-13)
         output_path = os.path.join(DATA_DIR, "green_products.json")
+        if scrape_success:
+            # Count validation: refuse to save if gap between live_count and scraped is >10%
+            scraped_count = len(products)
+            if live_count > 0 and scraped_count > 0:
+                gap_pct = abs(live_count - scraped_count) / live_count * 100
+                if scraped_count < live_count and gap_pct > 10:
+                    existing_count = _load_existing_green_product_count()
+                    print(f"⚠️ [GREEN] COUNT MISMATCH: scraped={scraped_count}, live={live_count}, gap={gap_pct:.0f}%")
+                    if existing_count > scraped_count:
+                        print(f"⚠️ [GREEN] Existing snapshot has {existing_count} items — preserving it")
+                        scrape_success = False  # Don't overwrite with worse data
+                    else:
+                        print(f"⚠️ [GREEN] Existing snapshot has {existing_count} items — saving new (still better)")
+                else:
+                    if gap_pct > 0:
+                        print(f"  [GREEN] Count OK: scraped={scraped_count}, live={live_count}, gap={gap_pct:.1f}% (within 10% tolerance)")
+
         if scrape_success:
             output_data = {
                 "live_count": live_count,
