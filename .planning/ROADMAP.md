@@ -1,7 +1,8 @@
 # Roadmap: VkusVill Sale Monitor
 
 **Created:** 2026-03-30
-**Status:** v1.7 shipped — next milestone not defined
+**Updated:** 2026-04-03
+**Status:** Active milestone v1.8 — History Search Completeness
 
 ## Milestones
 
@@ -13,69 +14,54 @@
 - ✅ **v1.5 History Search & Polish** — Phases 24-26 (shipped 2026-04-01)
 - ✅ **v1.6 Green Scraper Robustness** — Phases 27-28 (shipped 2026-04-02)
 - ✅ **v1.7 Categories & Subgroups** — Phases 29-33 (shipped 2026-04-03)
+- 🚧 **v1.8 History Search Completeness** — Phases 34-35 (planned 2026-04-03)
 
-## Phases
+## Active Milestone: v1.8 History Search Completeness
 
-<details>
-<summary>✅ v1.0 Bug Fix & Stability (Phases 1-9) — SHIPPED 2026-03-31</summary>
+**Goal:** Make History search show the full local catalog for a query, including live sale items and catalog products with no sale history yet.
 
-See: `.planning/milestones/v1.0-ROADMAP.md`
+**2 phases** | **6 requirements mapped** | All covered ✓
 
-</details>
+| # | Phase | Goal | Requirements | Success Criteria |
+|---|-------|------|--------------|------------------|
+| 34 | History Search Backend Semantics | Make search intentionally query across the local catalog without history-only exclusions. | HIST-05, HIST-06, HIST-07 | 4 |
+| 35 | Search Result UX & Regression Coverage | Make mixed-result states obvious and keep them protected by tests. | UI-14, UI-15, QA-01 | 4 |
 
-<details>
-<summary>✅ v1.1 Testing & QA (Phases 10-12) — SHIPPED 2026-03-31</summary>
+### Phase Details
 
-See: `.planning/milestones/v1.1-ROADMAP.md`
+**Phase 34: History Search Backend Semantics**
+Goal: Make the History API and search-mode filtering behave like an intentional catalog search instead of a history-only list with a text box.
+Requirements: HIST-05, HIST-06, HIST-07
+Success criteria:
+1. Searching for a product that is currently on sale returns that product in History results.
+2. Searching for a catalog product with zero sale history returns a result card instead of disappearing.
+3. Search-mode filters and chip scope do not reintroduce `total_sale_count > 0`-style restrictions.
+4. The search-mode contract is verified against mixed live-sale, history-only, and catalog-only fixtures.
 
-</details>
+**Phase 35: Search Result UX & Regression Coverage**
+Goal: Make mixed search results understandable to users and hard to regress.
+Requirements: UI-14, UI-15, QA-01
+Success criteria:
+1. Search results clearly distinguish live sale, history-only, and no-history catalog matches.
+2. Catalog-only search matches render with intentional "no data yet" presentation instead of looking broken.
+3. Automated coverage exercises live-sale, history-only, and catalog-only search cases.
+4. Search empty states and counts remain correct when search and filters are combined.
 
-<details>
-<summary>✅ v1.2 Price History (Phases 13-18) — SHIPPED 2026-04-01</summary>
+## Completed Milestones
 
-See: `.planning/milestones/v1.2-ROADMAP.md`
-
-</details>
-
-<details>
-<summary>✅ v1.3 Performance & Optimization (Phases 19-20) — SHIPPED 2026-04-01</summary>
-
-See: `.planning/milestones/v1.3-ROADMAP.md`
-
-</details>
-
-<details>
-<summary>✅ v1.4 Proxy Centralization (Phases 21-23) — SHIPPED 2026-04-01</summary>
-
-See: `.planning/milestones/v1.4-ROADMAP.md`
-
-</details>
-
-<details>
-<summary>✅ v1.5 History Search & Polish (Phases 24-26) — SHIPPED 2026-04-01</summary>
-
-See: `.planning/milestones/v1.5-ROADMAP.md`
-
-</details>
-
-<details>
-<summary>✅ v1.6 Green Scraper Robustness (Phases 27-28) — SHIPPED 2026-04-02</summary>
-
-See: `.planning/milestones/v1.6-ROADMAP.md`
-
-</details>
-
-<details>
-<summary>✅ v1.7 Categories & Subgroups (Phases 29-33) — SHIPPED 2026-04-03</summary>
-
-See: `.planning/milestones/v1.7-ROADMAP.md`
-
-</details>
+- v1.0 Bug Fix & Stability — phases 1-9, shipped 2026-03-31
+- v1.1 Testing & QA — phases 10-12, shipped 2026-03-31
+- v1.2 Price History — phases 13-18, shipped 2026-04-01
+- v1.3 Performance & Optimization — phases 19-20, shipped 2026-04-01
+- v1.4 Proxy Centralization — phases 21-23, shipped 2026-04-01
+- v1.5 History Search & Polish — phases 24-26, shipped 2026-04-01
+- v1.6 Green Scraper Robustness — phases 27-28, shipped 2026-04-02
+- v1.7 Categories & Subgroups — phases 29-33, shipped 2026-04-03
 
 ## Next Up
 
-- No active milestone is defined.
-- Start the next milestone with `$gsd-new-milestone`.
+- **Phase 34: History Search Backend Semantics** — define and implement the search-mode contract.
+- Start with `$gsd-discuss-phase 34` or jump straight to `$gsd-plan-phase 34`.
 
 ## Progress
 
@@ -89,3 +75,4 @@ See: `.planning/milestones/v1.7-ROADMAP.md`
 | 24-26 | v1.5 | ✅ Complete | 2026-04-01 |
 | 27-28 | v1.6 | ✅ Complete | 2026-04-02 |
 | 29-33 | v1.7 | ✅ Complete | 2026-04-03 |
+| 34-35 | v1.8 | 🟡 Planned | — |
