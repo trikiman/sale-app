@@ -1303,6 +1303,35 @@ body {
   border-color: rgba(37, 99, 235, 0.3);
 }
 
+/* Chip favorite icon (v1.7 FAV-03) */
+.chip-fav-icon {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
+  font-size: 10px;
+  opacity: 0.3;
+  cursor: pointer;
+  transition: opacity 0.2s, transform 0.15s;
+  vertical-align: middle;
+}
+
+.chip-fav-icon:hover {
+  opacity: 1;
+  transform: scale(1.3);
+}
+
+.category-chip.fav .chip-fav-icon {
+  opacity: 1;
+}
+
+.category-chip.fav {
+  box-shadow: 0 0 0 1px rgba(236, 72, 153, 0.3), 0 0 8px rgba(236, 72, 153, 0.15);
+}
+
+[data-theme="light"] .category-chip.fav {
+  box-shadow: 0 0 0 1px rgba(236, 72, 153, 0.2), 0 0 6px rgba(236, 72, 153, 0.1);
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar {
   width: 4px;

@@ -896,6 +896,43 @@ def remove_favorite(user_id: str, product_id: str, request: Request):
     return {"success": success, "product_id": product_id}
 
 
+# ── Category (Group/Subgroup) Favorites (v1.7 FAV-03/FAV-04) ─────
+
+@app.get("/api/favorites/{user_id}/categories")
+def get_favorite_categories(user_id: str, request: Request):
+    """Get all favorited groups/subgroups for a user."""
+    _validate_user_header(request, user_id)
+    favs = db.get_user_favorite_categories(user_id)
+    return {
+        "user_id": user_id,
+        "categories": [{"category_key": f.category_key, "category_name": f.category_name} for f in favs],
+    }
+
+
+@app.post("/api/favorites/{user_id}/categories")
+def toggle_favorite_category(user_id: str, raw_request: Request, category_key: str = Body(...), category_name: str = Body(...)):
+    """Toggle a group/subgroup favorite. category_key format: 'group:X' or 'subgroup:X/Y'."""
+    _validate_user_header(raw_request, user_id)
+    if user_id.isdigit():
+        db.upsert_user(int(user_id))
+    favs = db.get_user_favorite_categories(user_id)
+    is_favorited = any(f.category_key == category_key for f in favs)
+    if is_favorited:
+        db.remove_favorite_category(user_id, category_key)
+        return {"category_key": category_key, "category_name": category_name, "is_favorite": False}
+    else:
+        db.add_favorite_category(user_id, category_key, category_name)
+        return {"category_key": category_key, "category_name": category_name, "is_favorite": True}
+
+
+@app.delete("/api/favorites/{user_id}/categories/{category_key:path}")
+def remove_favorite_category(user_id: str, category_key: str, request: Request):
+    """Remove a category favorite."""
+    _validate_user_header(request, user_id)
+    success = db.remove_favorite_category(user_id, category_key)
+    return {"success": success, "category_key": category_key}
+
+
 # ── Telegram Account Linking ──────────────────────────────────────
 
 BOT_USERNAME = "green_price_monitor_bot"

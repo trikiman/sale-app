@@ -186,7 +186,7 @@ const ProductCard = memo(function ProductCard({ product, index, isFavorite, onTo
     && prev.viewMode === next.viewMode
 })
 
-function ScrollableChips({ selected, onSelect, items, className = '' }) {
+function ScrollableChips({ selected, onSelect, items, className = '', favoritedIds, onToggleFavorite }) {
   const scrollRef = useRef(null)
   const [canScrollLeft, setCanScrollLeft] = useState(false)
   const [canScrollRight, setCanScrollRight] = useState(true)
@@ -223,22 +223,36 @@ function ScrollableChips({ selected, onSelect, items, className = '' }) {
         className="flex gap-2 overflow-x-auto pb-2 px-4 -mx-4 scrollbar-hide relative"
         onScroll={checkScroll}
       >
-        {items.map((item) => (
-          <button
-            key={item.id}
-            onClick={() => onSelect(item.id)}
-            className={`category-chip tap-scale ${selected === item.id ? 'active' : ''}`}
-          >
-            {item.label}
-          </button>
-        ))}
+        {items.map((item) => {
+          const isFav = favoritedIds && item.favKey && favoritedIds.has(item.favKey)
+          return (
+            <button
+              key={item.id ?? item.label}
+              onClick={() => onSelect(item.id)}
+              className={`category-chip tap-scale ${selected === item.id ? 'active' : ''} ${isFav ? 'fav' : ''}`}
+            >
+              {item.label}
+              {onToggleFavorite && item.favKey && (
+                <span
+                  className="chip-fav-icon"
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onToggleFavorite(item.favKey, item.label)
+                  }}
+                >
+                  {isFav ? '❤️' : '🤍'}
+                </span>
+              )}
+            </button>
+          )
+        })}
       </div>
     </div>
   )
 }
 
-function CategoryFilter({ selected, onSelect, categories }) {
-  return <ScrollableChips selected={selected} onSelect={onSelect} items={categories} />
+function CategoryFilter({ selected, onSelect, categories, favoritedIds, onToggleFavorite }) {
+  return <ScrollableChips selected={selected} onSelect={onSelect} items={categories} favoritedIds={favoritedIds} onToggleFavorite={onToggleFavorite} />
 }
 
 function App() {
@@ -393,7 +407,7 @@ function App() {
   }, [isGuest, linkDismissed, userId])
 
   useEffect(() => {
-    // Load favorites
+    // Load product favorites
     setFavoritesLoading(true)
     fetch(`/api/favorites/${userId}`, {
       headers: getAuthHeaders(userId)
@@ -406,9 +420,20 @@ function App() {
       })
       .catch(err => {
         console.warn('Failed to load favorites from API, starting empty:', err)
-        // console.error('Failed to load favorites:', err)
       })
       .finally(() => setFavoritesLoading(false))
+
+    // Load category (group/subgroup) favorites (v1.7)
+    fetch(`/api/favorites/${userId}/categories`, {
+      headers: getAuthHeaders(userId)
+    })
+      .then(res => res.json())
+      .then(data => {
+        if (data.categories) {
+          setFavoriteCategories(new Set(data.categories.map(c => c.category_key)))
+        }
+      })
+      .catch(() => { })
 
     // Check auth status, then load initial cart count
     fetch(`/api/auth/status/${userId}`)
@@ -580,6 +605,7 @@ function App() {
   const [cartPanelOpen, setCartPanelOpen] = useState(false)
   const [cartCount, setCartCount] = useState(0)
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false)
+  const [favoriteCategories, setFavoriteCategories] = useState(new Set())
 
   const handleAddToCart = useCallback(async (product) => {
     if (!isAuthenticated) {
@@ -643,6 +669,34 @@ function App() {
       setTimeout(() => setToastMessage(null), 3000)
     }
   })
+
+  // v1.7: Toggle group/subgroup category favorite
+  const handleToggleCategoryFavorite = useCallback(async (categoryKey, categoryName) => {
+    const wasFav = favoriteCategories.has(categoryKey)
+    // Optimistic update
+    setFavoriteCategories(prev => {
+      const next = new Set(prev)
+      if (wasFav) next.delete(categoryKey)
+      else next.add(categoryKey)
+      return next
+    })
+    try {
+      const res = await fetch(`/api/favorites/${userId}/categories`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders(userId) },
+        body: JSON.stringify({ category_key: categoryKey, category_name: categoryName })
+      })
+      if (!res.ok) throw new Error('API failed')
+    } catch {
+      // Rollback on error
+      setFavoriteCategories(prev => {
+        const next = new Set(prev)
+        if (wasFav) next.add(categoryKey)
+        else next.delete(categoryKey)
+        return next
+      })
+    }
+  }, [favoriteCategories, userId])
 
   const triggerCategoryScraper = () => {
     setCategorizingDone(false)
@@ -865,13 +919,12 @@ function App() {
       const g = getGroup(p)
       if (g) groupCounts[g] = (groupCounts[g] || 0) + 1
     }
-    // Без категории-type groups go last
     const sortedGroups = Object.entries(groupCounts)
       .sort((a, b) => b[1] - a[1]) // sort by count descending
       .map(([g]) => g)
     const chips = [
       { id: 'all', label: `🏷️ Все` },
-      ...sortedGroups.map(g => ({ id: g, label: `${getCategoryEmoji(g)} ${g}` }))
+      ...sortedGroups.map(g => ({ id: g, label: `${getCategoryEmoji(g)} ${g}`, favKey: `group:${g}` }))
     ]
     return chips
   }, [enrichedProducts, typeFilters])
@@ -895,7 +948,7 @@ function App() {
     if (sorted.length < 2) return []
     return [
       { id: null, label: 'Все' },
-      ...sorted.map(([sg, cnt]) => ({ id: sg, label: `${sg} (${cnt})` }))
+      ...sorted.map(([sg, cnt]) => ({ id: sg, label: `${sg} (${cnt})`, favKey: `subgroup:${selectedCategory}/${sg}` }))
     ]
   }, [selectedCategory, enrichedProducts, typeFilters])
 
@@ -1418,6 +1471,8 @@ function App() {
             setSelectedSubgroup(null) // Reset subgroup when group changes
           }}
           categories={categories}
+          favoritedIds={favoriteCategories}
+          onToggleFavorite={handleToggleCategoryFavorite}
         />
       </div>
 
@@ -1429,6 +1484,8 @@ function App() {
             onSelect={setSelectedSubgroup}
             items={subgroupChips}
             className="subgroup-chips"
+            favoritedIds={favoriteCategories}
+            onToggleFavorite={handleToggleCategoryFavorite}
           />
         </div>
       )}
