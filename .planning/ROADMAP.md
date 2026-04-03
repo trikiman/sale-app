@@ -35,7 +35,7 @@
 **Goal:** Make the History API and search-mode filtering behave like an intentional catalog search instead of a history-only list with a text box.
 **Requirements:** HIST-05, HIST-06, HIST-07
 **Depends on:** —
-**Plans:** 0 plans
+**Plans:** 3 plans
 **Success Criteria**:
 1. Searching for a product that is currently on sale returns that product in History results.
 2. Searching for a catalog product with zero sale history returns a result card instead of disappearing.
