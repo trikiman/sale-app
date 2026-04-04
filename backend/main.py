@@ -3278,6 +3278,20 @@ def _tokenize_history_search(search_norm: str) -> list[str]:
     return tokens
 
 
+def _history_token_stem(token: str) -> str:
+    token = token.casefold()
+    if len(token) <= 4:
+        return token
+    # Pragmatic Russian inflection fallback:
+    # keep a stable prefix so "креветки" can match "креветками",
+    # "цезаря" can match "цезарь", etc.
+    if len(token) >= 9:
+        return token[:-3]
+    if len(token) >= 6:
+        return token[:-2]
+    return token[:-1]
+
+
 def _build_history_search_condition(search_norm: str):
     field_expr = "py_casefold(REPLACE(pc.name, char(160), ' '))"
     params = [f"%{search_norm.casefold()}%"]
@@ -3290,6 +3304,14 @@ def _build_history_search_condition(search_norm: str):
             token_clauses.append(f"{field_expr} LIKE ?")
             params.append(f"%{token}%")
         clauses.append(f"({' AND '.join(token_clauses)})")
+
+        stemmed = [_history_token_stem(token) for token in tokens]
+        if stemmed != tokens and all(len(token) >= 4 for token in stemmed):
+            stem_clauses = []
+            for token in stemmed:
+                stem_clauses.append(f"{field_expr} LIKE ?")
+                params.append(f"%{token}%")
+            clauses.append(f"({' AND '.join(stem_clauses)})")
 
     return f"({' OR '.join(clauses)})", params
 
