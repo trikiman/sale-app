@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v1.9
 milestone_name: Catalog Coverage Expansion
-status: roadmap_ready
-last_updated: "2026-04-04T08:30:35.2099444+03:00"
+status: context_ready
+last_updated: "2026-04-04T08:41:00+03:00"
 last_activity: 2026-04-04
 progress:
   total_phases: 3
@@ -24,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-04-04)
 ## Current Position
 
 Milestone: v1.9 — Catalog Coverage Expansion
-Phase: Not started
-Plan: —
-Status: Roadmap ready; phase discussion not started
-Last activity: 2026-04-04 — started milestone v1.9 and defined requirements/roadmap
+Phase: 36 — Supplemental Catalog Discovery
+Plan: Context gathered
+Status: Ready for planning
+Last activity: 2026-04-04 — captured Phase 36 context and locked discovery decisions
 
 ## Milestone Goal
 
@@ -37,8 +37,8 @@ Last activity: 2026-04-04 — started milestone v1.9 and defined requirements/ro
 
 ## Next Up
 
-- `$gsd-discuss-phase 36` — gather context for the supplemental catalog discovery approach
-- `$gsd-plan-phase 36` — write the implementation plan for the first v1.9 phase
+- `$gsd-plan-phase 36` — write the implementation plan for the supplemental catalog discovery phase
+- Resume from `.planning/phases/36-supplemental-catalog-discovery/36-CONTEXT.md`
 
 ## Completed Milestones
 
@@ -80,6 +80,7 @@ Last activity: 2026-04-04 — started milestone v1.9 and defined requirements/ro
 | v1.8 milestone completed | 2026-04-04 |
 | v1.8 milestone archived | 2026-04-04 |
 | v1.9 milestone started | 2026-04-04 |
+| v1.9 phase 36 context gathered | 2026-04-04 |
 
 ---
-*Last updated: 2026-04-04 after starting v1.9 milestone*
+*Last updated: 2026-04-04 after Phase 36 context capture*
