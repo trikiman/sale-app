@@ -198,6 +198,7 @@ export default function HistoryPage({ onBack, onOpenDetail, favorites = new Set(
   const [totalPages, setTotalPages] = useState(0)
   const [total, setTotal] = useState(0)
   const searchTimeout = useRef(null)
+  const wasSearchActiveRef = useRef(false)
   const listRef = useRef(null)
 
   // v1.7: Group/subgroup drill-down
@@ -215,6 +216,14 @@ export default function HistoryPage({ onBack, onOpenDetail, favorites = new Set(
   // For client-side favorites filtering
   const isClientFilter = specialFilter === 'favorites'
   const groupsScope = search ? 'all' : 'history'
+
+  useEffect(() => {
+    const isSearchActive = Boolean(search)
+    if (wasSearchActiveRef.current === isSearchActive) return
+    wasSearchActiveRef.current = isSearchActive
+    setSelectedGroup(null)
+    setSelectedSubgroup(null)
+  }, [search])
 
   // Handle chip clicks: type filters toggle, special filters are exclusive
   const handleFilterClick = (id) => {
