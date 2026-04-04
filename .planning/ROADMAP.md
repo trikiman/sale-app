@@ -34,7 +34,7 @@
 **Goal:** Add an offline discovery path for VkusVill products that the current hardcoded category crawl does not capture.
 **Requirements:** DATA-04
 **Depends on:** —
-**Plans:** Not planned yet
+**Plans:** 2/2 plans complete
 **Success Criteria**:
 1. Supplemental discovery finds stable product IDs for products absent from the current category crawl.
 2. Discovery can run within existing scraper constraints: low concurrency, no SMS/login dependency, and no per-user query path.
@@ -79,9 +79,8 @@
 
 ## Next Up
 
-- **Phase 36: Supplemental Catalog Discovery** — add the offline discovery path for products the current category crawl misses.
-- Run `$gsd-discuss-phase 36` to lock the discovery approach before implementation.
-- Or run `$gsd-plan-phase 36` to go straight into the execution plan.
+- **Phase 37: Catalog Merge & Backfill** — merge Phase 36 discovery output into local catalog artifacts safely.
+- Run `$gsd-discuss-phase 37` or `$gsd-plan-phase 37`.
 
 ## Progress
 
@@ -97,6 +96,6 @@
 | 29-33 | v1.7 | ✅ Complete | 2026-04-03 |
 | 34 | v1.8 | ✅ Complete | 2026-04-04 |
 | 35 | v1.8 | ✅ Complete | 2026-04-04 |
-| 36 | v1.9 | ⏳ Not started | - |
+| 36 | v1.9 | ✅ Complete | 2026-04-04 |
 | 37 | v1.9 | ⏳ Not started | - |
 | 38 | v1.9 | ⏳ Not started | - |

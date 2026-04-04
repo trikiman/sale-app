@@ -39,7 +39,7 @@
 
 | Requirement | Phase | Final Status | Notes |
 |-------------|-------|--------------|-------|
-| DATA-04 | 36 | Planned | Supplemental discovery adds an offline source for products missing from the current category crawl |
+| DATA-04 | 36 | Complete | Source-based offline discovery now scrapes catalog tiles into per-source temp files with source-level completion state |
 | DATA-05 | 37 | Planned | Newly discovered products are persisted into `category_db.json` and `product_catalog` |
 | DATA-06 | 37 | Planned | Multi-source refresh keeps the richest available metadata per product |
 | DATA-07 | 37 | Planned | Existing catalog rows survive supplemental refreshes without destructive overwrite |

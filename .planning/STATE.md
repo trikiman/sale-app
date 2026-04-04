@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.9
 milestone_name: Catalog Coverage Expansion
-status: planned
-last_updated: "2026-04-04T09:20:00+03:00"
+status: phase_36_complete
+last_updated: "2026-04-04T16:25:00+03:00"
 last_activity: 2026-04-04
 progress:
   total_phases: 3
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 2
-  completed_plans: 0
+  completed_plans: 2
 ---
 
 # Project State
@@ -25,9 +25,9 @@ See: .planning/PROJECT.md (updated 2026-04-04)
 
 Milestone: v1.9 — Catalog Coverage Expansion
 Phase: 36 — Supplemental Catalog Discovery
-Plan: 2 plans created
-Status: Phase planned; ready for execution
-Last activity: 2026-04-04 — replanned Phase 36 from corrected discuss-phase decisions
+Plan: 2/2 plans complete
+Status: Phase complete; ready to start Phase 37
+Last activity: 2026-04-04 — completed the Phase 36 source-based discovery pipeline and verified stable-source completion
 
 ## Milestone Goal
 
@@ -37,8 +37,8 @@ Last activity: 2026-04-04 — replanned Phase 36 from corrected discuss-phase de
 
 ## Next Up
 
-- `$gsd-execute-phase 36` — implement the supplemental discovery phase
-- Review `.planning/phases/36-supplemental-catalog-discovery/36-01-PLAN.md` and `.planning/phases/36-supplemental-catalog-discovery/36-02-PLAN.md` before execution if needed
+- `$gsd-discuss-phase 37` — capture the merge/backfill rules for Phase 37
+- `$gsd-plan-phase 37` — write the execution plan for catalog merge and backfill
 
 ## Completed Milestones
 
@@ -62,10 +62,11 @@ Last activity: 2026-04-04 — replanned Phase 36 from corrected discuss-phase de
 - v1.6 shipped: green scraper robustness with CDP modal loading + validation gates
 - v1.7 shipped: group/subgroup hierarchy scraped, drill-down filters on main/history, category favorites, and Telegram category alerts
 - v1.8 shipped: History search now covers the full local catalog during active queries and clearly labels mixed result states
-- Local search parity is still limited by what reaches `product_catalog`; v1.9 tackles that data gap instead of per-query hybrid search
+- Local search parity is still limited by what reaches `product_catalog`; Phase 36 now collects source-based discovery data and Phase 37 will merge it into the local catalog
 - History page chip scope now matches history results instead of the full catalog when no search is active
 - Category notifications dedupe across product/group/subgroup matches and fall back to `product_catalog` when merged sale JSON lacks hierarchy
 - Auto-deploy is active via GitHub webhook → EC2 and Vercel frontend deploys
+- Phase 36 discovered 46 catalog sources, completed 45 stable sources, and identified `set-vashi-skidki` as a personalized/non-blocking source
 
 ## Known Bugs
 
@@ -82,6 +83,7 @@ Last activity: 2026-04-04 — replanned Phase 36 from corrected discuss-phase de
 | v1.9 milestone started | 2026-04-04 |
 | v1.9 phase 36 context gathered | 2026-04-04 |
 | v1.9 phase 36 planned | 2026-04-04 |
+| v1.9 phase 36 completed | 2026-04-04 |
 
 ---
-*Last updated: 2026-04-04 after corrected Phase 36 replanning*
+*Last updated: 2026-04-04 after verified Phase 36 completion*
