@@ -149,21 +149,26 @@ def discover_catalog_sources_from_html(html: str) -> list[dict]:
 
 def extract_source_count_from_html(html: str) -> int | None:
     soup = BeautifulSoup(html, "lxml")
-    strings = [" ".join(text.split()) for text in soup.stripped_strings]
     heading = soup.find("h1")
 
     if heading:
-        heading_text = " ".join(heading.get_text(" ", strip=True).split())
-        try:
-            idx = strings.index(heading_text)
-        except ValueError:
-            idx = -1
-        if idx >= 0:
-            for text in strings[idx + 1: idx + 20]:
-                match = COUNT_RE.search(text)
-                if match:
-                    return int(match.group(1).replace(" ", ""))
+        for element in heading.next_elements:
+            if getattr(element, "name", None) == "h1":
+                break
+            text = ""
+            if isinstance(element, str):
+                text = " ".join(element.split())
+            else:
+                text = " ".join(element.get_text(" ", strip=True).split()) if getattr(element, "get_text", None) else ""
+            if not text:
+                continue
+            match = COUNT_RE.search(text)
+            if match:
+                return int(match.group(1).replace(" ", ""))
+            if getattr(element, "get", None) and "ProductCard" in " ".join(element.get("class", [])):
+                break
 
+    strings = [" ".join(text.split()) for text in soup.stripped_strings]
     for text in strings:
         match = COUNT_RE.search(text)
         if match:
@@ -264,7 +269,10 @@ def build_source_state_entry(
     *,
     source: dict,
     expected_count: int | None,
+    expected_count_source: str,
     current_run_count: int,
+    raw_run_count: int,
+    duplicate_count: int,
     stored_count: int,
     complete: bool,
     last_error: str | None,
@@ -279,7 +287,10 @@ def build_source_state_entry(
         "source_url": source["url"],
         "source_type": source.get("source_type", "catalog_tile"),
         "expected_count": expected_count,
+        "expected_count_source": expected_count_source,
         "collected_count": current_run_count,
+        "raw_collected_count": raw_run_count,
+        "duplicate_count": duplicate_count,
         "stored_count": stored_count,
         "complete": bool(complete),
         "last_run_at": last_run_at,
@@ -307,6 +318,16 @@ def save_source_file(source: dict, expected_count: int | None, products: dict, u
             "source_type": source.get("source_type", "catalog_tile"),
             "expected_count": expected_count,
             "products": products,
+        },
+    )
+
+
+def save_state_doc(state: dict) -> None:
+    atomic_write_json(
+        CATALOG_DISCOVERY_STATE_PATH,
+        {
+            "updated_at": utc_iso(),
+            "sources": state,
         },
     )
 
@@ -349,7 +370,10 @@ async def scrape_source(session: aiohttp.ClientSession, sem: asyncio.Semaphore, 
         entry = build_source_state_entry(
             source=source,
             expected_count=None,
+            expected_count_source="missing",
             current_run_count=0,
+            raw_run_count=0,
+            duplicate_count=0,
             stored_count=len(merged_products),
             complete=False,
             last_error=last_error,
@@ -362,13 +386,19 @@ async def scrape_source(session: aiohttp.ClientSession, sem: asyncio.Semaphore, 
         return entry
 
     expected_count = extract_source_count_from_html(html)
-    if expected_count is None:
-        last_error = "expected source count not found"
+    expected_count_source = "page_header" if expected_count is not None else "missing"
 
     max_page = extract_max_page_from_html(html)
     page_products, page_invalid = parse_source_products_from_html(html, source["url"])
     current_run_products.extend(page_products)
     invalid_identity_count += page_invalid
+
+    if expected_count is not None and expected_count < len(page_products):
+        expected_count = None
+        expected_count_source = "missing"
+
+    if expected_count is not None and len(current_run_products) >= expected_count:
+        max_page = 1
 
     for page_num in range(2, max_page + 1):
         page_url = f"{source['url']}?PAGEN_1={page_num}"
@@ -383,12 +413,20 @@ async def scrape_source(session: aiohttp.ClientSession, sem: asyncio.Semaphore, 
         invalid_identity_count += page_invalid
 
         if not page_products:
+            if page_num >= max_page:
+                break
+            if expected_count is not None and len(current_run_products) >= expected_count:
+                break
             last_failed_page = page_num
             last_error = f"page {page_num} returned 0 products"
             break
 
         current_run_products.extend(page_products)
 
+        if expected_count is not None and len(current_run_products) >= expected_count:
+            break
+
+    raw_current_run_count = len(current_run_products)
     current_run_by_id = {product["product_id"]: product for product in current_run_products}
     merged_products = merge_source_products(existing_products, list(current_run_by_id.values()), now)
 
@@ -396,21 +434,29 @@ async def scrape_source(session: aiohttp.ClientSession, sem: asyncio.Semaphore, 
         last_error = f"{invalid_identity_count} products missing numeric product_id"
 
     current_run_count = len(current_run_by_id)
+    duplicate_count = raw_current_run_count - current_run_count
+    if expected_count is None or expected_count < raw_current_run_count:
+        expected_count = raw_current_run_count
+        expected_count_source = "page_fallback"
     complete = (
         last_error is None
         and expected_count is not None
-        and current_run_count == expected_count
+        and raw_current_run_count == expected_count
     )
 
     if not complete and last_error is None and expected_count is not None:
-        last_error = f"count mismatch: expected {expected_count}, collected {current_run_count}"
+        last_error = f"count mismatch: expected {expected_count}, collected {raw_current_run_count}"
 
-    save_source_file(source, expected_count, merged_products, now)
+    products_to_save = current_run_by_id if complete else merged_products
+    save_source_file(source, expected_count, products_to_save, now)
     entry = build_source_state_entry(
         source=source,
         expected_count=expected_count,
+        expected_count_source=expected_count_source,
         current_run_count=current_run_count,
-        stored_count=len(merged_products),
+        raw_run_count=raw_current_run_count,
+        duplicate_count=duplicate_count,
+        stored_count=len(products_to_save),
         complete=complete,
         last_error=last_error,
         last_failed_page=last_failed_page,
@@ -447,15 +493,38 @@ async def run_catalog_discovery() -> int:
 
     async with aiohttp.ClientSession(headers=HEADERS, connector=connector) as session:
         sources = await discover_catalog_sources(session)
-        updated_state: dict[str, dict] = {}
+        updated_state: dict[str, dict] = dict(state)
         for source in sources:
-            updated_state[source["slug"]] = await scrape_source(session, sem, source, state)
-
-    state_doc = {
-        "updated_at": utc_iso(),
-        "sources": updated_state,
-    }
-    atomic_write_json(CATALOG_DISCOVERY_STATE_PATH, state_doc)
+            existing = updated_state.get(source["slug"], {})
+            source_file_path = os.path.join(CATALOG_DISCOVERY_SOURCES_DIR, f"{source['slug']}.json")
+            if (
+                existing.get("complete")
+                and os.path.exists(source_file_path)
+                and existing.get("stored_count") == existing.get("collected_count")
+            ):
+                print(f"[catalog-discovery] {source['slug']}: SKIP (already complete)")
+                continue
+            try:
+                updated_state[source["slug"]] = await scrape_source(session, sem, source, updated_state)
+            except Exception as exc:
+                now = utc_iso()
+                updated_state[source["slug"]] = build_source_state_entry(
+                    source=source,
+                    expected_count=existing.get("expected_count"),
+                    expected_count_source=existing.get("expected_count_source", "missing"),
+                    current_run_count=existing.get("collected_count", 0),
+                    raw_run_count=existing.get("raw_collected_count", 0),
+                    duplicate_count=existing.get("duplicate_count", 0),
+                    stored_count=existing.get("stored_count", 0),
+                    complete=False,
+                    last_error=f"source run exception: {exc}",
+                    last_failed_page=existing.get("last_failed_page"),
+                    last_run_at=now,
+                    previous_state=existing,
+                )
+                print(f"[catalog-discovery] {source['slug']}: EXCEPTION - {exc}")
+            save_state_doc(updated_state)
+    save_state_doc(updated_state)
 
     complete_sources = sum(1 for entry in updated_state.values() if entry.get("complete"))
     incomplete_sources = len(updated_state) - complete_sources

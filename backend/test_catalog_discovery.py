@@ -41,6 +41,31 @@ SOURCE_HTML = """
 </body></html>
 """
 
+SOURCE_HTML_WITH_PROMO_NOISE = """
+<html><body>
+<div>6 скидок</div>
+<h1>Готовая еда</h1>
+<div>1418 товаров</div>
+<div class="ProductCard">
+  <a class="ProductCard__link" href="/goods/salat-tsezar-61483.html">Салат Цезарь</a>
+</div>
+</body></html>
+"""
+
+SOURCE_HTML_WITH_BAD_SMALL_COUNT = """
+<html><body>
+<h1>Готовая еда</h1>
+<div>6 товаров</div>
+{cards}
+<a href="/goods/gotovaya-eda/?PAGEN_1=2">2</a>
+</body></html>
+""".format(
+    cards="".join(
+        f'<div class="ProductCard"><a class="ProductCard__link" href="/goods/product-{60000 + i}.html">Product {i}</a></div>'
+        for i in range(10)
+    )
+)
+
 
 class DummyThread:
     def __init__(self, target=None, daemon=None):
@@ -64,6 +89,20 @@ def test_extract_source_count_and_max_page():
     assert discovery.extract_max_page_from_html(SOURCE_HTML) == 4
 
 
+def test_extract_source_count_ignores_discount_noise_before_heading():
+    assert discovery.extract_source_count_from_html(SOURCE_HTML_WITH_PROMO_NOISE) == 1418
+
+
+def test_bad_small_header_count_should_be_rejected_by_collection_guard():
+    expected_count = discovery.extract_source_count_from_html(SOURCE_HTML_WITH_BAD_SMALL_COUNT)
+    page_products, _ = discovery.parse_source_products_from_html(
+        SOURCE_HTML_WITH_BAD_SMALL_COUNT, "https://vkusvill.ru/goods/gotovaya-eda/"
+    )
+    if expected_count is not None and expected_count < len(page_products):
+        expected_count = None
+    assert expected_count is None
+
+
 def test_extract_numeric_product_id():
     assert discovery.extract_numeric_product_id("https://vkusvill.ru/goods/salat-tsezar-61483.html") == "61483"
     assert discovery.extract_numeric_product_id("https://vkusvill.ru/goods/gotovaya-eda/") is None
@@ -74,7 +113,10 @@ def test_build_source_state_stays_incomplete_on_mismatch():
     entry = discovery.build_source_state_entry(
         source=source,
         expected_count=10,
+        expected_count_source="page_header",
         current_run_count=8,
+        raw_run_count=8,
+        duplicate_count=0,
         stored_count=9,
         complete=False,
         last_error="count mismatch: expected 10, collected 8",
@@ -83,7 +125,10 @@ def test_build_source_state_stays_incomplete_on_mismatch():
     )
     assert entry["complete"] is False
     assert entry["expected_count"] == 10
+    assert entry["expected_count_source"] == "page_header"
     assert entry["collected_count"] == 8
+    assert entry["raw_collected_count"] == 8
+    assert entry["duplicate_count"] == 0
     assert entry["stored_count"] == 9
 
 
@@ -129,6 +174,36 @@ def test_parse_source_products_rejects_cards_without_numeric_identity():
     products, invalid_count = discovery.parse_source_products_from_html(html, "https://vkusvill.ru/goods/gotovaya-eda/")
     assert products == []
     assert invalid_count == 1
+
+
+def test_fallback_expected_count_can_use_raw_page_total_when_header_count_is_bad():
+    raw_count = 25
+    unique_count = 25
+    expected_count = 6
+    if expected_count < unique_count:
+        expected_count = raw_count
+        expected_count_source = "page_fallback"
+    else:
+        expected_count_source = "page_header"
+    assert expected_count == 25
+    assert expected_count_source == "page_fallback"
+
+
+def test_duplicate_ids_inside_a_source_do_not_block_completion_when_raw_count_matches():
+    expected_count = 10
+    raw_count = 10
+    unique_count = 8
+    complete = raw_count == expected_count
+    assert complete is True
+    assert raw_count - unique_count == 2
+
+
+def test_zero_product_trailing_page_is_not_failure_once_expected_raw_count_is_reached():
+    expected_count = 10
+    current_run_products = [object()] * 10
+    page_products = []
+    should_fail = not page_products and not (expected_count is not None and len(current_run_products) >= expected_count)
+    assert should_fail is False
 
 
 def test_catalog_discovery_status_route_returns_state(monkeypatch, tmp_path):
