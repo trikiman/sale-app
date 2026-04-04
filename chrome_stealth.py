@@ -107,6 +107,16 @@ async def launch_stealth_browser(tag="SCRAPER", profile_dir=None, offscreen=Fals
             f"Make sure run_app.bat launched Chrome via start_chrome.ps1"
         )
 
+    # Ensure the local CDP websocket never goes through a system/SOCKS proxy.
+    no_proxy_hosts = ['127.0.0.1', 'localhost']
+    for env_key in ('NO_PROXY', 'no_proxy'):
+        current = os.environ.get(env_key, '')
+        parts = [p.strip() for p in current.split(',') if p.strip()]
+        for host in no_proxy_hosts:
+            if host not in parts:
+                parts.append(host)
+        os.environ[env_key] = ','.join(parts)
+
     # Connect via nodriver
     browser = await uc.Browser.create(
         host='127.0.0.1',
@@ -236,4 +246,3 @@ def restart_chrome_with_proxy(proxy: str | None = None, tag="PROXY"):
 
     print(f"  [{tag}] WARNING: Chrome may not have started on port {port}")
     return False
-
