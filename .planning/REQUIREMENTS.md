@@ -6,9 +6,9 @@
 
 ## History Search Semantics
 
-- [ ] **HIST-05**: User can search the History page and see matching products that are currently on sale right now.
-- [ ] **HIST-06**: User can search the History page and see matching products from `product_catalog` even when they have no recorded sale history yet.
-- [ ] **HIST-07**: While a search query is active, History page results are not silently restricted by the default history-only dataset or history-scoped group/subgroup state.
+- [x] **HIST-05**: User can search the History page and see matching products that are currently on sale right now.
+- [x] **HIST-06**: User can search the History page and see matching products from `product_catalog` even when they have no recorded sale history yet.
+- [x] **HIST-07**: While a search query is active, History page results are not silently restricted by the default history-only dataset or history-scoped group/subgroup state.
 
 ## Search Result Clarity
 

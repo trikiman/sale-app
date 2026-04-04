@@ -22,7 +22,7 @@
 
 **2 phases** | **6 requirements mapped** | All covered ✓
 
-- [ ] **Phase 34: History Search Backend Semantics** — Make search intentionally query across the local catalog without history-only exclusions.
+- [x] **Phase 34: History Search Backend Semantics** — Make search intentionally query across the local catalog without history-only exclusions. (completed 2026-04-04)
 - [ ] **Phase 35: Search Result UX & Regression Coverage** — Make mixed-result states obvious and keep them protected by tests.
 
 | # | Phase | Goal | Requirements | Success Criteria |
@@ -35,7 +35,7 @@
 **Goal:** Make the History API and search-mode filtering behave like an intentional catalog search instead of a history-only list with a text box.
 **Requirements:** HIST-05, HIST-06, HIST-07
 **Depends on:** —
-**Plans:** 3 plans
+**Plans:** 3/3 plans complete
 **Success Criteria**:
 1. Searching for a product that is currently on sale returns that product in History results.
 2. Searching for a catalog product with zero sale history returns a result card instead of disappearing.
@@ -67,8 +67,8 @@
 
 ## Next Up
 
-- **Phase 34: History Search Backend Semantics** — define and implement the search-mode contract.
-- Start with `$gsd-discuss-phase 34` or jump straight to `$gsd-plan-phase 34`.
+- **Phase 35: Search Result UX & Regression Coverage** — make mixed-result states obvious and keep them protected by tests.
+- Start with `$gsd-discuss-phase 35` or jump straight to `$gsd-plan-phase 35`.
 
 ## Progress
 
@@ -82,4 +82,5 @@
 | 24-26 | v1.5 | ✅ Complete | 2026-04-01 |
 | 27-28 | v1.6 | ✅ Complete | 2026-04-02 |
 | 29-33 | v1.7 | ✅ Complete | 2026-04-03 |
-| 34-35 | v1.8 | 🟡 Planned | — |
+| 34 | v1.8 | ✅ Complete | 2026-04-04 |
+| 35 | v1.8 | 🟡 Planned | — |
