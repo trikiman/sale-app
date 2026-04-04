@@ -3263,6 +3263,12 @@ def _normalize_history_search(search: Optional[str]) -> str:
     return normalized.strip()
 
 
+def _sqlite_casefold(value):
+    if value is None:
+        return ""
+    return str(value).casefold()
+
+
 def _apply_history_filters(conditions, params, category, group, subgroup, filter_val):
     if category:
         conditions.append("pc.category = ?")
@@ -3292,7 +3298,7 @@ def _fuzzy_search_fallback(search_norm: str, category, group, subgroup, filter_v
     Only called when exact search returns 0 results.
     For a 6-char word, generates ~20-30 variants — fast on 16K rows.
     """
-    search_lower = search_norm.lower()
+    search_lower = search_norm.casefold()
     variants = set()
     
     # Generate single-character substitution variants
@@ -3310,8 +3316,8 @@ def _fuzzy_search_fallback(search_norm: str, category, group, subgroup, filter_v
     
     if not variants:
         # No possible variants — return original empty result
-        conditions = ["LOWER(REPLACE(pc.name, char(160), ' ')) LIKE LOWER(?)"]
-        params = [f"%{search_norm}%"]
+        conditions = ["py_casefold(REPLACE(pc.name, char(160), ' ')) LIKE ?"]
+        params = [f"%{search_norm.casefold()}%"]
         _apply_history_filters(conditions, params, category, group, subgroup, filter_val)
         where = f"WHERE {' AND '.join(conditions)}"
         return 0, where, params
@@ -3320,7 +3326,7 @@ def _fuzzy_search_fallback(search_norm: str, category, group, subgroup, filter_v
     like_clauses = []
     params = []
     for variant in variants:
-        like_clauses.append("LOWER(REPLACE(pc.name, char(160), ' ')) LIKE LOWER(?)")
+        like_clauses.append("py_casefold(REPLACE(pc.name, char(160), ' ')) LIKE ?")
         params.append(f"%{variant}%")
     
     search_condition = f"({' OR '.join(like_clauses)})"
@@ -3351,6 +3357,7 @@ def history_get_products(
     try:
         conn = _sqlite3.connect(db.db_path, timeout=10)
         conn.row_factory = _sqlite3.Row
+        conn.create_function("py_casefold", 1, _sqlite_casefold)
         c = conn.cursor()
 
         # Build query
@@ -3363,8 +3370,8 @@ def history_get_products(
         if search_active:
             # Search mode intentionally queries the full local catalog.
             # Explicit user filters still apply below; only the implicit history-only gate is removed.
-            conditions.append("LOWER(REPLACE(pc.name, char(160), ' ')) LIKE LOWER(?)")
-            params.append(f"%{search_norm}%")
+            conditions.append("py_casefold(REPLACE(pc.name, char(160), ' ')) LIKE ?")
+            params.append(f"%{search_norm.casefold()}%")
         else:
             # When not searching, only show products that have been on sale at least once
             # (hides 16K+ seeded-only products that clutter the list with no data)

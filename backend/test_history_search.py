@@ -242,3 +242,27 @@ def test_groups_scope_all_includes_catalog_only_groups(monkeypatch, tmp_path):
     assert "Готовая еда" in history_names
     assert "Соусы" not in history_names
     assert "Соусы" in all_names
+
+
+def test_history_search_matches_uppercase_cyrillic_names(monkeypatch, tmp_path):
+    db_path = _setup_history_db(monkeypatch, tmp_path)
+
+    _insert_product(
+        db_path,
+        "catalog-upper",
+        'Салат "Цезарь" с курицей',
+        "Готовая еда",
+        "Готовая еда",
+        "Салаты",
+        0,
+        None,
+        None,
+    )
+
+    response = client.get(
+        "/api/history/products",
+        params={"search": "цезарь", "page": 1, "per_page": 20},
+    )
+
+    assert response.status_code == 200
+    assert "catalog-upper" in _response_ids(response.json())
