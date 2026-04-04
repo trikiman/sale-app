@@ -147,6 +147,7 @@ scraper_status: dict = {
     "merge":      {"running": False, "last_run": None, "exit_code": None, "last_output": ""},
     "login":      {"running": False, "last_run": None, "exit_code": None, "last_output": ""},
     "categories": {"running": False, "last_run": None, "exit_code": None, "last_output": ""},
+    "catalog_discovery": {"running": False, "last_run": None, "exit_code": None, "last_output": ""},
 }
 
 log_buffer: deque = deque(maxlen=1000)
@@ -155,9 +156,11 @@ _scraper_processes: dict = {}
 # Per-name locks — prevent two simultaneous requests launching the same scraper twice
 _run_locks: dict = {
     name: threading.Lock()
-    for name in ["green", "red", "yellow", "merge", "login", "categories"]
+    for name in ["green", "red", "yellow", "merge", "login", "categories", "catalog_discovery"]
 }
 _phone_map_lock = threading.Lock()  # R2-9: File lock for user_phone_map.json
+CATALOG_DISCOVERY_SCRIPT = os.path.join(BASE_PROJECT_DIR, "scrape_catalog_discovery.py")
+CATALOG_DISCOVERY_STATE_PATH = os.path.join(DATA_DIR, "catalog_discovery_state.json")
 
 # Per-user login sessions: {user_id: {"driver": uc.Chrome, "created_at": float}}
 _login_sessions: dict = {}
@@ -241,6 +244,25 @@ def _copy_tech_profile(src_dir: str, dst_dir: str = TECH_PROFILE_DIR):
         shutil.rmtree(dst_dir, ignore_errors=True)
     shutil.copytree(src_dir, dst_dir)
     return True
+
+
+def _load_catalog_discovery_state() -> dict:
+    if not os.path.exists(CATALOG_DISCOVERY_STATE_PATH):
+        return {"updated_at": None, "sources": {}}
+    try:
+        with open(CATALOG_DISCOVERY_STATE_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            data.setdefault("updated_at", None)
+            data.setdefault("sources", {})
+            return data
+    except Exception as exc:
+        return {
+            "updated_at": None,
+            "sources": {},
+            "error": f"failed to load discovery state: {exc}",
+        }
+    return {"updated_at": None, "sources": {}}
 
 
 def _cleanup_debug_screenshots():
@@ -3701,6 +3723,8 @@ def admin_run_scraper(
     # Keep categories public even though this generic route is declared first.
     if scraper == "categories":
         return admin_run_categories(token=token)
+    if scraper == "catalog-discovery":
+        return admin_run_catalog_discovery(token=token)
 
     _require_token(token)
 
@@ -3830,6 +3854,66 @@ def admin_run_categories(
 def admin_categories_status():
     """Return current status of the categories scraper."""
     return scraper_status["categories"]
+
+
+@app.post("/api/admin/run/catalog-discovery")
+def admin_run_catalog_discovery(
+    token: Optional[str] = Header(None, alias="X-Admin-Token"),
+):
+    """Run catalog discovery in the background without auto-merging."""
+    lock = _run_locks["catalog_discovery"]
+    with lock:
+        if scraper_status["catalog_discovery"]["running"]:
+            return {"started": False, "message": "Catalog discovery already running"}
+        scraper_status["catalog_discovery"]["running"] = True
+        scraper_status["catalog_discovery"]["last_run"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        scraper_status["catalog_discovery"]["last_output"] = ""
+
+    def worker():
+        lines: list[str] = []
+        try:
+            proc = subprocess.Popen(
+                [sys.executable, CATALOG_DISCOVERY_SCRIPT],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                cwd=BASE_PROJECT_DIR,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env={**os.environ, "PYTHONPATH": BASE_PROJECT_DIR},
+            )
+            _scraper_processes["catalog_discovery"] = proc
+            for line in proc.stdout:
+                line = line.rstrip()
+                lines.append(line)
+                log_buffer.append(f"[catalog_discovery] {line}")
+                scraper_status["catalog_discovery"]["last_output"] = "\n".join(lines[-40:])
+            proc.wait()
+            scraper_status["catalog_discovery"]["exit_code"] = proc.returncode
+            log_buffer.append(f"[catalog_discovery] Finished (exit {proc.returncode})")
+            lines.append(f"[catalog_discovery] Finished (exit {proc.returncode})")
+            scraper_status["catalog_discovery"]["last_output"] = "\n".join(lines[-40:])
+        except Exception as exc:
+            log_buffer.append(f"[catalog_discovery] Exception: {exc}")
+            scraper_status["catalog_discovery"]["exit_code"] = -1
+            lines.append(f"[catalog_discovery] Exception: {exc}")
+            scraper_status["catalog_discovery"]["last_output"] = "\n".join(lines[-40:])
+        finally:
+            scraper_status["catalog_discovery"]["running"] = False
+            scraper_status["catalog_discovery"]["last_output"] = "\n".join(lines[-40:])
+            _scraper_processes.pop("catalog_discovery", None)
+
+    threading.Thread(target=worker, daemon=True).start()
+    return {"started": "catalog_discovery", "message": "Catalog discovery started"}
+
+
+@app.get("/api/admin/run/catalog-discovery/status")
+def admin_catalog_discovery_status():
+    """Return current status of catalog discovery plus source-level state."""
+    return {
+        "status": scraper_status["catalog_discovery"],
+        "state": _load_catalog_discovery_state(),
+    }
 
 
 @app.get("/admin/logs")
