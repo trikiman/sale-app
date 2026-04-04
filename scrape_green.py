@@ -358,36 +358,31 @@ async def _inspect_green_section(page) -> tuple[bool, bool, int]:
 
             const greenSection = document.getElementById('js-Delivery__Order-green-state-not-empty');
 
-            // Method 1 (PRIORITY): Text-based "N товаров" from green section header
-            // The green section shows "184 товара →" or similar text.
-            // This is the authoritative count — NOT the swiper slide count.
+            // Method 1 (PRIORITY): Text-based "N товаров" from green section itself only.
             if (greenSection) {
-                // Look for small text elements with "N товар" (the header link)
                 const candidates = greenSection.querySelectorAll('a, span, div, p, h2, h3');
                 for (const el of candidates) {
-                    // Only direct text, not deeply nested containers
                     const ownText = normalize(el.textContent || '');
                     if (ownText.length < 50 && /\d+\s*товар/i.test(ownText)) {
-                        const count = extractCount(ownText);
-                        if (count > liveCount) liveCount = count;
+                        liveCount = extractCount(ownText);
+                        break;
                     }
                 }
             }
 
-            // Method 2: Search broader containers for "Зелёные ценники" + "N товар"
-            if (!liveCount) {
-                const containers = document.querySelectorAll('section, article, div');
-                for (const node of containers) {
-                    if (!isVisible(node)) continue;
-                    const text = normalize(node.innerText || '');
-                    if (!text) continue;
-                    if ((text.includes('Зелёные ценники') || text.includes('Зеленые ценники')) && /\d+\s*товар/i.test(text)) {
-                        liveCount = Math.max(liveCount, extractCount(text));
+            // Method 2: Search line-level text inside the green section only.
+            if (!liveCount && greenSection) {
+                const lines = normalize(greenSection.innerText || '').split(/\n+/);
+                for (const raw of lines) {
+                    const text = normalize(raw);
+                    if (text.length < 80 && /\d+\s*товар/i.test(text)) {
+                        liveCount = extractCount(text);
+                        break;
                     }
                 }
             }
 
-            // Method 3: Swiper slide count (FALLBACK only — gives carousel size, not total items)
+            // Method 3: Swiper slide count (fallback)
             if (!liveCount && greenSection) {
                 const ariaSlides = greenSection.querySelectorAll('.swiper-slide[aria-label]');
                 if (ariaSlides.length > 0) {
@@ -398,15 +393,11 @@ async def _inspect_green_section(page) -> tuple[bool, bool, int]:
                 }
             }
 
-            // Method 4: Walk up from GreenLabels button
+            // Method 4: Read count from the button itself only.
             if (!liveCount && buttonVisible) {
-                let current = greenButton;
-                for (let depth = 0; depth < 6 && current; depth += 1) {
-                    const text = normalize(current.innerText || current.textContent || '');
-                    if (text) {
-                        liveCount = Math.max(liveCount, extractCount(text));
-                    }
-                    current = current.parentElement;
+                const text = normalize(greenButton.innerText || greenButton.textContent || '');
+                if (text) {
+                    liveCount = Math.max(liveCount, extractCount(text));
                 }
             }
 

@@ -621,21 +621,30 @@ async def inspect_green_section(page) -> tuple:
 
             const greenSection = document.getElementById('js-Delivery__Order-green-state-not-empty');
             if (greenSection) {
-                let searchEl = greenSection;
-                for (let d = 0; d < 4 && searchEl; d++) {
-                    const links = searchEl.querySelectorAll('a, span, div, button');
-                    for (const link of links) {
-                        const t = normalize(link.innerText || '');
-                        if (t.length < 40) {
-                            const m = t.match(/(\d+)\s*товар/i);
-                            if (m) {
-                                const val = parseInt(m[1], 10);
-                                if (val > liveCount) liveCount = val;
-                            }
+                const links = greenSection.querySelectorAll('a, span, div, button');
+                for (const link of links) {
+                    const t = normalize(link.innerText || '');
+                    if (t.length < 40) {
+                        const m = t.match(/(\d+)\s*товар/i);
+                        if (m) {
+                            liveCount = parseInt(m[1], 10);
+                            break;
                         }
                     }
-                    if (liveCount > 0) break;
-                    searchEl = searchEl.parentElement;
+                }
+            }
+
+            if (!liveCount && greenSection) {
+                const lines = normalize(greenSection.innerText || '').split(/\n+/);
+                for (const raw of lines) {
+                    const t = normalize(raw);
+                    if (t.length < 80) {
+                        const m = t.match(/(\d+)\s*товар/i);
+                        if (m) {
+                            liveCount = parseInt(m[1], 10);
+                            break;
+                        }
+                    }
                 }
             }
 
@@ -649,26 +658,10 @@ async def inspect_green_section(page) -> tuple:
                 }
             }
 
-            if (!liveCount) {
-                const containers = document.querySelectorAll('section, article, div');
-                for (const node of containers) {
-                    if (!isVisible(node)) continue;
-                    const text = normalize(node.innerText || '');
-                    if (!text) continue;
-                    if ((text.includes('Зелёные ценники') || text.includes('Зеленые ценники')) && /\d+\s*товар/i.test(text)) {
-                        liveCount = Math.max(liveCount, extractCount(text));
-                    }
-                }
-            }
-
             if (!liveCount && buttonVisible) {
-                let current = greenButton;
-                for (let depth = 0; depth < 6 && current; depth += 1) {
-                    const text = normalize(current.innerText || current.textContent || '');
-                    if (text) {
-                        liveCount = Math.max(liveCount, extractCount(text));
-                    }
-                    current = current.parentElement;
+                const text = normalize(greenButton.innerText || greenButton.textContent || '');
+                if (text) {
+                    liveCount = Math.max(liveCount, extractCount(text));
                 }
             }
 
