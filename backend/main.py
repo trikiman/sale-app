@@ -3269,6 +3269,31 @@ def _sqlite_casefold(value):
     return str(value).casefold()
 
 
+def _tokenize_history_search(search_norm: str) -> list[str]:
+    tokens = []
+    for token in search_norm.casefold().split():
+        cleaned = token.strip('"\'.,:;!?()[]{}')
+        if cleaned:
+            tokens.append(cleaned)
+    return tokens
+
+
+def _build_history_search_condition(search_norm: str):
+    field_expr = "py_casefold(REPLACE(pc.name, char(160), ' '))"
+    params = [f"%{search_norm.casefold()}%"]
+    clauses = [f"{field_expr} LIKE ?"]
+
+    tokens = _tokenize_history_search(search_norm)
+    if len(tokens) > 1:
+        token_clauses = []
+        for token in tokens:
+            token_clauses.append(f"{field_expr} LIKE ?")
+            params.append(f"%{token}%")
+        clauses.append(f"({' AND '.join(token_clauses)})")
+
+    return f"({' OR '.join(clauses)})", params
+
+
 def _apply_history_filters(conditions, params, category, group, subgroup, filter_val):
     if category:
         conditions.append("pc.category = ?")
@@ -3316,8 +3341,8 @@ def _fuzzy_search_fallback(search_norm: str, category, group, subgroup, filter_v
     
     if not variants:
         # No possible variants — return original empty result
-        conditions = ["py_casefold(REPLACE(pc.name, char(160), ' ')) LIKE ?"]
-        params = [f"%{search_norm.casefold()}%"]
+        search_condition, params = _build_history_search_condition(search_norm)
+        conditions = [search_condition]
         _apply_history_filters(conditions, params, category, group, subgroup, filter_val)
         where = f"WHERE {' AND '.join(conditions)}"
         return 0, where, params
@@ -3370,8 +3395,9 @@ def history_get_products(
         if search_active:
             # Search mode intentionally queries the full local catalog.
             # Explicit user filters still apply below; only the implicit history-only gate is removed.
-            conditions.append("py_casefold(REPLACE(pc.name, char(160), ' ')) LIKE ?")
-            params.append(f"%{search_norm.casefold()}%")
+            search_condition, search_params = _build_history_search_condition(search_norm)
+            conditions.append(search_condition)
+            params.extend(search_params)
         else:
             # When not searching, only show products that have been on sale at least once
             # (hides 16K+ seeded-only products that clutter the list with no data)
