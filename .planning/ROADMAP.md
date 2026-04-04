@@ -2,7 +2,7 @@
 
 **Created:** 2026-03-30
 **Updated:** 2026-04-03
-**Status:** Active milestone v1.8 — History Search Completeness
+**Status:** v1.8 phases complete — ready to archive milestone
 
 ## Milestones
 
@@ -23,12 +23,12 @@
 **2 phases** | **6 requirements mapped** | All covered ✓
 
 - [x] **Phase 34: History Search Backend Semantics** — Make search intentionally query across the local catalog without history-only exclusions. (completed 2026-04-04)
-- [ ] **Phase 35: Search Result UX & Regression Coverage** — Make mixed-result states obvious and keep them protected by tests.
+- [x] **Phase 35: Search Result UX & Regression Coverage** — Make mixed-result states obvious and keep them protected by tests. (completed 2026-04-04)
 
 | # | Phase | Goal | Requirements | Success Criteria |
 |---|-------|------|--------------|------------------|
 | 34 | History Search Backend Semantics | Make search intentionally query across the local catalog without history-only exclusions. | HIST-05, HIST-06, HIST-07 | 4 |
-| 35 | Search Result UX & Regression Coverage | Make mixed-result states obvious and keep them protected by tests. | UI-14, UI-15, QA-01 | 4 |
+| 35 | Search Result UX & Regression Coverage | Make mixed search results understandable to users and hard to regress. | UI-14, UI-15, QA-01 | 4 |
 
 ### Phase 34: History Search Backend Semantics
 
@@ -47,7 +47,7 @@
 **Goal:** Make mixed search results understandable to users and hard to regress.
 **Requirements:** UI-14, UI-15, QA-01
 **Depends on:** Phase 34
-**Plans:** 2 plans
+**Plans:** 2/2 plans complete
 **Success Criteria**:
 1. Search results clearly distinguish live sale, history-only, and no-history catalog matches.
 2. Catalog-only search matches render with intentional "no data yet" presentation instead of looking broken.
@@ -67,8 +67,8 @@
 
 ## Next Up
 
-- **Phase 35: Search Result UX & Regression Coverage** — make mixed-result states obvious and keep them protected by tests.
-- Start with `$gsd-discuss-phase 35` or jump straight to `$gsd-plan-phase 35`.
+- **Milestone v1.8: History Search Completeness** — all planned phases are complete.
+- Run `$gsd-complete-milestone` to archive v1.8 and prepare the next milestone.
 
 ## Progress
 
@@ -83,4 +83,4 @@
 | 27-28 | v1.6 | ✅ Complete | 2026-04-02 |
 | 29-33 | v1.7 | ✅ Complete | 2026-04-03 |
 | 34 | v1.8 | ✅ Complete | 2026-04-04 |
-| 35 | v1.8 | 🟡 Planned | — |
+| 35 | v1.8 | ✅ Complete | 2026-04-04 |

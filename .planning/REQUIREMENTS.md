@@ -12,12 +12,12 @@
 
 ## Search Result Clarity
 
-- [ ] **UI-14**: User can tell from each search result whether the product is live on sale now, has past sale history only, or has no sale history yet.
-- [ ] **UI-15**: Catalog-only matches with no sale history render as valid search results with clear "no data yet" styling instead of looking broken or missing.
+- [x] **UI-14**: User can tell from each search result whether the product is live on sale now, has past sale history only, or has no sale history yet.
+- [x] **UI-15**: Catalog-only matches with no sale history render as valid search results with clear "no data yet" styling instead of looking broken or missing.
 
 ## Verification
 
-- [ ] **QA-01**: Automated coverage protects mixed search results across live-sale, history-only, and catalog-only products.
+- [x] **QA-01**: Automated coverage protects mixed search results across live-sale, history-only, and catalog-only products.
 
 ## Future Requirements
 
@@ -34,9 +34,9 @@
 
 | Requirement | Phase | Final Status | Notes |
 |-------------|-------|--------------|-------|
-| HIST-05 | 34 | Planned | Search must not lose live on-sale matches |
-| HIST-06 | 34 | Planned | Search must include catalog-only items with zero sale history |
-| HIST-07 | 34 | Planned | Search mode must bypass history-only scoping rules |
-| UI-14 | 35 | Planned | Mixed result states need clear visual cues |
-| UI-15 | 35 | Planned | Catalog-only cards should look intentional, not broken |
-| QA-01 | 35 | Planned | Regression coverage for live/history/catalog search cases |
+| HIST-05 | 34 | Complete | Search now returns currently-on-sale matches during active search |
+| HIST-06 | 34 | Complete | Search now returns catalog-only items with zero sale history |
+| HIST-07 | 34 | Complete | Search mode no longer inherits hidden history-only scope limits |
+| UI-14 | 35 | Complete | Cards now label live, history-only, and catalog-only search states |
+| UI-15 | 35 | Complete | Catalog-only cards now explain that the product exists but has no sale history yet |
+| QA-01 | 35 | Complete | Backend + frontend automated coverage protect mixed search result states |

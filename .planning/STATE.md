@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.8
 milestone_name: History Search Completeness
-status: Phase 34 complete
-last_updated: "2026-04-04T02:15:57.424Z"
+status: Milestone complete
+last_updated: "2026-04-04T03:11:56.592Z"
 last_activity: 2026-04-04
 progress:
   total_phases: 2
-  completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
+  completed_phases: 2
+  total_plans: 5
+  completed_plans: 5
 ---
 
 # Project State
@@ -19,15 +19,13 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-03)
 
 **Core value:** Family members see every VkusVill discount and can add to cart in one tap
-**Current focus:** Phase 35 execution prep for Search Result UX & Regression Coverage
+**Current focus:** Archive milestone v1.8 and prepare the next milestone
 
 ## Current Position
 
 Milestone: v1.8 — History Search Completeness
-Phase: 35
-Plan: 2 plans created
-Status: Ready for execution
-Last activity: 2026-04-04 — created Phase 35 execution plans for search-result clarity and frontend regression coverage
+Status: ✅ All milestone phases complete
+Last activity: 2026-04-04 — completed Phase 35 search-result clarity and regression coverage
 
 ## Milestone Goal
 
@@ -37,8 +35,8 @@ Last activity: 2026-04-04 — created Phase 35 execution plans for search-result
 
 ## Next Up
 
-- `$gsd-discuss-phase 35` — gather context for mixed-result UI and regression coverage
-- `$gsd-plan-phase 35` — skip discussion and draft execution plans directly
+- `$gsd-complete-milestone` — archive v1.8 and prepare the next milestone
+- `$gsd-new-milestone` — start the next milestone after archival
 
 ## Completed Milestones
 
@@ -66,7 +64,7 @@ Last activity: 2026-04-04 — created Phase 35 execution plans for search-result
 
 ## Known Bugs
 
-- History search completeness is still open until v1.8 phases 34-35 ship
+- No open milestone-scoped bugs remain for v1.8
 
 ## Timeline
 
@@ -83,6 +81,7 @@ Last activity: 2026-04-04 — created Phase 35 execution plans for search-result
 | v1.8 phase 34 completed | 2026-04-04 |
 | v1.8 phase 35 context gathered | 2026-04-04 |
 | v1.8 phase 35 planned | 2026-04-04 |
+| v1.8 phase 35 completed | 2026-04-04 |
 
 ---
-*Last updated: 2026-04-04 after Phase 35 planning*
+*Last updated: 2026-04-04 after Phase 35 completion*
