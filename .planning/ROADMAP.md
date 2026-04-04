@@ -1,8 +1,8 @@
 # Roadmap: VkusVill Sale Monitor
 
 **Created:** 2026-03-30
-**Updated:** 2026-04-03
-**Status:** v1.8 phases complete — ready to archive milestone
+**Updated:** 2026-04-04
+**Status:** v1.9 roadmap ready — phase 36 not started
 
 ## Milestones
 
@@ -14,45 +14,56 @@
 - ✅ **v1.5 History Search & Polish** — Phases 24-26 (shipped 2026-04-01)
 - ✅ **v1.6 Green Scraper Robustness** — Phases 27-28 (shipped 2026-04-02)
 - ✅ **v1.7 Categories & Subgroups** — Phases 29-33 (shipped 2026-04-03)
-- 🚧 **v1.8 History Search Completeness** — Phases 34-35 (planned 2026-04-03)
+- ✅ **v1.8 History Search Completeness** — Phases 34-35 (shipped 2026-04-04)
+- 🚧 **v1.9 Catalog Coverage Expansion** — Phases 36-38 (planned 2026-04-04)
 
-## Active Milestone: v1.8 History Search Completeness
+## Active Milestone: v1.9 Catalog Coverage Expansion
 
-**Goal:** Make History search show the full local catalog for a query, including live sale items and catalog products with no sale history yet.
+**Goal:** Expand the local `product_catalog` so History search can find more of the products VkusVill live search already knows about, without switching to per-query hybrid search yet.
 
-**2 phases** | **6 requirements mapped** | All covered ✓
-
-- [x] **Phase 34: History Search Backend Semantics** — Make search intentionally query across the local catalog without history-only exclusions. (completed 2026-04-04)
-- [x] **Phase 35: Search Result UX & Regression Coverage** — Make mixed-result states obvious and keep them protected by tests. (completed 2026-04-04)
+**3 phases** | **8 requirements mapped** | All covered ✓
 
 | # | Phase | Goal | Requirements | Success Criteria |
 |---|-------|------|--------------|------------------|
-| 34 | History Search Backend Semantics | Make search intentionally query across the local catalog without history-only exclusions. | HIST-05, HIST-06, HIST-07 | 4 |
-| 35 | Search Result UX & Regression Coverage | Make mixed search results understandable to users and hard to regress. | UI-14, UI-15, QA-01 | 4 |
+| 36 | Supplemental Catalog Discovery | Add an offline discovery path for products the current category crawl misses. | DATA-04 | 4 |
+| 37 | Catalog Merge & Backfill | Merge newly discovered products into local catalog artifacts without metadata loss. | DATA-05, DATA-06, DATA-07 | 4 |
+| 38 | Local Search Parity Verification | Prove the expanded local catalog closes targeted search gaps and keep coverage observable. | SRCH-04, SRCH-05, QA-02, OPS-01 | 4 |
 
-### Phase 34: History Search Backend Semantics
+### Phase 36: Supplemental Catalog Discovery
 
-**Goal:** Make the History API and search-mode filtering behave like an intentional catalog search instead of a history-only list with a text box.
-**Requirements:** HIST-05, HIST-06, HIST-07
+**Goal:** Add an offline discovery path for VkusVill products that the current hardcoded category crawl does not capture.
+**Requirements:** DATA-04
 **Depends on:** —
-**Plans:** 3/3 plans complete
+**Plans:** Not planned yet
 **Success Criteria**:
-1. Searching for a product that is currently on sale returns that product in History results.
-2. Searching for a catalog product with zero sale history returns a result card instead of disappearing.
-3. Search-mode filters and chip scope do not reintroduce `total_sale_count > 0`-style restrictions.
-4. The search-mode contract is verified against mixed live-sale, history-only, and catalog-only fixtures.
+1. Supplemental discovery finds stable product IDs for products absent from the current category crawl.
+2. Discovery can run within existing scraper constraints: low concurrency, no SMS/login dependency, and no per-user query path.
+3. Discovery output can be refreshed repeatably without duplicating products across runs.
+4. Representative known-gap queries now appear in the discovery snapshot for downstream merge.
 
-### Phase 35: Search Result UX & Regression Coverage
+### Phase 37: Catalog Merge & Backfill
 
-**Goal:** Make mixed search results understandable to users and hard to regress.
-**Requirements:** UI-14, UI-15, QA-01
-**Depends on:** Phase 34
-**Plans:** 2/2 plans complete
+**Goal:** Merge newly discovered products into `category_db.json` and `product_catalog` while preserving the richest available metadata.
+**Requirements:** DATA-05, DATA-06, DATA-07
+**Depends on:** Phase 36
+**Plans:** Not planned yet
 **Success Criteria**:
-1. Search results clearly distinguish live sale, history-only, and no-history catalog matches.
-2. Catalog-only search matches render with intentional "no data yet" presentation instead of looking broken.
-3. Automated coverage exercises live-sale, history-only, and catalog-only search cases.
-4. Search empty states and counts remain correct when search and filters are combined.
+1. Newly discovered products persist into both `category_db.json` and `product_catalog`.
+2. Merge logic preserves better existing category/group/subgroup/image metadata instead of overwriting it with poorer supplemental data.
+3. Current local databases can be backfilled without a destructive rebuild.
+4. Downstream consumers that read `product_catalog` can see the expanded local rows after refresh.
+
+### Phase 38: Local Search Parity Verification
+
+**Goal:** Prove that the expanded local catalog closes targeted search gaps and keep catalog-completeness gains observable.
+**Requirements:** SRCH-04, SRCH-05, QA-02, OPS-01
+**Depends on:** Phase 37
+**Plans:** Not planned yet
+**Success Criteria**:
+1. History search returns representative formerly missing products from the expanded local catalog after refresh.
+2. A parity-check query set exists for repeatable verification instead of ad hoc screenshots.
+3. Automated coverage protects discovery, merge, and search visibility for multi-source catalog data.
+4. Coverage stats or gap signals make it obvious whether catalog completeness improved and where it still falls short.
 
 ## Completed Milestones
 
@@ -64,11 +75,13 @@
 - v1.5 History Search & Polish — phases 24-26, shipped 2026-04-01
 - v1.6 Green Scraper Robustness — phases 27-28, shipped 2026-04-02
 - v1.7 Categories & Subgroups — phases 29-33, shipped 2026-04-03
+- v1.8 History Search Completeness — phases 34-35, shipped 2026-04-04
 
 ## Next Up
 
-- **Milestone v1.8: History Search Completeness** — all planned phases are complete.
-- Run `$gsd-complete-milestone` to archive v1.8 and prepare the next milestone.
+- **Phase 36: Supplemental Catalog Discovery** — add the offline discovery path for products the current category crawl misses.
+- Run `$gsd-discuss-phase 36` to lock the discovery approach before implementation.
+- Or run `$gsd-plan-phase 36` to go straight into the execution plan.
 
 ## Progress
 
@@ -84,3 +97,6 @@
 | 29-33 | v1.7 | ✅ Complete | 2026-04-03 |
 | 34 | v1.8 | ✅ Complete | 2026-04-04 |
 | 35 | v1.8 | ✅ Complete | 2026-04-04 |
+| 36 | v1.9 | ⏳ Not started | - |
+| 37 | v1.9 | ⏳ Not started | - |
+| 38 | v1.9 | ⏳ Not started | - |

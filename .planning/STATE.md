@@ -1,42 +1,44 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.8
-milestone_name: History Search Completeness
-status: Milestone complete
-last_updated: "2026-04-04T03:11:56.592Z"
+milestone: v1.9
+milestone_name: Catalog Coverage Expansion
+status: roadmap_ready
+last_updated: "2026-04-04T08:30:35.2099444+03:00"
 last_activity: 2026-04-04
 progress:
-  total_phases: 2
-  completed_phases: 2
-  total_plans: 5
-  completed_plans: 5
+  total_phases: 3
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-03)
+See: .planning/PROJECT.md (updated 2026-04-04)
 
 **Core value:** Family members see every VkusVill discount and can add to cart in one tap
-**Current focus:** Archive milestone v1.8 and prepare the next milestone
+**Current focus:** Plan and execute v1.9 catalog coverage expansion so local search catches more of the VkusVill assortment
 
 ## Current Position
 
-Milestone: v1.8 — History Search Completeness
-Status: ✅ All milestone phases complete
-Last activity: 2026-04-04 — completed Phase 35 search-result clarity and regression coverage
+Milestone: v1.9 — Catalog Coverage Expansion
+Phase: Not started
+Plan: —
+Status: Roadmap ready; phase discussion not started
+Last activity: 2026-04-04 — started milestone v1.9 and defined requirements/roadmap
 
 ## Milestone Goal
 
-- Make History search return the full local catalog for a query, not just history-backed products
-- Preserve clear live/history/ghost cues when search results mix different product states
-- Lock the behavior down with regression coverage before broader catalog-search work
+- Expand local catalog ingest beyond the current category crawl
+- Persist supplemental discoveries into `category_db.json` and `product_catalog` without metadata loss
+- Prove that formerly missing search queries resolve locally after refresh
 
 ## Next Up
 
-- `$gsd-complete-milestone` — archive v1.8 and prepare the next milestone
-- `$gsd-new-milestone` — start the next milestone after archival
+- `$gsd-discuss-phase 36` — gather context for the supplemental catalog discovery approach
+- `$gsd-plan-phase 36` — write the implementation plan for the first v1.9 phase
 
 ## Completed Milestones
 
@@ -50,6 +52,7 @@ Last activity: 2026-04-04 — completed Phase 35 search-result clarity and regre
 | v1.5 History Search & Polish | 24-26 | 2026-04-01 |
 | v1.6 Green Scraper Robustness | 27-28 | 2026-04-02 |
 | v1.7 Categories & Subgroups | 29-33 | 2026-04-03 |
+| v1.8 History Search Completeness | 34-35 | 2026-04-04 |
 
 ## Accumulated Context
 
@@ -58,30 +61,25 @@ Last activity: 2026-04-04 — completed Phase 35 search-result clarity and regre
 - v1.5 shipped: search normalization, fuzzy Cyrillic search, lazy image enrichment
 - v1.6 shipped: green scraper robustness with CDP modal loading + validation gates
 - v1.7 shipped: group/subgroup hierarchy scraped, drill-down filters on main/history, category favorites, and Telegram category alerts
+- v1.8 shipped: History search now covers the full local catalog during active queries and clearly labels mixed result states
+- Local search parity is still limited by what reaches `product_catalog`; v1.9 tackles that data gap instead of per-query hybrid search
 - History page chip scope now matches history results instead of the full catalog when no search is active
 - Category notifications dedupe across product/group/subgroup matches and fall back to `product_catalog` when merged sale JSON lacks hierarchy
 - Auto-deploy is active via GitHub webhook → EC2 and Vercel frontend deploys
 
 ## Known Bugs
 
-- No open milestone-scoped bugs remain for v1.8
+- VkusVill live search still finds products absent from the local catalog until the v1.9 ingest expansion lands
 
 ## Timeline
 
 | Event | Date |
 |-------|------|
-| v1.6 milestone completed | 2026-04-02 |
-| v1.7 milestone started | 2026-04-02 |
-| v1.7 phases 29-32 completed | 2026-04-03 |
-| v1.7 phase 33 completed | 2026-04-03 |
 | v1.7 milestone archived | 2026-04-03 |
 | v1.8 milestone started | 2026-04-03 |
-| v1.8 phase 34 context gathered | 2026-04-04 |
-| v1.8 phase 34 planned | 2026-04-04 |
-| v1.8 phase 34 completed | 2026-04-04 |
-| v1.8 phase 35 context gathered | 2026-04-04 |
-| v1.8 phase 35 planned | 2026-04-04 |
-| v1.8 phase 35 completed | 2026-04-04 |
+| v1.8 milestone completed | 2026-04-04 |
+| v1.8 milestone archived | 2026-04-04 |
+| v1.9 milestone started | 2026-04-04 |
 
 ---
-*Last updated: 2026-04-04 after Phase 35 completion*
+*Last updated: 2026-04-04 after starting v1.9 milestone*

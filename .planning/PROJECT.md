@@ -75,34 +75,40 @@ Family members see every VkusVill discount (green/red/yellow) the moment it appe
 - ✓ **HIST-01..04**: History page group/subgroup filtering and favorites shipped — v1.7
 - ✓ **FAV-03..04**: Group/subgroup favorites stored server-side and exposed in UI — v1.7
 - ✓ **BOT-06**: Telegram notifier sends alerts for favorited groups/subgroups with dedupe and match reasons — v1.7
+- ✓ **HIST-05..07**: History search returns full local-catalog matches across live-sale, history-only, and catalog-only states without hidden scope restrictions — v1.8
+- ✓ **UI-14..15**: History search clearly labels live, history-only, and catalog-only result states — v1.8
+- ✓ **QA-01**: Automated regression coverage protects mixed History search results — v1.8
 
 ### Active
 
 <!-- Current scope. Building toward these. -->
 
-- [ ] History search returns matching products even when they are currently on sale now
-- [ ] History search returns matching catalog products even when they have no recorded sale history yet
-- [ ] Search results clearly show whether a match is live on sale, historical-only, or has no sale data yet
-- [ ] Search-mode group/subgroup/filter behavior does not hide matching catalog products
-- [ ] Automated regression coverage protects mixed history-search results
+- [ ] Local catalog ingest expands beyond the current hardcoded category crawl so missing VkusVill products can be discovered offline
+- [ ] Newly discovered products persist into `category_db.json` and `product_catalog` with enough metadata for History search and cards
+- [ ] Multi-source catalog refresh deduplicates products and preserves the best available category/group/subgroup/image metadata
+- [ ] History search can show these newly ingested products from the local catalog after refresh, without per-query live search calls
+- [ ] Coverage metrics and automated regression tests make catalog-completeness progress visible and protected
 
-## Current Milestone: v1.8 History Search Completeness
+## Current Milestone: v1.9 Catalog Coverage Expansion
 
-**Goal:** Make History search show the full local catalog for a query, including products that are live on sale now and products that have never had a recorded sale.
+**Goal:** Expand the local `product_catalog` so History search can find more of the products VkusVill live search already knows about, without switching to per-query hybrid search yet.
 
 **Target features:**
-- Search-mode query semantics that do not fall back to history-only restrictions
-- Mixed-result cards that clearly distinguish live sale, historical-only, and no-history catalog matches
-- Search-mode chips and filters that do not silently hide otherwise matching products
-- Regression coverage for mixed history-search cases before broader catalog-search work lands
+- Supplemental offline discovery beyond the current category crawl for products that the hardcoded category list misses
+- Catalog merge/backfill that persists newly discovered products into `category_db.json` and `product_catalog`
+- Local search visibility for formerly missing products after refresh, still served from the local catalog
+- Coverage reporting and regression gates for catalog-completeness improvements
 
-## Latest Shipped Milestone: v1.7 Categories & Subgroups (2026-04-03)
+## Latest Shipped Milestone: v1.8 History Search Completeness (2026-04-04)
 
-Shipped across phases 29-33:
-- Group/subgroup hierarchy scraped for 16K+ products
-- Main page drill-down filters and category favorites
-- History page drill-down filters with history-aligned chip scope
-- Telegram notifications for favorited groups/subgroups
+Shipped across phases 34-35:
+- History search now queries the full local catalog during active search
+- Search results clearly label live, historical-only, and catalog-only matches
+- Backend and frontend regression coverage now protect mixed-result search states
+
+## Shipped: v1.7 Categories & Subgroups (2026-04-03)
+
+Group/subgroup hierarchy shipped across scraper data, main/history filters, favorites, and Telegram notifications.
 
 ## Shipped: v1.6 Green Scraper Robustness (2026-04-02)
 
@@ -127,9 +133,9 @@ Search and polish improvements for the History page:
 
 ## Next Milestone Candidates
 
+- Hybrid remote+local search fallback for true live parity beyond what offline catalog expansion can cover
 - Deeper subgroup pagination / multi-subgroup fidelity in the catalog pipeline
 - Scraper and notifier cleanup plus broader automated regression coverage
-- Remote-search parity beyond the local `product_catalog` snapshot
 
 ## Context
 
@@ -202,6 +208,7 @@ Search and polish improvements for the History page:
 | Exact category favorite keys (`group:X`, `subgroup:X/Y`) | Shared contract across main page, history page, and notifier | ✓ Good |
 | History chip scope follows history dataset | Prevent empty subgroup chips when the history list only shows products with sale history | ✓ Good |
 | Notifier falls back to `product_catalog` metadata | `proposals.json` sale snapshot does not always carry group/subgroup fields yet | ✓ Good |
+| Expand local `product_catalog` before adding hybrid search | Keeps History search local-first and moves live VkusVill dependency into offline ingest instead of user queries | — Active |
 
 ## Evolution
 
@@ -221,5 +228,5 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-03 after starting v1.8 milestone*
+*Last updated: 2026-04-04 after starting v1.9 milestone*
 

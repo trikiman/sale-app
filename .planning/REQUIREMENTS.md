@@ -1,42 +1,49 @@
-# Requirements: v1.8 History Search Completeness
+# Requirements: v1.9 Catalog Coverage Expansion
 
 **Status:** Active milestone
-**Created:** 2026-04-03
-**Goal:** Make History search return the full local catalog for a query, not just history-backed products.
+**Created:** 2026-04-04
+**Goal:** Expand the local catalog so History search can surface more VkusVill products without relying on live remote search per query.
 
-## History Search Semantics
+## Catalog Discovery
 
-- [x] **HIST-05**: User can search the History page and see matching products that are currently on sale right now.
-- [x] **HIST-06**: User can search the History page and see matching products from `product_catalog` even when they have no recorded sale history yet.
-- [x] **HIST-07**: While a search query is active, History page results are not silently restricted by the default history-only dataset or history-scoped group/subgroup state.
+- [ ] **DATA-04**: Catalog ingest expands beyond the current hardcoded category crawl so products present in VkusVill live search but missing from the local catalog can be discovered offline.
+- [ ] **DATA-05**: Newly discovered products are persisted into local catalog artifacts (`category_db.json` and `product_catalog`) with stable product IDs, names, and enough metadata to appear in History search.
 
-## Search Result Clarity
+## Catalog Merge Quality
 
-- [x] **UI-14**: User can tell from each search result whether the product is live on sale now, has past sale history only, or has no sale history yet.
-- [x] **UI-15**: Catalog-only matches with no sale history render as valid search results with clear "no data yet" styling instead of looking broken or missing.
+- [ ] **DATA-06**: Multi-source catalog refresh deduplicates products and preserves the best available category/group/subgroup/image metadata instead of clobbering richer existing rows.
+- [ ] **DATA-07**: Existing local products remain intact during supplemental ingest refreshes; category-derived data and sale-history-backed metadata are not lost when new sources are merged.
 
-## Verification
+## Search Outcome
 
-- [x] **QA-01**: Automated coverage protects mixed search results across live-sale, history-only, and catalog-only products.
+- [ ] **SRCH-04**: After a catalog refresh, History search can surface products that previously existed only in VkusVill remote search, while still serving results from the local catalog.
+- [ ] **SRCH-05**: The team has a repeatable parity-check query set for formerly missing products, so catalog-expansion progress can be verified intentionally instead of ad hoc screenshots.
+
+## Verification & Operations
+
+- [ ] **QA-02**: Automated coverage protects supplemental discovery, multi-source merge dedupe, and representative formerly-missing search queries.
+- [ ] **OPS-01**: Catalog refresh produces coverage stats or gap signals that make it clear whether local catalog completeness actually improved.
 
 ## Future Requirements
 
-- [ ] **SRCH-04**: Search can surface products beyond the locally scraped `product_catalog` when VkusVill's remote search has extra matches.
-- [ ] **DATA-04**: Catalog ingest expands to cover products that the current category scraper does not yet capture.
+- [ ] **SRCH-06**: History search can use live VkusVill search as a hybrid fallback when local catalog expansion still misses a query.
+- [ ] **DATA-08**: Local catalog preserves multi-subgroup fidelity in the DB instead of collapsing each product to one subgroup value.
 
 ## Out of Scope
 
-- Querying VkusVill's live remote search endpoint for every History-page search — defer until local catalog completeness is no longer enough.
-- Reworking the broader sale-history prediction UX — not needed to fix search completeness.
-- Multi-subgroup catalog model redesign — already identified as a separate milestone candidate.
+- Querying VkusVill live search on every user request in this milestone.
+- Reworking History search ranking or UI beyond what is needed to show newly ingested local products.
+- General scraper/notifier cleanup unrelated to catalog completeness.
 
 ## Traceability
 
 | Requirement | Phase | Final Status | Notes |
 |-------------|-------|--------------|-------|
-| HIST-05 | 34 | Complete | Search now returns currently-on-sale matches during active search |
-| HIST-06 | 34 | Complete | Search now returns catalog-only items with zero sale history |
-| HIST-07 | 34 | Complete | Search mode no longer inherits hidden history-only scope limits |
-| UI-14 | 35 | Complete | Cards now label live, history-only, and catalog-only search states |
-| UI-15 | 35 | Complete | Catalog-only cards now explain that the product exists but has no sale history yet |
-| QA-01 | 35 | Complete | Backend + frontend automated coverage protect mixed search result states |
+| DATA-04 | 36 | Planned | Supplemental discovery adds an offline source for products missing from the current category crawl |
+| DATA-05 | 37 | Planned | Newly discovered products are persisted into `category_db.json` and `product_catalog` |
+| DATA-06 | 37 | Planned | Multi-source refresh keeps the richest available metadata per product |
+| DATA-07 | 37 | Planned | Existing catalog rows survive supplemental refreshes without destructive overwrite |
+| SRCH-04 | 38 | Planned | History search shows newly ingested products from the expanded local catalog |
+| SRCH-05 | 38 | Planned | A parity-check query set verifies targeted local-catalog gains |
+| QA-02 | 38 | Planned | Regression coverage protects discovery, merge, and search visibility |
+| OPS-01 | 38 | Planned | Coverage stats make catalog-completeness gains visible after refreshes |

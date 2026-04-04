@@ -1,5 +1,19 @@
 # Milestones
 
+## v1.8 History Search Completeness (Shipped: 2026-04-04)
+
+**Phases completed:** 2 phases, 5 plans, 8 tasks
+
+**Key accomplishments:**
+
+- History search now treats active queries as full local-catalog lookups while preserving live-sale enrichment and explicit filter semantics
+- HistoryPage now clears stale group/subgroup scope only when it actually switches between history mode and active search
+- A targeted pytest suite now locks the History search contract against regressions across live, historical, and catalog-only matches
+- History search cards now call out whether a match is live, historical, or catalog-only without changing the existing card layout
+- Mixed History search result states are now protected by lightweight frontend tests alongside the existing backend search contract suite
+
+---
+
 ## v1.7 Categories & Subgroups (Shipped: 2026-04-03)
 
 **Phases completed:** 5 phases (29-33), shipped across 18 commits
