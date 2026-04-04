@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo, memo } from 'react'
 
 import { getAuthHeaders } from './api'
+import { getHistorySearchState } from './historySearchState'
 
 const API_BASE = '/api'
 
@@ -66,11 +67,12 @@ function ConfidenceDots({ level }) {
 }
 
 // History card — vertical layout matching mockup
-const HistoryCard = memo(function HistoryCard({ product, onClick, isFavorite, onToggleFavorite }) {
+const HistoryCard = memo(function HistoryCard({ product, onClick, isFavorite, onToggleFavorite, searchActive }) {
   const type = product.last_sale_type || 'green'
   const tc = TYPE_COLORS[type] || TYPE_COLORS.green
   const hasSales = product.total_sale_count > 0
   const isGhost = !hasSales && !product.is_currently_on_sale
+  const searchState = searchActive ? getHistorySearchState(product) : null
 
   const handleFavClick = (e) => {
     e.stopPropagation()
@@ -122,6 +124,14 @@ const HistoryCard = memo(function HistoryCard({ product, onClick, isFavorite, on
       {/* Info section */}
       <div className="hcard-body">
         <div className="hcard-name">{product.name}</div>
+        {searchState && (
+          <div className="hcard-state-row">
+            <span className={`hcard-state-chip hcard-state-chip-${searchState.kind}`}>
+              {searchState.label}
+            </span>
+            <div className="hcard-state-detail">{searchState.detail}</div>
+          </div>
+        )}
 
         {hasSales ? (
           <>
@@ -156,7 +166,9 @@ const HistoryCard = memo(function HistoryCard({ product, onClick, isFavorite, on
           </>
         ) : (
           <div className="hcard-no-data">
-            <span style={{ opacity: 0.4 }}>📊 Нет данных</span>
+            <span style={{ opacity: 0.5 }}>
+              {searchState?.kind === 'catalog' ? '📦 Скидок пока не было' : '📊 Нет данных'}
+            </span>
           </div>
         )}
       </div>
@@ -164,7 +176,8 @@ const HistoryCard = memo(function HistoryCard({ product, onClick, isFavorite, on
   )
 }, (prev, next) =>
   prev.product === next.product &&
-  prev.isFavorite === next.isFavorite
+  prev.isFavorite === next.isFavorite &&
+  prev.searchActive === next.searchActive
 )
 
 // Filter chips — type filters are multi-selectable, special filters are exclusive
@@ -520,6 +533,7 @@ export default function HistoryPage({ onBack, onOpenDetail, favorites = new Set(
                   onClick={() => onOpenDetail(p.id)}
                   isFavorite={favorites.has(p.id)}
                   onToggleFavorite={onToggleFavorite}
+                  searchActive={Boolean(search)}
                 />
               ))}
             </div>
