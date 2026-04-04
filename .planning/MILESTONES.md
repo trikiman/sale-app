@@ -1,5 +1,19 @@
 # Milestones
 
+## v1.9 Catalog Coverage Expansion (Shipped: 2026-04-04)
+
+**Phases completed:** 3 phases, 5 plans, 0 tasks
+
+**Key accomplishments:**
+
+- A source-based discovery pipeline now scrapes VkusVill catalog sources into separate temp files and validates completion per source
+- Catalog discovery now has admin run/status endpoints and dedicated regression coverage for the source-state contract
+- Phase 36 source files are now merged into one deduped discovery artifact and additively backfilled into `category_db.json`
+- Newly discovered products now flow into `product_catalog`, and the merge/backfill contract is covered by tests
+- A repeatable parity query set and live-vs-local parity report now verify that newly backfilled products are searchable locally
+
+---
+
 ## v1.8 History Search Completeness (Shipped: 2026-04-04)
 
 **Phases completed:** 2 phases, 5 plans, 8 tasks
