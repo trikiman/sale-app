@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.9
 milestone_name: Catalog Coverage Expansion
-status: phase_36_complete
-last_updated: "2026-04-04T16:25:00+03:00"
+status: milestone_ready_for_audit
+last_updated: "2026-04-04T16:55:00+03:00"
 last_activity: 2026-04-04
 progress:
   total_phases: 3
-  completed_phases: 1
-  total_plans: 2
-  completed_plans: 2
+  completed_phases: 3
+  total_plans: 5
+  completed_plans: 5
 ---
 
 # Project State
@@ -24,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-04-04)
 ## Current Position
 
 Milestone: v1.9 — Catalog Coverage Expansion
-Phase: 36 — Supplemental Catalog Discovery
-Plan: 2/2 plans complete
-Status: Phase complete; ready to start Phase 37
-Last activity: 2026-04-04 — completed the Phase 36 source-based discovery pipeline and verified stable-source completion
+Phase: 38 — Local Search Parity Verification
+Plan: Milestone implementation complete
+Status: Ready for milestone audit and archival
+Last activity: 2026-04-04 — completed Phases 36-38 and generated parity/coverage artifacts
 
 ## Milestone Goal
 
@@ -37,8 +37,8 @@ Last activity: 2026-04-04 — completed the Phase 36 source-based discovery pipe
 
 ## Next Up
 
-- `$gsd-discuss-phase 37` — capture the merge/backfill rules for Phase 37
-- `$gsd-plan-phase 37` — write the execution plan for catalog merge and backfill
+- `$gsd-audit-milestone` — verify milestone coverage and gap status before archival
+- `$gsd-complete-milestone` — archive milestone `v1.9` after audit passes
 
 ## Completed Milestones
 
@@ -67,6 +67,8 @@ Last activity: 2026-04-04 — completed the Phase 36 source-based discovery pipe
 - Category notifications dedupe across product/group/subgroup matches and fall back to `product_catalog` when merged sale JSON lacks hierarchy
 - Auto-deploy is active via GitHub webhook → EC2 and Vercel frontend deploys
 - Phase 36 discovered 46 catalog sources, completed 45 stable sources, and identified `set-vashi-skidki` as a personalized/non-blocking source
+- Phase 37 merged `17443` deduped discovery products and backfilled local catalog artifacts to `18678` rows
+- Phase 38 added repeatable parity queries and a live-vs-local parity report; broad `цезарь` still remains a visible gap signal
 
 ## Known Bugs
 
@@ -84,6 +86,8 @@ Last activity: 2026-04-04 — completed the Phase 36 source-based discovery pipe
 | v1.9 phase 36 context gathered | 2026-04-04 |
 | v1.9 phase 36 planned | 2026-04-04 |
 | v1.9 phase 36 completed | 2026-04-04 |
+| v1.9 phase 37 completed | 2026-04-04 |
+| v1.9 phase 38 completed | 2026-04-04 |
 
 ---
-*Last updated: 2026-04-04 after verified Phase 36 completion*
+*Last updated: 2026-04-04 after milestone implementation completion*

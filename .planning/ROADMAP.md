@@ -46,7 +46,7 @@
 **Goal:** Merge newly discovered products into `category_db.json` and `product_catalog` while preserving the richest available metadata.
 **Requirements:** DATA-05, DATA-06, DATA-07
 **Depends on:** Phase 36
-**Plans:** Not planned yet
+**Plans:** 2/2 plans complete
 **Success Criteria**:
 1. Newly discovered products persist into both `category_db.json` and `product_catalog`.
 2. Merge logic preserves better existing category/group/subgroup/image metadata instead of overwriting it with poorer supplemental data.
@@ -58,7 +58,7 @@
 **Goal:** Prove that the expanded local catalog closes targeted search gaps and keep catalog-completeness gains observable.
 **Requirements:** SRCH-04, SRCH-05, QA-02, OPS-01
 **Depends on:** Phase 37
-**Plans:** Not planned yet
+**Plans:** 1/1 plans complete
 **Success Criteria**:
 1. History search returns representative formerly missing products from the expanded local catalog after refresh.
 2. A parity-check query set exists for repeatable verification instead of ad hoc screenshots.
@@ -79,8 +79,8 @@
 
 ## Next Up
 
-- **Phase 37: Catalog Merge & Backfill** — merge Phase 36 discovery output into local catalog artifacts safely.
-- Run `$gsd-discuss-phase 37` or `$gsd-plan-phase 37`.
+- Milestone `v1.9` implementation work is complete.
+- Run milestone audit before archival.
 
 ## Progress
 
@@ -97,5 +97,5 @@
 | 34 | v1.8 | ✅ Complete | 2026-04-04 |
 | 35 | v1.8 | ✅ Complete | 2026-04-04 |
 | 36 | v1.9 | ✅ Complete | 2026-04-04 |
-| 37 | v1.9 | ⏳ Not started | - |
-| 38 | v1.9 | ⏳ Not started | - |
+| 37 | v1.9 | ✅ Complete | 2026-04-04 |
+| 38 | v1.9 | ✅ Complete | 2026-04-04 |

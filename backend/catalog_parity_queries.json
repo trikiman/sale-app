@@ -1,0 +1,39 @@
+{
+  "queries": [
+    {
+      "label": "broad-cesar",
+      "query": "цезарь",
+      "type": "broad"
+    },
+    {
+      "label": "omul",
+      "query": "Омуль подкопченный ломтики, 100 г",
+      "type": "exact",
+      "expected_product_id": "18920"
+    },
+    {
+      "label": "muksun",
+      "query": "Муксун подкопченный ломтики, 100 г",
+      "type": "exact",
+      "expected_product_id": "19560"
+    },
+    {
+      "label": "basket-small",
+      "query": "Корзина плетеная маленькая",
+      "type": "exact",
+      "expected_product_id": "21472"
+    },
+    {
+      "label": "avocado-hass",
+      "query": "Авокадо Хасс крупное",
+      "type": "exact",
+      "expected_product_id": "34088"
+    },
+    {
+      "label": "tartaletki",
+      "query": "Тарталетки вафельные",
+      "type": "exact",
+      "expected_product_id": "31424"
+    }
+  ]
+}

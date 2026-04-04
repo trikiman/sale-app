@@ -395,18 +395,21 @@ def seed_product_catalog():
             group_name = info.get("group", info.get("category", ""))
             subgroups = info.get("subgroups", [])
             subgroup = subgroups[0] if subgroups else ""
+            image_url = info.get("image_url", "")
             if not name:
                 continue
             try:
                 c.execute("""
-                    INSERT INTO product_catalog (product_id, name, category, group_name, subgroup, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
+                    INSERT INTO product_catalog (product_id, name, category, group_name, subgroup, image_url, updated_at)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(product_id) DO UPDATE SET
                         category = CASE WHEN excluded.category != '' AND product_catalog.category IS NULL 
                                         THEN excluded.category ELSE product_catalog.category END,
                         group_name = CASE WHEN excluded.group_name != '' THEN excluded.group_name ELSE product_catalog.group_name END,
-                        subgroup = CASE WHEN excluded.subgroup != '' THEN excluded.subgroup ELSE product_catalog.subgroup END
-                """, (str(pid), name, category, group_name, subgroup, now))
+                        subgroup = CASE WHEN excluded.subgroup != '' THEN excluded.subgroup ELSE product_catalog.subgroup END,
+                        image_url = CASE WHEN excluded.image_url != '' AND (product_catalog.image_url IS NULL OR product_catalog.image_url = '')
+                                         THEN excluded.image_url ELSE product_catalog.image_url END
+                """, (str(pid), name, category, group_name, subgroup, image_url, now))
                 inserted += 1
             except sqlite3.IntegrityError:
                 pass
