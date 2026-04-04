@@ -256,6 +256,7 @@ function CategoryFilter({ selected, onSelect, categories, favoritedIds, onToggle
 }
 
 function App() {
+  const isTelegramMiniApp = Boolean(window.Telegram?.WebApp?.initData)
   const [products, setProducts] = useState([])
   const [resolvedWeights, setResolvedWeights] = useState({})
   const [selectedCategory, setSelectedCategory] = useState('all')
@@ -1080,8 +1081,8 @@ function App() {
       >
         <h1 className="text-2xl font-bold mb-2">{headerEmoji} {headerTitle}</h1>
 
-        {/* Open in browser link — only shown inside Telegram WebApp */}
-        {window.Telegram?.WebApp && (
+        {/* Open in browser link — only shown inside a real Telegram Mini App session */}
+        {isTelegramMiniApp && (
           <div
             onClick={() => {
               const url = 'https://vkusvillsale.vercel.app'
