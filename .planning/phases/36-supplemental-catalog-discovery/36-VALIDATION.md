@@ -38,9 +38,9 @@ created: 2026-04-04
 
 | Task ID | Plan | Wave | Requirement | Test Type | Automated Command | File Exists | Status |
 |---------|------|------|-------------|-----------|-------------------|-------------|--------|
-| 36-01-01 | 01 | 1 | DATA-04 | unit | `pytest backend/test_catalog_discovery.py -q -k query_contract` | ❌ W0 | ⬜ pending |
-| 36-01-02 | 01 | 1 | DATA-04 | unit | `pytest backend/test_catalog_discovery.py -q -k stable_id` | ❌ W0 | ⬜ pending |
-| 36-02-01 | 02 | 2 | DATA-04 | integration | `pytest backend/test_catalog_discovery.py -q -k orchestration` | ❌ W0 | ⬜ pending |
+| 36-01-01 | 01 | 1 | DATA-04 | unit | `pytest backend/test_catalog_discovery.py -q -k manifest` | ❌ W0 | ⬜ pending |
+| 36-01-02 | 01 | 1 | DATA-04 | unit | `pytest backend/test_catalog_discovery.py -q -k source_state` | ❌ W0 | ⬜ pending |
+| 36-02-01 | 02 | 2 | DATA-04 | integration | `pytest backend/test_catalog_discovery.py -q -k admin_route` | ❌ W0 | ⬜ pending |
 | 36-02-02 | 02 | 2 | DATA-04 | regression | `pytest backend/test_catalog_discovery.py backend/test_categories.py backend/test_history_search.py -q` | ❌ W0 | ⬜ pending |
 
 *Status: ⬜ pending · ✅ green · ❌ red · ⚠️ flaky*
@@ -49,8 +49,8 @@ created: 2026-04-04
 
 ## Wave 0 Requirements
 
-- [ ] `backend/test_catalog_discovery.py` — new test file for seed loading, stable-ID filtering, dedupe, and artifact stats
-- [ ] Shared fixtures or inline helpers for temporary discovery query/artifact files
+- [ ] `backend/test_catalog_discovery.py` — tests for source manifest extraction, source file persistence, incomplete-run handling, completion validation, and admin orchestration
+- [ ] Temporary JSON-file helpers for source files and source-state files
 
 *Existing infrastructure covers command execution and pytest wiring once the new test file exists.*
 
@@ -60,8 +60,8 @@ created: 2026-04-04
 
 | Behavior | Requirement | Why Manual | Test Instructions |
 |----------|-------------|------------|-------------------|
-| Known-gap query appears in discovery output | DATA-04 | Depends on live VkusVill response shape and seed quality | Run the discovery script against the checked-in seed file, then inspect `data/catalog_discovery.json` for entries sourced from the `цезарь` query |
-| Discovery output remains sidecar-only | DATA-04 | Requires confirming no unintended runtime rewiring | Run discovery, then verify `category_db.json`, `product_catalog`, and `/api/history/products` remain unchanged before Phase 37 work |
+| Source page count matches source artifact count | DATA-04 | Depends on live VkusVill response and paging behavior | Run one source scrape, compare the source page’s visible `N товаров` count to the unique IDs in that source file |
+| Failed source remains incomplete in admin panel | DATA-04 | Needs live operational run/state transition | Force an incomplete source run, then confirm admin logs/state show the mismatch and that the source is not marked complete |
 
 ---
 

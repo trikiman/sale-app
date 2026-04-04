@@ -3,7 +3,7 @@ gsd_state_version: 1.0
 milestone: v1.9
 milestone_name: Catalog Coverage Expansion
 status: planned
-last_updated: "2026-04-04T08:55:00+03:00"
+last_updated: "2026-04-04T09:20:00+03:00"
 last_activity: 2026-04-04
 progress:
   total_phases: 3
@@ -27,7 +27,7 @@ Milestone: v1.9 — Catalog Coverage Expansion
 Phase: 36 — Supplemental Catalog Discovery
 Plan: 2 plans created
 Status: Phase planned; ready for execution
-Last activity: 2026-04-04 — created research, validation, and executable plans for Phase 36
+Last activity: 2026-04-04 — replanned Phase 36 from corrected discuss-phase decisions
 
 ## Milestone Goal
 
@@ -84,4 +84,4 @@ Last activity: 2026-04-04 — created research, validation, and executable plans
 | v1.9 phase 36 planned | 2026-04-04 |
 
 ---
-*Last updated: 2026-04-04 after Phase 36 planning*
+*Last updated: 2026-04-04 after corrected Phase 36 replanning*
