@@ -47,7 +47,7 @@
 **Goal:** Make mixed search results understandable to users and hard to regress.
 **Requirements:** UI-14, UI-15, QA-01
 **Depends on:** Phase 34
-**Plans:** 0 plans
+**Plans:** 2 plans
 **Success Criteria**:
 1. Search results clearly distinguish live sale, history-only, and no-history catalog matches.
 2. Catalog-only search matches render with intentional "no data yet" presentation instead of looking broken.
