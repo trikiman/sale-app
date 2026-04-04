@@ -3231,7 +3231,40 @@ _CYRILLIC_CONFUSABLES = {
     'ё': ['е'],
 }
 
-def _fuzzy_search_fallback(search_norm: str, category, filter_val, cursor):
+def _normalize_history_search(search: Optional[str]) -> str:
+    """Normalize copied VkusVill search text into the DB-comparable form."""
+    if not search:
+        return ""
+    normalized = search.replace('\xa0', ' ').replace('\u00a0', ' ')
+    normalized = normalized.replace('\u201c', '"').replace('\u201d', '"')
+    normalized = normalized.replace('\u00ab', '"').replace('\u00bb', '"')
+    return normalized.strip()
+
+
+def _apply_history_filters(conditions, params, category, group, subgroup, filter_val):
+    if category:
+        conditions.append("pc.category = ?")
+        params.append(category)
+
+    if group:
+        conditions.append("pc.group_name = ?")
+        params.append(group)
+
+    if subgroup:
+        conditions.append("pc.subgroup = ?")
+        params.append(subgroup)
+
+    if filter_val and filter_val != 'all':
+        filter_types = [f.strip() for f in filter_val.split(',') if f.strip() in ('green', 'red', 'yellow')]
+        if filter_types:
+            placeholders = ','.join('?' * len(filter_types))
+            conditions.append(f"pc.last_sale_type IN ({placeholders})")
+            params.extend(filter_types)
+        elif filter_val == 'predicted_soon':
+            conditions.append("pc.total_sale_count > 0 AND pc.usual_sale_time IS NOT NULL")
+
+
+def _fuzzy_search_fallback(search_norm: str, category, group, subgroup, filter_val, cursor):
     """Generate Cyrillic typo variants and rebuild WHERE clause.
     
     Only called when exact search returns 0 results.
@@ -3257,17 +3290,7 @@ def _fuzzy_search_fallback(search_norm: str, category, filter_val, cursor):
         # No possible variants — return original empty result
         conditions = ["LOWER(REPLACE(pc.name, char(160), ' ')) LIKE LOWER(?)"]
         params = [f"%{search_norm}%"]
-        if category:
-            conditions.append("pc.category = ?")
-            params.append(category)
-        if filter_val and filter_val != 'all':
-            filter_types_fb = [f.strip() for f in filter_val.split(',') if f.strip() in ('green', 'red', 'yellow')]
-            if filter_types_fb:
-                placeholders_fb = ','.join('?' * len(filter_types_fb))
-                conditions.append(f"pc.last_sale_type IN ({placeholders_fb})")
-                params.extend(filter_types_fb)
-            elif filter_val == 'predicted_soon':
-                conditions.append("pc.total_sale_count > 0 AND pc.usual_sale_time IS NOT NULL")
+        _apply_history_filters(conditions, params, category, group, subgroup, filter_val)
         where = f"WHERE {' AND '.join(conditions)}"
         return 0, where, params
     
@@ -3280,18 +3303,7 @@ def _fuzzy_search_fallback(search_norm: str, category, filter_val, cursor):
     
     search_condition = f"({' OR '.join(like_clauses)})"
     conditions = [search_condition]
-    
-    if category:
-        conditions.append("pc.category = ?")
-        params.append(category)
-    if filter_val and filter_val != 'all':
-        filter_types = [f.strip() for f in filter_val.split(',') if f.strip() in ('green', 'red', 'yellow')]
-        if filter_types:
-            placeholders_f = ','.join('?' * len(filter_types))
-            conditions.append(f"pc.last_sale_type IN ({placeholders_f})")
-            params.extend(filter_types)
-        elif filter_val == 'predicted_soon':
-            conditions.append("pc.total_sale_count > 0 AND pc.usual_sale_time IS NOT NULL")
+    _apply_history_filters(conditions, params, category, group, subgroup, filter_val)
     
     where = f"WHERE {' AND '.join(conditions)}"
     
@@ -3323,13 +3335,12 @@ def history_get_products(
         conditions = []
         params = []
 
-        if search:
-            # Normalize search input: replace non-breaking spaces, curly quotes
-            search_norm = search.replace('\xa0', ' ').replace('\u00a0', ' ')
-            search_norm = search_norm.replace('\u201c', '"').replace('\u201d', '"')  # curly quotes
-            search_norm = search_norm.replace('\u00ab', '"').replace('\u00bb', '"')  # guillemets
-            search_norm = search_norm.strip()
-            # Also normalize DB column: replace char(160) nbsp with space
+        search_norm = _normalize_history_search(search)
+        search_active = bool(search_norm)
+
+        if search_active:
+            # Search mode intentionally queries the full local catalog.
+            # Explicit user filters still apply below; only the implicit history-only gate is removed.
             conditions.append("LOWER(REPLACE(pc.name, char(160), ' ')) LIKE LOWER(?)")
             params.append(f"%{search_norm}%")
         else:
@@ -3337,27 +3348,7 @@ def history_get_products(
             # (hides 16K+ seeded-only products that clutter the list with no data)
             conditions.append("pc.total_sale_count > 0")
 
-        if category:
-            conditions.append("pc.category = ?")
-            params.append(category)
-
-        # Group/subgroup filters (v1.7)
-        if group:
-            conditions.append("pc.group_name = ?")
-            params.append(group)
-        if subgroup:
-            conditions.append("pc.subgroup = ?")
-            params.append(subgroup)
-
-        if filter and filter != 'all':
-            # Support comma-separated multi-select: "green,red" → IN ('green', 'red')
-            filter_types = [f.strip() for f in filter.split(',') if f.strip() in ('green', 'red', 'yellow')]
-            if filter_types:
-                placeholders_f = ','.join('?' * len(filter_types))
-                conditions.append(f"pc.last_sale_type IN ({placeholders_f})")
-                params.extend(filter_types)
-            elif filter == 'predicted_soon':
-                conditions.append("pc.total_sale_count > 0 AND pc.usual_sale_time IS NOT NULL")
+        _apply_history_filters(conditions, params, category, group, subgroup, filter)
 
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
 
@@ -3375,9 +3366,9 @@ def history_get_products(
         total = c.fetchone()[0]
 
         # Fuzzy search fallback: when exact match returns 0, try common Cyrillic typo variants
-        if total == 0 and search:
+        if total == 0 and search_active:
             total, where, params = _fuzzy_search_fallback(
-                search_norm, category, filter, c
+                search_norm, category, group, subgroup, filter, c
             )
 
         # Get page
@@ -3573,7 +3564,7 @@ def get_groups(request: Request):
                 ORDER BY COUNT(*) DESC
             """)
         else:
-            # All groups from catalog
+            # All groups from the local catalog. Search mode relies on this broader scope.
             c.execute("""
                 SELECT group_name, subgroup, COUNT(*) as cnt
                 FROM product_catalog
