@@ -1,5 +1,26 @@
 # Milestones
 
+## v1.10 Scraper Freshness & Reliability (Shipped: 2026-04-05)
+
+**Phases completed:** 4 phases, 11 plans, 0 tasks
+
+**Key accomplishments:**
+
+- A machine-readable cycle-state contract now exists before merge and is visible through admin status
+- Sale sessions now survive transient misses and only close after 60 healthy minutes of confirmed absence
+- Notifier and backend “new products” surfaces now follow confirmed session reentry instead of first-ever-seen product IDs
+- The scheduler now runs full cycles on a 5-minute target and green-only refreshes on a 1-minute target between them
+- Per-source freshness is now visible in backend payloads and the MiniApp reuses its existing warning surface for stale-color alerts
+- Scheduler cadence and freshness contracts are now protected by repeatable regression tests
+- The main sale screen now hydrates from the last good payload so users see useful content before the fresh network fetch completes
+- Card enrichment now runs with lower pressure and cached weight reuse so the grid stays more responsive while metadata loads
+- The milestone kept the current data path and improved it directly instead of adopting a private API without clear evidence
+- A repeatable milestone regression command now covers continuity, notifier, scheduler freshness, admin payloads, and existing backend behavior together
+- The milestone now has inspectable verification artifacts showing what was tested, what passed, and what residual risk remains
+- The milestone’s continuity, freshness, warning, and main-screen performance changes are now backed by inspectable verification artifacts
+
+---
+
 ## v1.9 Catalog Coverage Expansion (Shipped: 2026-04-04)
 
 **Phases completed:** 3 phases, 5 plans, 0 tasks
