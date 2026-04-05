@@ -15,6 +15,7 @@
 - The main sale screen now hydrates from the last good payload so users see useful content before the fresh network fetch completes
 - Card enrichment now runs with lower pressure and cached weight reuse so the grid stays more responsive while metadata loads
 - The milestone kept the current data path and improved it directly instead of adopting a private API without clear evidence
+- Cart add no longer fakes sold-out removal on timeout; the UI fails fast and can recover success from confirmed cart state
 - A repeatable milestone regression command now covers continuity, notifier, scheduler freshness, admin payloads, and existing backend behavior together
 - The milestone now has inspectable verification artifacts showing what was tested, what passed, and what residual risk remains
 - The milestone’s continuity, freshness, warning, and main-screen performance changes are now backed by inspectable verification artifacts
