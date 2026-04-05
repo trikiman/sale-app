@@ -2,7 +2,7 @@
 
 **Created:** 2026-03-30
 **Updated:** 2026-04-05
-**Status:** v1.10 planned — ready for phase 39
+**Status:** v1.10 complete — ready for milestone audit
 
 ## Milestones
 
@@ -16,9 +16,9 @@
 - ✅ **v1.7 Categories & Subgroups** — Phases 29-33 (shipped 2026-04-03)
 - ✅ **v1.8 History Search Completeness** — Phases 34-35 (shipped 2026-04-04)
 - ✅ **v1.9 Catalog Coverage Expansion** — Phases 36-38 (shipped 2026-04-04)
-- 🟡 **v1.10 Scraper Freshness & Reliability** — Phases 39-42 (planned 2026-04-05)
+- ✅ **v1.10 Scraper Freshness & Reliability** — Phases 39-42 (implemented 2026-04-05)
 
-## Current Milestone: v1.10 Scraper Freshness & Reliability
+## Latest Completed Milestone: v1.10 Scraper Freshness & Reliability
 
 **Goal:** Keep sale/newness signals correct and the main sale screen responsive by making scrape cadence, failure handling, and card loading more resilient.
 
@@ -36,7 +36,7 @@
 **Goal:** Make history/newness logic resilient to transient scrape misses so continuously-on-sale products do not look new again.
 **Requirements:** HIST-08, BOT-07, OPS-02
 **Depends on:** —
-**Plans:** 0/0 plans complete
+**Plans:** 3/3 plans complete
 **Success Criteria**:
 1. A product that stays on sale through a partial or missed scrape does not open a fake new sale session.
 2. Notification dedupe only resets after a real sale exit/re-entry, not after one bad cycle.
@@ -48,7 +48,7 @@
 **Goal:** Rebalance scrape cadence around greener, fresher data while making stale/error states visible.
 **Requirements:** SCRP-10, SCRP-11, SCRP-12, OPS-03
 **Depends on:** Phase 39
-**Plans:** 0/0 plans complete
+**Plans:** 3/3 plans complete
 **Success Criteria**:
 1. Green refreshes can run more often than red/yellow without violating the sequential Chrome constraint.
 2. Admin/backend status exposes per-source freshness so outdated green data is obvious.
@@ -60,7 +60,7 @@
 **Goal:** Remove the slow initial loading feel and laggy card interactions on the main MiniApp screen.
 **Requirements:** UI-16, UI-17, UI-18
 **Depends on:** Phase 40
-**Plans:** 0/0 plans complete
+**Plans:** 3/3 plans complete
 **Success Criteria**:
 1. First useful content on the sale screen arrives faster than the current long blocking spinner path.
 2. Product cards remain responsive while enrichment data loads in the background.
@@ -72,7 +72,7 @@
 **Goal:** Prove the new continuity, freshness, alerting, and performance behavior is stable before shipping.
 **Requirements:** QA-03
 **Depends on:** Phases 39-41
-**Plans:** 0/0 plans complete
+**Plans:** 2/2 plans complete
 **Success Criteria**:
 1. Automated coverage reproduces the false re-appearance scenario and proves it no longer regresses.
 2. Verification covers duplicate-notification prevention across partial-failure cycles.
@@ -142,9 +142,7 @@
 
 ## Next Up
 
-- **Phase 39: Sale Continuity Guardrails** — Stop fake re-appearances and duplicate notifications caused by transient scrape misses.
-- `$gsd-discuss-phase 39` — gather context and pin down the guardrail strategy
-- `$gsd-plan-phase 39` — skip discussion and plan directly
+- Run `$gsd-audit-milestone` to verify the completed v1.10 milestone before archiving.
 
 ## Progress
 
@@ -163,7 +161,7 @@
 | 36 | v1.9 | ✅ Complete | 2026-04-04 |
 | 37 | v1.9 | ✅ Complete | 2026-04-04 |
 | 38 | v1.9 | ✅ Complete | 2026-04-04 |
-| 39 | v1.10 | 🟡 Planned | — |
-| 40 | v1.10 | 🟡 Planned | — |
-| 41 | v1.10 | 🟡 Planned | — |
-| 42 | v1.10 | 🟡 Planned | — |
+| 39 | v1.10 | ✅ Complete | 2026-04-05 |
+| 40 | v1.10 | ✅ Complete | 2026-04-05 |
+| 41 | v1.10 | ✅ Complete | 2026-04-05 |
+| 42 | v1.10 | ✅ Complete | 2026-04-05 |

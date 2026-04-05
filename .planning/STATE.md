@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.10
 milestone_name: Scraper Freshness & Reliability
-status: Ready for planning
-last_updated: "2026-04-05T14:00:00.000Z"
+status: Ready for milestone audit and archival
+last_updated: "2026-04-05T18:00:00.000Z"
 last_activity: 2026-04-05
 progress:
   total_phases: 4
-  completed_phases: 0
-  total_plans: 3
-  completed_plans: 0
+  completed_phases: 4
+  total_plans: 11
+  completed_plans: 11
 ---
 
 # Project State
@@ -24,9 +24,9 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 ## Current Position
 
 Milestone: v1.10 — Scraper Freshness & Reliability
-Phase: 39 — Sale Continuity Guardrails
-Plan: 3 plans ready
-Status: Ready for execution
+Phase: 42 — Regression & Release Verification
+Plan: Milestone implementation complete
+Status: Ready for milestone audit and archival
 Last activity: 2026-04-05
 
 ## Milestone Goal
@@ -38,8 +38,8 @@ Last activity: 2026-04-05
 
 ## Next Up
 
-- `$gsd-execute-phase 39` — implement the continuity guardrails from the 3 prepared plans
-- Phase 40 context is already captured in `.planning/phases/40-freshness-aware-scheduler-alerts/40-CONTEXT.md`
+- `$gsd-audit-milestone` — verify milestone coverage and integration before archival
+- `$gsd-complete-milestone` — archive milestone `v1.10` after audit passes
 
 ## Completed Milestones
 
@@ -66,21 +66,16 @@ Last activity: 2026-04-05
 - v1.8 shipped: History search now covers the full local catalog during active queries and clearly labels mixed result states
 - v1.9 shipped: supplemental catalog discovery/backfill now expands local search coverage with parity reporting and regression gates
 - Auto-deploy is active via GitHub webhook → EC2 and Vercel frontend deploys
-- Scheduler still runs one flat sequential red -> yellow -> green cycle every 3 minutes, which makes green freshness coupled to slower sources
-- New-item detection is still keyed off "seen in current proposals vs ever seen before", and sale-history sessions still close immediately when a product drops out of a cycle
-- MiniApp initial load is still a blocking `/api/products` fetch, while missing card weights trigger extra `/api/product/{id}/details` calls for visible cards
-- Auto-refresh failures are mostly silent in the UI, and scraper failures are still primarily visible in logs/admin status rather than proactive alerts
-- Phase 39 context locked the continuity rule: products need 1 hour of healthy absence before they count as gone, and failed/stale cycles do not count toward disappearance
-- Phase 39 also requires detailed diagnostics for every session close/reopen decision so false daily appearances are easier to debug
-- Phase 39 is now planned into 3 waves: cycle-health snapshot, grace-window session logic, and confirmed-reentry notifier/API alignment
-- Phase 40 context is now locked: 5-minute full cycles, 1-minute green-only target cadence between full cycles, 10-minute stale threshold for all colors, keep last valid snapshots, and reuse the existing MiniApp warning surface for all users
+- Scheduler now runs full cycles on a 5-minute target with extra green-only refresh opportunities on a 1-minute target between them
+- Sale sessions now stay continuous across transient misses and only close after 60 healthy minutes of absence
+- New-item alerts now follow confirmed session reentry instead of first-ever-seen product IDs
+- `/api/products` and `/admin/status` now expose per-source freshness and cycle-state visibility
+- MiniApp now hydrates from the last good product payload and uses a lower-pressure enrichment queue for missing card metadata
+- The milestone verification set now includes continuity, scheduler freshness, notifier, admin-status, history-search, catalog-merge, and API coverage together
 
 ## Known Bugs
 
-- Continuous-sale products can look like they re-appeared when a scrape cycle misses them and later sees them again
-- Scheduler freshness is biased by the flat red/yellow/green cadence instead of green-first refresh priorities
-- MiniApp can show a long loading state on first open, and product cards still feel laggy during enrichment
-- Scraper/scheduler failures are not surfaced robustly enough to prevent silent stale data
+- No confirmed open milestone bugs after the current implementation pass
 
 ## Timeline
 
@@ -100,6 +95,8 @@ Last activity: 2026-04-05
 | v1.10 phase 39 context gathered | 2026-04-05 |
 | v1.10 phase 39 planned | 2026-04-05 |
 | v1.10 phase 40 context gathered | 2026-04-05 |
+| v1.10 phases 39-42 implemented | 2026-04-05 |
+| v1.10 verification artifacts written | 2026-04-05 |
 
 ---
-*Last updated: 2026-04-05 after planning phase 39 and gathering v1.10 phase 40 context*
+*Last updated: 2026-04-05 after completing v1.10 implementation and verification*

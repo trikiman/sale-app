@@ -32,7 +32,7 @@ from starlette.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 import hashlib
 import hmac
 import time as _time
@@ -413,6 +413,8 @@ class ProductsResponse(BaseModel):
     greenMissing: Optional[bool] = False
     dataStale: Optional[bool] = False
     staleInfo: Optional[List[str]] = None
+    sourceFreshness: Optional[Dict[str, Any]] = None
+    cycleState: Optional[Dict[str, Any]] = None
     products: List[Product]
 
 
@@ -799,6 +801,56 @@ def client_log(request: Request, payload: dict = Body(default={})):
     logger.info(f"[CLIENT-{level.upper()}] {msg} | UA: {ua}")
     return {"ok": True}
 
+
+def _build_source_freshness(stale_minutes: int = 10) -> tuple[dict, list[str], float]:
+    source_freshness = {}
+    stale_files = []
+    latest_mtime = 0.0
+
+    for color in ("green", "red", "yellow"):
+        src = os.path.join(DATA_DIR, f"{color}_products.json")
+        exists = os.path.exists(src)
+        updated_at = None
+        age_min = None
+        is_stale = True
+
+        if exists:
+            mtime = os.path.getmtime(src)
+            latest_mtime = max(latest_mtime, mtime)
+            age_min = round((_time.time() - mtime) / 60, 1)
+            updated_at = datetime.fromtimestamp(mtime).isoformat(timespec="seconds")
+            is_stale = age_min > stale_minutes
+            if is_stale:
+                stale_files.append(f"{color} ({age_min:.0f}m)")
+        else:
+            stale_files.append(f"{color} (missing)")
+
+        source_freshness[color] = {
+            "exists": exists,
+            "updatedAt": updated_at,
+            "ageMinutes": age_min,
+            "isStale": is_stale,
+            "status": "ok" if exists and not is_stale else ("missing" if not exists else "stale"),
+        }
+
+    return source_freshness, stale_files, latest_mtime
+
+
+def _load_cycle_state() -> dict:
+    cycle_path = os.path.join(DATA_DIR, "scrape_cycle_state.json")
+    if not os.path.exists(cycle_path):
+        return {"available": False}
+
+    try:
+        with open(cycle_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            data["available"] = True
+            return data
+    except Exception as exc:
+        return {"available": False, "error": str(exc)}
+    return {"available": False}
+
 @app.get("/api/products", response_model=ProductsResponse)
 def get_products():
     """Get all products from proposals.json, with live staleness check."""
@@ -817,20 +869,11 @@ def get_products():
                     time.sleep(0.5)  # Retry once after brief pause
                 else:
                     raise HTTPException(status_code=500, detail="Invalid JSON data")
-        # Live staleness: check source file ages at request time (not baked merge-time value)
-        STALE_MINUTES = 10
-        stale_files = []
-        latest_mtime = 0
-        for color in ('green', 'red', 'yellow'):
-            src = os.path.join(DATA_DIR, f"{color}_products.json")
-            if os.path.exists(src):
-                mtime = os.path.getmtime(src)
-                latest_mtime = max(latest_mtime, mtime)
-                age_min = (_time.time() - mtime) / 60
-                if age_min > STALE_MINUTES:
-                    stale_files.append(f"{color} ({age_min:.0f}m)")
+        source_freshness, stale_files, latest_mtime = _build_source_freshness(stale_minutes=10)
+        data["sourceFreshness"] = source_freshness
         data["dataStale"] = len(stale_files) > 0
         data["staleInfo"] = stale_files if stale_files else None
+        data["cycleState"] = _load_cycle_state()
         # Override baked updatedAt with the most recent source file mtime
         if latest_mtime > 0:
             from datetime import datetime, timezone, timedelta
@@ -989,7 +1032,12 @@ def sync_products():
         with open(PROPOSALS_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
         products = data.get("products", [])
-        new_count = sum(1 for p in products if p.get("id") and db.mark_product_seen(p["id"]))
+        product_ids = [str(p["id"]) for p in products if p.get("id")]
+        pending_ids = db.get_pending_sale_entry_products(product_ids)
+        for pid in product_ids:
+            db.mark_product_seen(pid)
+        db.mark_pending_sale_entries_surfaced(list(pending_ids))
+        new_count = len(pending_ids)
         return {"success": True, "total_products": len(products), "new_products": new_count}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
@@ -1003,8 +1051,8 @@ def get_new_products():
         with open(PROPOSALS_PATH, "r", encoding="utf-8") as f:
             data = json.load(f)
         products = data.get("products", [])
-        new_ids = db.get_new_products([p["id"] for p in products])
-        new_products = [p for p in products if p["id"] in new_ids]
+        new_ids = db.get_pending_sale_entry_products([str(p["id"]) for p in products if p.get("id")])
+        new_products = [p for p in products if str(p.get("id")) in new_ids]
         return {"new_products": new_products, "count": len(new_products)}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
@@ -3705,6 +3753,8 @@ def admin_get_status(token: Optional[str] = Header(None, alias="X-Admin-Token"))
     """Return current scraper status and product counts."""
     _require_token(token)
     counts = {"green": 0, "red": 0, "yellow": 0, "total": 0, "updatedAt": None, "greenLiveCount": 0}
+    source_freshness, _, _ = _build_source_freshness(stale_minutes=10)
+    cycle_state = _load_cycle_state()
     if os.path.exists(PROPOSALS_PATH):
         try:
             with open(PROPOSALS_PATH, "r", encoding="utf-8") as f:
@@ -3728,7 +3778,13 @@ def admin_get_status(token: Optional[str] = Header(None, alias="X-Admin-Token"))
         cookie_health["expired"] = age_days > 60
     cookie_health["green_missing"] = not os.path.exists(os.path.join(DATA_DIR, "green_products.json"))
 
-    return {"scrapers": scraper_status, "data": counts, "techCookies": cookie_health}
+    return {
+        "scrapers": scraper_status,
+        "data": counts,
+        "techCookies": cookie_health,
+        "sourceFreshness": source_freshness,
+        "cycleState": cycle_state,
+    }
 
 
 @app.post("/api/admin/tech-login")

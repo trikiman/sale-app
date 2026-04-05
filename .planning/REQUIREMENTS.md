@@ -1,31 +1,31 @@
 # Requirements: v1.10 Scraper Freshness & Reliability
 
-**Status:** Planned
+**Status:** Milestone implementation complete
 **Created:** 2026-04-05
 **Goal:** Keep sale/newness signals correct and the main screen fast by making scrape cadence, failure handling, and card loading more resilient.
 
 ## Sale Continuity & Notification Correctness
 
-- [ ] **HIST-08**: User sees one continuous sale session for a product that stayed on sale, even if one or more scrape cycles partially fail or temporarily miss the product.
-- [ ] **BOT-07**: User does not receive repeated "new item" or favorite-available alerts for a product that never actually left sale.
-- [ ] **OPS-02**: Partial or failed scrape cycles do not overwrite downstream history/newness calculations as if missing products truly disappeared.
+- [x] **HIST-08**: User sees one continuous sale session for a product that stayed on sale, even if one or more scrape cycles partially fail or temporarily miss the product.
+- [x] **BOT-07**: User does not receive repeated "new item" or favorite-available alerts for a product that never actually left sale.
+- [x] **OPS-02**: Partial or failed scrape cycles do not overwrite downstream history/newness calculations as if missing products truly disappeared.
 
 ## Scheduler Freshness
 
-- [ ] **SCRP-10**: Green scraper can refresh more frequently than red/yellow within the current sequential Chrome/profile constraints.
-- [ ] **SCRP-11**: Backend/admin status exposes per-source freshness so green staleness is distinguishable from red/yellow staleness.
-- [ ] **SCRP-12**: Merge/notifier logic can use the freshest valid source snapshots instead of assuming every source was refreshed in the same cadence bucket.
+- [x] **SCRP-10**: Green scraper can refresh more frequently than red/yellow within the current sequential Chrome/profile constraints.
+- [x] **SCRP-11**: Backend/admin status exposes per-source freshness so green staleness is distinguishable from red/yellow staleness.
+- [x] **SCRP-12**: Merge/notifier logic can use the freshest valid source snapshots instead of assuming every source was refreshed in the same cadence bucket.
 
 ## MiniApp Load & Card Performance
 
-- [ ] **UI-16**: Main sale screen reaches first useful content without a long blocking spinner under normal conditions.
-- [ ] **UI-17**: Product cards remain responsive while enrichment data loads, and card interactions do not feel laggy.
-- [ ] **UI-18**: Card/detail data path is profiled and optimized; any extra API or reverse-engineered data path must be justified by measured latency improvement.
+- [x] **UI-16**: Main sale screen reaches first useful content without a long blocking spinner under normal conditions.
+- [x] **UI-17**: Product cards remain responsive while enrichment data loads, and card interactions do not feel laggy.
+- [x] **UI-18**: Card/detail data path is profiled and optimized; any extra API or reverse-engineered data path must be justified by measured latency improvement.
 
 ## Operations & Verification
 
-- [ ] **OPS-03**: Admin or Telegram receives visible failure alerts when scraper/scheduler cycles error, time out, or keep serving stale data.
-- [ ] **QA-03**: Automated coverage protects continuous-sale session integrity, non-duplicate notifications after partial failures, scheduler cadence rules, and the main-screen performance contract.
+- [x] **OPS-03**: Admin or Telegram receives visible failure alerts when scraper/scheduler cycles error, time out, or keep serving stale data.
+- [x] **QA-03**: Automated coverage protects continuous-sale session integrity, non-duplicate notifications after partial failures, scheduler cadence rules, and the main-screen performance contract.
 
 ## Future Requirements
 
@@ -42,14 +42,14 @@
 
 | Requirement | Phase | Final Status | Notes |
 |-------------|-------|--------------|-------|
-| HIST-08 | 39 | Planned | Sale sessions must stay continuous across transient scrape gaps or explicitly tolerated partial cycles |
-| BOT-07 | 39 | Planned | Notification dedupe must track real sale exits/re-entries instead of single-cycle visibility loss |
-| OPS-02 | 39 | Planned | Bad cycles need a contract that prevents history/newness from treating them as true product disappearance |
-| SCRP-10 | 40 | Planned | Green refresh cadence should be higher than red/yellow without breaking sequential Chrome usage |
-| SCRP-11 | 40 | Planned | Surface per-source freshness in backend/admin status and downstream UI state |
-| SCRP-12 | 40 | Planned | Merge/notifier should operate on freshest valid snapshots rather than same-cycle assumptions |
-| OPS-03 | 40 | Planned | Failure and stale-data alerts should be pushed visibly, not left only in logs |
-| UI-16 | 41 | Planned | Reduce long blocking first-load state on the main sale screen |
-| UI-17 | 41 | Planned | Remove card lag caused by enrichment/render paths while preserving existing UX |
-| UI-18 | 41 | Planned | Profile-driven optimization of card/detail data path, including API investigation only if it wins measurably |
-| QA-03 | 42 | Planned | Regression/perf verification for continuity, cadence, alerting, and main-screen responsiveness |
+| HIST-08 | 39 | Complete | Sale sessions now stay open across transient misses and only close after 60 healthy minutes of absence |
+| BOT-07 | 39 | Complete | Notifier/API new-entry signals now follow confirmed active-session reentry instead of first-ever-seen IDs |
+| OPS-02 | 39 | Complete | Cycle-state contract and reason-coded session logs prevent bad cycles from being treated as true disappearance |
+| SCRP-10 | 40 | Complete | Scheduler now targets 5-minute full cycles plus 1-minute green-only refreshes without overlap |
+| SCRP-11 | 40 | Complete | `/api/products` and `/admin/status` now expose per-source freshness for green/red/yellow |
+| SCRP-12 | 40 | Complete | Merge/notifier now operate on the freshest valid per-color snapshots rather than same-cycle assumptions |
+| OPS-03 | 40 | Complete | Stale/failure visibility now surfaces through MiniApp warnings and admin/log payloads |
+| UI-16 | 41 | Complete | Main screen now hydrates from the last good payload instead of always blocking on a fresh fetch |
+| UI-17 | 41 | Complete | Card enrichment now runs through a lower-pressure delayed queue with cached weight reuse |
+| UI-18 | 41 | Complete | Performance work stayed on the current data path and documented why no private API switch was needed |
+| QA-03 | 42 | Complete | Milestone regression suite and verification artifacts now cover continuity, freshness, alerting, and main-screen responsiveness |

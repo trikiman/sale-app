@@ -2,6 +2,10 @@ import pytest
 from fastapi.testclient import TestClient
 import os
 import tempfile
+import json
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import backend.main as main
 
@@ -78,3 +82,33 @@ def test_copy_tech_profile_replaces_previous_profile():
 
         assert os.path.exists(os.path.join(dst_dir, "Profile Marker.txt"))
         assert not os.path.exists(os.path.join(dst_dir, "stale.txt"))
+
+
+def test_admin_status_includes_cycle_state(monkeypatch, tmp_path):
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    cycle_state_path = data_dir / "scrape_cycle_state.json"
+    cycle_state_path.write_text(
+        json.dumps(
+            {
+                "continuity_safe": False,
+                "overall_status": "degraded",
+                "reasons": ["green:timeout"],
+                "sources": {
+                    "green": {"status": "timeout", "status_text": "TIMEOUT", "counted_for_continuity": False},
+                    "red": {"status": "ok", "status_text": "OK", "counted_for_continuity": True},
+                    "yellow": {"status": "ok", "status_text": "OK", "counted_for_continuity": True},
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(main, "DATA_DIR", str(data_dir))
+
+    response = client.get("/admin/status", headers={"X-Admin-Token": main.ADMIN_TOKEN})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["cycleState"]["continuity_safe"] is False
+    assert body["cycleState"]["sources"]["green"]["status"] == "timeout"
+    assert set(body["sourceFreshness"].keys()) == {"green", "red", "yellow"}

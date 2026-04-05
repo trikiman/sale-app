@@ -159,9 +159,14 @@ class Database:
                     first_seen TEXT NOT NULL,
                     last_seen TEXT NOT NULL,
                     duration_minutes INTEGER DEFAULT 0,
-                    is_active INTEGER DEFAULT 1
+                    is_active INTEGER DEFAULT 1,
+                    new_entry_pending INTEGER DEFAULT 1
                 )
             """)
+            try:
+                cursor.execute("ALTER TABLE sale_sessions ADD COLUMN new_entry_pending INTEGER DEFAULT 1")
+            except Exception:
+                pass
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_sessions_product ON sale_sessions(product_id)")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_sessions_active ON sale_sessions(is_active)")
             
@@ -380,6 +385,40 @@ class Database:
             
             seen = {row[0] for row in cursor.fetchall()}
             return set(product_ids) - seen
+
+    def get_pending_sale_entry_products(self, product_ids: List[str]) -> Set[str]:
+        """Return product IDs whose current active sale session still has a pending entry signal."""
+        normalized = [str(pid) for pid in product_ids if str(pid)]
+        if not normalized:
+            return set()
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            placeholders = ','.join('?' * len(normalized))
+            cursor.execute(f"""
+                SELECT product_id
+                FROM sale_sessions
+                WHERE is_active = 1
+                  AND COALESCE(new_entry_pending, 1) = 1
+                  AND product_id IN ({placeholders})
+            """, normalized)
+            return {str(row[0]) for row in cursor.fetchall()}
+
+    def mark_pending_sale_entries_surfaced(self, product_ids: List[str]):
+        """Clear the pending-entry flag for the active sessions of the given product IDs."""
+        normalized = [str(pid) for pid in product_ids if str(pid)]
+        if not normalized:
+            return
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            placeholders = ','.join('?' * len(normalized))
+            cursor.execute(f"""
+                UPDATE sale_sessions
+                SET new_entry_pending = 0
+                WHERE is_active = 1
+                  AND product_id IN ({placeholders})
+            """, normalized)
     
     def mark_products_notified(self, product_ids: List[str]):
         """Mark products as notified"""

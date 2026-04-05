@@ -14,9 +14,10 @@ from contextlib import contextmanager
 import config
 
 
-# Gap threshold: if a product isn't seen for this many minutes,
+# Gap threshold: if a product isn't seen for this many healthy minutes,
 # the session is considered closed and a new one starts.
-SESSION_GAP_MINUTES = 15
+SESSION_GAP_MINUTES = 60
+CYCLE_STATE_PATH = os.path.join(config.DATA_DIR, "scrape_cycle_state.json")
 
 
 def get_sale_db_path() -> str:
@@ -73,9 +74,14 @@ def init_sale_history_tables():
                 first_seen TEXT NOT NULL,
                 last_seen TEXT NOT NULL,
                 duration_minutes INTEGER DEFAULT 0,
-                is_active INTEGER DEFAULT 1
+                is_active INTEGER DEFAULT 1,
+                new_entry_pending INTEGER DEFAULT 1
             )
         """)
+        try:
+            c.execute("ALTER TABLE sale_sessions ADD COLUMN new_entry_pending INTEGER DEFAULT 1")
+        except Exception:
+            pass
         c.execute("CREATE INDEX IF NOT EXISTS idx_sessions_product ON sale_sessions(product_id)")
         c.execute("CREATE INDEX IF NOT EXISTS idx_sessions_active ON sale_sessions(is_active)")
 
@@ -146,6 +152,48 @@ def _load_category_db_groups() -> Dict[str, Dict]:
         return {}
 
 
+def _load_cycle_state() -> Dict[str, Any]:
+    if not os.path.exists(CYCLE_STATE_PATH):
+        return {"sources": {}}
+
+    try:
+        with open(CYCLE_STATE_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            data.setdefault("sources", {})
+            return data
+    except Exception:
+        pass
+    return {"sources": {}}
+
+
+def _get_cycle_source_state(cycle_state: Dict[str, Any], sale_type: str) -> Dict[str, Any]:
+    sources = cycle_state.get("sources") or {}
+    entry = sources.get(str(sale_type).lower()) or {}
+    if not isinstance(entry, dict):
+        entry = {}
+    return {
+        "status": entry.get("status", "unknown"),
+        "status_text": entry.get("status_text", "Unknown cycle state"),
+        "counted_for_continuity": bool(entry.get("counted_for_continuity", False)),
+    }
+
+
+def _log_session_decision(decision: str, product_id: str, sale_type: str, missing_minutes: Optional[int] = None, source_state: Optional[Dict[str, Any]] = None):
+    source_state = source_state or {}
+    parts = [
+        f"🧭 [SESSION] {decision}",
+        f"id={product_id}",
+        f"type={sale_type}",
+    ]
+    if missing_minutes is not None:
+        parts.append(f"missing={missing_minutes}m")
+    if source_state:
+        parts.append(f"source={source_state.get('status')}")
+        parts.append(f"reason={source_state.get('status_text')}")
+    print(" | ".join(parts))
+
+
 def record_sale_appearances(current_products: List[Dict[str, Any]]):
     """
     Record current sale products and manage sessions.
@@ -155,10 +203,11 @@ def record_sale_appearances(current_products: List[Dict[str, Any]]):
         current_products: list of product dicts from proposals.json
                           Each has: id, name, type, currentPrice, oldPrice, image, category, group, subgroup
     """
-    if not current_products:
-        return
+    current_products = current_products or []
 
     now = datetime.now(timezone.utc).isoformat()
+    now_dt = datetime.fromisoformat(now)
+    cycle_state = _load_cycle_state()
     
     # Load group/subgroup data from category_db
     catdb_groups = _load_category_db_groups()
@@ -197,22 +246,56 @@ def record_sale_appearances(current_products: List[Dict[str, Any]]):
         current_ids = {str(p.get("id", "")) for p in current_products if p.get("id")}
         
         # Close sessions for products no longer on sale
-        c.execute("SELECT id, product_id, first_seen FROM sale_sessions WHERE is_active = 1")
+        c.execute("SELECT id, product_id, sale_type, first_seen, last_seen FROM sale_sessions WHERE is_active = 1")
         active_sessions = c.fetchall()
         
         sessions_closed = 0
+        sessions_kept_unsafe = 0
+        sessions_kept_grace = 0
         for row in active_sessions:
             if row["product_id"] not in current_ids:
-                # Product gone — close session
+                source_state = _get_cycle_source_state(cycle_state, row["sale_type"])
+                last_seen_dt = datetime.fromisoformat(row["last_seen"])
+                missing_minutes = int((now_dt - last_seen_dt).total_seconds() / 60)
+
+                if not source_state["counted_for_continuity"]:
+                    sessions_kept_unsafe += 1
+                    _log_session_decision(
+                        "KEEP_ACTIVE_UNSAFE_CYCLE",
+                        row["product_id"],
+                        row["sale_type"],
+                        missing_minutes=missing_minutes,
+                        source_state=source_state,
+                    )
+                    continue
+
+                if missing_minutes < SESSION_GAP_MINUTES:
+                    sessions_kept_grace += 1
+                    _log_session_decision(
+                        "KEEP_ACTIVE_GRACE_WINDOW",
+                        row["product_id"],
+                        row["sale_type"],
+                        missing_minutes=missing_minutes,
+                        source_state=source_state,
+                    )
+                    continue
+
+                # Product confirmed gone — close session
                 first = datetime.fromisoformat(row["first_seen"])
-                now_dt = datetime.fromisoformat(now)
-                duration = int((now_dt - first).total_seconds() / 60)
+                duration = int((last_seen_dt - first).total_seconds() / 60)
                 c.execute("""
                     UPDATE sale_sessions 
-                    SET is_active = 0, last_seen = ?, duration_minutes = ?
+                    SET is_active = 0, duration_minutes = ?
                     WHERE id = ?
-                """, (now, duration, row["id"]))
+                """, (duration, row["id"]))
                 sessions_closed += 1
+                _log_session_decision(
+                    "CLOSE_CONFIRMED_ABSENCE",
+                    row["product_id"],
+                    row["sale_type"],
+                    missing_minutes=missing_minutes,
+                    source_state=source_state,
+                )
 
         # Open/extend sessions for active products
         sessions_opened = 0
@@ -252,13 +335,21 @@ def record_sale_appearances(current_products: List[Dict[str, Any]]):
                 """, (now, duration, price, old_price, discount, existing["id"]))
                 sessions_extended += 1
             else:
+                c.execute("SELECT 1 FROM sale_sessions WHERE product_id = ? LIMIT 1", (pid,))
+                had_previous_session = c.fetchone() is not None
                 # New session
                 c.execute("""
                     INSERT INTO sale_sessions 
-                    (product_id, sale_type, price, old_price, discount_pct, first_seen, last_seen, duration_minutes, is_active)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1)
+                    (product_id, sale_type, price, old_price, discount_pct, first_seen, last_seen, duration_minutes, is_active, new_entry_pending)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 0, 1, 1)
                 """, (pid, sale_type, price, old_price, discount, now, now))
                 sessions_opened += 1
+                _log_session_decision(
+                    "OPEN_CONFIRMED_REENTRY" if had_previous_session else "OPEN_INITIAL_ENTRY",
+                    pid,
+                    sale_type,
+                    source_state=_get_cycle_source_state(cycle_state, sale_type),
+                )
 
         # 3. Update product catalog with latest info (including group/subgroup)
         for p in current_products:
@@ -298,8 +389,11 @@ def record_sale_appearances(current_products: List[Dict[str, Any]]):
                     updated_at = excluded.updated_at
             """, (pid, name, category, group_name, subgroup, image, price, now, sale_type, now))
 
-        print(f"📊 Sale history: +{appearances_added} appearances, "
-              f"{sessions_opened} opened, {sessions_extended} extended, {sessions_closed} closed")
+        print(
+            f"📊 Sale history: +{appearances_added} appearances, "
+            f"{sessions_opened} opened, {sessions_extended} extended, {sessions_closed} closed, "
+            f"{sessions_kept_grace} grace-held, {sessions_kept_unsafe} unsafe-held"
+        )
 
 
 def update_product_stats():

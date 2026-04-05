@@ -11,6 +11,7 @@ import time
 import subprocess
 import sys
 import os
+import json
 from datetime import datetime
 
 # Fix Windows console encoding for emoji in scraper output
@@ -19,7 +20,9 @@ if sys.platform == 'win32':
     sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 
 # Configuration
-INTERVAL_MINUTES = 3
+FULL_CYCLE_INTERVAL_SECONDS = 300
+GREEN_TARGET_INTERVAL_SECONDS = 60
+DEFAULT_GREEN_RUNTIME_SECONDS = 60
 SCRAPER_TIMEOUT = 300  # 5 minutes max per scraper
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
@@ -29,6 +32,7 @@ os.makedirs(LOG_DIR, exist_ok=True)
 os.makedirs(os.path.join(LOG_DIR, "backend"), exist_ok=True)  # BUG-3: notifier log dir
 
 LOG_FILE = os.path.join(LOG_DIR, "scheduler.log")
+CYCLE_STATE_PATH = os.path.join(DATA_DIR, "scrape_cycle_state.json")
 
 
 def log(message):
@@ -252,21 +256,123 @@ def _check_file_updated(path, before_ts):
     return os.path.getmtime(path) > before_ts
 
 
-def run_full_cycle(proxy_state):
-    """Run a full scrape cycle. Returns updated proxy_state dict."""
-    _kill_orphan_chromes()  # only orphans, keep main CDP Chrome alive
-    log("=" * 60)
-    log("=== Starting Scrape Cycle ===")
-    log("=" * 60)
+def _classify_scraper_status(code, file_updated):
+    if code == -2:
+        return "TIMEOUT (even after retry)"
+    if code != 0:
+        return f"ERROR (exit {code})"
+    if not file_updated:
+        return "WARNING (exit 0 but data NOT updated)"
+    return "OK (data updated)"
 
-    # ── Proxy check: is VkusVill reachable? ──
+
+def _status_kind(status_text: str) -> str:
+    upper = (status_text or "").upper()
+    if upper.startswith("OK"):
+        return "ok"
+    if upper.startswith("TIMEOUT"):
+        return "timeout"
+    if upper.startswith("ERROR"):
+        return "error"
+    if upper.startswith("WARNING"):
+        return "warning"
+    if upper.startswith("SKIPPED"):
+        return "skipped"
+    return "unknown"
+
+
+def _source_state_entry(tag: str, data_file: str, status_text: str, ran_this_cycle: bool):
+    path = os.path.join(DATA_DIR, data_file)
+    exists = os.path.exists(path)
+    updated_at = None
+    age_minutes = None
+    if exists:
+        mtime = os.path.getmtime(path)
+        updated_at = datetime.fromtimestamp(mtime).isoformat(timespec="seconds")
+        age_minutes = round((time.time() - mtime) / 60, 1)
+
+    if not ran_this_cycle:
+        status_kind = "skipped" if exists else "missing"
+        counted_for_continuity = False
+        status_text = status_text or "SKIPPED (not run this cycle)"
+    else:
+        status_kind = _status_kind(status_text)
+        counted_for_continuity = status_kind == "ok"
+
+    return {
+        "status": status_kind,
+        "status_text": status_text,
+        "data_file": data_file,
+        "exists": exists,
+        "updated_at": updated_at,
+        "age_minutes": age_minutes,
+        "counted_for_continuity": counted_for_continuity,
+    }
+
+
+def _build_cycle_state(cycle_type: str, cycle_started_at: str, cycle_finished_at: str, scraper_results: dict, ran_tags: set[str], merge_status: str = None, notifier_status: str = None):
+    source_specs = {
+        "red": ("RED", "red_products.json"),
+        "yellow": ("YELLOW", "yellow_products.json"),
+        "green": ("GREEN", "green_products.json"),
+    }
+    sources = {}
+    reasons = []
+    for color, (tag, data_file) in source_specs.items():
+        result = scraper_results.get(tag, {})
+        entry = _source_state_entry(
+            tag,
+            data_file,
+            result.get("status_text", "SKIPPED (not run this cycle)"),
+            tag in ran_tags,
+        )
+        sources[color] = entry
+        if not entry["counted_for_continuity"]:
+            reasons.append(f"{color}:{entry['status']}")
+
+    overall_status = "healthy" if not reasons else "degraded"
+    if merge_status and _status_kind(merge_status) != "ok":
+        overall_status = "degraded"
+        reasons.append(f"merge:{_status_kind(merge_status)}")
+    if notifier_status and _status_kind(notifier_status) not in {"ok", "unknown"}:
+        overall_status = "degraded"
+        reasons.append(f"notifier:{_status_kind(notifier_status)}")
+
+    return {
+        "cycle_type": cycle_type,
+        "cycle_started_at": cycle_started_at,
+        "cycle_finished_at": cycle_finished_at,
+        "continuity_safe": all(entry["counted_for_continuity"] for entry in sources.values()),
+        "overall_status": overall_status,
+        "reasons": reasons,
+        "sources": sources,
+        "merge": {"status": _status_kind(merge_status), "status_text": merge_status} if merge_status else None,
+        "notifier": {"status": _status_kind(notifier_status), "status_text": notifier_status} if notifier_status else None,
+    }
+
+
+def _write_cycle_state(state: dict):
+    with open(CYCLE_STATE_PATH, "w", encoding="utf-8") as f:
+        json.dump(state, f, ensure_ascii=False, indent=2)
+
+
+def choose_due_job(now_monotonic: float, next_all_due_at: float, next_green_due_at: float, estimated_green_runtime: float) -> str | None:
+    if now_monotonic >= next_all_due_at:
+        return "all"
+    if now_monotonic >= next_green_due_at:
+        if now_monotonic + estimated_green_runtime >= next_all_due_at:
+            return "skip_green"
+        return "green"
+    return None
+
+
+def _prepare_proxy_connectivity(proxy_state):
     from proxy_manager import ProxyManager
-    pm = ProxyManager(log_func=log)
 
+    pm = ProxyManager(log_func=log)
     current_proxy = proxy_state.get("active_proxy")
 
     if pm.check_direct():
-        # Direct works — if we were using proxy, switch back
         if current_proxy:
             log("VkusVill reachable directly — switching Chrome back to direct mode")
             from chrome_stealth import restart_chrome_with_proxy
@@ -275,7 +381,6 @@ def run_full_cycle(proxy_state):
         log("VkusVill: OK (direct)")
     else:
         log("VkusVill: BLOCKED (direct connection failed)")
-        # Find a working proxy
         proxy = pm.get_working_proxy()
         if proxy:
             proxy_url = f"socks5://{proxy}"
@@ -288,29 +393,21 @@ def run_full_cycle(proxy_state):
                 log(f"Already using proxy: {proxy_url}")
         else:
             log("WARNING: VkusVill blocked and no working proxy found. Cycle will likely fail.")
+    return pm, proxy_state
 
-    # Run all 3 scrapers sequentially — each gets its own Chrome port
-    scrapers = [
-        ("scrape_red.py", "RED", "red_products.json"),
-        ("scrape_yellow.py", "YELLOW", "yellow_products.json"),
-        ("scrape_green.py", "GREEN", "green_products.json"),  # last = freshest
-    ]
 
+def _run_scraper_set(scrapers, proxy_state):
+    pm, proxy_state = _prepare_proxy_connectivity(proxy_state)
     scraper_results = {}
     for script, tag, data_file in scrapers:
         data_path = os.path.join(DATA_DIR, data_file)
         before_ts = os.path.getmtime(data_path) if os.path.exists(data_path) else 0
 
         code = run_script(script, tag)
-
-        # ── Timeout or block → kill + proxy + retry once ──
-        if code == -2 or code == 1:  # -2 = timeout, 1 = scraper error (likely block)
+        if code == -2 or code == 1:
             log(f"  {tag}: {'TIMEOUT' if code == -2 else 'FAILED'} — attempting kill + proxy + retry")
-
-            # 1. Kill ALL scraper Chrome (will restart with proxy)
             _kill_all_scraper_chrome()
 
-            # 2. Pick next proxy (removes the dead one from pool)
             proxy = pm.next_proxy()
             if proxy:
                 proxy_url = f"socks5://{proxy}"
@@ -318,66 +415,144 @@ def run_full_cycle(proxy_state):
                 from chrome_stealth import restart_chrome_with_proxy
                 restart_chrome_with_proxy(proxy=proxy_url, tag="PROXY")
                 proxy_state["active_proxy"] = proxy_url
-                time.sleep(3)  # let Chrome stabilize
-
-                # 3. Retry the scraper once
+                time.sleep(3)
                 before_ts = os.path.getmtime(data_path) if os.path.exists(data_path) else 0
                 code = run_script(script, f"{tag}-RETRY")
             else:
                 log("  No working proxy found — skipping retry")
 
         file_updated = _check_file_updated(data_path, before_ts)
-
-        if code == -2:
-            status = "TIMEOUT (even after retry)"
-        elif code != 0:
-            status = f"ERROR (exit {code})"
-        elif not file_updated:
-            status = "WARNING (exit 0 but data NOT updated)"
-        else:
-            status = "OK (data updated)"
-
-        scraper_results[tag] = status
-        log(f"  {tag}: {status}")
+        status_text = _classify_scraper_status(code, file_updated)
+        scraper_results[tag] = {
+            "status_text": status_text,
+            "code": code,
+            "file_updated": file_updated,
+            "data_file": data_file,
+        }
+        log(f"  {tag}: {status_text}")
 
     _kill_all_scraper_chrome()
-    proxy_state["active_proxy"] = None  # next cycle starts fresh Chrome
+    proxy_state["active_proxy"] = None
+    return proxy_state, scraper_results
 
-    # Run merge after all scrapers complete
+
+def _run_merge_and_notifier():
     log("Running merge...")
-    run_script("scrape_merge.py", "MERGE")
+    merge_code = run_script("scrape_merge.py", "MERGE")
+    merge_status = "OK (data updated)" if merge_code == 0 else f"ERROR (exit {merge_code})"
 
-    # Send Telegram notifications for favorites that are now on sale
     log("Running favorite notifications...")
-    run_script(os.path.join("backend", "notifier.py"), "NOTIF")
+    notifier_code = run_script(os.path.join("backend", "notifier.py"), "NOTIF")
+    notifier_status = "OK (notifications run)" if notifier_code == 0 else f"ERROR (exit {notifier_code})"
+    return merge_status, notifier_status
 
-    # Summary
+
+def run_full_cycle(proxy_state):
+    """Run a full scrape cycle. Returns updated proxy_state dict."""
+    _kill_orphan_chromes()  # only orphans, keep main CDP Chrome alive
+    log("=" * 60)
+    log("=== Starting Full Scrape Cycle ===")
+    log("=" * 60)
+    cycle_started_at = datetime.now().isoformat(timespec="seconds")
+    scrapers = [
+        ("scrape_red.py", "RED", "red_products.json"),
+        ("scrape_yellow.py", "YELLOW", "yellow_products.json"),
+        ("scrape_green.py", "GREEN", "green_products.json"),
+    ]
+    proxy_state, scraper_results = _run_scraper_set(scrapers, proxy_state)
+    _write_cycle_state(
+        _build_cycle_state(
+            "all",
+            cycle_started_at,
+            datetime.now().isoformat(timespec="seconds"),
+            scraper_results,
+            {"RED", "YELLOW", "GREEN"},
+        )
+    )
+    merge_status, notifier_status = _run_merge_and_notifier()
+    cycle_finished_at = datetime.now().isoformat(timespec="seconds")
+    _write_cycle_state(
+        _build_cycle_state(
+            "all",
+            cycle_started_at,
+            cycle_finished_at,
+            scraper_results,
+            {"RED", "YELLOW", "GREEN"},
+            merge_status=merge_status,
+            notifier_status=notifier_status,
+        )
+    )
+
     log("-" * 60)
     log("Cycle Summary:")
-    for tag, status in scraper_results.items():
-        log(f"  {tag}: {status}")
-    if proxy_state.get("active_proxy"):
-        log(f"  PROXY: {proxy_state['active_proxy']}")
+    for tag, result in scraper_results.items():
+        log(f"  {tag}: {result['status_text']}")
+    log(f"  MERGE: {merge_status}")
+    log(f"  NOTIF: {notifier_status}")
     log("=" * 60)
 
-    # Track consecutive failures for circuit breaker
-    all_failed = all("ERROR" in s for s in scraper_results.values())
+    all_failed = all(result["code"] != 0 for result in scraper_results.values())
     if all_failed:
         proxy_state["consecutive_fails"] = proxy_state.get("consecutive_fails", 0) + 1
     else:
         proxy_state["consecutive_fails"] = 0
+    return proxy_state
 
+def run_green_only_cycle(proxy_state):
+    """Run one green-only refresh cycle, then merge and notify."""
+    _kill_orphan_chromes()
+    log("-" * 60)
+    log("=== Starting Green-Only Refresh ===")
+    log("-" * 60)
+    cycle_started_at = datetime.now().isoformat(timespec="seconds")
+    scrapers = [
+        ("scrape_green.py", "GREEN", "green_products.json"),
+    ]
+    proxy_state, scraper_results = _run_scraper_set(scrapers, proxy_state)
+    _write_cycle_state(
+        _build_cycle_state(
+            "green_only",
+            cycle_started_at,
+            datetime.now().isoformat(timespec="seconds"),
+            scraper_results,
+            {"GREEN"},
+        )
+    )
+    merge_status, notifier_status = _run_merge_and_notifier()
+    cycle_finished_at = datetime.now().isoformat(timespec="seconds")
+    _write_cycle_state(
+        _build_cycle_state(
+            "green_only",
+            cycle_started_at,
+            cycle_finished_at,
+            scraper_results,
+            {"GREEN"},
+            merge_status=merge_status,
+            notifier_status=notifier_status,
+        )
+    )
+    log(f"  GREEN: {scraper_results['GREEN']['status_text']}")
+    log(f"  MERGE: {merge_status}")
+    log(f"  NOTIF: {notifier_status}")
+    log("-" * 60)
     return proxy_state
 
 
 def main():
-    log(f"Scheduler service started. Interval: {INTERVAL_MINUTES} minutes.")
+    log(
+        "Scheduler service started. "
+        f"Full cycle target: {FULL_CYCLE_INTERVAL_SECONDS}s | "
+        f"Green target: {GREEN_TARGET_INTERVAL_SECONDS}s."
+    )
     log(f"Logs: {LOG_FILE}")
 
     proxy_state = {
         "active_proxy": None,
         "consecutive_fails": 0,
     }
+    next_all_due_at = time.monotonic()
+    next_green_due_at = next_all_due_at + GREEN_TARGET_INTERVAL_SECONDS
+    estimated_green_runtime = DEFAULT_GREEN_RUNTIME_SECONDS
 
     while True:
         try:
@@ -389,25 +564,45 @@ def main():
                 log("Login finished — resuming scrapers.")
                 time.sleep(3)  # Give Chrome a moment to settle
 
-            proxy_state = run_full_cycle(proxy_state)
+            now_monotonic = time.monotonic()
+            job = choose_due_job(now_monotonic, next_all_due_at, next_green_due_at, estimated_green_runtime)
 
-            # Circuit breaker: if 3+ consecutive all-fail cycles, wait longer
-            fails = proxy_state.get("consecutive_fails", 0)
-            if fails >= 3:
-                wait = 10  # minutes
-                log(f"Circuit breaker: {fails} consecutive failures. Waiting {wait} min instead of {INTERVAL_MINUTES}.")
-                # Also try refreshing proxy list for next attempt
-                try:
-                    from proxy_manager import ProxyManager
-                    pm = ProxyManager(log_func=log)
-                    pm.refresh_proxy_list()
-                except Exception:
-                    pass
-            else:
-                wait = INTERVAL_MINUTES
+            if job is None:
+                sleep_for = max(0.5, min(next_all_due_at, next_green_due_at) - now_monotonic)
+                time.sleep(min(sleep_for, 5.0))
+                continue
 
-            log(f"Waiting {wait} minutes for next cycle...")
-            time.sleep(wait * 60)
+            if job == "skip_green":
+                log("Skipping GREEN-only refresh to keep the next full cycle on schedule.")
+                next_green_due_at = next_all_due_at + GREEN_TARGET_INTERVAL_SECONDS
+                sleep_for = max(0.5, next_all_due_at - time.monotonic())
+                time.sleep(min(sleep_for, 5.0))
+                continue
+
+            if job == "all":
+                cycle_started = time.monotonic()
+                proxy_state = run_full_cycle(proxy_state)
+                fails = proxy_state.get("consecutive_fails", 0)
+                if fails >= 3:
+                    wait_seconds = 600
+                    log(f"Circuit breaker: {fails} consecutive failures. Waiting {wait_seconds // 60} min before next full cycle.")
+                    try:
+                        from proxy_manager import ProxyManager
+                        pm = ProxyManager(log_func=log)
+                        pm.refresh_proxy_list()
+                    except Exception:
+                        pass
+                    next_all_due_at = time.monotonic() + wait_seconds
+                    next_green_due_at = next_all_due_at + GREEN_TARGET_INTERVAL_SECONDS
+                else:
+                    next_all_due_at = cycle_started + FULL_CYCLE_INTERVAL_SECONDS
+                    next_green_due_at = cycle_started + GREEN_TARGET_INTERVAL_SECONDS
+                continue
+
+            green_started = time.monotonic()
+            proxy_state = run_green_only_cycle(proxy_state)
+            estimated_green_runtime = max(1.0, time.monotonic() - green_started)
+            next_green_due_at = green_started + GREEN_TARGET_INTERVAL_SECONDS
         except KeyboardInterrupt:
             log("Scheduler stopped by user.")
             break
@@ -418,4 +613,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

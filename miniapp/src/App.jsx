@@ -58,6 +58,31 @@ const TYPE_CONFIG = {
   _default: { bg: 'bg-gray-500/20', text: 'text-gray-400', label: '📦 Другое', border: 'border-gray-500/30', priceColor: '#9ca3af', tint: '' }
 }
 const CARDS_PER_PAGE = 24
+const PRODUCTS_CACHE_KEY = 'vv_products_cache_v1'
+const WEIGHT_CACHE_KEY = 'vv_weight_cache_v1'
+
+function readCachedJson(key) {
+  try {
+    const raw = localStorage.getItem(key)
+    return raw ? JSON.parse(raw) : null
+  } catch {
+    return null
+  }
+}
+
+function writeCachedJson(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value))
+  } catch {
+    // Cache is best-effort only.
+  }
+}
+
+function normalizeProductsPayload(items) {
+  return Array.isArray(items)
+    ? items.map((p) => ({ ...p, category: normalizeCategory(p.category) }))
+    : []
+}
 
 const ProductCard = memo(function ProductCard({ product, index, isFavorite, onToggleFavorite, favoritesLoading, onAddToCart, viewMode, cartState, onOpenDetail }) {
   const [imageLoaded, setImageLoaded] = useState(false)
@@ -256,12 +281,17 @@ function CategoryFilter({ selected, onSelect, categories, favoritedIds, onToggle
 }
 
 function App() {
+  const initialProductsCacheRef = useRef(undefined)
+  if (initialProductsCacheRef.current === undefined) {
+    initialProductsCacheRef.current = readCachedJson(PRODUCTS_CACHE_KEY)
+  }
+  const initialProductsCache = initialProductsCacheRef.current
   const isTelegramMiniApp = Boolean(window.Telegram?.WebApp?.initData)
-  const [products, setProducts] = useState([])
-  const [resolvedWeights, setResolvedWeights] = useState({})
+  const [products, setProducts] = useState(() => normalizeProductsPayload(initialProductsCache?.products))
+  const [resolvedWeights, setResolvedWeights] = useState(() => readCachedJson(WEIGHT_CACHE_KEY) || {})
   const [selectedCategory, setSelectedCategory] = useState('all')
   const [selectedSubgroup, setSelectedSubgroup] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(() => !initialProductsCache?.products?.length)
   const [favoritesLoading, setFavoritesLoading] = useState(true)
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     return localStorage.getItem('vv_authenticated') === '1'
@@ -273,8 +303,9 @@ function App() {
   const [showLoginPrompt, setShowLoginPrompt] = useState(false)
   const [error, setError] = useState(null)
   const [toastMessage, setToastMessage] = useState(null)
-  const [updatedAt, setUpdatedAt] = useState(null)
-  const updatedAtRef = useRef(null)
+  const [updatedAt, setUpdatedAt] = useState(() => initialProductsCache?.updatedAt || null)
+  const updatedAtRef = useRef(initialProductsCache?.updatedAt || null)
+  const freshnessSignatureRef = useRef(JSON.stringify(initialProductsCache?.sourceFreshness || {}))
   const [favorites, setFavorites] = useState(new Set())
   const [userId] = useState(() => {
     // Check if we previously linked a Telegram account
@@ -298,9 +329,10 @@ function App() {
     red: true,
     yellow: true
   })
-  const [greenLiveCount, setGreenLiveCount] = useState(null)
-  const [dataStale, setDataStale] = useState(false)
-  const [greenMissing, setGreenMissing] = useState(false)
+  const [greenLiveCount, setGreenLiveCount] = useState(() => initialProductsCache?.greenLiveCount ?? null)
+  const [dataStale, setDataStale] = useState(() => !!initialProductsCache?.dataStale)
+  const [greenMissing, setGreenMissing] = useState(() => !!initialProductsCache?.greenMissing)
+  const [sourceFreshness, setSourceFreshness] = useState(() => initialProductsCache?.sourceFreshness || null)
   const [scraperRunning, setScraperRunning] = useState(false)
   const [scraperDone, setScraperDone] = useState(false)
   const [showTokenInput, setShowTokenInput] = useState(false)
@@ -337,6 +369,10 @@ function App() {
   useEffect(() => {
     localStorage.setItem('vv_view_mode', viewMode)
   }, [viewMode])
+
+  useEffect(() => {
+    writeCachedJson(WEIGHT_CACHE_KEY, resolvedWeights)
+  }, [resolvedWeights])
 
   // Check server-side link status on load (handles new device/browser)
   // If already linked, store telegram_id locally and reload
@@ -515,7 +551,8 @@ function App() {
 
   // Reusable product loader (used for initial load + auto-refresh)
   const loadProducts = (isAutoRefresh = false) => {
-    if (!isAutoRefresh) setLoading(true)
+    const shouldBlock = !isAutoRefresh && products.length === 0
+    if (shouldBlock) setLoading(true)
     fetch('/api/products')
       .then(res => {
         if (!res.ok) throw new Error('Failed to load data')
@@ -523,27 +560,52 @@ function App() {
       })
       .then(data => {
         if (data.products && Array.isArray(data.products)) {
-          // On auto-refresh, only update if data actually changed
-          if (isAutoRefresh && data.updatedAt === updatedAtRef.current) return
-          setProducts(data.products.map(p => ({ ...p, category: normalizeCategory(p.category) })))
+          const normalizedProducts = normalizeProductsPayload(data.products)
+          const freshnessSignature = JSON.stringify(data.sourceFreshness || {})
+          if (
+            isAutoRefresh &&
+            data.updatedAt === updatedAtRef.current &&
+            freshnessSignature === freshnessSignatureRef.current &&
+            !!data.dataStale === dataStale &&
+            !!data.greenMissing === greenMissing
+          ) return
+
+          setProducts(normalizedProducts)
           setUpdatedAt(data.updatedAt)
           updatedAtRef.current = data.updatedAt
+          freshnessSignatureRef.current = freshnessSignature
           if (data.greenLiveCount !== undefined) setGreenLiveCount(data.greenLiveCount)
           setDataStale(!!data.dataStale)
           setGreenMissing(!!data.greenMissing)
+          setSourceFreshness(data.sourceFreshness || null)
+          setError(null)
+          writeCachedJson(PRODUCTS_CACHE_KEY, {
+            products: normalizedProducts,
+            updatedAt: data.updatedAt,
+            greenLiveCount: data.greenLiveCount,
+            dataStale: !!data.dataStale,
+            greenMissing: !!data.greenMissing,
+            sourceFreshness: data.sourceFreshness || null,
+          })
         } else if (Array.isArray(data) && data.length > 0) {
-          setProducts(data.map(p => ({ ...p, category: normalizeCategory(p.category) })))
-        } else if (!isAutoRefresh) {
+          setProducts(normalizeProductsPayload(data))
+          setError(null)
+        } else if (!isAutoRefresh && products.length === 0) {
           setError('Товары не найдены')
         }
       })
       .catch(err => {
         if (isAutoRefresh) return // Silently ignore auto-refresh errors
         console.error('API Error:', err)
-        setError('Не удалось загрузить данные. Проверьте подключение.')
+        if (products.length === 0) {
+          setError('Не удалось загрузить данные. Проверьте подключение.')
+        } else {
+          setToastMessage({ text: 'Не удалось обновить данные', type: 'error' })
+          setTimeout(() => setToastMessage(null), 3000)
+        }
       })
       .finally(() => {
-        if (!isAutoRefresh) setLoading(false)
+        if (shouldBlock) setLoading(false)
       })
   }
 
@@ -860,46 +922,59 @@ function App() {
       pendingWeightIdsRef.current.add(product.id)
     }
 
-    Promise.allSettled(
-      productsNeedingWeight.map(async (product) => {
-        const res = await fetch(`/api/product/${product.id}/details`)
-        if (!res.ok) {
-          throw new Error(`Failed to load weight for ${product.id}`)
+    const timer = window.setTimeout(() => {
+      const queue = [...productsNeedingWeight]
+      const loadedWeights = {}
+
+      const worker = async () => {
+        while (queue.length > 0 && !cancelled) {
+          const product = queue.shift()
+          if (!product) return
+
+          try {
+            const res = await fetch(`/api/product/${product.id}/details`)
+            if (!res.ok) {
+              throw new Error(`Failed to load weight for ${product.id}`)
+            }
+            const data = await res.json()
+            const weight = String(data?.weight || '').trim()
+            if (weight) {
+              loadedWeights[product.id] = weight
+            }
+          } catch {
+            // Best-effort enrichment only.
+          } finally {
+            pendingWeightIdsRef.current.delete(product.id)
+          }
         }
-        const data = await res.json()
-        return {
-          id: product.id,
-          weight: String(data?.weight || '').trim(),
-        }
-      }),
-    )
-      .then((results) => {
+      }
+
+      Promise.allSettled([
+        worker(),
+        worker(),
+      ]).then(() => {
         if (cancelled) return
+        if (Object.keys(loadedWeights).length === 0) return
 
         setResolvedWeights((prev) => {
           let changed = false
           const next = { ...prev }
-
-          for (const result of results) {
-            if (result.status !== 'fulfilled') continue
-            if (!result.value.weight) continue
-            if (next[result.value.id]) continue
-
-            next[result.value.id] = result.value.weight
+          for (const [id, weight] of Object.entries(loadedWeights)) {
+            if (next[id]) continue
+            next[id] = weight
             changed = true
           }
-
           return changed ? next : prev
         })
       })
-      .finally(() => {
-        for (const product of productsNeedingWeight) {
-          pendingWeightIdsRef.current.delete(product.id)
-        }
-      })
+    }, 200)
 
     return () => {
       cancelled = true
+      window.clearTimeout(timer)
+      for (const product of productsNeedingWeight) {
+        pendingWeightIdsRef.current.delete(product.id)
+      }
     }
   }, [filteredProducts, resolvedWeights])
 
@@ -958,6 +1033,17 @@ function App() {
   const countGreen = enrichedProducts.filter(p => p.type === 'green').length
   const countRed = enrichedProducts.filter(p => p.type === 'red').length
   const countYellow = enrichedProducts.filter(p => p.type === 'yellow').length
+  const staleColorLabels = useMemo(() => {
+    if (!sourceFreshness) return []
+    const labels = {
+      green: 'зелёные',
+      red: 'красные',
+      yellow: 'жёлтые',
+    }
+    return Object.entries(sourceFreshness)
+      .filter(([, info]) => info?.isStale)
+      .map(([color]) => labels[color] || color)
+  }, [sourceFreshness])
 
   // Dynamic header based on active filters
   const activeTypes = Object.entries(typeFilters).filter(([, active]) => active).map(([type]) => type)
@@ -1267,7 +1353,7 @@ function App() {
           <div
             className="mt-2 px-4 py-2 rounded-xl bg-yellow-500/20 border border-yellow-500/50 text-yellow-300 text-center text-xs anim-scale"
           >
-            ⚠️ Данные устарели — товары и цены могут не совпадать с сайтом
+            ⚠️ Данные устарели{staleColorLabels.length ? `: ${staleColorLabels.join(', ')}` : ''} — товары и цены могут не совпадать с сайтом
           </div>
         )}
 

@@ -153,7 +153,7 @@ class Notifier:
         return data.get('products', [])
     
     def detect_new_products(self) -> list:
-        """Detect new products that haven't been seen before.
+        """Detect products whose current active sale session has a pending entry signal.
         
         NOTE (BOT-04): Does NOT mark products as seen — caller must call
         mark_all_products_seen() after all per-user notifications are sent.
@@ -162,17 +162,22 @@ class Notifier:
         if not products:
             return []
         
-        product_ids = [p['id'] for p in products]
-        new_ids = self.db.get_new_products(product_ids)
+        product_ids = [str(p['id']) for p in products if p.get('id')]
+        new_ids = self.db.get_pending_sale_entry_products(product_ids)
         
-        # Return only new products (don't mark as seen yet — BOT-04 fix)
-        return [p for p in products if p['id'] in new_ids]
+        # Return only pending-entry products (don't mark as surfaced yet — BOT-04 fix)
+        return [p for p in products if str(p.get('id')) in new_ids]
     
     def mark_all_products_seen(self):
-        """Mark all current products as seen. Call AFTER all notifications."""
+        """Mark current products as seen and clear any pending session-entry flags after notifications."""
         products = self.load_products()
+        product_ids = []
         for product in products:
-            self.db.mark_product_seen(product['id'])
+            if product.get('id'):
+                pid = str(product['id'])
+                product_ids.append(pid)
+                self.db.mark_product_seen(pid)
+        self.db.mark_pending_sale_entries_surfaced(product_ids)
     
     def get_favorite_alerts(self) -> dict:
         """Check if any user's favorites are now available"""
