@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import backend.main as main
+from cart.vkusvill_api import VkusVillCart
 
 
 client = TestClient(main.app)
@@ -76,3 +77,22 @@ def test_cart_add_maps_upstream_timeout_to_504(monkeypatch, tmp_path):
 
     assert response.status_code == 504
     assert response.json() == {"detail": "Cart API timeout"}
+
+
+def test_cart_uses_cached_proxy_without_refresh(monkeypatch, tmp_path):
+    cookies_path = tmp_path / "cookies.json"
+    cookies_path.write_text("[]", encoding="utf-8")
+
+    class DummyProxyManager:
+        def __init__(self):
+            self.calls = []
+
+        def get_working_proxy(self, allow_refresh=True):
+            self.calls.append(allow_refresh)
+            return "127.0.0.1:1080"
+
+    pm = DummyProxyManager()
+    cart = VkusVillCart(str(cookies_path), proxy_manager=pm)
+
+    assert cart._get_proxy_url() == "socks5://127.0.0.1:1080"
+    assert pm.calls == [False]

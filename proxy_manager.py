@@ -76,13 +76,14 @@ class ProxyManager:
         """Check if VkusVill is reachable WITHOUT a proxy (direct IP)."""
         return self._probe_vkusvill(proxy=None)
 
-    def get_working_proxy(self) -> str | None:
+    def get_working_proxy(self, allow_refresh: bool = True) -> str | None:
         """Get a SOCKS5 proxy for VkusVill. Returns 'ip:port' or None.
 
         If cache has proxies → return first one instantly (no re-testing).
         If cache empty → fetch fresh list, test, cache, return best.
         """
-        self.ensure_pool()  # auto-refresh if pool is low
+        if allow_refresh:
+            self.ensure_pool()  # auto-refresh if pool is low
         proxies = self._cache.get("proxies", [])
 
         if proxies:

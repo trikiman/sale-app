@@ -93,9 +93,9 @@ class VkusVillCart:
         logger.info(f"Session ready (user_id={self.user_id}, sessid={self.sessid[:8]}...)")
     
     def _get_proxy_url(self):
-        """Get a proxy URL from ProxyManager, or None for direct connection."""
+        """Get a cached proxy URL from ProxyManager without blocking on pool refresh."""
         if self._proxy_manager:
-            addr = self._proxy_manager.get_working_proxy()
+            addr = self._proxy_manager.get_working_proxy(allow_refresh=False)
             if addr:
                 return f"socks5://{addr}"
         return None
