@@ -3,12 +3,12 @@ gsd_state_version: 1.0
 milestone: v1.10
 milestone_name: Scraper Freshness & Reliability
 status: Ready for planning
-last_updated: "2026-04-05T13:00:00.000Z"
+last_updated: "2026-04-05T14:00:00.000Z"
 last_activity: 2026-04-05
 progress:
   total_phases: 4
   completed_phases: 0
-  total_plans: 0
+  total_plans: 3
   completed_plans: 0
 ---
 
@@ -25,8 +25,8 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 
 Milestone: v1.10 — Scraper Freshness & Reliability
 Phase: 39 — Sale Continuity Guardrails
-Plan: Context captured
-Status: Ready for planning
+Plan: 3 plans ready
+Status: Ready for execution
 Last activity: 2026-04-05
 
 ## Milestone Goal
@@ -38,8 +38,8 @@ Last activity: 2026-04-05
 
 ## Next Up
 
-- `$gsd-plan-phase 39` — turn the captured continuity decisions into an implementation plan
-- Review `.planning/phases/39-sale-continuity-guardrails/39-CONTEXT.md` before planning if needed
+- `$gsd-execute-phase 39` — implement the continuity guardrails from the 3 prepared plans
+- Phase 40 context is already captured in `.planning/phases/40-freshness-aware-scheduler-alerts/40-CONTEXT.md`
 
 ## Completed Milestones
 
@@ -72,6 +72,8 @@ Last activity: 2026-04-05
 - Auto-refresh failures are mostly silent in the UI, and scraper failures are still primarily visible in logs/admin status rather than proactive alerts
 - Phase 39 context locked the continuity rule: products need 1 hour of healthy absence before they count as gone, and failed/stale cycles do not count toward disappearance
 - Phase 39 also requires detailed diagnostics for every session close/reopen decision so false daily appearances are easier to debug
+- Phase 39 is now planned into 3 waves: cycle-health snapshot, grace-window session logic, and confirmed-reentry notifier/API alignment
+- Phase 40 context is now locked: 5-minute full cycles, 1-minute green-only target cadence between full cycles, 10-minute stale threshold for all colors, keep last valid snapshots, and reuse the existing MiniApp warning surface for all users
 
 ## Known Bugs
 
@@ -96,6 +98,8 @@ Last activity: 2026-04-05
 | v1.9 phase 38 completed | 2026-04-04 |
 | v1.10 milestone started | 2026-04-05 |
 | v1.10 phase 39 context gathered | 2026-04-05 |
+| v1.10 phase 39 planned | 2026-04-05 |
+| v1.10 phase 40 context gathered | 2026-04-05 |
 
 ---
-*Last updated: 2026-04-05 after gathering v1.10 phase 39 context*
+*Last updated: 2026-04-05 after planning phase 39 and gathering v1.10 phase 40 context*
