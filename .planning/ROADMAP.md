@@ -1,8 +1,8 @@
 # Roadmap: VkusVill Sale Monitor
 
 **Created:** 2026-03-30
-**Updated:** 2026-04-04
-**Status:** v1.9 complete — ready for next milestone
+**Updated:** 2026-04-05
+**Status:** v1.10 planned — ready for phase 39
 
 ## Milestones
 
@@ -16,6 +16,68 @@
 - ✅ **v1.7 Categories & Subgroups** — Phases 29-33 (shipped 2026-04-03)
 - ✅ **v1.8 History Search Completeness** — Phases 34-35 (shipped 2026-04-04)
 - ✅ **v1.9 Catalog Coverage Expansion** — Phases 36-38 (shipped 2026-04-04)
+- 🟡 **v1.10 Scraper Freshness & Reliability** — Phases 39-42 (planned 2026-04-05)
+
+## Current Milestone: v1.10 Scraper Freshness & Reliability
+
+**Goal:** Keep sale/newness signals correct and the main sale screen responsive by making scrape cadence, failure handling, and card loading more resilient.
+
+**4 phases** | **11 requirements mapped** | All covered ✓
+
+| # | Phase | Goal | Requirements | Success Criteria |
+|---|-------|------|--------------|------------------|
+| 39 | Sale Continuity Guardrails | Stop fake re-appearances and duplicate notifications caused by transient scrape misses. | HIST-08, BOT-07, OPS-02 | 4 |
+| 40 | Freshness-Aware Scheduler & Alerts | Prioritize green freshness, expose per-source age, and alert on bad cycles. | SCRP-10, SCRP-11, SCRP-12, OPS-03 | 4 |
+| 41 | Main Screen & Card Performance | Remove long blocking load and laggy card behavior with measured optimizations. | UI-16, UI-17, UI-18 | 4 |
+| 42 | Regression & Release Verification | Lock the continuity, cadence, alerting, and performance contract with automated verification. | QA-03 | 4 |
+
+### Phase 39: Sale Continuity Guardrails
+
+**Goal:** Make history/newness logic resilient to transient scrape misses so continuously-on-sale products do not look new again.
+**Requirements:** HIST-08, BOT-07, OPS-02
+**Depends on:** —
+**Plans:** 0/0 plans complete
+**Success Criteria**:
+1. A product that stays on sale through a partial or missed scrape does not open a fake new sale session.
+2. Notification dedupe only resets after a real sale exit/re-entry, not after one bad cycle.
+3. Downstream history/newness logic can distinguish a bad cycle from a true product disappearance.
+4. The existing green flow keeps working while these guardrails are introduced.
+
+### Phase 40: Freshness-Aware Scheduler & Alerts
+
+**Goal:** Rebalance scrape cadence around greener, fresher data while making stale/error states visible.
+**Requirements:** SCRP-10, SCRP-11, SCRP-12, OPS-03
+**Depends on:** Phase 39
+**Plans:** 0/0 plans complete
+**Success Criteria**:
+1. Green refreshes can run more often than red/yellow without violating the sequential Chrome constraint.
+2. Admin/backend status exposes per-source freshness so outdated green data is obvious.
+3. Merge/notifier logic uses the freshest valid source snapshots instead of same-cycle assumptions.
+4. Failures, timeouts, or persistent staleness generate visible alerts instead of only log lines.
+
+### Phase 41: Main Screen & Card Performance
+
+**Goal:** Remove the slow initial loading feel and laggy card interactions on the main MiniApp screen.
+**Requirements:** UI-16, UI-17, UI-18
+**Depends on:** Phase 40
+**Plans:** 0/0 plans complete
+**Success Criteria**:
+1. First useful content on the sale screen arrives faster than the current long blocking spinner path.
+2. Product cards remain responsive while enrichment data loads in the background.
+3. Any card/detail API changes are driven by measured latency gains, not speculation.
+4. Existing favorites, cart, and detail interactions keep their current behavior.
+
+### Phase 42: Regression & Release Verification
+
+**Goal:** Prove the new continuity, freshness, alerting, and performance behavior is stable before shipping.
+**Requirements:** QA-03
+**Depends on:** Phases 39-41
+**Plans:** 0/0 plans complete
+**Success Criteria**:
+1. Automated coverage reproduces the false re-appearance scenario and proves it no longer regresses.
+2. Verification covers duplicate-notification prevention across partial-failure cycles.
+3. Scheduler cadence and alerting behavior are exercised by repeatable tests or fixtures.
+4. Main-screen load/perf checks confirm the UI no longer regresses to the current laggy behavior.
 
 ## Latest Shipped Milestone: v1.9 Catalog Coverage Expansion
 
@@ -76,10 +138,13 @@
 - v1.6 Green Scraper Robustness — phases 27-28, shipped 2026-04-02
 - v1.7 Categories & Subgroups — phases 29-33, shipped 2026-04-03
 - v1.8 History Search Completeness — phases 34-35, shipped 2026-04-04
+- v1.9 Catalog Coverage Expansion — phases 36-38, shipped 2026-04-04
 
 ## Next Up
 
-- Start the next milestone with `$gsd-new-milestone`.
+- **Phase 39: Sale Continuity Guardrails** — Stop fake re-appearances and duplicate notifications caused by transient scrape misses.
+- `$gsd-discuss-phase 39` — gather context and pin down the guardrail strategy
+- `$gsd-plan-phase 39` — skip discussion and plan directly
 
 ## Progress
 
@@ -98,3 +163,7 @@
 | 36 | v1.9 | ✅ Complete | 2026-04-04 |
 | 37 | v1.9 | ✅ Complete | 2026-04-04 |
 | 38 | v1.9 | ✅ Complete | 2026-04-04 |
+| 39 | v1.10 | 🟡 Planned | — |
+| 40 | v1.10 | 🟡 Planned | — |
+| 41 | v1.10 | 🟡 Planned | — |
+| 42 | v1.10 | 🟡 Planned | — |
