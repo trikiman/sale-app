@@ -19,7 +19,7 @@ Family members see every VkusVill discount (green/red/yellow) the moment it appe
 - ✓ **SCRAPE-01**: System scrapes green price tags from VkusVill cart page using technical account cookies — existing (scrape_green.py)
 - ✓ **SCRAPE-02**: System scrapes red price tags from VkusVill catalog — existing (scrape_red.py)
 - ✓ **SCRAPE-03**: System scrapes yellow "купи 6+" multi-buy prices from VkusVill catalog — existing (scrape_yellow.py)
-- ✓ **SCRAPE-04**: System runs scrapers sequentially every 5 minutes via scheduler — existing (scheduler_service.py)
+- ✓ **SCRAPE-04**: System runs scrapers sequentially every 3 minutes via scheduler — existing (scheduler_service.py)
 - ✓ **SCRAPE-05**: System merges all scraped data into proposals.json with staleness detection — existing (scrape_merge.py)
 - ✓ **SCRAPE-06**: System scrapes VkusVill product categories via pure HTTP — existing (scrape_categories.py)
 - ✓ **AUTH-01**: User can log in with phone number + SMS code via web app — existing (backend/main.py nodriver)
@@ -83,28 +83,28 @@ Family members see every VkusVill discount (green/red/yellow) the moment it appe
 
 <!-- Current scope. Building toward these. -->
 
-- [ ] Local catalog ingest expands beyond the current hardcoded category crawl so missing VkusVill products can be discovered offline
-- [ ] Newly discovered products persist into `category_db.json` and `product_catalog` with enough metadata for History search and cards
-- [ ] Multi-source catalog refresh deduplicates products and preserves the best available category/group/subgroup/image metadata
-- [ ] History search can show these newly ingested products from the local catalog after refresh, without per-query live search calls
-- [ ] Coverage metrics and automated regression tests make catalog-completeness progress visible and protected
+- [ ] Continuous-sale products stay a single sale session even when a scrape cycle partially fails or temporarily misses them
+- [ ] Favorite/new-item notifications only fire when a product actually re-enters sale, not when a bad cycle makes it disappear and come back
+- [ ] Scheduler can refresh green data more often than red/yellow while still respecting the existing sequential Chrome constraints
+- [ ] Scraper failures and stale-source conditions are visible to admins/users instead of silently degrading history and notifications
+- [ ] Main MiniApp load and product cards feel fast enough on first open, with card-data optimizations driven by measurement instead of guesswork
 
-## Current Milestone: v1.9 Catalog Coverage Expansion
+## Current Milestone: v1.10 Scraper Freshness & Reliability
 
-**Goal:** Expand the local `product_catalog` so History search can find more of the products VkusVill live search already knows about, without switching to per-query hybrid search yet.
+**Goal:** Keep sale/newness signals correct and the main sale screen responsive by making scrape cadence, failure handling, and card loading more resilient.
 
 **Target features:**
-- Supplemental offline discovery beyond the current category crawl for products that the hardcoded category list misses
-- Catalog merge/backfill that persists newly discovered products into `category_db.json` and `product_catalog`
-- Local search visibility for formerly missing products after refresh, still served from the local catalog
-- Coverage reporting and regression gates for catalog-completeness improvements
+- Continuous-sale guardrails so transient scrape misses do not create fake re-appearances, new sessions, or duplicate notifications
+- Scheduler rebalance so green refreshes happen more often than red/yellow without breaking the current sequential scraper model
+- Failure/staleness alerting that makes bad cycles visible before they silently poison history, notifier, or UI freshness
+- Main-screen and card-path performance work, including profiling any API/card enrichment bottlenecks before changing the data path
 
-## Latest Shipped Milestone: v1.8 History Search Completeness (2026-04-04)
+## Latest Shipped Milestone: v1.9 Catalog Coverage Expansion (2026-04-04)
 
-Shipped across phases 34-35:
-- History search now queries the full local catalog during active search
-- Search results clearly label live, historical-only, and catalog-only matches
-- Backend and frontend regression coverage now protect mixed-result search states
+Shipped across phases 36-38:
+- Supplemental catalog discovery now covers stable source-based offline discovery beyond the hardcoded category crawl
+- Catalog merge/backfill now persists newly discovered products into local catalog artifacts without clobbering richer metadata
+- Repeatable parity reports and regression coverage now make local-catalog completeness visible and testable
 
 ## Shipped: v1.7 Categories & Subgroups (2026-04-03)
 
@@ -133,9 +133,9 @@ Search and polish improvements for the History page:
 
 ## Next Milestone Candidates
 
-- Hybrid remote+local search fallback for true live parity beyond what offline catalog expansion can cover
-- Deeper subgroup pagination / multi-subgroup fidelity in the catalog pipeline
-- Scraper and notifier cleanup plus broader automated regression coverage
+- Reverse-engineered/private API path for green data only if cadence + robustness work still cannot meet freshness targets
+- Deeper admin observability for scraper health trends and historical freshness drift
+- Larger-scale frontend data-path work such as server-driven pagination or virtualization if card performance still degrades as product volume grows
 
 ## Context
 
@@ -147,7 +147,7 @@ Search and polish improvements for the History page:
 │  python main.py│  scheduler_svc.py │  uvicorn backend    │
 ├──────────────────────────────────────────────────────────┤
 │  Notifications │  Scrape prices    │  Admin panel        │
-│  "В корзину"   │  every 5 min      │  Web app (products) │
+│  "В корзину"   │  every 3 min      │  Web app (products) │
 │  "Открыть"     │  tech account     │  Cart API           │
 │  /login        │                   │  Login API          │
 └──────────────────────────────────────────────────────────┘
@@ -228,5 +228,5 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-04 after starting v1.9 milestone*
+*Last updated: 2026-04-05 after starting v1.10 milestone*
 

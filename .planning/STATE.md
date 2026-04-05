@@ -1,44 +1,45 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.9
-milestone_name: Catalog Coverage Expansion
-status: Ready for milestone audit and archival
-last_updated: "2026-04-04T12:33:41.604Z"
-last_activity: 2026-04-04
+milestone: v1.10
+milestone_name: Scraper Freshness & Reliability
+status: Defining requirements
+last_updated: "2026-04-05T12:00:00.000Z"
+last_activity: 2026-04-05
 progress:
-  total_phases: 3
-  completed_phases: 3
-  total_plans: 5
-  completed_plans: 5
+  total_phases: 4
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-04)
+See: .planning/PROJECT.md (updated 2026-04-05)
 
 **Core value:** Family members see every VkusVill discount and can add to cart in one tap
-**Current focus:** Plan and execute v1.9 catalog coverage expansion so local search catches more of the VkusVill assortment
+**Current focus:** Plan and execute v1.10 so sale continuity, notifier correctness, scraper freshness, and main-screen responsiveness stop drifting under partial failures
 
 ## Current Position
 
-Milestone: v1.9 — Catalog Coverage Expansion
-Phase: 38 — Local Search Parity Verification
-Plan: Milestone implementation complete
-Status: Ready for milestone audit and archival
-Last activity: 2026-04-04
+Milestone: v1.10 — Scraper Freshness & Reliability
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-04-05
 
 ## Milestone Goal
 
-- Expand local catalog ingest beyond the current category crawl
-- Persist supplemental discoveries into `category_db.json` and `product_catalog` without metadata loss
-- Prove that formerly missing search queries resolve locally after refresh
+- Stop continuous-sale items from being split into fake daily re-appearances
+- Prioritize green freshness without starving red/yellow coverage
+- Surface scraper failures/staleness instead of silently degrading notifier/history output
+- Remove the slow initial loading and laggy card feel on the main MiniApp screen
 
 ## Next Up
 
-- `$gsd-audit-milestone` — verify milestone coverage and gap status before archival
-- `$gsd-complete-milestone` — archive milestone `v1.9` after audit passes
+- `$gsd-discuss-phase 39` — confirm the continuity/newness guardrail approach
+- `$gsd-plan-phase 39` — plan the first implementation phase directly
 
 ## Completed Milestones
 
@@ -53,6 +54,7 @@ Last activity: 2026-04-04
 | v1.6 Green Scraper Robustness | 27-28 | 2026-04-02 |
 | v1.7 Categories & Subgroups | 29-33 | 2026-04-03 |
 | v1.8 History Search Completeness | 34-35 | 2026-04-04 |
+| v1.9 Catalog Coverage Expansion | 36-38 | 2026-04-04 |
 
 ## Accumulated Context
 
@@ -62,17 +64,19 @@ Last activity: 2026-04-04
 - v1.6 shipped: green scraper robustness with CDP modal loading + validation gates
 - v1.7 shipped: group/subgroup hierarchy scraped, drill-down filters on main/history, category favorites, and Telegram category alerts
 - v1.8 shipped: History search now covers the full local catalog during active queries and clearly labels mixed result states
-- Local search parity is still limited by what reaches `product_catalog`; Phase 36 now collects source-based discovery data and Phase 37 will merge it into the local catalog
-- History page chip scope now matches history results instead of the full catalog when no search is active
-- Category notifications dedupe across product/group/subgroup matches and fall back to `product_catalog` when merged sale JSON lacks hierarchy
+- v1.9 shipped: supplemental catalog discovery/backfill now expands local search coverage with parity reporting and regression gates
 - Auto-deploy is active via GitHub webhook → EC2 and Vercel frontend deploys
-- Phase 36 discovered 46 catalog sources, completed 45 stable sources, and identified `set-vashi-skidki` as a personalized/non-blocking source
-- Phase 37 merged `17443` deduped discovery products and backfilled local catalog artifacts to `18678` rows
-- Phase 38 added repeatable parity queries and a live-vs-local parity report; broad `цезарь` still remains a visible gap signal
+- Scheduler still runs one flat sequential red -> yellow -> green cycle every 3 minutes, which makes green freshness coupled to slower sources
+- New-item detection is still keyed off "seen in current proposals vs ever seen before", and sale-history sessions still close immediately when a product drops out of a cycle
+- MiniApp initial load is still a blocking `/api/products` fetch, while missing card weights trigger extra `/api/product/{id}/details` calls for visible cards
+- Auto-refresh failures are mostly silent in the UI, and scraper failures are still primarily visible in logs/admin status rather than proactive alerts
 
 ## Known Bugs
 
-- VkusVill live search still finds products absent from the local catalog until the v1.9 ingest expansion lands
+- Continuous-sale products can look like they re-appeared when a scrape cycle misses them and later sees them again
+- Scheduler freshness is biased by the flat red/yellow/green cadence instead of green-first refresh priorities
+- MiniApp can show a long loading state on first open, and product cards still feel laggy during enrichment
+- Scraper/scheduler failures are not surfaced robustly enough to prevent silent stale data
 
 ## Timeline
 
@@ -88,6 +92,7 @@ Last activity: 2026-04-04
 | v1.9 phase 36 completed | 2026-04-04 |
 | v1.9 phase 37 completed | 2026-04-04 |
 | v1.9 phase 38 completed | 2026-04-04 |
+| v1.10 milestone started | 2026-04-05 |
 
 ---
-*Last updated: 2026-04-04 after milestone implementation completion*
+*Last updated: 2026-04-05 after starting v1.10 milestone*
