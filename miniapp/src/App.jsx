@@ -479,16 +479,11 @@ function App() {
         setIsAuthenticated(data.authenticated)
         if (data.phone) setUserPhone(data.phone)
         if (data.authenticated) {
-          fetch(`/api/cart/items/${userId}`, {
-            headers: getAuthHeaders(userId)
-          })
-            .then(r => r.json())
-            .then(cart => { if (cart.items_count != null) setCartCount(cart.items_count) })
-            .catch(() => { })
+          refreshCartState().catch(() => { })
         }
       })
       .catch(err => console.warn('Failed to check auth status:', err))
-  }, [userId])
+  }, [refreshCartState, userId])
 
   const [favBusy, setFavBusy] = useState(new Set())
   const handleToggleFavorite = useCallback(async (product) => {
@@ -667,8 +662,35 @@ function App() {
   })
   const [cartPanelOpen, setCartPanelOpen] = useState(false)
   const [cartCount, setCartCount] = useState(0)
+  const [cartItemIds, setCartItemIds] = useState(new Set())
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false)
   const [favoriteCategories, setFavoriteCategories] = useState(new Set())
+
+  const refreshCartState = useCallback(async (retries = 1, delayMs = 0) => {
+    const wait = (ms) => new Promise(resolve => window.setTimeout(resolve, ms))
+
+    for (let attempt = 0; attempt < retries; attempt++) {
+      if (attempt > 0 || delayMs > 0) {
+        await wait(delayMs)
+      }
+      try {
+        const res = await fetch(`/api/cart/items/${userId}`, {
+          headers: getAuthHeaders(userId)
+        })
+        const cart = await res.json()
+        if (cart.items_count != null) {
+          setCartCount(cart.items_count)
+          const ids = new Set((cart.items || []).map(item => String(item.id ?? item.product_id ?? '')))
+          setCartItemIds(ids)
+          return { ok: true, itemsCount: cart.items_count, itemIds: ids }
+        }
+      } catch {
+        // best-effort retry path
+      }
+    }
+
+    return { ok: false, itemsCount: cartCount, itemIds: cartItemIds }
+  }, [cartCount, cartItemIds, userId])
 
   const handleAddToCart = useCallback(async (product) => {
     if (!isAuthenticated) {
@@ -743,13 +765,26 @@ function App() {
       }
     } catch (err) {
       console.error(err)
+      const unknownCartOutcome = err?.name === 'AbortError'
+      if (unknownCartOutcome) {
+        setToastMessage({ text: 'Проверяем корзину…', type: 'error' })
+        const cartState = await refreshCartState(3, 1200)
+        if (cartState.ok && (cartState.itemIds.has(String(pid)) || cartState.itemsCount > cartCount)) {
+          setCartStates(s => ({ ...s, [pid]: 'success' }))
+          setCartCount(cartState.itemsCount)
+          setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), 2000)
+          setToastMessage({ text: 'Товар добавлен в корзину', type: 'success' })
+          setTimeout(() => setToastMessage(null), 3000)
+          return
+        }
+      }
       setCartStates(s => ({ ...s, [pid]: 'error' }))
-      const message = err?.name === 'AbortError' ? 'Корзина отвечает слишком долго' : 'Ошибка сети'
+      const message = unknownCartOutcome ? 'Корзина отвечает слишком долго' : 'Ошибка сети'
       setToastMessage({ text: message, type: 'error' })
       setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), 2000)
       setTimeout(() => setToastMessage(null), 3000)
     }
-  })
+  }, [cartCount, isAuthenticated, refreshCartState, userId])
 
   // v1.7: Toggle group/subgroup category favorite
   const handleToggleCategoryFavorite = useCallback(async (categoryKey, categoryName) => {
