@@ -1,49 +1,55 @@
-# Requirements: v1.9 Catalog Coverage Expansion
+# Requirements: v1.10 Scraper Freshness & Reliability
 
-**Status:** Milestone implementation complete
-**Created:** 2026-04-04
-**Goal:** Expand the local catalog so History search can surface more VkusVill products without relying on live remote search per query.
+**Status:** Planned
+**Created:** 2026-04-05
+**Goal:** Keep sale/newness signals correct and the main screen fast by making scrape cadence, failure handling, and card loading more resilient.
 
-## Catalog Discovery
+## Sale Continuity & Notification Correctness
 
-- [x] **DATA-04**: Catalog ingest expands beyond the current hardcoded category crawl so products present in VkusVill live search but missing from the local catalog can be discovered offline.
-- [x] **DATA-05**: Newly discovered products are persisted into local catalog artifacts (`category_db.json` and `product_catalog`) with stable product IDs, names, and enough metadata to appear in History search.
+- [ ] **HIST-08**: User sees one continuous sale session for a product that stayed on sale, even if one or more scrape cycles partially fail or temporarily miss the product.
+- [ ] **BOT-07**: User does not receive repeated "new item" or favorite-available alerts for a product that never actually left sale.
+- [ ] **OPS-02**: Partial or failed scrape cycles do not overwrite downstream history/newness calculations as if missing products truly disappeared.
 
-## Catalog Merge Quality
+## Scheduler Freshness
 
-- [x] **DATA-06**: Multi-source catalog refresh deduplicates products and preserves the best available category/group/subgroup/image metadata instead of clobbering richer existing rows.
-- [x] **DATA-07**: Existing local products remain intact during supplemental ingest refreshes; category-derived data and sale-history-backed metadata are not lost when new sources are merged.
+- [ ] **SCRP-10**: Green scraper can refresh more frequently than red/yellow within the current sequential Chrome/profile constraints.
+- [ ] **SCRP-11**: Backend/admin status exposes per-source freshness so green staleness is distinguishable from red/yellow staleness.
+- [ ] **SCRP-12**: Merge/notifier logic can use the freshest valid source snapshots instead of assuming every source was refreshed in the same cadence bucket.
 
-## Search Outcome
+## MiniApp Load & Card Performance
 
-- [x] **SRCH-04**: After a catalog refresh, History search can surface products that previously existed only in VkusVill remote search, while still serving results from the local catalog.
-- [x] **SRCH-05**: The team has a repeatable parity-check query set for formerly missing products, so catalog-expansion progress can be verified intentionally instead of ad hoc screenshots.
+- [ ] **UI-16**: Main sale screen reaches first useful content without a long blocking spinner under normal conditions.
+- [ ] **UI-17**: Product cards remain responsive while enrichment data loads, and card interactions do not feel laggy.
+- [ ] **UI-18**: Card/detail data path is profiled and optimized; any extra API or reverse-engineered data path must be justified by measured latency improvement.
 
-## Verification & Operations
+## Operations & Verification
 
-- [x] **QA-02**: Automated coverage protects supplemental discovery, multi-source merge dedupe, and representative formerly-missing search queries.
-- [x] **OPS-01**: Catalog refresh produces coverage stats or gap signals that make it clear whether local catalog completeness actually improved.
+- [ ] **OPS-03**: Admin or Telegram receives visible failure alerts when scraper/scheduler cycles error, time out, or keep serving stale data.
+- [ ] **QA-03**: Automated coverage protects continuous-sale session integrity, non-duplicate notifications after partial failures, scheduler cadence rules, and the main-screen performance contract.
 
 ## Future Requirements
 
-- [ ] **SRCH-06**: History search can use live VkusVill search as a hybrid fallback when local catalog expansion still misses a query.
-- [ ] **DATA-08**: Local catalog preserves multi-subgroup fidelity in the DB instead of collapsing each product to one subgroup value.
+- [ ] **SCRP-13**: Replace the browser-driven green path with a reverse-engineered/private API only if freshness targets still cannot be met after cadence and robustness fixes.
+- [ ] **UI-19**: Move to larger-scale feed optimization (server-driven pagination or virtualization) if card performance still degrades as product volume grows.
 
 ## Out of Scope
 
-- Querying VkusVill live search on every user request in this milestone.
-- Reworking History search ranking or UI beyond what is needed to show newly ingested local products.
-- General scraper/notifier cleanup unrelated to catalog completeness.
+- Replacing the established Python + React + nodriver stack in this milestone.
+- Running scrapers in parallel Chrome sessions; the existing sequential constraint stays in place.
+- Full redesign of the MiniApp card UI unrelated to speed, freshness, or failure handling.
 
 ## Traceability
 
 | Requirement | Phase | Final Status | Notes |
 |-------------|-------|--------------|-------|
-| DATA-04 | 36 | Complete | Source-based offline discovery now scrapes catalog tiles into per-source temp files with source-level completion state |
-| DATA-05 | 37 | Complete | Merged discovery data now backfills both `category_db.json` and `product_catalog` |
-| DATA-06 | 37 | Complete | Merge is additive and preserves richer existing metadata |
-| DATA-07 | 37 | Complete | Existing local rows remain intact while discovery rows fill blanks or add new products |
-| SRCH-04 | 38 | Complete | Exact newly backfilled products are now searchable locally |
-| SRCH-05 | 38 | Complete | `backend/catalog_parity_queries.json` and `data/catalog_parity_report.json` form the repeatable parity query set/report |
-| QA-02 | 38 | Complete | Merge, discovery, parity, and history-search suites now pass together |
-| OPS-01 | 38 | Complete | Source-state plus parity report make completeness gains and remaining broad-query gaps visible |
+| HIST-08 | 39 | Planned | Sale sessions must stay continuous across transient scrape gaps or explicitly tolerated partial cycles |
+| BOT-07 | 39 | Planned | Notification dedupe must track real sale exits/re-entries instead of single-cycle visibility loss |
+| OPS-02 | 39 | Planned | Bad cycles need a contract that prevents history/newness from treating them as true product disappearance |
+| SCRP-10 | 40 | Planned | Green refresh cadence should be higher than red/yellow without breaking sequential Chrome usage |
+| SCRP-11 | 40 | Planned | Surface per-source freshness in backend/admin status and downstream UI state |
+| SCRP-12 | 40 | Planned | Merge/notifier should operate on freshest valid snapshots rather than same-cycle assumptions |
+| OPS-03 | 40 | Planned | Failure and stale-data alerts should be pushed visibly, not left only in logs |
+| UI-16 | 41 | Planned | Reduce long blocking first-load state on the main sale screen |
+| UI-17 | 41 | Planned | Remove card lag caused by enrichment/render paths while preserving existing UX |
+| UI-18 | 41 | Planned | Profile-driven optimization of card/detail data path, including API investigation only if it wins measurably |
+| QA-03 | 42 | Planned | Regression/perf verification for continuity, cadence, alerting, and main-screen responsiveness |
