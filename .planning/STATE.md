@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v1.10
 milestone_name: Scraper Freshness & Reliability
-status: Defining requirements
-last_updated: "2026-04-05T12:00:00.000Z"
+status: Ready for planning
+last_updated: "2026-04-05T13:00:00.000Z"
 last_activity: 2026-04-05
 progress:
   total_phases: 4
@@ -24,9 +24,9 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 ## Current Position
 
 Milestone: v1.10 — Scraper Freshness & Reliability
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
+Phase: 39 — Sale Continuity Guardrails
+Plan: Context captured
+Status: Ready for planning
 Last activity: 2026-04-05
 
 ## Milestone Goal
@@ -38,8 +38,8 @@ Last activity: 2026-04-05
 
 ## Next Up
 
-- `$gsd-discuss-phase 39` — confirm the continuity/newness guardrail approach
-- `$gsd-plan-phase 39` — plan the first implementation phase directly
+- `$gsd-plan-phase 39` — turn the captured continuity decisions into an implementation plan
+- Review `.planning/phases/39-sale-continuity-guardrails/39-CONTEXT.md` before planning if needed
 
 ## Completed Milestones
 
@@ -70,6 +70,8 @@ Last activity: 2026-04-05
 - New-item detection is still keyed off "seen in current proposals vs ever seen before", and sale-history sessions still close immediately when a product drops out of a cycle
 - MiniApp initial load is still a blocking `/api/products` fetch, while missing card weights trigger extra `/api/product/{id}/details` calls for visible cards
 - Auto-refresh failures are mostly silent in the UI, and scraper failures are still primarily visible in logs/admin status rather than proactive alerts
+- Phase 39 context locked the continuity rule: products need 1 hour of healthy absence before they count as gone, and failed/stale cycles do not count toward disappearance
+- Phase 39 also requires detailed diagnostics for every session close/reopen decision so false daily appearances are easier to debug
 
 ## Known Bugs
 
@@ -93,6 +95,7 @@ Last activity: 2026-04-05
 | v1.9 phase 37 completed | 2026-04-04 |
 | v1.9 phase 38 completed | 2026-04-04 |
 | v1.10 milestone started | 2026-04-05 |
+| v1.10 phase 39 context gathered | 2026-04-05 |
 
 ---
-*Last updated: 2026-04-05 after starting v1.10 milestone*
+*Last updated: 2026-04-05 after gathering v1.10 phase 39 context*
