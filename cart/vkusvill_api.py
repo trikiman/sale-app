@@ -25,6 +25,7 @@ BASKET_UPDATE_URL = "https://vkusvill.ru/ajax/delivery_order/basket_update.php"
 BASKET_RECALC_URL = "https://vkusvill.ru/ajax/delivery_order/basket_recalc.php"
 BASKET_CLEAR_URL = "https://vkusvill.ru/ajax/delivery_order/basket_clear.php"
 VKUSVILL_BASE = "https://vkusvill.ru"
+CART_REQUEST_TIMEOUT = httpx.Timeout(connect=2.0, read=3.0, write=3.0, pool=2.0)
 
 
 class VkusVillCart:
@@ -107,7 +108,7 @@ class VkusVillCart:
         sessid and user_id matching the session from the cookies.
         """
         try:
-            client_kwargs = dict(timeout=15)
+            client_kwargs = dict(timeout=CART_REQUEST_TIMEOUT)
             proxy_url = self._get_proxy_url()
             if proxy_url:
                 client_kwargs['proxy'] = proxy_url
@@ -151,7 +152,7 @@ class VkusVillCart:
             'Cookie': self._cookie_str,
         }
 
-        client_kwargs = dict(timeout=15)
+        client_kwargs = dict(timeout=CART_REQUEST_TIMEOUT)
         proxy_url = self._get_proxy_url()
         if proxy_url:
             client_kwargs['proxy'] = proxy_url
@@ -167,7 +168,7 @@ class VkusVillCart:
         """Check if the current session is logged in to VkusVill."""
         self._ensure_session()
         try:
-            client_kwargs = dict(timeout=15)
+            client_kwargs = dict(timeout=CART_REQUEST_TIMEOUT)
             proxy_url = self._get_proxy_url()
             if proxy_url:
                 client_kwargs['proxy'] = proxy_url
@@ -233,12 +234,15 @@ class VkusVillCart:
             
             try:
                 last_result = self._request(BASKET_ADD_URL, data)
+            except httpx.TimeoutException as e:
+                logger.error(f"Cart API request timed out: {e}")
+                return {'success': False, 'error': str(e) or 'timed out', 'error_type': 'timeout'}
             except httpx.HTTPError as e:
                 logger.error(f"Cart API request failed: {e}")
-                return {'success': False, 'error': str(e)}
+                return {'success': False, 'error': str(e), 'error_type': 'http'}
             except json.JSONDecodeError:
                 logger.error("Cart API returned non-JSON")
-                return {'success': False, 'error': 'Invalid response from VkusVill'}
+                return {'success': False, 'error': 'Invalid response from VkusVill', 'error_type': 'invalid_response'}
         
         if not last_result:
             return {'success': False, 'error': 'No response'}
@@ -256,6 +260,7 @@ class VkusVillCart:
         result = {
             'success': success,
             'error': error,
+            'error_type': last_result.get('error_type', 'api') if not success else None,
             'raw': last_result,
         }
         

@@ -1,5 +1,9 @@
 import httpx
+import os
+import sys
 from fastapi.testclient import TestClient
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import backend.main as main
 
@@ -14,7 +18,7 @@ def test_cart_items_returns_fast_fallback_on_upstream_timeout(monkeypatch, tmp_p
     calls = {"count": 0}
 
     class BoomCart:
-        def __init__(self, cookies_path):
+        def __init__(self, cookies_path, proxy_manager=None):
             self.cookies_path = cookies_path
 
         def get_cart(self):
@@ -44,3 +48,31 @@ def test_cart_items_returns_fast_fallback_on_upstream_timeout(monkeypatch, tmp_p
     }
     assert second.json()["source_unavailable"] is True
     assert second.json()["source_error"] == "VkusVill temporarily unreachable"
+
+
+def test_cart_add_maps_upstream_timeout_to_504(monkeypatch, tmp_path):
+    cookies_path = tmp_path / "cookies.json"
+    cookies_path.write_text("[]", encoding="utf-8")
+
+    class SlowCart:
+        def __init__(self, cookies_path, proxy_manager=None):
+            self.cookies_path = cookies_path
+
+        def add(self, product_id, price_type=1, is_green=0):
+            return {"success": False, "error": "timed out", "error_type": "timeout"}
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(main, "_get_phone_for_user", lambda user_id: None)
+    monkeypatch.setattr(main, "get_user_cookies_path", lambda user_id: str(cookies_path))
+    monkeypatch.setattr(main, "VkusVillCart", SlowCart)
+
+    response = client.post(
+        "/api/cart/add",
+        headers={"X-Telegram-User-Id": "123"},
+        json={"user_id": "123", "product_id": 33243, "is_green": 1, "price_type": 222},
+    )
+
+    assert response.status_code == 504
+    assert response.json() == {"detail": "Cart API timeout"}

@@ -682,52 +682,70 @@ function App() {
     try {
       const isGreen = product.type === 'green' ? 1 : 0
       const priceType = product.type === 'green' ? 222 : 1
-
-      const res = await fetch('/api/cart/add', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...getAuthHeaders(userId)
-        },
-        body: JSON.stringify({
-          user_id: userId,
-          product_id: parseInt(pid, 10),
-          is_green: isGreen,
-          price_type: priceType
+      const controller = new AbortController()
+      const requestTimeout = window.setTimeout(() => controller.abort(), 5500)
+      try {
+        const res = await fetch('/api/cart/add', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...getAuthHeaders(userId)
+          },
+          signal: controller.signal,
+          body: JSON.stringify({
+            user_id: userId,
+            product_id: parseInt(pid, 10),
+            is_green: isGreen,
+            price_type: priceType
+          })
         })
-      })
 
-      const data = await res.json()
-      console.log('[cart/add]', res.status, data)
-      if (res.ok && data.success) {
-        setCartStates(s => ({ ...s, [pid]: 'success' }))
-        setCartCount(data.cart_items || cartCount + 1)
-        setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), 2000)
-      } else {
-        if (res.status === 401) {
-          setIsAuthenticated(false)
-          setShowLogin(true)
+        const data = await res.json()
+        console.log('[cart/add]', res.status, data)
+        if (res.ok && data.success) {
+          setCartStates(s => ({ ...s, [pid]: 'success' }))
+          setCartCount(data.cart_items || cartCount + 1)
+          setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), 2000)
         } else {
-          setToastMessage({ text: 'Этот продукт уже раскупили', type: 'error' })
-          setTimeout(() => setToastMessage(null), 4000)
-          if (res.status === 400) {
-            setSoldOutIds(s => {
-              const next = new Set([...s, pid])
-              try {
-                localStorage.setItem('soldOutIds', JSON.stringify([...next]))
-                localStorage.setItem('soldOutIds_expiry', String(Date.now() + 4 * 60 * 60 * 1000))
-              } catch { }
-              return next
+          if (res.status === 401) {
+            setIsAuthenticated(false)
+            setShowLogin(true)
+          } else {
+            const detail = String(data?.detail || data?.error || '').toLowerCase()
+            const soldOut =
+              res.status === 400 &&
+              (detail.includes('распрод') ||
+               detail.includes('недоступ') ||
+               detail.includes('out of stock') ||
+               detail.includes('popup_analogs'))
+
+            setToastMessage({
+              text: soldOut ? 'Этот продукт уже раскупили' : 'Корзина временно недоступна',
+              type: 'error'
             })
+            setTimeout(() => setToastMessage(null), 4000)
+            if (soldOut) {
+              setSoldOutIds(s => {
+                const next = new Set([...s, pid])
+                try {
+                  localStorage.setItem('soldOutIds', JSON.stringify([...next]))
+                  localStorage.setItem('soldOutIds_expiry', String(Date.now() + 4 * 60 * 60 * 1000))
+                } catch { }
+                return next
+              })
+            }
           }
+          setCartStates(s => ({ ...s, [pid]: 'error' }))
+          setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), 2000)
         }
-        setCartStates(s => ({ ...s, [pid]: 'error' }))
-        setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), 2000)
+      } finally {
+        window.clearTimeout(requestTimeout)
       }
     } catch (err) {
       console.error(err)
       setCartStates(s => ({ ...s, [pid]: 'error' }))
-      setToastMessage({ text: 'Ошибка сети', type: 'error' })
+      const message = err?.name === 'AbortError' ? 'Корзина отвечает слишком долго' : 'Ошибка сети'
+      setToastMessage({ text: message, type: 'error' })
       setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), 2000)
       setTimeout(() => setToastMessage(null), 3000)
     }

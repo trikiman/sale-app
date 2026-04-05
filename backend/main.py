@@ -3127,6 +3127,12 @@ def cart_add_endpoint(req: CartAddRequest, request: Request):
             }
         else:
             error = result.get("error", "Unknown API error")
+            error_type = (result.get("error_type") or "").lower()
+            lowered = str(error).lower()
+            if error_type == "timeout" or "timed out" in lowered or "timeout" in lowered:
+                raise HTTPException(status_code=504, detail="Cart API timeout")
+            if "temporarily unreachable" in lowered or "failed to communicate" in lowered:
+                raise HTTPException(status_code=502, detail="Cart API unavailable")
             raise HTTPException(status_code=400, detail=error)
     except HTTPException:
         raise
