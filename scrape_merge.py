@@ -15,6 +15,19 @@ if sys.platform == 'win32':
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 
+
+def _sanitize_subgroup_label(value):
+    if not value:
+        return None
+    label = str(value).replace('\xa0', ' ').replace('\u00a0', ' ').strip()
+    folded = label.casefold()
+    if '%' in label:
+        return None
+    if 'скидк' in folded:
+        return None
+    return label
+
+
 def merge_products():
     print("🔀 Merging products...")
     
@@ -96,7 +109,7 @@ def merge_products():
             # Support both old format (category) and new format (group/subgroups)
             p['group'] = info.get('group', info.get('category', ''))
             subgroups = info.get('subgroups', [])
-            p['subgroup'] = subgroups[0] if subgroups else None
+            p['subgroup'] = _sanitize_subgroup_label(subgroups[0]) if subgroups else None
         else:
             p['group'] = p.get('category', '') or 'Без категории'
             p['subgroup'] = None

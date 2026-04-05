@@ -848,6 +848,9 @@ def get_products():
                 data["greenMissing"] = len(_gprods) == 0
             except Exception:
                 data["greenMissing"] = True
+        if isinstance(data.get("products"), list):
+            for product in data["products"]:
+                product["subgroup"] = _sanitize_subgroup_label(product.get("subgroup"))
         return data
     except json.JSONDecodeError:
         raise HTTPException(status_code=500, detail="Invalid JSON data")
@@ -3269,6 +3272,18 @@ def _sqlite_casefold(value):
     return str(value).casefold()
 
 
+def _sanitize_subgroup_label(value: Optional[str]) -> str:
+    if not value:
+        return ""
+    label = str(value).replace('\xa0', ' ').replace('\u00a0', ' ').strip()
+    folded = label.casefold()
+    if '%' in label:
+        return ""
+    if 'скидк' in folded:
+        return ""
+    return label
+
+
 def _tokenize_history_search(search_norm: str) -> list[str]:
     tokens = []
     for token in search_norm.casefold().split():
@@ -3468,7 +3483,7 @@ def history_get_products(
                 "name": row["name"],
                 "category": row["category"],
                 "group": row["group_name"] or "",
-                "subgroup": row["subgroup"] or "",
+                "subgroup": _sanitize_subgroup_label(row["subgroup"]),
                 "image_url": row["image_url"],
                 "last_known_price": row["last_known_price"],
                 "total_sale_count": row["total_sale_count"] or 0,
@@ -3575,7 +3590,7 @@ def history_get_products(
         groups_dict = {}
         for r in groups_raw:
             gname = r["group_name"]
-            sg = r["subgroup"]
+            sg = _sanitize_subgroup_label(r["subgroup"])
             cnt = r["cnt"]
             if gname not in groups_dict:
                 groups_dict[gname] = {"name": gname, "count": 0, "subgroups": []}
@@ -3656,7 +3671,7 @@ def get_groups(request: Request):
         groups_dict = {}
         for r in rows:
             gname = r["group_name"]
-            sg = r["subgroup"]
+            sg = _sanitize_subgroup_label(r["subgroup"])
             cnt = r["cnt"]
             if gname not in groups_dict:
                 groups_dict[gname] = {"name": gname, "count": 0, "subgroups": []}

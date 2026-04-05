@@ -314,3 +314,35 @@ def test_history_search_matches_inflected_multiword_queries(monkeypatch, tmp_pat
 
     assert response.status_code == 200
     assert "catalog-shrimp" in _response_ids(response.json())
+
+
+def test_sanitize_subgroup_label_filters_discount_like_noise():
+    assert main._sanitize_subgroup_label("Скидки %") == ""
+    assert main._sanitize_subgroup_label("Скидки % (10)") == ""
+    assert main._sanitize_subgroup_label("Утка, гусь, цесарка") == "Утка, гусь, цесарка"
+
+
+def test_groups_scope_all_omits_invalid_discount_like_subgroups(monkeypatch, tmp_path):
+    db_path = _setup_history_db(monkeypatch, tmp_path)
+
+    conn = sqlite3.connect(db_path)
+    cur = conn.cursor()
+    cur.execute(
+        """
+        INSERT INTO product_catalog (
+            product_id, name, category, group_name, subgroup, image_url,
+            last_known_price, total_sale_count, last_sale_at, last_sale_type,
+            avg_discount_pct, max_discount_pct, usual_sale_time, avg_catch_window_min, updated_at
+        ) VALUES (?, ?, ?, ?, ?, '', 199, 1, ?, ?, 20, 25, '09:00', 45, '2026-04-04T00:00:00+03:00')
+        """,
+        ("discount-like", "Бедро цыпленка", "Мясо, птица", "Мясо, птица", "Скидки %", "2026-04-04T00:00:00+03:00", "yellow"),
+    )
+    conn.commit()
+    conn.close()
+
+    groups = client.get("/api/groups", params={"scope": "all"})
+    assert groups.status_code == 200
+    body = groups.json()
+    meat_group = next(group for group in body["groups"] if group["name"] == "Мясо, птица")
+    subgroup_names = [subgroup["name"] for subgroup in meat_group["subgroups"]]
+    assert "Скидки %" not in subgroup_names
