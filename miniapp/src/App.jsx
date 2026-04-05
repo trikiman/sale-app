@@ -479,11 +479,21 @@ function App() {
         setIsAuthenticated(data.authenticated)
         if (data.phone) setUserPhone(data.phone)
         if (data.authenticated) {
-          refreshCartState().catch(() => { })
+          fetch(`/api/cart/items/${userId}`, {
+            headers: getAuthHeaders(userId)
+          })
+            .then(r => r.json())
+            .then(cart => {
+              if (cart.items_count != null) {
+                setCartCount(cart.items_count)
+                setCartItemIds(new Set((cart.items || []).map(item => String(item.id ?? item.product_id ?? ''))))
+              }
+            })
+            .catch(() => { })
         }
       })
       .catch(err => console.warn('Failed to check auth status:', err))
-  }, [refreshCartState, userId])
+  }, [userId])
 
   const [favBusy, setFavBusy] = useState(new Set())
   const handleToggleFavorite = useCallback(async (product) => {
