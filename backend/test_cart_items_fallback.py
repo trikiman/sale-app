@@ -96,3 +96,46 @@ def test_cart_uses_cached_proxy_without_refresh(monkeypatch, tmp_path):
 
     assert cart._get_proxy_url() == "socks5://127.0.0.1:1080"
     assert pm.calls == [False]
+
+
+def test_cart_timeout_can_be_recovered_from_cart_state(monkeypatch, tmp_path):
+    cookies_path = tmp_path / "cookies.json"
+    cookies_path.write_text("[]", encoding="utf-8")
+
+    cart = VkusVillCart(str(cookies_path), user_id=1, sessid="sess")
+    monkeypatch.setattr(cart, "_ensure_session", lambda: None)
+
+    calls = {"count": 0}
+
+    def fake_request(url, data, referer="/"):
+        calls["count"] += 1
+        raise httpx.ReadTimeout("timed out")
+
+    def fake_get_cart():
+        return {
+            "success": True,
+            "items_count": 1,
+            "total_price": 49,
+            "raw": {
+                "basket": {
+                    "26198_0": {
+                        "PRODUCT_ID": 26198,
+                        "NAME": "Bread",
+                        "Q": 1,
+                        "PRICE": 49,
+                        "CAN_BUY": "Y",
+                        "MAX_Q": 1,
+                    }
+                }
+            },
+        }
+
+    monkeypatch.setattr(cart, "_request", fake_request)
+    monkeypatch.setattr(cart, "get_cart", fake_get_cart)
+
+    result = cart.add(26198, price_type=222, is_green=1)
+
+    assert calls["count"] == 1
+    assert result["success"] is True
+    assert result["product_id"] == 26198
+    assert result["cart_items"] == 1

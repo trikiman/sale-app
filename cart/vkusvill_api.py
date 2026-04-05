@@ -163,6 +163,13 @@ class VkusVillCart:
         except json.JSONDecodeError:
             logger.error(f"Non-JSON response from {url}: {r.text[:200]}")
             raise
+
+    def _find_cart_item(self, cart_payload: dict, product_id: int) -> dict | None:
+        basket = cart_payload.get('raw', {}).get('basket', {})
+        for item in basket.values():
+            if isinstance(item, dict) and str(item.get('PRODUCT_ID', '')) == str(product_id):
+                return item
+        return None
     
     def is_logged_in(self) -> bool:
         """Check if the current session is logged in to VkusVill."""
@@ -236,6 +243,26 @@ class VkusVillCart:
                 last_result = self._request(BASKET_ADD_URL, data)
             except httpx.TimeoutException as e:
                 logger.error(f"Cart API request timed out: {e}")
+                try:
+                    cart_state = self.get_cart()
+                    cart_item = self._find_cart_item(cart_state, product_id)
+                    if cart_state.get('success') and cart_item:
+                        logger.info(f"✅ Cart add for {product_id} inferred from cart state after timeout")
+                        return {
+                            'success': True,
+                            'product_name': cart_item.get('NAME', ''),
+                            'product_id': cart_item.get('PRODUCT_ID'),
+                            'quantity': cart_item.get('Q', 0),
+                            'price': cart_item.get('PRICE', 0),
+                            'cart_items': cart_state.get('items_count', 0),
+                            'cart_total': cart_state.get('total_price', 0),
+                            'can_buy': cart_item.get('CAN_BUY') == 'Y' or cart_item.get('CAN_BUY') is True,
+                            'max_q': cart_item.get('MAX_Q', 0),
+                            'error_type': None,
+                            'raw': {'timeout_recovered': True},
+                        }
+                except Exception as cart_exc:
+                    logger.warning(f"Cart timeout recovery check failed: {cart_exc}")
                 return {'success': False, 'error': str(e) or 'timed out', 'error_type': 'timeout'}
             except httpx.HTTPError as e:
                 logger.error(f"Cart API request failed: {e}")
