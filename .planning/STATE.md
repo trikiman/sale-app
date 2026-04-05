@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.10
 milestone_name: Scraper Freshness & Reliability
-status: Ready for milestone audit and archival
-last_updated: "2026-04-05T18:00:00.000Z"
+status: Milestone archived
+last_updated: "2026-04-05T19:00:00.000Z"
 last_activity: 2026-04-05
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 11
-  completed_plans: 11
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
 ---
 
 # Project State
@@ -24,9 +24,9 @@ See: .planning/PROJECT.md (updated 2026-04-05)
 ## Current Position
 
 Milestone: v1.10 — Scraper Freshness & Reliability
-Phase: 42 — Regression & Release Verification
-Plan: Milestone implementation complete
-Status: Ready for milestone audit and archival
+Phase: Complete
+Plan: Archived
+Status: Milestone archived
 Last activity: 2026-04-05
 
 ## Milestone Goal
@@ -38,8 +38,7 @@ Last activity: 2026-04-05
 
 ## Next Up
 
-- `$gsd-audit-milestone` — verify milestone coverage and integration before archival
-- `$gsd-complete-milestone` — archive milestone `v1.10` after audit passes
+- `$gsd-new-milestone` — define the next milestone and create fresh requirements/roadmap
 
 ## Completed Milestones
 
@@ -72,6 +71,7 @@ Last activity: 2026-04-05
 - `/api/products` and `/admin/status` now expose per-source freshness and cycle-state visibility
 - MiniApp now hydrates from the last good product payload and uses a lower-pressure enrichment queue for missing card metadata
 - The milestone verification set now includes continuity, scheduler freshness, notifier, admin-status, history-search, catalog-merge, and API coverage together
+- v1.10 archived to `.planning/milestones/` with roadmap, requirements, and audit snapshots
 
 ## Known Bugs
 
@@ -97,6 +97,7 @@ Last activity: 2026-04-05
 | v1.10 phase 40 context gathered | 2026-04-05 |
 | v1.10 phases 39-42 implemented | 2026-04-05 |
 | v1.10 verification artifacts written | 2026-04-05 |
+| v1.10 milestone archived | 2026-04-05 |
 
 ---
-*Last updated: 2026-04-05 after completing v1.10 implementation and verification*
+*Last updated: 2026-04-05 after archiving v1.10 milestone*

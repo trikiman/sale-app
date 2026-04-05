@@ -78,18 +78,20 @@ Family members see every VkusVill discount (green/red/yellow) the moment it appe
 - ✓ **HIST-05..07**: History search returns full local-catalog matches across live-sale, history-only, and catalog-only states without hidden scope restrictions — v1.8
 - ✓ **UI-14..15**: History search clearly labels live, history-only, and catalog-only result states — v1.8
 - ✓ **QA-01**: Automated regression coverage protects mixed History search results — v1.8
+- ✓ **HIST-08**: Continuous sale sessions survive transient scrape misses and only close after confirmed 60-minute healthy absence — v1.10
+- ✓ **BOT-07**: New-item alerts require confirmed sale exit/reentry instead of first-ever-seen IDs — v1.10
+- ✓ **SCRP-10..12**: Scheduler supports green-only freshness passes, exposes per-source freshness, and keeps last valid snapshots when colors are stale — v1.10
+- ✓ **OPS-02..03**: Cycle-state diagnostics and stale/failure visibility now surface through admin payloads, logs, and MiniApp warnings — v1.10
+- ✓ **UI-16..18**: Main screen hydrates from cached data, card enrichment is lower-pressure, and no private API switch was taken without evidence — v1.10
+- ✓ **QA-03**: Milestone regression suite covers continuity, scheduler freshness, notifier behavior, and the current backend API contract — v1.10
 
 ### Active
 
 <!-- Current scope. Building toward these. -->
 
-- [ ] Continuous-sale products stay a single sale session even when a scrape cycle partially fails or temporarily misses them
-- [ ] Favorite/new-item notifications only fire when a product actually re-enters sale, not when a bad cycle makes it disappear and come back
-- [ ] Scheduler can refresh green data more often than red/yellow while still respecting the existing sequential Chrome constraints
-- [ ] Scraper failures and stale-source conditions are visible to admins/users instead of silently degrading history and notifications
-- [ ] Main MiniApp load and product cards feel fast enough on first open, with card-data optimizations driven by measurement instead of guesswork
+None currently — next milestone not defined yet.
 
-## Current Milestone: v1.10 Scraper Freshness & Reliability
+## Latest Shipped Milestone: v1.10 Scraper Freshness & Reliability
 
 **Goal:** Keep sale/newness signals correct and the main sale screen responsive by making scrape cadence, failure handling, and card loading more resilient.
 
@@ -99,7 +101,7 @@ Family members see every VkusVill discount (green/red/yellow) the moment it appe
 - Failure/staleness alerting that makes bad cycles visible before they silently poison history, notifier, or UI freshness
 - Main-screen and card-path performance work, including profiling any API/card enrichment bottlenecks before changing the data path
 
-## Latest Shipped Milestone: v1.9 Catalog Coverage Expansion (2026-04-04)
+## Previous Shipped Milestone: v1.9 Catalog Coverage Expansion (2026-04-04)
 
 Shipped across phases 36-38:
 - Supplemental catalog discovery now covers stable source-based offline discovery beyond the hardcoded category crawl
@@ -209,6 +211,9 @@ Search and polish improvements for the History page:
 | History chip scope follows history dataset | Prevent empty subgroup chips when the history list only shows products with sale history | ✓ Good |
 | Notifier falls back to `product_catalog` metadata | `proposals.json` sale snapshot does not always carry group/subgroup fields yet | ✓ Good |
 | Expand local `product_catalog` before adding hybrid search | Keeps History search local-first and moves live VkusVill dependency into offline ingest instead of user queries | — Active |
+| Per-cycle health snapshot before merge/history updates | Missing one scrape cycle should not split continuous sale sessions or create fake restocks | ✓ Good |
+| Full-cycle + green-only dual cadence | Green needs fresher refreshes, but red/yellow must still keep a predictable full-cycle target | ✓ Good |
+| Last-good snapshot hydration in MiniApp | Cached content is safer than a long blocking spinner when freshness warnings remain visible | ✓ Good |
 
 ## Evolution
 
@@ -228,5 +233,5 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-05 after starting v1.10 milestone*
+*Last updated: 2026-04-05 after completing v1.10 milestone*
 

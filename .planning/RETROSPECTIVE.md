@@ -1,5 +1,47 @@
 # Retrospective
 
+## Milestone: v1.10 — Scraper Freshness & Reliability
+
+**Shipped:** 2026-04-05
+**Phases:** 4 | **Plans:** 11
+
+### What Was Built
+
+- Sale-session continuity guardrails with 60-minute healthy-absence closure
+- Confirmed session reentry semantics for notifier/API “new item” behavior
+- Full-cycle plus green-only scheduler cadence with per-source freshness metadata
+- MiniApp stale-warning reuse plus faster first-load/card enrichment paths
+- Milestone-level regression and release verification artifacts
+
+### What Worked
+
+- Turning the “daily re-appearance” complaint into a concrete state-contract fix made the backend work much more direct
+- Adding focused regression tests before pushing further into scheduler/UI changes kept the later work safer
+- Reusing existing MiniApp warning surfaces avoided unnecessary UI churn while still making stale data visible
+
+### What Was Inefficient
+
+- Milestone planning and implementation overlapped heavily, so state/roadmap paperwork had to be caught up late
+- The repo had several stale backend tests that were still asserting old route contracts and had to be updated during verification
+- Nyquist validation artifacts lagged behind the later phases even though the milestone-level verification evidence was strong
+
+### Patterns Established
+
+- Persist a machine-readable cycle-state artifact before merge/history updates when downstream logic depends on scraper trustworthiness
+- Use active-session flags rather than “ever seen” tables for “new again” sale-entry semantics
+- Cached last-good payload hydration is a pragmatic performance win for this MiniApp when freshness warnings remain visible
+
+### Key Lessons
+
+- A flaky observation pipeline needs explicit “is this cycle trustworthy?” state, not just retry logs
+- “New product” and “product visible in the latest snapshot” are not the same concept
+- Updating stale tests is part of milestone verification work; otherwise release confidence is fake
+
+### Cost Observations
+
+- Sessions: one concentrated autonomous closeout pass spanning planning, implementation, verification, audit, and archival
+- Notable: the majority of risk reduction came from the targeted regression harness and planning cleanup, not from large architectural rewrites
+
 ## Milestone: v1.7 — Categories & Subgroups
 
 **Shipped:** 2026-04-03
@@ -44,3 +86,5 @@
 
 - Ad-hoc implementation remains faster in the short term, but it creates stale audits and weak milestone stats later
 - Production verification has become the main source of last-mile bugs for this project, especially around EC2 process state
+- Reusing existing UI/state surfaces usually beats introducing new abstractions when the problem is reliability rather than product scope
+- Milestone closeout is smoother when verification artifacts are written during implementation instead of reconstructed afterward
