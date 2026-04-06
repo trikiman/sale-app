@@ -2,7 +2,7 @@
 
 **Created:** 2026-03-30
 **Updated:** 2026-04-06
-**Status:** v1.11 planned — ready for phase kickoff
+**Status:** v1.11 archived — ready for next milestone
 
 ## Milestones
 
@@ -17,9 +17,11 @@
 - ✅ **v1.8 History Search Completeness** — Phases 34-35 (shipped 2026-04-04)
 - ✅ **v1.9 Catalog Coverage Expansion** — Phases 36-38 (shipped 2026-04-04)
 - ✅ **v1.10 Scraper Freshness & Reliability** — Phases 39-42 (shipped 2026-04-05)
-- 🟡 **v1.11 Cart Responsiveness & Truth Recovery** — Phases 43-45 (planned 2026-04-06)
+- ✅ **v1.11 Cart Responsiveness & Truth Recovery** — Phases 43-45 (shipped 2026-04-06)
 
-## Current Milestone: v1.11 Cart Responsiveness & Truth Recovery
+## Latest Completed Milestone: v1.11 Cart Responsiveness & Truth Recovery
+
+Archived details: `.planning/milestones/v1.11-ROADMAP.md`
 
 **Goal:** Make add-to-cart feel fast and trustworthy by capping the click-path wait at 5 seconds, moving ambiguous recovery off the main interaction path, and tightening diagnostics around slow cart actions.
 
@@ -67,7 +69,7 @@
 3. Verification proves the visible add interaction stays within the 5-second UX budget even when reconciliation continues afterward.
 4. The milestone ships with a repeatable verification path for the cart-response contract.
 
-## Latest Completed Milestone: v1.10 Scraper Freshness & Reliability
+## Previous Completed Milestone: v1.10 Scraper Freshness & Reliability
 
 Archived details: `.planning/milestones/v1.10-ROADMAP.md`
 
@@ -87,7 +89,7 @@ Archived details: `.planning/milestones/v1.10-ROADMAP.md`
 
 ## Next Up
 
-- `$gsd-complete-milestone` — archive v1.11 and prepare the next milestone
+- `$gsd-new-milestone` — define the next milestone and create fresh requirements/roadmap
 
 ## Progress
 
