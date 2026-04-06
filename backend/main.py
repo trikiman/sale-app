@@ -2931,6 +2931,33 @@ async def _run_verify_job(job_id: str, user_id: str, code: str):
         if not is_authenticated and _login_succeeded:
             logger.info(f"VkusVill redirected (login OK) but cookies incomplete for {entry.get('phone', user_id)}")
 
+        session_sessid = None
+        session_user_id = None
+        try:
+            page_html = await asyncio.wait_for(
+                tab.evaluate("document.documentElement.outerHTML"),
+                timeout=5
+            )
+            if isinstance(page_html, str):
+                sessid_match = re.search(r"name=['\"]sessid['\"].*?value=['\"]([^'\"]+)['\"]", page_html)
+                if sessid_match:
+                    session_sessid = sessid_match.group(1)
+
+                user_id_match = re.search(r'id=["\']lk-user-id["\'].*?value=["\'](\d+)["\']', page_html)
+                if not user_id_match:
+                    user_id_match = re.search(r'"USER_ID"\s*:\s*"(\d+)"', page_html)
+                if user_id_match:
+                    session_user_id = int(user_id_match.group(1))
+        except Exception as meta_err:
+            logger.warning(f"Could not extract cart session metadata during cookie save: {meta_err}")
+
+        cookie_payload = {
+            "cookies": cookies_list,
+            "sessid": session_sessid,
+            "user_id": session_user_id,
+            "saved_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+        }
+
         # Save cookies by PHONE
         phone_10 = entry.get("phone", "")
         if phone_10:
@@ -2941,14 +2968,14 @@ async def _run_verify_job(job_id: str, user_id: str, code: str):
                     os.remove(bak)
             os.makedirs(os.path.dirname(cookies_path), exist_ok=True)
             with open(cookies_path, 'w', encoding='utf-8') as f:
-                json.dump(cookies_list, f, indent=2)
+                json.dump(cookie_payload, f, ensure_ascii=False, indent=2)
             _save_user_phone_mapping(user_id, phone_10)
             logger.info(f"Saved {len(cookies_list)} cookies for phone {phone_10} (UF_USER_AUTH=Y)")
         else:
             cookies_path = get_user_cookies_path(int(user_id) if user_id.isdigit() else user_id)
             os.makedirs(os.path.dirname(cookies_path), exist_ok=True)
             with open(cookies_path, 'w', encoding='utf-8') as f:
-                json.dump(cookies_list, f, indent=2)
+                json.dump(cookie_payload, f, ensure_ascii=False, indent=2)
             logger.info(f"Saved {len(cookies_list)} cookies for user {user_id} (UF_USER_AUTH=Y)")
 
         _result = {

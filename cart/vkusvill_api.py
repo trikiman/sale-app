@@ -14,6 +14,7 @@ alongside cookie data. The login flow must export these.
 import httpx
 import os
 import json
+import time
 
 import re
 import logging
@@ -26,6 +27,8 @@ BASKET_RECALC_URL = "https://vkusvill.ru/ajax/delivery_order/basket_recalc.php"
 BASKET_CLEAR_URL = "https://vkusvill.ru/ajax/delivery_order/basket_clear.php"
 VKUSVILL_BASE = "https://vkusvill.ru"
 CART_REQUEST_TIMEOUT = httpx.Timeout(connect=2.0, read=3.0, write=3.0, pool=2.0)
+CART_ADD_HOT_PATH_DEADLINE_SECONDS = 1.5
+CART_ADD_REQUEST_TIMEOUT = httpx.Timeout(CART_ADD_HOT_PATH_DEADLINE_SECONDS)
 
 
 class VkusVillCart:
@@ -71,9 +74,14 @@ class VkusVillCart:
         if isinstance(data, dict):
             cookies_list = data.get('cookies', [])
             if not self.sessid:
-                self.sessid = data.get('sessid', '')
+                self.sessid = data.get('sessid') or ''
             if not self.user_id:
-                self.user_id = data.get('user_id', 0)
+                metadata_user_id = data.get('user_id')
+                if metadata_user_id not in (None, ''):
+                    try:
+                        self.user_id = int(metadata_user_id)
+                    except (TypeError, ValueError):
+                        self.user_id = metadata_user_id
         else:
             cookies_list = data
         
@@ -141,7 +149,7 @@ class VkusVillCart:
         except httpx.HTTPError as e:
             logger.warning(f"Failed to extract session params: {e}")
     
-    def _request(self, url: str, data: dict, referer: str = '/') -> dict:
+    def _request(self, url: str, data: dict, referer: str = '/', timeout=None) -> dict:
         """Make a POST request using raw Cookie header via ProxyManager rotation."""
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36',
@@ -152,7 +160,7 @@ class VkusVillCart:
             'Cookie': self._cookie_str,
         }
 
-        client_kwargs = dict(timeout=CART_REQUEST_TIMEOUT)
+        client_kwargs = dict(timeout=timeout or CART_REQUEST_TIMEOUT)
         proxy_url = self._get_proxy_url()
         if proxy_url:
             client_kwargs['proxy'] = proxy_url
@@ -212,6 +220,7 @@ class VkusVillCart:
             dict with keys: success (bool), product_name, cart_total, error
         """
         self._ensure_session()
+        deadline = time.monotonic() + CART_ADD_HOT_PATH_DEADLINE_SECONDS
         
         last_result = None
         for _ in range(quantity):
@@ -240,30 +249,21 @@ class VkusVillCart:
                 data['sessid'] = self.sessid
             
             try:
-                last_result = self._request(BASKET_ADD_URL, data)
+                request_timeout_seconds = max(0.1, deadline - time.monotonic())
+                last_result = self._request(
+                    BASKET_ADD_URL,
+                    data,
+                    timeout=httpx.Timeout(request_timeout_seconds),
+                )
             except httpx.TimeoutException as e:
                 logger.error(f"Cart API request timed out: {e}")
-                try:
-                    cart_state = self.get_cart()
-                    cart_item = self._find_cart_item(cart_state, product_id)
-                    if cart_state.get('success') and cart_item:
-                        logger.info(f"✅ Cart add for {product_id} inferred from cart state after timeout")
-                        return {
-                            'success': True,
-                            'product_name': cart_item.get('NAME', ''),
-                            'product_id': cart_item.get('PRODUCT_ID'),
-                            'quantity': cart_item.get('Q', 0),
-                            'price': cart_item.get('PRICE', 0),
-                            'cart_items': cart_state.get('items_count', 0),
-                            'cart_total': cart_state.get('total_price', 0),
-                            'can_buy': cart_item.get('CAN_BUY') == 'Y' or cart_item.get('CAN_BUY') is True,
-                            'max_q': cart_item.get('MAX_Q', 0),
-                            'error_type': None,
-                            'raw': {'timeout_recovered': True},
-                        }
-                except Exception as cart_exc:
-                    logger.warning(f"Cart timeout recovery check failed: {cart_exc}")
-                return {'success': False, 'error': str(e) or 'timed out', 'error_type': 'timeout'}
+                return {
+                    'success': False,
+                    'pending': True,
+                    'error': 'pending_timeout',
+                    'error_type': 'pending_timeout',
+                    'raw': {'deadline_seconds': CART_ADD_HOT_PATH_DEADLINE_SECONDS},
+                }
             except httpx.HTTPError as e:
                 logger.error(f"Cart API request failed: {e}")
                 return {'success': False, 'error': str(e), 'error_type': 'http'}

@@ -1,3 +1,4 @@
+import json
 import httpx
 import os
 import sys
@@ -98,44 +99,60 @@ def test_cart_uses_cached_proxy_without_refresh(monkeypatch, tmp_path):
     assert pm.calls == [False]
 
 
-def test_cart_timeout_can_be_recovered_from_cart_state(monkeypatch, tmp_path):
+def test_cart_bootstrap_uses_saved_metadata_without_warmup(monkeypatch, tmp_path):
+    cookies_path = tmp_path / "cookies.json"
+    cookies_path.write_text(
+        json.dumps(
+            {
+                "cookies": [{"name": "UF_USER_AUTH", "value": "Y"}],
+                "sessid": "saved-sessid",
+                "user_id": 991,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    cart = VkusVillCart(str(cookies_path))
+
+    calls = {"extract": 0}
+
+    def should_not_extract():
+        calls["extract"] += 1
+        raise AssertionError("_extract_session_params should not be called when metadata exists")
+
+    monkeypatch.setattr(cart, "_extract_session_params", should_not_extract)
+
+    cart._ensure_session()
+
+    assert calls["extract"] == 0
+    assert cart.sessid == "saved-sessid"
+    assert cart.user_id == 991
+
+
+def test_cart_timeout_returns_pending_without_inline_cart_check(monkeypatch, tmp_path):
     cookies_path = tmp_path / "cookies.json"
     cookies_path.write_text("[]", encoding="utf-8")
 
     cart = VkusVillCart(str(cookies_path), user_id=1, sessid="sess")
     monkeypatch.setattr(cart, "_ensure_session", lambda: None)
 
-    calls = {"count": 0}
+    calls = {"request": 0, "get_cart": 0}
 
-    def fake_request(url, data, referer="/"):
-        calls["count"] += 1
+    def fake_request(url, data, referer="/", timeout=None):
+        calls["request"] += 1
         raise httpx.ReadTimeout("timed out")
 
-    def fake_get_cart():
-        return {
-            "success": True,
-            "items_count": 1,
-            "total_price": 49,
-            "raw": {
-                "basket": {
-                    "26198_0": {
-                        "PRODUCT_ID": 26198,
-                        "NAME": "Bread",
-                        "Q": 1,
-                        "PRICE": 49,
-                        "CAN_BUY": "Y",
-                        "MAX_Q": 1,
-                    }
-                }
-            },
-        }
+    def should_not_get_cart():
+        calls["get_cart"] += 1
+        raise AssertionError("get_cart should not be called from the timeout path")
 
     monkeypatch.setattr(cart, "_request", fake_request)
-    monkeypatch.setattr(cart, "get_cart", fake_get_cart)
+    monkeypatch.setattr(cart, "get_cart", should_not_get_cart)
 
     result = cart.add(26198, price_type=222, is_green=1)
 
-    assert calls["count"] == 1
-    assert result["success"] is True
-    assert result["product_id"] == 26198
-    assert result["cart_items"] == 1
+    assert calls["request"] == 1
+    assert calls["get_cart"] == 0
+    assert result["success"] is False
+    assert result["pending"] is True
+    assert result["error_type"] == "pending_timeout"
