@@ -236,6 +236,7 @@ Search and polish improvements for the History page:
 | Opt-in pending cart add contract | Keep legacy timeout behavior for current callers, but let new clients switch to `202 pending` plus attempt polling without blocking the hot path | — Active |
 | Pending cart UI is neutral, not failure-first | Ambiguous add results should show "checking cart" and keep the app usable instead of turning red before truth is known | ✓ Good |
 | In-cart products use synced quantity controls | Cards and detail drawer should switch into the same typed `шт/кг` quantity control instead of reverting to a plain add button | ✓ Good |
+| Cart diagnostics belong in admin/status + logs | Operators should inspect cart attempt timing and reconciliation through existing admin surfaces rather than adding new end-user diagnostics UI | ✓ Good |
 
 ## Evolution
 
@@ -255,5 +256,5 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-06 after completing Phase 44 bounded cart UI work*
+*Last updated: 2026-04-06 after completing Phase 45 cart diagnostics work*
 

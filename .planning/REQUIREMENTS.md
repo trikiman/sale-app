@@ -19,8 +19,8 @@
 
 ## Operations & Verification
 
-- [ ] **OPS-04**: Team can inspect cart-add latency, timeout reason, and reconciliation outcome for slow cart actions.
-- [ ] **QA-04**: Automated coverage protects the 5-second add UX budget and eventual cart-truth recovery flow.
+- [x] **OPS-04**: Team can inspect cart-add latency, timeout reason, and reconciliation outcome for slow cart actions.
+- [x] **QA-04**: Automated coverage protects the 5-second add UX budget and eventual cart-truth recovery flow.
 
 ## Future Requirements
 
@@ -44,8 +44,8 @@
 | CART-07 | 44 | Complete |
 | CART-08 | 44 | Complete |
 | CART-09 | 43 | Complete |
-| OPS-04 | 45 | Pending |
-| QA-04 | 45 | Pending |
+| OPS-04 | 45 | Complete |
+| QA-04 | 45 | Complete |
 
 **Coverage:**
 - v1 requirements: 9 total

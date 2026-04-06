@@ -29,7 +29,7 @@
 |---|-------|------|--------------|------------------|
 | 43 | Backend Cart Response Contract | Bound the cart-add request path and preserve enough state for later reconciliation instead of chaining long inline recovery waits. | Complete    | 2026-04-06 |
 | 44 | Frontend Bounded Add UX | End the visible add flow within 5 seconds, switch unresolved adds into a clear background-checking state, and prevent duplicate taps. | Complete    | 2026-04-06 |
-| 45 | Cart Diagnostics & Verification | Make slow/ambiguous add outcomes inspectable and lock the new latency contract with repeatable regression coverage. | OPS-04, QA-04 | 4 |
+| 45 | Cart Diagnostics & Verification | Make slow/ambiguous add outcomes inspectable and lock the new latency contract with repeatable regression coverage. | Complete    | 2026-04-06 |
 
 ### Phase 43: Backend Cart Response Contract
 
@@ -60,7 +60,7 @@
 **Goal:** Expose slow cart-action behavior clearly enough to debug and verify the new bounded-latency contract end to end.
 **Requirements:** OPS-04, QA-04
 **Depends on:** Phases 43-44
-**Plans:** Not planned yet
+**Plans:** 3/3 plans complete
 **Success Criteria**:
 1. Logs or admin diagnostics show cart-add latency segments, timeout class, and final reconciliation outcome for slow actions.
 2. Automated coverage exercises fast success, ambiguous timeout with late success, and true failure paths.
@@ -87,8 +87,7 @@ Archived details: `.planning/milestones/v1.10-ROADMAP.md`
 
 ## Next Up
 
-- `$gsd-discuss-phase 45` — gather context for cart diagnostics and verification
-- `$gsd-plan-phase 45` — skip discussion and plan Phase 45 directly
+- `$gsd-complete-milestone` — archive v1.11 and prepare the next milestone
 
 ## Progress
 
@@ -107,4 +106,4 @@ Archived details: `.planning/milestones/v1.10-ROADMAP.md`
 | 39-42 | v1.10 | ✅ Complete | 2026-04-05 |
 | 43 | v1.11 | ✅ Complete | 2026-04-06 |
 | 44 | v1.11 | ✅ Complete | 2026-04-06 |
-| 45 | v1.11 | 🟡 Planned | — |
+| 45 | v1.11 | ✅ Complete | 2026-04-06 |
