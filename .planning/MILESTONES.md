@@ -1,5 +1,23 @@
 # Milestones
 
+## v1.11 Cart Responsiveness & Truth Recovery (Shipped: 2026-04-06)
+
+**Phases completed:** 3 phases, 9 plans, 0 tasks
+
+**Key accomplishments:**
+
+- The cart hot path now reuses saved session metadata and returns an ambiguous timeout result instead of doing an inline cart read before responding
+- The backend now has an opt-in pending add contract with short-lived dedupe and a status route for later reconciliation
+- The pending cart contract is now protected by focused backend tests for legacy timeout compatibility, dedupe reuse, and status-route reconciliation
+- The add-to-cart click path now uses the pending backend contract so the UI stops blocking on inline cart refresh loops and shows a neutral checking state instead
+- The cart contract now preserves decimal quantities and exposes a set-quantity route, so real `шт/кг` controls no longer depend on fake frontend-only state
+- Confirmed in-cart products now switch into a synced VkusVill-like quantity control across cards and detail views, with typed `шт` and `кг` entry
+- Recent cart attempt lifecycle data is now exposed through `/admin/status`, rendered in the admin dashboard, and logged with explicit attempt IDs
+- The cart regression suite now covers immediate success, pending transitions, quantity routes, and the admin diagnostics payload in one repeatable command
+- The repo now has a current lightweight cart UI sanity helper and a verification artifact that records both automated cart diagnostics checks and browser/manual limitations
+
+---
+
 ## v1.10 Scraper Freshness & Reliability (Shipped: 2026-04-05)
 
 **Phases completed:** 4 phases, 11 plans, 0 tasks
