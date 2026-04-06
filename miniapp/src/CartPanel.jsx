@@ -57,6 +57,21 @@ export default function CartPanel({ isOpen, onClose, userId }) {
         setBusyIds(s => { const n = new Set(s); busy ? n.add(id) : n.delete(id); return n })
     }
 
+    const formatQuantity = (value) => {
+        const num = Number(value)
+        if (Number.isNaN(num) || num <= 0) return '0'
+        if (Number.isInteger(num)) return String(num)
+        return num.toFixed(3).replace(/\.?0+$/, '')
+    }
+
+    const formatUnit = (unit) => {
+        const raw = String(unit || '').trim().toLowerCase()
+        if (!raw) return 'шт'
+        if (raw === 'kg') return 'кг'
+        if (raw === 'pcs') return 'шт'
+        return raw
+    }
+
     const handleRemove = async (productId) => {
         markBusy(productId, true)
         try {
@@ -73,15 +88,26 @@ export default function CartPanel({ isOpen, onClose, userId }) {
     const handleQuantity = async (productId, delta) => {
         markBusy(productId, true)
         try {
-            const endpoint = delta > 0 ? '/api/cart/add' : '/api/cart/remove'
+            const item = items.find(entry => entry.id === productId)
+            if (!item) throw new Error('Товар не найден в корзине')
+
+            const currentQuantity = Number(item.quantity || 0)
+            const step = Number(item.step || item.koef || 1) || 1
+            const nextQuantity = delta > 0
+                ? currentQuantity + step
+                : Math.max(0, currentQuantity - step)
+            const endpoint = nextQuantity <= 0 ? '/api/cart/remove' : '/api/cart/set-quantity'
+            const payload = nextQuantity <= 0
+                ? { user_id: userId, product_id: productId }
+                : { user_id: userId, product_id: productId, quantity: nextQuantity }
             const res = await fetch(endpoint, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json', ...getAuthHeaders(userId) },
-                body: JSON.stringify({ user_id: userId, product_id: productId })
+                body: JSON.stringify(payload)
             })
-            if (res.ok) fetchCart(false)
+            if (res.ok) await fetchCart(false)
         } catch (e) { setError('Ошибка сети') }
-        markBusy(productId, false)
+        finally { markBusy(productId, false) }
     }
 
     const handleClearAll = async () => {
@@ -154,7 +180,11 @@ export default function CartPanel({ isOpen, onClose, userId }) {
                         <div className="cart-items-list">
                             {items.map((item, i) => {
                                 const isBusy = busyIds.has(item.id)
-                                const atMax = item.max_q > 0 && item.quantity >= item.max_q
+                                const quantity = Number(item.quantity || 0)
+                                const maxQuantity = Number(item.max_q || 0)
+                                const step = Number(item.step || item.koef || 1) || 1
+                                const atMax = maxQuantity > 0 && quantity >= maxQuantity
+                                const unit = formatUnit(item.unit)
                                 return (
                                     <div key={item.id || i} className={`cart-item ${!item.can_buy ? 'cart-item-oos' : ''}`}>
                                         {item.image && (
@@ -178,18 +208,18 @@ export default function CartPanel({ isOpen, onClose, userId }) {
                                                 )}
                                             </span>
                                             <span className="cart-item-meta">
-                                                📦 {item.quantity} шт
-                                                {item.can_buy && item.max_q > 0 && item.max_q <= 3 && (
-                                                    <span className="cart-item-low"> · осталось {item.max_q}</span>
+                                                📦 {formatQuantity(item.quantity)} {unit}
+                                                {item.can_buy && maxQuantity > 0 && maxQuantity <= 3 && (
+                                                    <span className="cart-item-low"> · осталось {formatQuantity(item.max_q)} {unit}</span>
                                                 )}
                                                 {atMax && <span className="cart-item-low"> · макс</span>}
                                             </span>
                                         </div>
                                         <div className="cart-qty-controls">
-                                            <button className="cart-qty-btn" onClick={() => item.quantity <= 1 ? handleRemove(item.id) : handleQuantity(item.id, -1)} disabled={isBusy}>
-                                                {item.quantity <= 1 ? <span className="cart-qty-trash">🗑</span> : '−'}
+                                            <button className="cart-qty-btn" onClick={() => quantity <= step ? handleRemove(item.id) : handleQuantity(item.id, -1)} disabled={isBusy}>
+                                                {quantity <= step ? <span className="cart-qty-trash">🗑</span> : '−'}
                                             </button>
-                                            <span className="cart-qty-value">{isBusy ? '…' : item.quantity}</span>
+                                            <span className="cart-qty-value">{isBusy ? '…' : formatQuantity(item.quantity)}</span>
                                             <button className="cart-qty-btn" onClick={() => handleQuantity(item.id, 1)} disabled={isBusy || !item.can_buy || atMax}>+</button>
                                         </div>
                                     </div>

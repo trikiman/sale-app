@@ -3411,9 +3411,9 @@ def cart_items_endpoint(user_id: str, request: Request):
         # VkusVill sometimes returns {} for empty basket, or a dict of items instead of list
         raw_items = data.get('items', [])
         if isinstance(raw_items, dict):
-            items_list = list(raw_items.values())
+            items_list = list(raw_items.items())
         elif isinstance(raw_items, list):
-            items_list = raw_items
+            items_list = [(item.get('PRODUCT_ID') if isinstance(item, dict) else None, item) for item in raw_items]
         else:
             items_list = []
             
@@ -3423,15 +3423,19 @@ def cart_items_endpoint(user_id: str, request: Request):
             "items": [
                 {
                     "id": item.get("PRODUCT_ID") if isinstance(item, dict) else None,
+                    "basket_key": basket_key,
                     "name": item.get("NAME") if isinstance(item, dict) else "",
                     "price": float(item.get("PRICE", 0)) if isinstance(item, dict) else 0,
                     "old_price": float(item.get("BASE_PRICE", 0)) if isinstance(item, dict) else 0,
-                    "quantity": int(item.get("Q", 0)) if isinstance(item, dict) else 0,
+                    "quantity": _coerce_cart_numeric(item.get("Q", 0)) if isinstance(item, dict) else 0,
                     "image": item.get("DETAIL_PICTURE_SRC") if isinstance(item, dict) else "",
                     "can_buy": str(item.get("CAN_BUY", "")).upper() in ['Y', 'TRUE', '1'] if isinstance(item, dict) else False,
-                    "max_q": int(item.get("MAX_Q", 0)) if isinstance(item, dict) and item.get("MAX_Q") else 0,
+                    "max_q": _coerce_cart_numeric(item.get("MAX_Q", 0)) if isinstance(item, dict) and item.get("MAX_Q") else 0,
+                    "unit": item.get("MEASURE_NAME") if isinstance(item, dict) and item.get("MEASURE_NAME") else (item.get("UNIT") if isinstance(item, dict) else "шт"),
+                    "step": _coerce_cart_numeric(item.get("STEP", 1)) if isinstance(item, dict) else 1,
+                    "koef": _coerce_cart_numeric(item.get("KOEF", 1)) if isinstance(item, dict) else 1,
                 }
-                for item in items_list if isinstance(item, dict)
+                for basket_key, item in items_list if isinstance(item, dict)
             ]
         }
     except HTTPException:
@@ -3444,6 +3448,22 @@ def cart_items_endpoint(user_id: str, request: Request):
 class CartRemoveRequest(BaseModel):
     user_id: str
     product_id: int
+
+
+class CartSetQuantityRequest(BaseModel):
+    user_id: str
+    product_id: int
+    quantity: float
+
+
+def _coerce_cart_numeric(value, default=0):
+    try:
+        num = float(str(value).replace(',', '.'))
+    except (TypeError, ValueError):
+        return default
+    if num.is_integer():
+        return int(num)
+    return num
 
 
 @app.post("/api/cart/remove")
@@ -3468,6 +3488,30 @@ def cart_remove_endpoint(req: CartRemoveRequest, request: Request):
     except Exception as e:
         logger.error(f"Cart remove error: {e}")
         raise HTTPException(status_code=500, detail="Ошибка удаления из корзины")
+
+
+@app.post("/api/cart/set-quantity")
+def cart_set_quantity_endpoint(req: CartSetQuantityRequest, request: Request):
+    """Set the quantity for an existing cart line."""
+    _validate_user_header(request, str(req.user_id))
+    cookies_path = _resolve_cart_cookies_path(req.user_id)
+    if not os.path.exists(cookies_path):
+        raise HTTPException(status_code=401, detail="Не авторизованы")
+
+    try:
+        cart = VkusVillCart(cookies_path=cookies_path, proxy_manager=_proxy_manager)
+        try:
+            result = cart.set_quantity(product_id=req.product_id, quantity=req.quantity)
+        finally:
+            cart.close()
+        if result.get("success"):
+            return result
+        raise HTTPException(status_code=400, detail=result.get("error", "Не удалось обновить количество"))
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Cart set quantity error: {e}")
+        raise HTTPException(status_code=500, detail="Ошибка изменения количества")
 
 
 class CartClearRequest(BaseModel):

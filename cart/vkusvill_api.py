@@ -31,6 +31,16 @@ CART_ADD_HOT_PATH_DEADLINE_SECONDS = 1.5
 CART_ADD_REQUEST_TIMEOUT = httpx.Timeout(CART_ADD_HOT_PATH_DEADLINE_SECONDS)
 
 
+def _coerce_numeric(value, default=0):
+    try:
+        num = float(str(value).replace(',', '.'))
+    except (TypeError, ValueError):
+        return default
+    if num.is_integer():
+        return int(num)
+    return num
+
+
 class VkusVillCart:
     """Client for VkusVill cart operations via their internal AJAX API.
     
@@ -394,6 +404,87 @@ class VkusVillCart:
             'success': success,
             'items_count': totals.get('Q_ITEMS', 0),
             'total_price': totals.get('PRICE_FINAL', 0),
+        }
+
+    def set_quantity(self, product_id: int, quantity: float, basket_key: str = None) -> dict:
+        """Set the quantity for an existing basket line via basket_update.php."""
+        self._ensure_session()
+
+        target_q = _coerce_numeric(quantity, 0)
+        if target_q <= 0:
+            return self.remove(product_id, basket_key=basket_key)
+
+        cart_data = self.get_cart()
+        if not cart_data.get('success'):
+            return {'success': False, 'error': 'Could not fetch cart to find basket key'}
+
+        basket = cart_data.get('raw', {}).get('basket', {})
+        old_q = 0
+        is_green = 0
+        koef = 1
+        step = 1
+        max_q = 0
+
+        for key, item in basket.items():
+            if isinstance(item, dict) and str(item.get('PRODUCT_ID', '')) == str(product_id):
+                basket_key = key
+                old_q = _coerce_numeric(item.get('Q', 0), 0)
+                is_green = 1 if item.get('IS_GREEN') else 0
+                koef = _coerce_numeric(item.get('KOEF', 1), 1)
+                step = _coerce_numeric(item.get('STEP', 1), 1)
+                max_q = _coerce_numeric(item.get('MAX_Q', 0), 0)
+                break
+
+        if not basket_key:
+            logger.warning(f"Product {product_id} not found in cart for set_quantity")
+            return {'success': False, 'error': 'Product not found in cart'}
+
+        if max_q and target_q > max_q:
+            target_q = max_q
+
+        if target_q == old_q:
+            return {
+                'success': True,
+                'items_count': cart_data.get('items_count', 0),
+                'total_price': cart_data.get('total_price', 0),
+                'quantity': target_q,
+                'max_q': max_q,
+            }
+
+        update_type = 'basket_up' if target_q > old_q else 'basket_down'
+        data = {
+            'id': basket_key,
+            'productId': product_id,
+            'isGreen': is_green,
+            'q': target_q,
+            'q_old': old_q,
+            'koef': koef,
+            'step': step,
+            'coupon': '',
+            'bonus': '',
+            'type': update_type,
+            'typeBtn': '',
+        }
+        if self.sessid:
+            data['sessid'] = self.sessid
+
+        try:
+            result = self._request(BASKET_UPDATE_URL, data, referer='/cart/')
+        except Exception as e:
+            logger.error(f"Cart set_quantity failed: {e}")
+            return {'success': False, 'error': str(e)}
+
+        success = str(result.get('success', '')).upper() in ['Y', 'TRUE', '1']
+        totals = result.get('totals', {})
+
+        logger.info(f"{'✅' if success else '❌'} Set quantity {product_id} -> {target_q}: {result.get('error', 'ok')}")
+        return {
+            'success': success,
+            'items_count': totals.get('Q_ITEMS', 0),
+            'total_price': totals.get('PRICE_FINAL', 0),
+            'quantity': target_q,
+            'max_q': max_q,
+            'raw': result,
         }
 
     def clear_all(self) -> dict:
