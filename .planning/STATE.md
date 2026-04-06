@@ -75,6 +75,10 @@ Last activity: 2026-04-06
 - The milestone verification set now includes continuity, scheduler freshness, notifier, admin-status, history-search, catalog-merge, and API coverage together
 - v1.10 archived to `.planning/milestones/` with roadmap, requirements, and audit snapshots
 
+### Pending Todos
+
+- Clarify stale banner freshness vs updated time — the stale warning is driven by per-color source age, while the header shows the latest merged payload time, so the UI currently looks contradictory even when backend freshness logic is correct.
+
 ## Known Bugs
 
 - Add-to-cart can still feel stuck well past 5 seconds because the frontend timeout path continues into extra cart refresh/reconciliation work while VkusVill add requests may complete late upstream
