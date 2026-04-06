@@ -192,3 +192,94 @@ def test_cart_add_status_can_transition_pending_to_failed(monkeypatch, tmp_path)
     assert body["status"] == "failed"
     assert body["source"] == "status_lookup_cart"
     assert body["last_error"] == "product_not_found_in_cart"
+
+
+def test_cart_items_preserve_decimal_quantity_fields(monkeypatch, tmp_path):
+    _clear_attempt_state()
+    cookies_path = tmp_path / "cookies.json"
+    cookies_path.write_text("[]", encoding="utf-8")
+
+    class DecimalCart:
+        def __init__(self, cookies_path, proxy_manager=None):
+            self.cookies_path = cookies_path
+
+        def get_cart(self):
+            return {
+                "success": True,
+                "items_count": 1,
+                "total_price": 91,
+                "items": {
+                    "500_0": {
+                        "PRODUCT_ID": 500,
+                        "NAME": "Apples",
+                        "PRICE": 91,
+                        "BASE_PRICE": 100,
+                        "Q": "0.73",
+                        "MAX_Q": "12.3",
+                        "UNIT": "кг",
+                        "STEP": "0.01",
+                        "KOEF": "0.01",
+                        "CAN_BUY": "Y",
+                    }
+                },
+            }
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(main, "_vkusvill_backoff_until", 0.0)
+    monkeypatch.setattr(main, "_get_phone_for_user", lambda user_id: None)
+    monkeypatch.setattr(main, "get_user_cookies_path", lambda user_id: str(cookies_path))
+    monkeypatch.setattr(main, "VkusVillCart", DecimalCart)
+
+    response = client.get("/api/cart/items/123", headers={"X-Telegram-User-Id": "123"})
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["items"][0]["basket_key"] == "500_0"
+    assert body["items"][0]["quantity"] == 0.73
+    assert body["items"][0]["max_q"] == 12.3
+    assert body["items"][0]["unit"] == "кг"
+    assert body["items"][0]["step"] == 0.01
+    assert body["items"][0]["koef"] == 0.01
+
+
+def test_cart_set_quantity_route_delegates_to_cart_client(monkeypatch, tmp_path):
+    _clear_attempt_state()
+    cookies_path = tmp_path / "cookies.json"
+    cookies_path.write_text("[]", encoding="utf-8")
+    seen = {}
+
+    class QuantityCart:
+        def __init__(self, cookies_path, proxy_manager=None):
+            self.cookies_path = cookies_path
+
+        def set_quantity(self, product_id, quantity):
+            seen["product_id"] = product_id
+            seen["quantity"] = quantity
+            return {
+                "success": True,
+                "items_count": 2,
+                "total_price": 182,
+                "quantity": quantity,
+                "max_q": 12.3,
+            }
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(main, "_get_phone_for_user", lambda user_id: None)
+    monkeypatch.setattr(main, "get_user_cookies_path", lambda user_id: str(cookies_path))
+    monkeypatch.setattr(main, "VkusVillCart", QuantityCart)
+
+    response = client.post(
+        "/api/cart/set-quantity",
+        headers={"X-Telegram-User-Id": "123"},
+        json={"user_id": "123", "product_id": 500, "quantity": 0.73},
+    )
+
+    body = response.json()
+    assert response.status_code == 200
+    assert seen == {"product_id": 500, "quantity": 0.73}
+    assert body["quantity"] == 0.73
+    assert body["max_q"] == 12.3

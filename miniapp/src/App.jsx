@@ -1,10 +1,11 @@
 import { useState, useEffect, useMemo, useRef, useCallback, memo, lazy, Suspense } from 'react'
 import CartPanel from './CartPanel'
 import ProductDetail from './ProductDetail'
+import CartQuantityControl from './CartQuantityControl'
 const HistoryPage = lazy(() => import('./HistoryPage'))
 const HistoryDetail = lazy(() => import('./HistoryDetail'))
 import { buildCategoryRunView } from './categoryRunStatus'
-import { getCardMetaBadges, mergeResolvedWeights, shouldFetchMissingWeight } from './productMeta'
+import { getCardMetaBadges, isWeightedUnit, mergeResolvedWeights, normalizeUnit, shouldFetchMissingWeight } from './productMeta'
 import { getAuthHeaders } from './api'
 import './index.css'
 
@@ -84,7 +85,30 @@ function normalizeProductsPayload(items) {
     : []
 }
 
-const ProductCard = memo(function ProductCard({ product, index, isFavorite, onToggleFavorite, favoritesLoading, onAddToCart, viewMode, cartState, onOpenDetail }) {
+function buildCartItemMap(items = []) {
+  const itemIds = new Set()
+  const itemsById = {}
+
+  for (const item of items) {
+    const id = String(item?.id ?? item?.product_id ?? '')
+    if (!id) continue
+    itemIds.add(id)
+    itemsById[id] = item
+  }
+
+  return { itemIds, itemsById }
+}
+
+function getCartStep(unit, cartItem) {
+  const derived = Number(cartItem?.step || cartItem?.koef || 0)
+  if (Number.isFinite(derived) && derived > 0) {
+    return derived
+  }
+
+  return isWeightedUnit(unit) ? 0.01 : 1
+}
+
+const ProductCard = memo(function ProductCard({ product, index, isFavorite, onToggleFavorite, favoritesLoading, onAddToCart, onSetCartQuantity, viewMode, cartState, cartItem, isCartBusy, onOpenDetail }) {
   const [imageLoaded, setImageLoaded] = useState(false)
   const [imageError, setImageError] = useState(false)
   const metaBadges = getCardMetaBadges(product)
@@ -98,6 +122,13 @@ const ProductCard = memo(function ProductCard({ product, index, isFavorite, onTo
     : 0
 
   const config = TYPE_CONFIG[product.type] || TYPE_CONFIG._default
+  const normalizedUnit = normalizeUnit(cartItem?.unit || product.unit)
+  const showQuantityControl = cartState !== 'loading'
+    && cartState !== 'pending'
+    && cartState !== 'success'
+    && cartState !== 'error'
+    && Number(cartItem?.quantity || 0) > 0
+  const step = getCartStep(normalizedUnit, cartItem)
 
   return (
     <div
@@ -162,36 +193,49 @@ const ProductCard = memo(function ProductCard({ product, index, isFavorite, onTo
               <span className="card-old-price">{product.oldPrice}₽</span>
             )}
           </div>
-          <button
-            className={`cart-btn tap-scale-sm ${cartState === 'success' ? 'cart-btn-success' : ''} ${cartState === 'error' ? 'cart-btn-error' : ''} ${cartState === 'pending' ? 'cart-btn-pending' : ''}`}
-            onClick={(e) => {
-              e.stopPropagation()
-              if (cartState !== 'loading' && cartState !== 'pending') onAddToCart(product)
-            }}
-            aria-label="Добавить в корзину"
-            disabled={cartState === 'loading' || cartState === 'pending'}
-          >
-            {cartState === 'loading' ? (
-              <span className="cart-btn-spinner" />
-            ) : cartState === 'pending' ? (
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.4">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l4 2" />
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9 9 0 100-18 9 9 0 000 18z" />
-              </svg>
-            ) : cartState === 'success' ? (
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-              </svg>
-            ) : cartState === 'error' ? (
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            ) : (
-              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 100 4 2 2 0 000-4z" />
-              </svg>
-            )}
-          </button>
+          {showQuantityControl ? (
+            <CartQuantityControl
+              compact
+              quantity={cartItem.quantity}
+              unit={normalizedUnit}
+              disabled={isCartBusy}
+              canIncrement={!(Number(cartItem?.max_q || 0) > 0 && Number(cartItem.quantity || 0) >= Number(cartItem.max_q))}
+              onDecrement={() => onSetCartQuantity(product, Math.max(0, Number(cartItem.quantity || 0) - step))}
+              onIncrement={() => onSetCartQuantity(product, Number(cartItem.quantity || 0) + step)}
+              onCommitQuantity={(nextQuantity) => onSetCartQuantity(product, nextQuantity)}
+            />
+          ) : (
+            <button
+              className={`cart-btn tap-scale-sm ${cartState === 'success' ? 'cart-btn-success' : ''} ${cartState === 'error' ? 'cart-btn-error' : ''} ${cartState === 'pending' ? 'cart-btn-pending' : ''}`}
+              onClick={(e) => {
+                e.stopPropagation()
+                if (cartState !== 'loading' && cartState !== 'pending') onAddToCart(product)
+              }}
+              aria-label="Добавить в корзину"
+              disabled={cartState === 'loading' || cartState === 'pending'}
+            >
+              {cartState === 'loading' ? (
+                <span className="cart-btn-spinner" />
+              ) : cartState === 'pending' ? (
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.4">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l4 2" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9 9 0 100-18 9 9 0 000 18z" />
+                </svg>
+              ) : cartState === 'success' ? (
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              ) : cartState === 'error' ? (
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 100 4 2 2 0 000-4z" />
+                </svg>
+              )}
+            </button>
+          )}
         </div>
 
         <div className="card-meta-row">
@@ -212,6 +256,8 @@ const ProductCard = memo(function ProductCard({ product, index, isFavorite, onTo
   return prev.product === next.product
     && prev.isFavorite === next.isFavorite
     && prev.cartState === next.cartState
+    && prev.cartItem === next.cartItem
+    && prev.isCartBusy === next.isCartBusy
     && prev.favoritesLoading === next.favoritesLoading
     && prev.viewMode === next.viewMode
 })
@@ -489,11 +535,13 @@ function App() {
           })
             .then(r => r.json())
             .then(cart => {
-              if (cart.items_count != null) {
-                setCartCount(cart.items_count)
-                setCartItemIds(new Set((cart.items || []).map(item => String(item.id ?? item.product_id ?? ''))))
-              }
-            })
+                if (cart.items_count != null) {
+                  const { itemIds, itemsById } = buildCartItemMap(cart.items || [])
+                  setCartCount(cart.items_count)
+                  setCartItemIds(itemIds)
+                  setCartItemsById(itemsById)
+                }
+              })
             .catch(() => { })
         }
       })
@@ -678,6 +726,8 @@ function App() {
   const [cartPanelOpen, setCartPanelOpen] = useState(false)
   const [cartCount, setCartCount] = useState(0)
   const [cartItemIds, setCartItemIds] = useState(new Set())
+  const [cartItemsById, setCartItemsById] = useState({})
+  const [cartBusyIds, setCartBusyIds] = useState(new Set())
   const pendingCartAttemptsRef = useRef(new Map())
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false)
   const [favoriteCategories, setFavoriteCategories] = useState(new Set())
@@ -695,18 +745,19 @@ function App() {
         })
         const cart = await res.json()
         if (cart.items_count != null) {
+          const { itemIds, itemsById } = buildCartItemMap(cart.items || [])
           setCartCount(cart.items_count)
-          const ids = new Set((cart.items || []).map(item => String(item.id ?? item.product_id ?? '')))
-          setCartItemIds(ids)
-          return { ok: true, itemsCount: cart.items_count, itemIds: ids }
+          setCartItemIds(itemIds)
+          setCartItemsById(itemsById)
+          return { ok: true, itemsCount: cart.items_count, itemIds, itemsById }
         }
       } catch {
         // best-effort retry path
       }
     }
 
-    return { ok: false, itemsCount: cartCount, itemIds: cartItemIds }
-  }, [cartCount, cartItemIds, userId])
+    return { ok: false, itemsCount: cartCount, itemIds: cartItemIds, itemsById: cartItemsById }
+  }, [cartCount, cartItemIds, cartItemsById, userId])
 
   const pollCartAttemptStatus = useCallback(async (product, attemptId) => {
     const pid = String(product.id)
@@ -751,11 +802,23 @@ function App() {
             next.add(pid)
             return next
           })
+          setCartItemsById(prev => ({
+            ...prev,
+            [pid]: prev[pid] || {
+              id: product.id,
+              quantity: 1,
+              unit: product.unit || 'шт',
+              step: getCartStep(product.unit, null),
+              koef: getCartStep(product.unit, null),
+              max_q: 0,
+            },
+          }))
           if (typeof data.cart_items === 'number') {
             setCartCount(data.cart_items)
           } else {
             setCartCount(prev => prev + 1)
           }
+          void refreshCartState(1, 0)
           setCartStates(s => ({ ...s, [pid]: 'success' }))
           setToastMessage({ text: 'Товар добавлен в корзину', type: 'success' })
           window.setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), 2000)
@@ -835,8 +898,20 @@ function App() {
           next.add(String(pid))
           return next
         })
+        setCartItemsById(prev => ({
+          ...prev,
+          [String(pid)]: prev[String(pid)] || {
+            id: product.id,
+            quantity: 1,
+            unit: product.unit || 'шт',
+            step: getCartStep(product.unit, null),
+            koef: getCartStep(product.unit, null),
+            max_q: 0,
+          },
+        }))
         setCartStates(s => ({ ...s, [pid]: 'success' }))
         setCartCount(typeof data.cart_items === 'number' ? data.cart_items : cartCount + 1)
+        void refreshCartState(1, 0)
         setToastMessage({ text: 'Товар добавлен в корзину', type: 'success' })
         setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), 2000)
         setTimeout(() => setToastMessage(null), 3000)
@@ -892,6 +967,91 @@ function App() {
       setTimeout(() => setToastMessage(null), 3000)
     }
   }, [cartCount, isAuthenticated, pollCartAttemptStatus, userId])
+
+  const handleSetCartQuantity = useCallback(async (product, requestedQuantity) => {
+    if (!isAuthenticated) {
+      setShowLoginPrompt(true)
+      return
+    }
+
+    const pid = String(product.id)
+    const unit = normalizeUnit(cartItemsById[pid]?.unit || product.unit)
+    const nextQuantity = isWeightedUnit(unit)
+      ? Math.max(0, Number(Number(requestedQuantity).toFixed(3)))
+      : Math.max(0, Math.round(Number(requestedQuantity)))
+
+    setCartBusyIds(prev => {
+      const next = new Set(prev)
+      next.add(pid)
+      return next
+    })
+
+    try {
+      const endpoint = nextQuantity <= 0 ? '/api/cart/remove' : '/api/cart/set-quantity'
+      const payload = nextQuantity <= 0
+        ? { user_id: userId, product_id: product.id }
+        : { user_id: userId, product_id: product.id, quantity: nextQuantity }
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(userId),
+        },
+        body: JSON.stringify(payload),
+      })
+
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        throw new Error(String(data?.detail || data?.error || 'Ошибка корзины'))
+      }
+
+      if (nextQuantity <= 0) {
+        setCartItemIds(prev => {
+          const next = new Set(prev)
+          next.delete(pid)
+          return next
+        })
+        setCartItemsById(prev => {
+          const next = { ...prev }
+          delete next[pid]
+          return next
+        })
+      } else {
+        setCartItemIds(prev => {
+          const next = new Set(prev)
+          next.add(pid)
+          return next
+        })
+        setCartItemsById(prev => ({
+          ...prev,
+          [pid]: {
+            ...prev[pid],
+            id: product.id,
+            quantity: data.quantity ?? nextQuantity,
+            max_q: data.max_q ?? prev[pid]?.max_q ?? 0,
+            unit: prev[pid]?.unit || product.unit || 'шт',
+            step: prev[pid]?.step || getCartStep(unit, prev[pid]),
+            koef: prev[pid]?.koef || getCartStep(unit, prev[pid]),
+          },
+        }))
+      }
+
+      if (typeof data.items_count === 'number') {
+        setCartCount(data.items_count)
+      }
+      void refreshCartState(1, 0)
+    } catch (err) {
+      console.error(err)
+      setToastMessage({ text: 'Не удалось обновить количество', type: 'error' })
+      setTimeout(() => setToastMessage(null), 3000)
+    } finally {
+      setCartBusyIds(prev => {
+        const next = new Set(prev)
+        next.delete(pid)
+        return next
+      })
+    }
+  }, [cartItemsById, isAuthenticated, refreshCartState, userId])
 
   // v1.7: Toggle group/subgroup category favorite
   const handleToggleCategoryFavorite = useCallback(async (categoryKey, categoryName) => {
@@ -1802,8 +1962,11 @@ function App() {
               isFavorite={favorites.has(product.id)}
               onToggleFavorite={handleToggleFavorite}
               onAddToCart={handleAddToCart}
+              onSetCartQuantity={handleSetCartQuantity}
               onOpenDetail={handleOpenDetail}
               cartState={cartStates[product.id] || null}
+              cartItem={cartItemsById[String(product.id)] || null}
+              isCartBusy={cartBusyIds.has(String(product.id))}
               favoritesLoading={favoritesLoading}
               viewMode={viewMode}
             />
@@ -1842,6 +2005,9 @@ function App() {
           onClose={() => setSelectedProduct(null)}
           onAddToCart={handleAddToCart}
           cartState={cartStates[selectedProduct.id] || null}
+          cartItem={cartItemsById[String(selectedProduct.id)] || null}
+          isCartBusy={cartBusyIds.has(String(selectedProduct.id))}
+          onSetCartQuantity={handleSetCartQuantity}
         />
       )}
 

@@ -1,4 +1,6 @@
 import { useState, useEffect } from 'react'
+import CartQuantityControl from './CartQuantityControl'
+import { isWeightedUnit, normalizeUnit } from './productMeta'
 
 // Route all VkusVill images through backend proxy.
 // Backend handles smart CDN routing (cdn1-img → direct, img → proxy rotation).
@@ -10,7 +12,7 @@ function proxyImg(url) {
   return url
 }
 
-export default function ProductDetail({ product, onClose, onAddToCart, cartState }) {
+export default function ProductDetail({ product, onClose, onAddToCart, onSetCartQuantity, cartState, cartItem, isCartBusy }) {
   const [details, setDetails] = useState(null)
   const [loading, setLoading] = useState(true)
   const [imgIndex, setImgIndex] = useState(0)
@@ -40,6 +42,13 @@ export default function ProductDetail({ product, onClose, onAddToCart, cartState
 
   const images = details?.images?.length ? details.images : (product.image ? [product.image] : [])
   const weight = details?.weight || product.weight || ''
+  const normalizedUnit = normalizeUnit(cartItem?.unit || product.unit)
+  const step = Number(cartItem?.step || cartItem?.koef || (isWeightedUnit(normalizedUnit) ? 0.01 : 1))
+  const showQuantityControl = cartState !== 'loading'
+    && cartState !== 'pending'
+    && cartState !== 'success'
+    && cartState !== 'error'
+    && Number(cartItem?.quantity || 0) > 0
 
   return (
     <>
@@ -112,17 +121,29 @@ export default function ProductDetail({ product, onClose, onAddToCart, cartState
           </div>
 
           {/* Add to cart */}
-          <button
-            className={`detail-cart-btn ${cartState === 'success' ? 'success' : cartState === 'error' ? 'error' : cartState === 'pending' ? 'pending' : ''}`}
-            onClick={() => onAddToCart(product)}
-            disabled={cartState === 'loading' || cartState === 'pending'}
-          >
-            {cartState === 'loading' ? '⏳ Добавляем…'
-              : cartState === 'pending' ? '🕓 Проверяем…'
-              : cartState === 'success' ? '✅ Добавлено'
-                : cartState === 'error' ? '❌ Ошибка'
-                  : '🛒 В корзину'}
-          </button>
+          {showQuantityControl ? (
+            <CartQuantityControl
+              quantity={cartItem.quantity}
+              unit={normalizedUnit}
+              disabled={isCartBusy}
+              canIncrement={!(Number(cartItem?.max_q || 0) > 0 && Number(cartItem.quantity || 0) >= Number(cartItem.max_q))}
+              onDecrement={() => onSetCartQuantity(product, Math.max(0, Number(cartItem.quantity || 0) - step))}
+              onIncrement={() => onSetCartQuantity(product, Number(cartItem.quantity || 0) + step)}
+              onCommitQuantity={(nextQuantity) => onSetCartQuantity(product, nextQuantity)}
+            />
+          ) : (
+            <button
+              className={`detail-cart-btn ${cartState === 'success' ? 'success' : cartState === 'error' ? 'error' : cartState === 'pending' ? 'pending' : ''}`}
+              onClick={() => onAddToCart(product)}
+              disabled={cartState === 'loading' || cartState === 'pending'}
+            >
+              {cartState === 'loading' ? '⏳ Добавляем…'
+                : cartState === 'pending' ? '🕓 Проверяем…'
+                : cartState === 'success' ? '✅ Добавлено'
+                  : cartState === 'error' ? '❌ Ошибка'
+                    : '🛒 В корзину'}
+            </button>
+          )}
 
           {/* Details */}
           {loading ? (

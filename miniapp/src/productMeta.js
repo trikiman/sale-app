@@ -1,6 +1,6 @@
 const WEIGHT_STOCK_UNITS = new Set(['кг', 'г', 'л', 'мл'])
 
-function normalizeUnit(unit) {
+export function normalizeUnit(unit) {
   const raw = String(unit || '').trim().toLowerCase()
   if (!raw) return 'шт'
   if (raw === 'kg') return 'кг'
@@ -11,11 +11,30 @@ function normalizeUnit(unit) {
   return raw
 }
 
-function formatQuantity(value) {
+export function isWeightedUnit(unit) {
+  return WEIGHT_STOCK_UNITS.has(normalizeUnit(unit))
+}
+
+export function formatQuantity(value) {
   const num = Number(value)
   if (Number.isNaN(num) || num <= 0) return ''
   if (Number.isInteger(num)) return String(num)
   return num.toFixed(3).replace(/\.?0+$/, '')
+}
+
+export function parseQuantityInput(rawValue, unit) {
+  const normalized = String(rawValue || '').trim().replace(',', '.')
+  if (!normalized) return null
+
+  const parsed = Number(normalized)
+  if (!Number.isFinite(parsed) || parsed < 0) return null
+
+  if (!isWeightedUnit(unit)) {
+    return Number.isInteger(parsed) ? parsed : null
+  }
+
+  if (parsed === 0) return 0
+  return Number(parsed.toFixed(3))
 }
 
 export function getCardMetaBadges(product) {
@@ -31,7 +50,7 @@ export function getCardMetaBadges(product) {
     })
   }
 
-  if (weight && !WEIGHT_STOCK_UNITS.has(unit)) {
+  if (weight && !isWeightedUnit(unit)) {
     badges.push({
       kind: 'weight',
       text: weight,
@@ -61,7 +80,7 @@ export function shouldFetchMissingWeight(product) {
   if (weight) return false
 
   const unit = normalizeUnit(product?.unit)
-  if (WEIGHT_STOCK_UNITS.has(unit)) return false
+  if (isWeightedUnit(unit)) return false
 
   return Number(product?.stock) > 0
 }
