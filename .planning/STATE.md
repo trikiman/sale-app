@@ -19,14 +19,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-06)
 
 **Core value:** Family members see every VkusVill discount and can add to cart in one tap
-**Current focus:** Start Phase 44 so the frontend switches to the new pending-aware cart contract and replaces the plain add button with the bounded in-cart control flow
+**Current focus:** Plan Phase 44 so the frontend consumes the pending cart contract, switches cards into the synced quantity control, and removes the old inline timeout wait path
 
 ## Current Position
 
 Milestone: v1.11 — Cart Responsiveness & Truth Recovery
 Phase: 44
-Plan: Not started
-Status: Phase 43 complete; Phase 44 ready for planning
+Plan: Context gathered
+Status: Phase 44 context gathered; ready for planning
 Last activity: 2026-04-06
 
 ## Milestone Goal
@@ -38,8 +38,8 @@ Last activity: 2026-04-06
 
 ## Next Up
 
-- `$gsd-discuss-phase 44` — gather context for the bounded frontend add UX and in-card quantity controls
-- `$gsd-plan-phase 44` — skip discussion and plan Phase 44 directly
+- `$gsd-plan-phase 44` — create the execution plans for the bounded frontend add UX
+- `$gsd-execute-phase 44` — run Phase 44 after planning completes
 
 ## Completed Milestones
 
@@ -107,6 +107,7 @@ Last activity: 2026-04-06
 | v1.11 milestone started | 2026-04-06 |
 | v1.11 roadmap created | 2026-04-06 |
 | v1.11 phase 43 executed | 2026-04-06 |
+| v1.11 phase 44 context gathered | 2026-04-06 |
 
 ---
-*Last updated: 2026-04-06 after completing Phase 43*
+*Last updated: 2026-04-06 after gathering Phase 44 context*
