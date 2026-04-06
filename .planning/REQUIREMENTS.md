@@ -12,10 +12,10 @@
 
 ## Cart Truth Recovery
 
-- [ ] **CART-06**: User eventually sees the correct cart state after a slow or timed-out add that may have succeeded late upstream.
+- [x] **CART-06**: User eventually sees the correct cart state after a slow or timed-out add that may have succeeded late upstream.
 - [ ] **CART-07**: User does not see a hard failure or sold-out removal when cart truth is still ambiguous.
 - [ ] **CART-08**: User does not create duplicate add attempts by tapping repeatedly while one add is still unresolved.
-- [ ] **CART-09**: User is not blocked by backend session repair or follow-up cart reads once the 5-second response budget is exhausted.
+- [x] **CART-09**: User is not blocked by backend session repair or follow-up cart reads once the 5-second response budget is exhausted.
 
 ## Operations & Verification
 
@@ -40,10 +40,10 @@
 | CART-04 | 44 | Pending |
 | UI-19 | 44 | Pending |
 | CART-05 | 44 | Pending |
-| CART-06 | 43 | Pending |
+| CART-06 | 43 | Complete |
 | CART-07 | 44 | Pending |
 | CART-08 | 44 | Pending |
-| CART-09 | 43 | Pending |
+| CART-09 | 43 | Complete |
 | OPS-04 | 45 | Pending |
 | QA-04 | 45 | Pending |
 

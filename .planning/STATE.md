@@ -2,14 +2,14 @@
 gsd_state_version: 1.0
 milestone: v1.11
 milestone_name: Cart Responsiveness & Truth Recovery
-status: Milestone defined, ready for phase planning
-last_updated: "2026-04-06T00:00:00.000Z"
+status: planning
+last_updated: "2026-04-06T07:09:14.541Z"
 last_activity: 2026-04-06
 progress:
   total_phases: 3
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
+  completed_phases: 1
+  total_plans: 3
+  completed_plans: 3
 ---
 
 # Project State
@@ -19,14 +19,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-06)
 
 **Core value:** Family members see every VkusVill discount and can add to cart in one tap
-**Current focus:** Kick off Phase 43 so backend cart-add responses stop dragging through inline recovery and the 5-second frontend budget has a clean contract to target
+**Current focus:** Start Phase 44 so the frontend switches to the new pending-aware cart contract and replaces the plain add button with the bounded in-cart control flow
 
 ## Current Position
 
 Milestone: v1.11 — Cart Responsiveness & Truth Recovery
-Phase: 43 ready to start
-Plan: —
-Status: Milestone defined, ready for phase planning
+Phase: 44
+Plan: Not started
+Status: Phase 43 complete; Phase 44 ready for planning
 Last activity: 2026-04-06
 
 ## Milestone Goal
@@ -38,8 +38,8 @@ Last activity: 2026-04-06
 
 ## Next Up
 
-- `$gsd-discuss-phase 43` — gather context for the backend cart response contract
-- `$gsd-plan-phase 43` — skip discussion and plan Phase 43 directly
+- `$gsd-discuss-phase 44` — gather context for the bounded frontend add UX and in-card quantity controls
+- `$gsd-plan-phase 44` — skip discussion and plan Phase 44 directly
 
 ## Completed Milestones
 
@@ -106,6 +106,7 @@ Last activity: 2026-04-06
 | v1.10 milestone archived | 2026-04-05 |
 | v1.11 milestone started | 2026-04-06 |
 | v1.11 roadmap created | 2026-04-06 |
+| v1.11 phase 43 executed | 2026-04-06 |
 
 ---
-*Last updated: 2026-04-06 after starting v1.11 milestone*
+*Last updated: 2026-04-06 after completing Phase 43*

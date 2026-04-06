@@ -27,7 +27,7 @@
 
 | # | Phase | Goal | Requirements | Success Criteria |
 |---|-------|------|--------------|------------------|
-| 43 | Backend Cart Response Contract | Bound the cart-add request path and preserve enough state for later reconciliation instead of chaining long inline recovery waits. | CART-06, CART-09 | 4 |
+| 43 | Backend Cart Response Contract | Bound the cart-add request path and preserve enough state for later reconciliation instead of chaining long inline recovery waits. | Complete    | 2026-04-06 |
 | 44 | Frontend Bounded Add UX | End the visible add flow within 5 seconds, switch unresolved adds into a clear background-checking state, and prevent duplicate taps. | CART-04, UI-19, CART-05, CART-07, CART-08 | 4 |
 | 45 | Cart Diagnostics & Verification | Make slow/ambiguous add outcomes inspectable and lock the new latency contract with repeatable regression coverage. | OPS-04, QA-04 | 4 |
 
@@ -36,7 +36,7 @@
 **Goal:** Bound backend cart-add latency and move ambiguous truth recovery off the main request path without losing eventual correctness.
 **Requirements:** CART-06, CART-09
 **Depends on:** —
-**Plans:** Not planned yet
+**Plans:** 3/3 plans complete
 **Success Criteria**:
 1. Cart add no longer chains multi-second inline recovery loops before returning a response.
 2. Backend returns a bounded ambiguous/pending outcome when upstream add truth is still unknown instead of stretching the visible wait path.
