@@ -53,6 +53,41 @@ def test_cart_add_allow_pending_returns_202_with_attempt_id(monkeypatch, tmp_pat
     assert body["attempt_id"]
     assert body["product_id"] == 33243
     assert body["user_id"] == "123"
+    assert body["started_at"] is not None
+    assert body["resolved_at"] is None
+    assert body["duration_ms"] is None
+
+
+def test_cart_add_allow_pending_can_return_immediate_success(monkeypatch, tmp_path):
+    _clear_attempt_state()
+    cookies_path = tmp_path / "cookies.json"
+    cookies_path.write_text("[]", encoding="utf-8")
+
+    class ImmediateSuccessCart:
+        def __init__(self, cookies_path, proxy_manager=None):
+            self.cookies_path = cookies_path
+
+        def add(self, product_id, price_type=1, is_green=0):
+            return {"success": True, "cart_items": 4, "cart_total": 310}
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(main, "_get_phone_for_user", lambda user_id: None)
+    monkeypatch.setattr(main, "get_user_cookies_path", lambda user_id: str(cookies_path))
+    monkeypatch.setattr(main, "VkusVillCart", ImmediateSuccessCart)
+
+    response = client.post(
+        "/api/cart/add",
+        headers={"X-Telegram-User-Id": "123"},
+        json={"user_id": "123", "product_id": 33243, "allow_pending": True},
+    )
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["success"] is True
+    assert body["cart_items"] == 4
+    assert body["cart_total"] == 310
 
 
 def test_duplicate_pending_adds_reuse_same_attempt_id(monkeypatch, tmp_path):
@@ -146,6 +181,8 @@ def test_cart_add_status_can_transition_pending_to_success(monkeypatch, tmp_path
     assert body["cart_items"] == 3
     assert body["cart_total"] == 145
     assert body["source"] == "status_lookup_cart"
+    assert body["resolved_at"] is not None
+    assert body["duration_ms"] is not None
 
 
 def test_cart_add_status_can_transition_pending_to_failed(monkeypatch, tmp_path):
@@ -192,6 +229,8 @@ def test_cart_add_status_can_transition_pending_to_failed(monkeypatch, tmp_path)
     assert body["status"] == "failed"
     assert body["source"] == "status_lookup_cart"
     assert body["last_error"] == "product_not_found_in_cart"
+    assert body["resolved_at"] is not None
+    assert body["duration_ms"] is not None
 
 
 def test_cart_items_preserve_decimal_quantity_fields(monkeypatch, tmp_path):
