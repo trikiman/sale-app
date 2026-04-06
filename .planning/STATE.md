@@ -2,7 +2,7 @@
 gsd_state_version: 1.0
 milestone: v1.11
 milestone_name: Cart Responsiveness & Truth Recovery
-status: completed
+status: Milestone archived
 last_updated: "2026-04-06T10:29:09.582Z"
 last_activity: 2026-04-06
 progress:
@@ -19,15 +19,15 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-06)
 
 **Core value:** Family members see every VkusVill discount and can add to cart in one tap
-**Current focus:** Milestone v1.11 is functionally complete; archive the cart responsiveness work and prepare the next milestone
+**Current focus:** Start the next milestone from a clean requirements/roadmap cycle
 
 ## Current Position
 
 Milestone: v1.11 — Cart Responsiveness & Truth Recovery
-Phase: 45
-Plan: Complete
+Phase: Complete
+Plan: Archived
 Last activity: 2026-04-06
-Status: All milestone phases complete; ready for milestone completion
+Status: Milestone archived
 
 ## Milestone Goal
 
@@ -38,7 +38,7 @@ Status: All milestone phases complete; ready for milestone completion
 
 ## Next Up
 
-- `$gsd-complete-milestone` — archive v1.11 and prepare the next milestone
+- `$gsd-new-milestone` — define the next milestone and create fresh requirements/roadmap
 
 ## Completed Milestones
 
@@ -110,6 +110,7 @@ Status: All milestone phases complete; ready for milestone completion
 | v1.11 phase 44 executed | 2026-04-06 |
 | v1.11 phase 45 context gathered | 2026-04-06 |
 | v1.11 phase 45 executed | 2026-04-06 |
+| v1.11 milestone archived | 2026-04-06 |
 
 ---
-*Last updated: 2026-04-06 after completing Phase 45*
+*Last updated: 2026-04-06 after archiving v1.11 milestone*
