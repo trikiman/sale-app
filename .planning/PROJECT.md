@@ -89,7 +89,25 @@ Family members see every VkusVill discount (green/red/yellow) the moment it appe
 
 <!-- Current scope. Building toward these. -->
 
-None currently — next milestone not defined yet.
+- **CART-04**: User gets a final add result or explicit pending state within 5.0 seconds of tapping add to cart.
+- **UI-19**: User sees a short non-blocking "checking cart" state after timeout instead of a spinner that keeps stretching.
+- **CART-05**: User can keep browsing and using the MiniApp while cart reconciliation continues in the background.
+- **CART-06**: User eventually sees the correct cart state after a slow or timed-out add that may have succeeded late upstream.
+- **CART-07**: User does not see a hard failure or sold-out removal when cart truth is still ambiguous.
+- **CART-08**: User does not create duplicate add attempts by tapping repeatedly while one add is still unresolved.
+- **CART-09**: User is not blocked by backend session repair or follow-up cart reads once the 5-second response budget is exhausted.
+- **OPS-04**: Operator can inspect cart-add latency, timeout reason, and reconciliation outcome for slow cart actions.
+- **QA-04**: Automated coverage protects the 5-second add UX budget and eventual cart-truth recovery flow.
+
+## Current Milestone: v1.11 Cart Responsiveness & Truth Recovery
+
+**Goal:** Make add-to-cart feel fast and trustworthy by capping the click-path wait at 5 seconds, moving ambiguous recovery off the main interaction path, and tightening cart diagnostics.
+
+**Target features:**
+- Hard 5.0-second add-to-cart UX budget on the click path
+- Background cart reconciliation after ambiguous add timeouts instead of inline wait chaining
+- Backend cart/session recovery tuned for fast acknowledgement plus later truth recovery
+- Diagnostics and regression coverage for slow-add latency, late success, and duplicate-tap edge cases
 
 ## Latest Shipped Milestone: v1.10 Scraper Freshness & Reliability
 
@@ -233,5 +251,5 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-05 after completing v1.10 milestone*
+*Last updated: 2026-04-06 after starting v1.11 milestone*
 

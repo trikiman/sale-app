@@ -1,12 +1,12 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.10
-milestone_name: Scraper Freshness & Reliability
-status: Milestone archived
-last_updated: "2026-04-05T19:00:00.000Z"
-last_activity: 2026-04-05
+milestone: v1.11
+milestone_name: Cart Responsiveness & Truth Recovery
+status: Defining requirements
+last_updated: "2026-04-06T00:00:00.000Z"
+last_activity: 2026-04-06
 progress:
-  total_phases: 0
+  total_phases: 4
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -16,29 +16,29 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-05)
+See: .planning/PROJECT.md (updated 2026-04-06)
 
 **Core value:** Family members see every VkusVill discount and can add to cart in one tap
-**Current focus:** Plan and execute v1.10 so sale continuity, notifier correctness, scraper freshness, and main-screen responsiveness stop drifting under partial failures
+**Current focus:** Plan and execute v1.11 so add-to-cart stops blocking past 5 seconds and ambiguous cart outcomes reconcile in the background instead of freezing the click path
 
 ## Current Position
 
-Milestone: v1.10 — Scraper Freshness & Reliability
-Phase: Complete
-Plan: Archived
-Status: Milestone archived
-Last activity: 2026-04-05
+Milestone: v1.11 — Cart Responsiveness & Truth Recovery
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-04-06
 
 ## Milestone Goal
 
-- Stop continuous-sale items from being split into fake daily re-appearances
-- Prioritize green freshness without starving red/yellow coverage
-- Surface scraper failures/staleness instead of silently degrading notifier/history output
-- Remove the slow initial loading and laggy card feel on the main MiniApp screen
+- Stop add-to-cart from keeping the user in a loading state longer than 5 seconds
+- Move cart truth reconciliation after ambiguous timeouts into a background path instead of chaining extra waits inside one click
+- Tighten backend cart/session recovery so slow upstream behavior does not stretch the visible user wait budget
+- Make slow-add latency, timeout causes, and reconciliation outcomes visible enough to debug confidently
 
 ## Next Up
 
-- `$gsd-new-milestone` — define the next milestone and create fresh requirements/roadmap
+- Define milestone requirements and roadmap for phases 43-46
 
 ## Completed Milestones
 
@@ -54,6 +54,7 @@ Last activity: 2026-04-05
 | v1.7 Categories & Subgroups | 29-33 | 2026-04-03 |
 | v1.8 History Search Completeness | 34-35 | 2026-04-04 |
 | v1.9 Catalog Coverage Expansion | 36-38 | 2026-04-04 |
+| v1.10 Scraper Freshness & Reliability | 39-42 | 2026-04-05 |
 
 ## Accumulated Context
 
@@ -75,7 +76,7 @@ Last activity: 2026-04-05
 
 ## Known Bugs
 
-- No confirmed open milestone bugs after the current implementation pass
+- Add-to-cart can still feel stuck well past 5 seconds because the frontend timeout path continues into extra cart refresh/reconciliation work while VkusVill add requests may complete late upstream
 
 ## Timeline
 
@@ -98,6 +99,7 @@ Last activity: 2026-04-05
 | v1.10 phases 39-42 implemented | 2026-04-05 |
 | v1.10 verification artifacts written | 2026-04-05 |
 | v1.10 milestone archived | 2026-04-05 |
+| v1.11 milestone started | 2026-04-06 |
 
 ---
-*Last updated: 2026-04-05 after archiving v1.10 milestone*
+*Last updated: 2026-04-06 after starting v1.11 milestone*
