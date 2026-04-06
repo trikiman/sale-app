@@ -1546,6 +1546,12 @@ body {
   transition: background 0.3s;
 }
 
+.cart-btn-pending {
+  background: #a16207 !important;
+  box-shadow: 0 2px 12px rgba(245, 158, 11, 0.28) !important;
+  transition: background 0.3s;
+}
+
 .cart-btn-spinner {
   display: inline-block;
   width: 16px;

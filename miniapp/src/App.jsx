@@ -163,16 +163,21 @@ const ProductCard = memo(function ProductCard({ product, index, isFavorite, onTo
             )}
           </div>
           <button
-            className={`cart-btn tap-scale-sm ${cartState === 'success' ? 'cart-btn-success' : ''} ${cartState === 'error' ? 'cart-btn-error' : ''}`}
+            className={`cart-btn tap-scale-sm ${cartState === 'success' ? 'cart-btn-success' : ''} ${cartState === 'error' ? 'cart-btn-error' : ''} ${cartState === 'pending' ? 'cart-btn-pending' : ''}`}
             onClick={(e) => {
               e.stopPropagation()
-              if (cartState !== 'loading') onAddToCart(product)
+              if (cartState !== 'loading' && cartState !== 'pending') onAddToCart(product)
             }}
             aria-label="Добавить в корзину"
-            disabled={cartState === 'loading'}
+            disabled={cartState === 'loading' || cartState === 'pending'}
           >
             {cartState === 'loading' ? (
               <span className="cart-btn-spinner" />
+            ) : cartState === 'pending' ? (
+              <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.4">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l4 2" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9 9 0 100-18 9 9 0 000 18z" />
+              </svg>
             ) : cartState === 'success' ? (
               <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
@@ -653,7 +658,7 @@ function App() {
     }
   }, [])
 
-  // Per-product cart button state: 'loading' | 'success' | 'error' | null
+  // Per-product cart button state: 'loading' | 'pending' | 'success' | 'error' | null
   const [cartStates, setCartStates] = useState({})
   const [selectedProduct, setSelectedProduct] = useState(null)
   const handleOpenDetail = useCallback((product) => setSelectedProduct(product), [])
@@ -673,6 +678,7 @@ function App() {
   const [cartPanelOpen, setCartPanelOpen] = useState(false)
   const [cartCount, setCartCount] = useState(0)
   const [cartItemIds, setCartItemIds] = useState(new Set())
+  const pendingCartAttemptsRef = useRef(new Map())
   const [showFavoritesOnly, setShowFavoritesOnly] = useState(false)
   const [favoriteCategories, setFavoriteCategories] = useState(new Set())
 
@@ -702,6 +708,95 @@ function App() {
     return { ok: false, itemsCount: cartCount, itemIds: cartItemIds }
   }, [cartCount, cartItemIds, userId])
 
+  const pollCartAttemptStatus = useCallback(async (product, attemptId) => {
+    const pid = String(product.id)
+    const wait = (ms) => new Promise(resolve => window.setTimeout(resolve, ms))
+
+    pendingCartAttemptsRef.current.set(pid, attemptId)
+
+    for (let attempt = 0; attempt < 20; attempt++) {
+      await wait(attempt === 0 ? 700 : 900)
+
+      if (pendingCartAttemptsRef.current.get(pid) !== attemptId) {
+        return
+      }
+
+      try {
+        const res = await fetch(`/api/cart/add-status/${attemptId}`, {
+          headers: getAuthHeaders(userId),
+        })
+
+        if (res.status === 401) {
+          pendingCartAttemptsRef.current.delete(pid)
+          setIsAuthenticated(false)
+          setShowLogin(true)
+          setCartStates(s => ({ ...s, [pid]: null }))
+          return
+        }
+
+        if (!res.ok) {
+          throw new Error(`Status ${res.status}`)
+        }
+
+        const data = await res.json()
+        if (data.status === 'pending') {
+          continue
+        }
+
+        pendingCartAttemptsRef.current.delete(pid)
+
+        if (data.status === 'success') {
+          setCartItemIds(prev => {
+            const next = new Set(prev)
+            next.add(pid)
+            return next
+          })
+          if (typeof data.cart_items === 'number') {
+            setCartCount(data.cart_items)
+          } else {
+            setCartCount(prev => prev + 1)
+          }
+          setCartStates(s => ({ ...s, [pid]: 'success' }))
+          setToastMessage({ text: 'Товар добавлен в корзину', type: 'success' })
+          window.setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), 2000)
+          window.setTimeout(() => setToastMessage(null), 3000)
+          return
+        }
+
+        const lastError = String(data.last_error || '')
+        const soldOut = lastError.toLowerCase().includes('popup_analogs') || lastError.toLowerCase().includes('распрод')
+        if (soldOut) {
+          setSoldOutIds(s => {
+            const next = new Set([...s, pid])
+            try {
+              localStorage.setItem('soldOutIds', JSON.stringify([...next]))
+              localStorage.setItem('soldOutIds_expiry', String(Date.now() + 4 * 60 * 60 * 1000))
+            } catch { }
+            return next
+          })
+        }
+        setCartStates(s => ({ ...s, [pid]: 'error' }))
+        setToastMessage({
+          text: soldOut ? 'Этот продукт уже раскупили' : 'Не удалось добавить товар',
+          type: 'error',
+        })
+        window.setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), 2000)
+        window.setTimeout(() => setToastMessage(null), 3000)
+        return
+      } catch (err) {
+        console.error(err)
+      }
+    }
+
+    if (pendingCartAttemptsRef.current.get(pid) === attemptId) {
+      pendingCartAttemptsRef.current.delete(pid)
+      setCartStates(s => ({ ...s, [pid]: 'error' }))
+      setToastMessage({ text: 'Не удалось подтвердить корзину', type: 'error' })
+      window.setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), 2000)
+      window.setTimeout(() => setToastMessage(null), 3000)
+    }
+  }, [userId])
+
   const handleAddToCart = useCallback(async (product) => {
     if (!isAuthenticated) {
       setShowLoginPrompt(true)
@@ -714,87 +809,89 @@ function App() {
     try {
       const isGreen = product.type === 'green' ? 1 : 0
       const priceType = product.type === 'green' ? 222 : 1
-      const controller = new AbortController()
-      const requestTimeout = window.setTimeout(() => controller.abort(), 5500)
-      try {
-        const res = await fetch('/api/cart/add', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...getAuthHeaders(userId)
-          },
-          signal: controller.signal,
-          body: JSON.stringify({
-            user_id: userId,
-            product_id: parseInt(pid, 10),
-            is_green: isGreen,
-            price_type: priceType
-          })
+      const clientRequestId = window.crypto?.randomUUID?.() || `cart-${Date.now()}-${pid}`
+      const res = await fetch('/api/cart/add', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getAuthHeaders(userId)
+        },
+        body: JSON.stringify({
+          user_id: userId,
+          product_id: parseInt(pid, 10),
+          is_green: isGreen,
+          price_type: priceType,
+          allow_pending: true,
+          client_request_id: clientRequestId,
         })
+      })
 
-        const data = await res.json()
-        console.log('[cart/add]', res.status, data)
-        if (res.ok && data.success) {
-          setCartStates(s => ({ ...s, [pid]: 'success' }))
-          setCartCount(data.cart_items || cartCount + 1)
-          setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), 2000)
-        } else {
-          if (res.status === 401) {
-            setIsAuthenticated(false)
-            setShowLogin(true)
-          } else {
-            const detail = String(data?.detail || data?.error || '').toLowerCase()
-            const soldOut =
-              res.status === 400 &&
-              (detail.includes('распрод') ||
-               detail.includes('недоступ') ||
-               detail.includes('out of stock') ||
-               detail.includes('popup_analogs'))
-
-            setToastMessage({
-              text: soldOut ? 'Этот продукт уже раскупили' : 'Корзина временно недоступна',
-              type: 'error'
-            })
-            setTimeout(() => setToastMessage(null), 4000)
-            if (soldOut) {
-              setSoldOutIds(s => {
-                const next = new Set([...s, pid])
-                try {
-                  localStorage.setItem('soldOutIds', JSON.stringify([...next]))
-                  localStorage.setItem('soldOutIds_expiry', String(Date.now() + 4 * 60 * 60 * 1000))
-                } catch { }
-                return next
-              })
-            }
-          }
-          setCartStates(s => ({ ...s, [pid]: 'error' }))
-          setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), 2000)
-        }
-      } finally {
-        window.clearTimeout(requestTimeout)
+      const data = await res.json()
+      console.log('[cart/add]', res.status, data)
+      if (res.ok && data.success) {
+        pendingCartAttemptsRef.current.delete(String(pid))
+        setCartItemIds(prev => {
+          const next = new Set(prev)
+          next.add(String(pid))
+          return next
+        })
+        setCartStates(s => ({ ...s, [pid]: 'success' }))
+        setCartCount(typeof data.cart_items === 'number' ? data.cart_items : cartCount + 1)
+        setToastMessage({ text: 'Товар добавлен в корзину', type: 'success' })
+        setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), 2000)
+        setTimeout(() => setToastMessage(null), 3000)
+        return
       }
-    } catch (err) {
-      console.error(err)
-      const unknownCartOutcome = err?.name === 'AbortError'
-      if (unknownCartOutcome) {
-        setToastMessage({ text: 'Проверяем корзину…', type: 'error' })
-        const cartState = await refreshCartState(3, 1200)
-        if (cartState.ok && (cartState.itemIds.has(String(pid)) || cartState.itemsCount > cartCount)) {
-          setCartStates(s => ({ ...s, [pid]: 'success' }))
-          setCartCount(cartState.itemsCount)
-          setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), 2000)
-          setToastMessage({ text: 'Товар добавлен в корзину', type: 'success' })
-          setTimeout(() => setToastMessage(null), 3000)
-          return
+
+      if (res.status === 202 && data.pending && data.status === 'pending' && data.attempt_id) {
+        setCartStates(s => ({ ...s, [pid]: 'pending' }))
+        setToastMessage({ text: 'Проверяем корзину…', type: 'info' })
+        window.setTimeout(() => {
+          setToastMessage(current => current?.text === 'Проверяем корзину…' ? null : current)
+        }, 2500)
+        void pollCartAttemptStatus(product, data.attempt_id)
+        return
+      }
+
+      if (res.status === 401) {
+        setIsAuthenticated(false)
+        setShowLogin(true)
+      } else {
+        const detail = String(data?.detail || data?.error || '').toLowerCase()
+        const soldOut =
+          res.status === 400 &&
+          (detail.includes('распрод') ||
+           detail.includes('недоступ') ||
+           detail.includes('out of stock') ||
+           detail.includes('popup_analogs'))
+
+        setToastMessage({
+          text: soldOut ? 'Этот продукт уже раскупили' : 'Корзина временно недоступна',
+          type: 'error'
+        })
+        setTimeout(() => setToastMessage(null), 4000)
+        if (soldOut) {
+          setSoldOutIds(s => {
+            const next = new Set([...s, pid])
+            try {
+              localStorage.setItem('soldOutIds', JSON.stringify([...next]))
+              localStorage.setItem('soldOutIds_expiry', String(Date.now() + 4 * 60 * 60 * 1000))
+            } catch { }
+            return next
+          })
         }
       }
       setCartStates(s => ({ ...s, [pid]: 'error' }))
-      const message = unknownCartOutcome ? 'Корзина отвечает слишком долго' : 'Ошибка сети'
-      setToastMessage({ text: message, type: 'error' })
+      setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), 2000)
+    } catch (err) {
+      console.error(err)
+      pendingCartAttemptsRef.current.delete(String(pid))
+      setCartStates(s => ({ ...s, [pid]: 'error' }))
+      setToastMessage({ text: 'Ошибка сети', type: 'error' })
       setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), 2000)
       setTimeout(() => setToastMessage(null), 3000)
     }
-  }, [cartCount, isAuthenticated, refreshCartState, userId])
+  }, [cartCount, isAuthenticated, pollCartAttemptStatus, userId])
 
   // v1.7: Toggle group/subgroup category favorite
   const handleToggleCategoryFavorite = useCallback(async (categoryKey, categoryName) => {
@@ -1754,7 +1851,11 @@ function App() {
       {/* Floating Toast Notification */}
       {toastMessage && (
         <div
-          className={`fixed top-16 left-1/2 -translate-x-1/2 px-4 py-2.5 rounded-xl shadow-[0_0_20px_rgba(0,0,0,0.3)] z-[200] text-sm font-medium whitespace-nowrap border toast-enter ${toastMessage.type === 'error' ? 'bg-[#2a1313] text-red-400 border-red-500/30' : 'bg-[#132a18] text-green-400 border-green-500/30'
+          className={`fixed top-16 left-1/2 -translate-x-1/2 px-4 py-2.5 rounded-xl shadow-[0_0_20px_rgba(0,0,0,0.3)] z-[200] text-sm font-medium whitespace-nowrap border toast-enter ${toastMessage.type === 'error'
+            ? 'bg-[#2a1313] text-red-400 border-red-500/30'
+            : toastMessage.type === 'info'
+              ? 'bg-[#1f2134] text-amber-200 border-amber-400/30'
+              : 'bg-[#132a18] text-green-400 border-green-500/30'
             }`}
         >
           {toastMessage.text}

@@ -113,11 +113,12 @@ export default function ProductDetail({ product, onClose, onAddToCart, cartState
 
           {/* Add to cart */}
           <button
-            className={`detail-cart-btn ${cartState === 'success' ? 'success' : cartState === 'error' ? 'error' : ''}`}
+            className={`detail-cart-btn ${cartState === 'success' ? 'success' : cartState === 'error' ? 'error' : cartState === 'pending' ? 'pending' : ''}`}
             onClick={() => onAddToCart(product)}
-            disabled={cartState === 'loading'}
+            disabled={cartState === 'loading' || cartState === 'pending'}
           >
             {cartState === 'loading' ? '⏳ Добавляем…'
+              : cartState === 'pending' ? '🕓 Проверяем…'
               : cartState === 'success' ? '✅ Добавлено'
                 : cartState === 'error' ? '❌ Ошибка'
                   : '🛒 В корзину'}
