@@ -41,6 +41,7 @@ from datetime import datetime
 import json
 import os
 import sys
+import uuid
 
 # Windows: asyncio.create_subprocess_exec() requires ProactorEventLoop.
 # uvicorn --reload forces SelectorEventLoop which can't spawn subprocesses.
@@ -433,6 +434,8 @@ class CartAddRequest(BaseModel):
     product_id: int
     is_green: int = 0
     price_type: int = 1
+    allow_pending: bool = False
+    client_request_id: Optional[str] = None
 
 
 # ─── Public Endpoints ─────────────────────────────────────────────────────────
@@ -3009,6 +3012,105 @@ async def _run_verify_job(job_id: str, user_id: str, code: str):
 
 # ─── Cart Endpoints ───────────────────────────────────────────────────────────
 
+_CART_PENDING_DEDUPE_WINDOW_SECONDS = 5.0
+_CART_PENDING_ATTEMPT_TTL_SECONDS = 30.0
+_cart_add_attempts: dict[str, dict] = {}
+_cart_add_attempt_index: dict[tuple[str, int], str] = {}
+_cart_add_attempts_lock = threading.Lock()
+
+
+def _resolve_cart_cookies_path(user_id: str) -> str:
+    phone = _get_phone_for_user(str(user_id))
+    if phone:
+        return _phone_cookies_path(phone)
+    return get_user_cookies_path(int(user_id) if user_id.isdigit() else user_id)
+
+
+def _prune_cart_add_attempts(now: float | None = None):
+    now = now or _time.time()
+    expired_attempt_ids = [
+        attempt_id
+        for attempt_id, attempt in _cart_add_attempts.items()
+        if attempt.get("expires_at", 0) <= now
+    ]
+    for attempt_id in expired_attempt_ids:
+        attempt = _cart_add_attempts.pop(attempt_id, None)
+        if not attempt:
+            continue
+        key = (str(attempt.get("user_id")), int(attempt.get("product_id", 0)))
+        if _cart_add_attempt_index.get(key) == attempt_id:
+            _cart_add_attempt_index.pop(key, None)
+
+
+def _serialize_cart_add_attempt(attempt: dict) -> dict:
+    now = _time.time()
+    return {
+        "attempt_id": attempt["attempt_id"],
+        "status": attempt["status"],
+        "pending": attempt["status"] == "pending",
+        "product_id": attempt["product_id"],
+        "user_id": attempt["user_id"],
+        "cart_items": attempt.get("cart_items"),
+        "cart_total": attempt.get("cart_total"),
+        "source": attempt.get("source"),
+        "last_error": attempt.get("last_error"),
+        "expires_in_ms": max(0, int((attempt.get("expires_at", now) - now) * 1000)),
+    }
+
+
+def _get_or_create_pending_cart_attempt(user_id: str, product_id: int, client_request_id: str | None = None) -> tuple[dict, bool]:
+    now = _time.time()
+    with _cart_add_attempts_lock:
+        _prune_cart_add_attempts(now)
+        key = (str(user_id), int(product_id))
+        existing_id = _cart_add_attempt_index.get(key)
+        if existing_id:
+            existing = _cart_add_attempts.get(existing_id)
+            if existing and existing.get("status") == "pending" and now - existing.get("created_at", now) <= _CART_PENDING_DEDUPE_WINDOW_SECONDS:
+                existing["source"] = "dedupe_reuse"
+                existing["client_request_id"] = client_request_id or existing.get("client_request_id")
+                return existing.copy(), False
+
+        attempt_id = uuid.uuid4().hex
+        attempt = {
+            "attempt_id": attempt_id,
+            "user_id": str(user_id),
+            "product_id": int(product_id),
+            "status": "pending",
+            "created_at": now,
+            "expires_at": now + _CART_PENDING_ATTEMPT_TTL_SECONDS,
+            "last_error": "pending_timeout",
+            "client_request_id": client_request_id,
+            "source": "cart_add_timeout",
+            "cart_items": None,
+            "cart_total": None,
+        }
+        _cart_add_attempts[attempt_id] = attempt
+        _cart_add_attempt_index[key] = attempt_id
+        return attempt.copy(), True
+
+
+def _update_cart_add_attempt(attempt_id: str, **fields) -> dict | None:
+    with _cart_add_attempts_lock:
+        attempt = _cart_add_attempts.get(attempt_id)
+        if not attempt:
+            return None
+        attempt.update(fields)
+        if attempt.get("status") != "pending":
+            key = (str(attempt.get("user_id")), int(attempt.get("product_id", 0)))
+            if _cart_add_attempt_index.get(key) == attempt_id:
+                _cart_add_attempt_index.pop(key, None)
+        return attempt.copy()
+
+
+def _mark_cart_attempt_expired(attempt_id: str) -> dict | None:
+    return _update_cart_add_attempt(
+        attempt_id,
+        status="expired",
+        source="attempt_expired",
+        last_error="pending_timeout",
+    )
+
 # ─── PIN Auth Endpoints ───────────────────────────────────────────────────────
 
 @app.post("/api/auth/verify-pin")
@@ -3130,12 +3232,20 @@ def auth_logout(req: AuthLogoutRequest):
 def cart_add_endpoint(req: CartAddRequest, request: Request):
     """Add a product to the user's VkusVill cart."""
     _validate_user_header(request, str(req.user_id))
-    # Try phone-based cookies first, fallback to legacy user_id cookies
-    phone = _get_phone_for_user(str(req.user_id))
-    if phone:
-        cookies_path = _phone_cookies_path(phone)
-    else:
-        cookies_path = get_user_cookies_path(int(req.user_id) if req.user_id.isdigit() else req.user_id)
+    if req.allow_pending:
+        pending_attempt, should_call_upstream = _get_or_create_pending_cart_attempt(
+            req.user_id,
+            req.product_id,
+            req.client_request_id,
+        )
+        if not should_call_upstream:
+            return Response(
+                content=json.dumps(_serialize_cart_add_attempt(pending_attempt), ensure_ascii=False),
+                status_code=202,
+                media_type="application/json",
+            )
+
+    cookies_path = _resolve_cart_cookies_path(req.user_id)
     if not os.path.exists(cookies_path):
         raise HTTPException(status_code=401, detail="Вы не авторизованы. Войдите в аккаунт.")
 
@@ -3147,6 +3257,15 @@ def cart_add_endpoint(req: CartAddRequest, request: Request):
             cart.close()
 
         if result.get("success"):
+            if req.allow_pending and 'pending_attempt' in locals():
+                _update_cart_add_attempt(
+                    pending_attempt["attempt_id"],
+                    status="success",
+                    source="cart_add_success",
+                    last_error=None,
+                    cart_items=result.get("cart_items"),
+                    cart_total=result.get("cart_total"),
+                )
             return {
                 "success": True,
                 "cart_items": result.get("cart_items"),
@@ -3156,10 +3275,29 @@ def cart_add_endpoint(req: CartAddRequest, request: Request):
             error = result.get("error", "Unknown API error")
             error_type = (result.get("error_type") or "").lower()
             lowered = str(error).lower()
+            if req.allow_pending and (result.get("pending") or error_type == "pending_timeout"):
+                _update_cart_add_attempt(
+                    pending_attempt["attempt_id"],
+                    status="pending",
+                    source="cart_add_timeout",
+                    last_error=error_type or "pending_timeout",
+                )
+                return Response(
+                    content=json.dumps(_serialize_cart_add_attempt(pending_attempt), ensure_ascii=False),
+                    status_code=202,
+                    media_type="application/json",
+                )
             if error_type == "timeout" or "timed out" in lowered or "timeout" in lowered:
                 raise HTTPException(status_code=504, detail="Cart API timeout")
             if "temporarily unreachable" in lowered or "failed to communicate" in lowered:
                 raise HTTPException(status_code=502, detail="Cart API unavailable")
+            if req.allow_pending and 'pending_attempt' in locals():
+                _update_cart_add_attempt(
+                    pending_attempt["attempt_id"],
+                    status="failed",
+                    source="cart_add_error",
+                    last_error=error,
+                )
             raise HTTPException(status_code=400, detail=error)
     except HTTPException:
         raise
@@ -3168,15 +3306,86 @@ def cart_add_endpoint(req: CartAddRequest, request: Request):
         raise HTTPException(status_code=500, detail="Failed to communicate with Cart API")
 
 
+@app.get("/api/cart/add-status/{attempt_id}")
+def cart_add_status_endpoint(attempt_id: str, request: Request):
+    with _cart_add_attempts_lock:
+        _prune_cart_add_attempts()
+        attempt = _cart_add_attempts.get(attempt_id)
+        if not attempt:
+            raise HTTPException(status_code=404, detail="Cart add attempt not found")
+        attempt_snapshot = attempt.copy()
+
+    _validate_user_header(request, str(attempt_snapshot["user_id"]))
+
+    if attempt_snapshot["status"] != "pending":
+        return _serialize_cart_add_attempt(attempt_snapshot)
+
+    if attempt_snapshot.get("expires_at", 0) <= _time.time():
+        expired_attempt = _mark_cart_attempt_expired(attempt_id)
+        return _serialize_cart_add_attempt(expired_attempt or attempt_snapshot)
+
+    cookies_path = _resolve_cart_cookies_path(str(attempt_snapshot["user_id"]))
+    if not os.path.exists(cookies_path):
+        failed_attempt = _update_cart_add_attempt(
+            attempt_id,
+            status="failed",
+            source="status_lookup_auth",
+            last_error="cookies_missing",
+        )
+        return _serialize_cart_add_attempt(failed_attempt or attempt_snapshot)
+
+    try:
+        cart = VkusVillCart(cookies_path=cookies_path, proxy_manager=_proxy_manager)
+        try:
+            cart_state = cart.get_cart()
+            cart_item = cart._find_cart_item(cart_state, attempt_snapshot["product_id"])
+        finally:
+            cart.close()
+    except Exception as exc:
+        logger.warning(f"Cart add status lookup failed for {attempt_id}: {exc}")
+        cart_state = {"success": False, "error": str(exc)}
+        cart_item = None
+
+    if cart_state.get("success") and cart_item:
+        success_attempt = _update_cart_add_attempt(
+            attempt_id,
+            status="success",
+            source="status_lookup_cart",
+            last_error=None,
+            cart_items=cart_state.get("items_count"),
+            cart_total=cart_state.get("total_price"),
+        )
+        return _serialize_cart_add_attempt(success_attempt or attempt_snapshot)
+
+    if cart_state.get("success"):
+        failed_attempt = _update_cart_add_attempt(
+            attempt_id,
+            status="failed",
+            source="status_lookup_cart",
+            last_error="product_not_found_in_cart",
+            cart_items=cart_state.get("items_count"),
+            cart_total=cart_state.get("total_price"),
+        )
+        return _serialize_cart_add_attempt(failed_attempt or attempt_snapshot)
+
+    if attempt_snapshot.get("expires_at", 0) <= _time.time():
+        expired_attempt = _mark_cart_attempt_expired(attempt_id)
+        return _serialize_cart_add_attempt(expired_attempt or attempt_snapshot)
+
+    pending_attempt = _update_cart_add_attempt(
+        attempt_id,
+        status="pending",
+        source="status_lookup_pending",
+        last_error=str(cart_state.get("error", "pending_timeout")),
+    )
+    return _serialize_cart_add_attempt(pending_attempt or attempt_snapshot)
+
+
 @app.get("/api/cart/items/{user_id}")
 def cart_items_endpoint(user_id: str, request: Request):
     """Get current VkusVill cart items for a user."""
     _validate_user_header(request, user_id)
-    phone = _get_phone_for_user(user_id)
-    if phone:
-        cookies_path = _phone_cookies_path(phone)
-    else:
-        cookies_path = get_user_cookies_path(int(user_id) if user_id.isdigit() else user_id)
+    cookies_path = _resolve_cart_cookies_path(user_id)
     if not os.path.exists(cookies_path):
         raise HTTPException(status_code=401, detail="Не авторизованы")
 
