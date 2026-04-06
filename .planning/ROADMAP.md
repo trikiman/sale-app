@@ -1,8 +1,8 @@
 # Roadmap: VkusVill Sale Monitor
 
 **Created:** 2026-03-30
-**Updated:** 2026-04-05
-**Status:** v1.10 archived — ready for next milestone
+**Updated:** 2026-04-06
+**Status:** v1.11 planned — ready for phase kickoff
 
 ## Milestones
 
@@ -16,59 +16,60 @@
 - ✅ **v1.7 Categories & Subgroups** — Phases 29-33 (shipped 2026-04-03)
 - ✅ **v1.8 History Search Completeness** — Phases 34-35 (shipped 2026-04-04)
 - ✅ **v1.9 Catalog Coverage Expansion** — Phases 36-38 (shipped 2026-04-04)
-- ✅ **v1.10 Scraper Freshness & Reliability** — Phases 39-42 (implemented 2026-04-05)
+- ✅ **v1.10 Scraper Freshness & Reliability** — Phases 39-42 (shipped 2026-04-05)
+- 🟡 **v1.11 Cart Responsiveness & Truth Recovery** — Phases 43-45 (planned 2026-04-06)
 
-## Archived Milestone: v1.10 Scraper Freshness & Reliability
+## Current Milestone: v1.11 Cart Responsiveness & Truth Recovery
 
-Archived details: `.planning/milestones/v1.10-ROADMAP.md`
+**Goal:** Make add-to-cart feel fast and trustworthy by capping the click-path wait at 5 seconds, moving ambiguous recovery off the main interaction path, and tightening diagnostics around slow cart actions.
 
-## Latest Shipped Milestone: v1.9 Catalog Coverage Expansion
-
-**Goal:** Expand the local `product_catalog` so History search can find more of the products VkusVill live search already knows about, without switching to per-query hybrid search yet.
-
-**3 phases** | **8 requirements mapped** | All covered ✓
+**3 phases** | **9 requirements mapped** | All covered ✓
 
 | # | Phase | Goal | Requirements | Success Criteria |
 |---|-------|------|--------------|------------------|
-| 36 | Supplemental Catalog Discovery | Add an offline discovery path for products the current category crawl misses. | DATA-04 | 4 |
-| 37 | Catalog Merge & Backfill | Merge newly discovered products into local catalog artifacts without metadata loss. | DATA-05, DATA-06, DATA-07 | 4 |
-| 38 | Local Search Parity Verification | Prove the expanded local catalog closes targeted search gaps and keep coverage observable. | SRCH-04, SRCH-05, QA-02, OPS-01 | 4 |
+| 43 | Backend Cart Response Contract | Bound the cart-add request path and preserve enough state for later reconciliation instead of chaining long inline recovery waits. | CART-06, CART-09 | 4 |
+| 44 | Frontend Bounded Add UX | End the visible add flow within 5 seconds, switch unresolved adds into a clear background-checking state, and prevent duplicate taps. | CART-04, UI-19, CART-05, CART-07, CART-08 | 4 |
+| 45 | Cart Diagnostics & Verification | Make slow/ambiguous add outcomes inspectable and lock the new latency contract with repeatable regression coverage. | OPS-04, QA-04 | 4 |
 
-### Phase 36: Supplemental Catalog Discovery
+### Phase 43: Backend Cart Response Contract
 
-**Goal:** Add an offline discovery path for VkusVill products that the current hardcoded category crawl does not capture.
-**Requirements:** DATA-04
+**Goal:** Bound backend cart-add latency and move ambiguous truth recovery off the main request path without losing eventual correctness.
+**Requirements:** CART-06, CART-09
 **Depends on:** —
-**Plans:** 2/2 plans complete
+**Plans:** Not planned yet
 **Success Criteria**:
-1. Supplemental discovery finds stable product IDs for products absent from the current category crawl.
-2. Discovery can run within existing scraper constraints: low concurrency, no SMS/login dependency, and no per-user query path.
-3. Discovery output can be refreshed repeatably without duplicating products across runs.
-4. Representative known-gap queries now appear in the discovery snapshot for downstream merge.
+1. Cart add no longer chains multi-second inline recovery loops before returning a response.
+2. Backend returns a bounded ambiguous/pending outcome when upstream add truth is still unknown instead of stretching the visible wait path.
+3. Enough attempt context is preserved to reconcile late-success cart adds after the initial response.
+4. True backend failures remain distinguishable from ambiguous upstream slowdowns.
 
-### Phase 37: Catalog Merge & Backfill
+### Phase 44: Frontend Bounded Add UX
 
-**Goal:** Merge newly discovered products into `category_db.json` and `product_catalog` while preserving the richest available metadata.
-**Requirements:** DATA-05, DATA-06, DATA-07
-**Depends on:** Phase 36
-**Plans:** 2/2 plans complete
+**Goal:** Cap the visible add-to-cart interaction at 5 seconds and keep the MiniApp interactive while reconciliation continues in the background.
+**Requirements:** CART-04, UI-19, CART-05, CART-07, CART-08
+**Depends on:** Phase 43
+**Plans:** Not planned yet
 **Success Criteria**:
-1. Newly discovered products persist into both `category_db.json` and `product_catalog`.
-2. Merge logic preserves better existing category/group/subgroup/image metadata instead of overwriting it with poorer supplemental data.
-3. Current local databases can be backfilled without a destructive rebuild.
-4. Downstream consumers that read `product_catalog` can see the expanded local rows after refresh.
+1. The add spinner or equivalent loading state stops at or before 5.0 seconds and switches to an explicit background-checking message.
+2. Product browsing, filters, scrolling, and other controls remain usable while reconciliation continues.
+3. Ambiguous add results do not render as hard failure or sold-out removal until reconciliation proves the add truly failed.
+4. Repeated taps while one add attempt is unresolved do not send duplicate add requests.
 
-### Phase 38: Local Search Parity Verification
+### Phase 45: Cart Diagnostics & Verification
 
-**Goal:** Prove that the expanded local catalog closes targeted search gaps and keep catalog-completeness gains observable.
-**Requirements:** SRCH-04, SRCH-05, QA-02, OPS-01
-**Depends on:** Phase 37
-**Plans:** 1/1 plans complete
+**Goal:** Expose slow cart-action behavior clearly enough to debug and verify the new bounded-latency contract end to end.
+**Requirements:** OPS-04, QA-04
+**Depends on:** Phases 43-44
+**Plans:** Not planned yet
 **Success Criteria**:
-1. History search returns representative formerly missing products from the expanded local catalog after refresh.
-2. A parity-check query set exists for repeatable verification instead of ad hoc screenshots.
-3. Automated coverage protects discovery, merge, and search visibility for multi-source catalog data.
-4. Coverage stats or gap signals make it obvious whether catalog completeness improved and where it still falls short.
+1. Logs or admin diagnostics show cart-add latency segments, timeout class, and final reconciliation outcome for slow actions.
+2. Automated coverage exercises fast success, ambiguous timeout with late success, and true failure paths.
+3. Verification proves the visible add interaction stays within the 5-second UX budget even when reconciliation continues afterward.
+4. The milestone ships with a repeatable verification path for the cart-response contract.
+
+## Latest Completed Milestone: v1.10 Scraper Freshness & Reliability
+
+Archived details: `.planning/milestones/v1.10-ROADMAP.md`
 
 ## Completed Milestones
 
@@ -82,10 +83,12 @@ Archived details: `.planning/milestones/v1.10-ROADMAP.md`
 - v1.7 Categories & Subgroups — phases 29-33, shipped 2026-04-03
 - v1.8 History Search Completeness — phases 34-35, shipped 2026-04-04
 - v1.9 Catalog Coverage Expansion — phases 36-38, shipped 2026-04-04
+- v1.10 Scraper Freshness & Reliability — phases 39-42, shipped 2026-04-05
 
 ## Next Up
 
-- Start the next milestone with `$gsd-new-milestone`.
+- `$gsd-discuss-phase 43` — gather context for the backend cart response contract
+- `$gsd-plan-phase 43` — skip discussion and plan Phase 43 directly
 
 ## Progress
 
@@ -99,12 +102,9 @@ Archived details: `.planning/milestones/v1.10-ROADMAP.md`
 | 24-26 | v1.5 | ✅ Complete | 2026-04-01 |
 | 27-28 | v1.6 | ✅ Complete | 2026-04-02 |
 | 29-33 | v1.7 | ✅ Complete | 2026-04-03 |
-| 34 | v1.8 | ✅ Complete | 2026-04-04 |
-| 35 | v1.8 | ✅ Complete | 2026-04-04 |
-| 36 | v1.9 | ✅ Complete | 2026-04-04 |
-| 37 | v1.9 | ✅ Complete | 2026-04-04 |
-| 38 | v1.9 | ✅ Complete | 2026-04-04 |
-| 39 | v1.10 | ✅ Complete | 2026-04-05 |
-| 40 | v1.10 | ✅ Complete | 2026-04-05 |
-| 41 | v1.10 | ✅ Complete | 2026-04-05 |
-| 42 | v1.10 | ✅ Complete | 2026-04-05 |
+| 34-35 | v1.8 | ✅ Complete | 2026-04-04 |
+| 36-38 | v1.9 | ✅ Complete | 2026-04-04 |
+| 39-42 | v1.10 | ✅ Complete | 2026-04-05 |
+| 43 | v1.11 | 🟡 Planned | — |
+| 44 | v1.11 | 🟡 Planned | — |
+| 45 | v1.11 | 🟡 Planned | — |

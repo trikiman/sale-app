@@ -37,21 +37,21 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CART-04 | — | Pending |
-| UI-19 | — | Pending |
-| CART-05 | — | Pending |
-| CART-06 | — | Pending |
-| CART-07 | — | Pending |
-| CART-08 | — | Pending |
-| CART-09 | — | Pending |
-| OPS-04 | — | Pending |
-| QA-04 | — | Pending |
+| CART-04 | 44 | Pending |
+| UI-19 | 44 | Pending |
+| CART-05 | 44 | Pending |
+| CART-06 | 43 | Pending |
+| CART-07 | 44 | Pending |
+| CART-08 | 44 | Pending |
+| CART-09 | 43 | Pending |
+| OPS-04 | 45 | Pending |
+| QA-04 | 45 | Pending |
 
 **Coverage:**
 - v1 requirements: 9 total
-- Mapped to phases: 0
-- Unmapped: 9
+- Mapped to phases: 9
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-06*
-*Last updated: 2026-04-06 after initial definition*
+*Last updated: 2026-04-06 after roadmap mapping*
