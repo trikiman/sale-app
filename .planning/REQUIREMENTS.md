@@ -6,15 +6,15 @@
 
 ## Add-to-Cart Response Budget
 
-- [ ] **CART-04**: User gets a final add result or explicit pending state within 5.0 seconds of tapping add to cart.
-- [ ] **UI-19**: User sees a short non-blocking "checking cart" message when the add result is still uncertain after the 5-second budget is exhausted.
-- [ ] **CART-05**: User can keep browsing and using the MiniApp while cart reconciliation continues in the background.
+- [x] **CART-04**: User gets a final add result or explicit pending state within 5.0 seconds of tapping add to cart.
+- [x] **UI-19**: User sees a short non-blocking "checking cart" message when the add result is still uncertain after the 5-second budget is exhausted.
+- [x] **CART-05**: User can keep browsing and using the MiniApp while cart reconciliation continues in the background.
 
 ## Cart Truth Recovery
 
 - [x] **CART-06**: User eventually sees the correct cart state after a slow or timed-out add that may have succeeded late upstream.
-- [ ] **CART-07**: User does not see a hard failure or sold-out removal when cart truth is still ambiguous.
-- [ ] **CART-08**: User does not create duplicate add attempts by tapping repeatedly while one add is still unresolved.
+- [x] **CART-07**: User does not see a hard failure or sold-out removal when cart truth is still ambiguous.
+- [x] **CART-08**: User does not create duplicate add attempts by tapping repeatedly while one add is still unresolved.
 - [x] **CART-09**: User is not blocked by backend session repair or follow-up cart reads once the 5-second response budget is exhausted.
 
 ## Operations & Verification
@@ -37,12 +37,12 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CART-04 | 44 | Pending |
-| UI-19 | 44 | Pending |
-| CART-05 | 44 | Pending |
+| CART-04 | 44 | Complete |
+| UI-19 | 44 | Complete |
+| CART-05 | 44 | Complete |
 | CART-06 | 43 | Complete |
-| CART-07 | 44 | Pending |
-| CART-08 | 44 | Pending |
+| CART-07 | 44 | Complete |
+| CART-08 | 44 | Complete |
 | CART-09 | 43 | Complete |
 | OPS-04 | 45 | Pending |
 | QA-04 | 45 | Pending |

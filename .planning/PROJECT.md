@@ -234,6 +234,8 @@ Search and polish improvements for the History page:
 | Last-good snapshot hydration in MiniApp | Cached content is safer than a long blocking spinner when freshness warnings remain visible | ✓ Good |
 | Metadata-first cart session bootstrap | Persist `sessid` and `user_id` with saved cookies so cart add can skip warmup GETs when metadata is already known | ✓ Good |
 | Opt-in pending cart add contract | Keep legacy timeout behavior for current callers, but let new clients switch to `202 pending` plus attempt polling without blocking the hot path | — Active |
+| Pending cart UI is neutral, not failure-first | Ambiguous add results should show "checking cart" and keep the app usable instead of turning red before truth is known | ✓ Good |
+| In-cart products use synced quantity controls | Cards and detail drawer should switch into the same typed `шт/кг` quantity control instead of reverting to a plain add button | ✓ Good |
 
 ## Evolution
 
@@ -253,5 +255,5 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-06 after completing Phase 43 backend cart contract work*
+*Last updated: 2026-04-06 after completing Phase 44 bounded cart UI work*
 
