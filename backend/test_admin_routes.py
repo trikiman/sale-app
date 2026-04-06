@@ -112,3 +112,38 @@ def test_admin_status_includes_cycle_state(monkeypatch, tmp_path):
     assert body["cycleState"]["continuity_safe"] is False
     assert body["cycleState"]["sources"]["green"]["status"] == "timeout"
     assert set(body["sourceFreshness"].keys()) == {"green", "red", "yellow"}
+
+
+def test_admin_status_includes_cart_diagnostics(monkeypatch, tmp_path):
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    monkeypatch.setattr(main, "DATA_DIR", str(data_dir))
+
+    main._cart_add_attempts.clear()
+    main._cart_add_attempt_index.clear()
+    main._cart_add_attempts["attempt-1"] = {
+        "attempt_id": "attempt-1",
+        "user_id": "123",
+        "product_id": 500,
+        "status": "success",
+        "final_status": "success",
+        "created_at": 1.0,
+        "started_at": 1.0,
+        "resolved_at": 2.0,
+        "duration_ms": 1000,
+        "expires_at": 9999999999.0,
+        "source": "status_lookup_cart",
+        "last_error": None,
+        "cart_items": 2,
+        "cart_total": 182,
+    }
+
+    response = client.get("/admin/status", headers={"X-Admin-Token": main.ADMIN_TOKEN})
+
+    assert response.status_code == 200
+    body = response.json()
+    assert "cartDiagnostics" in body
+    assert body["cartDiagnostics"]["pendingCount"] == 0
+    assert body["cartDiagnostics"]["lastResolvedAt"] == 2.0
+    assert body["cartDiagnostics"]["recentAttempts"][0]["attempt_id"] == "attempt-1"
+    assert body["cartDiagnostics"]["recentAttempts"][0]["duration_ms"] == 1000

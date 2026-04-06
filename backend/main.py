@@ -3042,11 +3042,26 @@ def _prune_cart_add_attempts(now: float | None = None):
             _cart_add_attempt_index.pop(key, None)
 
 
+def _log_cart_attempt_event(event: str, attempt: dict):
+    logger.info(
+        "[CART-ATTEMPT] %s attempt=%s user=%s product=%s status=%s source=%s duration_ms=%s error=%s",
+        event,
+        attempt.get("attempt_id"),
+        attempt.get("user_id"),
+        attempt.get("product_id"),
+        attempt.get("status"),
+        attempt.get("source"),
+        attempt.get("duration_ms"),
+        attempt.get("last_error"),
+    )
+
+
 def _serialize_cart_add_attempt(attempt: dict) -> dict:
     now = _time.time()
     return {
         "attempt_id": attempt["attempt_id"],
         "status": attempt["status"],
+        "final_status": attempt.get("final_status", attempt["status"]),
         "pending": attempt["status"] == "pending",
         "product_id": attempt["product_id"],
         "user_id": attempt["user_id"],
@@ -3054,7 +3069,31 @@ def _serialize_cart_add_attempt(attempt: dict) -> dict:
         "cart_total": attempt.get("cart_total"),
         "source": attempt.get("source"),
         "last_error": attempt.get("last_error"),
+        "started_at": attempt.get("started_at"),
+        "resolved_at": attempt.get("resolved_at"),
+        "duration_ms": attempt.get("duration_ms"),
         "expires_in_ms": max(0, int((attempt.get("expires_at", now) - now) * 1000)),
+    }
+
+
+def _get_recent_cart_attempts(limit: int = 8) -> list[dict]:
+    now = _time.time()
+    with _cart_add_attempts_lock:
+        _prune_cart_add_attempts(now)
+        attempts = list(_cart_add_attempts.values())
+
+    attempts.sort(key=lambda attempt: attempt.get("resolved_at") or attempt.get("started_at") or 0, reverse=True)
+    return [_serialize_cart_add_attempt(attempt) for attempt in attempts[:limit]]
+
+
+def _build_cart_diagnostics() -> dict:
+    recent_attempts = _get_recent_cart_attempts()
+    pending_attempts = [attempt for attempt in recent_attempts if attempt.get("status") == "pending"]
+    resolved_attempts = [attempt for attempt in recent_attempts if attempt.get("resolved_at")]
+    return {
+        "recentAttempts": recent_attempts,
+        "pendingCount": len(pending_attempts),
+        "lastResolvedAt": resolved_attempts[0]["resolved_at"] if resolved_attempts else None,
     }
 
 
@@ -3078,15 +3117,20 @@ def _get_or_create_pending_cart_attempt(user_id: str, product_id: int, client_re
             "product_id": int(product_id),
             "status": "pending",
             "created_at": now,
+            "started_at": now,
             "expires_at": now + _CART_PENDING_ATTEMPT_TTL_SECONDS,
             "last_error": "pending_timeout",
             "client_request_id": client_request_id,
             "source": "cart_add_timeout",
             "cart_items": None,
             "cart_total": None,
+            "resolved_at": None,
+            "duration_ms": None,
+            "final_status": "pending",
         }
         _cart_add_attempts[attempt_id] = attempt
         _cart_add_attempt_index[key] = attempt_id
+        _log_cart_attempt_event("created", attempt)
         return attempt.copy(), True
 
 
@@ -3095,11 +3139,21 @@ def _update_cart_add_attempt(attempt_id: str, **fields) -> dict | None:
         attempt = _cart_add_attempts.get(attempt_id)
         if not attempt:
             return None
+        previous_status = attempt.get("status")
         attempt.update(fields)
+        if attempt.get("status") != "pending":
+            resolved_at = fields.get("resolved_at", _time.time())
+            attempt["resolved_at"] = resolved_at
+            started_at = attempt.get("started_at") or attempt.get("created_at") or resolved_at
+            attempt["duration_ms"] = max(0, int((resolved_at - started_at) * 1000))
+            attempt["final_status"] = attempt.get("status")
         if attempt.get("status") != "pending":
             key = (str(attempt.get("user_id")), int(attempt.get("product_id", 0)))
             if _cart_add_attempt_index.get(key) == attempt_id:
                 _cart_add_attempt_index.pop(key, None)
+        if fields or previous_status != attempt.get("status"):
+            event = "resolved" if attempt.get("status") != "pending" else "updated"
+            _log_cart_attempt_event(event, attempt)
         return attempt.copy()
 
 
@@ -4070,6 +4124,7 @@ def admin_get_status(token: Optional[str] = Header(None, alias="X-Admin-Token"))
         "techCookies": cookie_health,
         "sourceFreshness": source_freshness,
         "cycleState": cycle_state,
+        "cartDiagnostics": _build_cart_diagnostics(),
     }
 
 

@@ -400,6 +400,18 @@
         <div id="scraper-status-list"></div>
       </div>
 
+      <!-- Cart Diagnostics -->
+      <div class="card">
+        <h2>🛒 Диагностика корзины</h2>
+        <div class="row" style="gap:16px; margin-bottom:10px">
+          <div class="text-muted">Pending: <strong id="cart-pending-count">—</strong></div>
+          <div class="text-muted">Последний финал: <strong id="cart-last-resolved">—</strong></div>
+        </div>
+        <div id="cart-diagnostics-list" class="text-muted" style="font-size:12px; display:grid; gap:6px">
+          Диагностика ещё не загружена
+        </div>
+      </div>
+
       <!-- Proxy Pool Dashboard -->
       <div class="card">
         <h2>🌐 Proxy Pool</h2>
@@ -540,6 +552,7 @@
       document.getElementById('last-refresh').textContent = 'Обновлено: ' + new Date().toLocaleTimeString('ru-RU');
 
       updateCookieWarning(data);
+      updateCartDiagnostics(data);
 
       var list = document.getElementById('scraper-status-list');
       list.innerHTML = '';
@@ -694,6 +707,35 @@
         warn.classList.remove('hidden');
       } else {
         warn.classList.add('hidden');
+      }
+    }
+
+    function updateCartDiagnostics(data) {
+      var diag = data.cartDiagnostics || {};
+      var recent = diag.recentAttempts || [];
+      document.getElementById('cart-pending-count').textContent = (diag.pendingCount !== undefined) ? diag.pendingCount : '—';
+      document.getElementById('cart-last-resolved').textContent = diag.lastResolvedAt || '—';
+
+      var list = document.getElementById('cart-diagnostics-list');
+      if (!recent.length) {
+        list.textContent = 'Недавних cart-attempt событий нет';
+        return;
+      }
+
+      list.innerHTML = '';
+      for (var i = 0; i < recent.length; i++) {
+        var item = recent[i];
+        var row = document.createElement('div');
+        row.className = 'status-row';
+        row.innerHTML =
+          '<div class="status-name">#' + (item.product_id || '—') + '</div>' +
+          '<span class="badge ' + (item.status === 'success' ? 'badge-on' : 'badge-off') + '">' + item.status + '</span>' +
+          '<div class="status-time">' +
+            'src=' + (item.source || '—') +
+            ' · ' + ((item.duration_ms != null) ? item.duration_ms + 'ms' : '—') +
+            (item.last_error ? ' · ' + item.last_error : '') +
+          '</div>';
+        list.appendChild(row);
       }
     }
 
