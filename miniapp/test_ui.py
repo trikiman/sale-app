@@ -1,63 +1,54 @@
 from playwright.sync_api import sync_playwright
-import time
 import sys
 
-def run_tests():
+
+APP_URL = "http://localhost:5173"
+
+
+def log(message: str):
+    print(message, flush=True)
+
+
+def main():
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
-        
-        print("1. Loading Localhost Miniapp...")
+
+        log(f"1. Loading MiniApp from {APP_URL} ...")
         try:
-            page.goto("http://localhost:5173", timeout=5000)
-            page.wait_for_selector(".app-container")
+            page.goto(APP_URL, timeout=5000)
+            page.wait_for_selector(".app-container", timeout=5000)
         except Exception:
-            print("Frontend not easily reachable, skipping UI test.")
-            sys.exit(0)
+            log("MiniApp dev server is not reachable; skipping browser sanity check.")
+            browser.close()
+            return 0
 
-        print("2. Testing Login PIN Flow...")
+        log("2. Checking that the current product-card surface is reachable ...")
         try:
-            # Click Login
-            page.click("button:has-text('Войти')")
-            page.wait_for_selector(".login-card")
-            
-            # Assuming we can mock or trigger the "set_pin" state
-            # Since React state is internal, let's type phone
-            page.fill('input[type="tel"]', '9999999999')
-            page.click('button:has-text("Получить код")')
-            
-            # We wait for the API response. If it triggers the mock/OTP
-            time.sleep(2)
-        except Exception as e:
-            print(f"Warning on Login PIN test: {e}")
+            page.wait_for_selector(".product-grid .card-vertical", timeout=5000)
+            first_card = page.locator(".product-grid .card-vertical").first
+            first_card.locator(".cart-btn, .cart-inline-qty").first.wait_for(timeout=5000)
+            log("Found a reachable cart control on the product card.")
+        except Exception as exc:
+            log(f"Card surface sanity check failed: {exc}")
+            browser.close()
+            return 1
 
-        # Let's test the toast notification for Cart if possible
-        # Click close login
+        log("3. Opening the detail drawer and checking its cart surface ...")
         try:
-            page.click("text=Назад", timeout=2000)
-        except:
-            pass
-            
-        print("3. Testing Cart Add visual error (Toast)...")
-        try:
-            # We must be logged in to add to cart, or if not logged in it opens Login.
-            # Let's see if we can trigger the Add to Cart
-            # Wait for a product card
-            page.wait_for_selector(".ProductCard", timeout=5000)
-            card = page.locator(".ProductCard").first
-            
-            # Click the cart button
-            card.locator(".cart-btn").click()
-            
-            # Since we are not logged in, it should spawn Login card.
-            # If we were logged in, it would show the toast. 
-            print("Cart click spawned login or toasted.")
-            
-        except Exception as e:
-            print(f"Cart test warning: {e}")
+            first_card.locator(".card-image-wrap").click()
+            page.wait_for_selector(".detail-drawer", timeout=5000)
+            page.locator(".detail-drawer .detail-cart-btn, .detail-drawer .cart-inline-qty").first.wait_for(timeout=5000)
+            log("Found a reachable cart control in the detail drawer.")
+        except Exception as exc:
+            log(f"Detail drawer sanity check failed: {exc}")
+            browser.close()
+            return 1
 
-        print("Done testing.")
+        log("4. Browser sanity helper completed.")
         browser.close()
+        return 0
+
 
 if __name__ == "__main__":
-    run_tests()
+    raise SystemExit(main())
