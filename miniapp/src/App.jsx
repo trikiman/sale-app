@@ -874,6 +874,8 @@ function App() {
     const pid = product.id
     setCartStates(s => ({ ...s, [pid]: 'loading' }))
     const t0 = performance.now()
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 5000)
     console.log(`[CART-ADD] START | product=${pid} name=${product.name?.substring(0, 30)}`)
 
     try {
@@ -882,6 +884,7 @@ function App() {
       const clientRequestId = window.crypto?.randomUUID?.() || `cart-${Date.now()}-${pid}`
       const res = await fetch('/api/cart/add', {
         method: 'POST',
+        signal: controller.signal,
         headers: {
           'Content-Type': 'application/json',
           ...getAuthHeaders(userId)
@@ -897,6 +900,7 @@ function App() {
       })
 
       const data = await res.json()
+      clearTimeout(timer)
       console.log(`[CART-ADD] RESPONSE | product=${pid} status=${res.status} success=${data.success} pending=${data.pending} | ${(performance.now()-t0).toFixed(0)}ms`)
       if (res.ok && data.success) {
         console.log(`[CART-ADD] SUCCESS | product=${pid} cart_items=${data.cart_items} | ${(performance.now()-t0).toFixed(0)}ms`)
@@ -927,16 +931,25 @@ function App() {
       }
 
       if (res.status === 202 && data.pending && data.status === 'pending' && data.attempt_id) {
-        console.log(`[CART-ADD] PENDING → POLLING | product=${pid} attempt=${data.attempt_id} | ${(performance.now()-t0).toFixed(0)}ms`)
+        const elapsed = performance.now() - t0
+        console.log(`[CART-ADD] PENDING → POLLING | product=${pid} attempt=${data.attempt_id} elapsed=${elapsed.toFixed(0)}ms | ${(performance.now()-t0).toFixed(0)}ms`)
+        if (elapsed > 4000) {
+          // D3: not worth polling, show background message
+          setToastMessage({ text: 'Добавляем в фоне', type: 'info' })
+          setCartStates(s => ({ ...s, [pid]: null }))
+          setTimeout(() => setToastMessage(null), 3000)
+          return
+        }
         setCartStates(s => ({ ...s, [pid]: 'pending' }))
         setToastMessage({ text: 'Проверяем корзину…', type: 'info' })
         window.setTimeout(() => {
           setToastMessage(current => current?.text === 'Проверяем корзину…' ? null : current)
         }, 2500)
-        void pollCartAttemptStatus(product, data.attempt_id)
+        void pollCartAttemptStatus(product, data.attempt_id, t0)
         return
       }
 
+      clearTimeout(timer)
       if (res.status === 401) {
         setIsAuthenticated(false)
         setShowLogin(true)
@@ -968,6 +981,16 @@ function App() {
       setCartStates(s => ({ ...s, [pid]: 'error' }))
       setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), 2000)
     } catch (err) {
+      clearTimeout(timer)
+      if (err.name === 'AbortError') {
+        console.error(`[CART-ADD] TIMEOUT 5s | product=${pid} | ${(performance.now()-t0).toFixed(0)}ms`)
+        pendingCartAttemptsRef.current.delete(String(pid))
+        setCartStates(s => ({ ...s, [pid]: 'error' }))
+        setToastMessage({ text: 'Корзина не ответила вовремя', type: 'error' })
+        setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), 2000)
+        setTimeout(() => setToastMessage(null), 3000)
+        return
+      }
       console.error(`[CART-ADD] NETWORK ERROR | product=${pid} error=${err.message} | ${(performance.now()-t0).toFixed(0)}ms`)
       pendingCartAttemptsRef.current.delete(String(pid))
       setCartStates(s => ({ ...s, [pid]: 'error' }))
