@@ -167,7 +167,7 @@ class TestNormalizeCategory(unittest.TestCase):
     def test_tier1_overrides_raw(self):
         """DB category takes priority over raw category."""
         result = utils.normalize_category("Молочные продукты", "Ямс батат", "119807")
-        self.assertEqual(result, "Овощи, фрукты, ягоды, зелень")
+        self.assertEqual(result, "Овощи и фрукты")
 
     def test_tier2_raw_category_used(self):
         """Product NOT in DB, meaningful raw category → use raw."""
@@ -192,7 +192,7 @@ class TestNormalizeCategory(unittest.TestCase):
     def test_tier3_novinki_for_unknown(self):
         """Completely unknown product → 'Новинки'."""
         result = utils.normalize_category("", "Какой-то загадочный товар", "99999")
-        self.assertEqual(result, "Новинки")
+        self.assertEqual(result, "Без категории")
 
     def test_no_product_id(self):
         """No product_id → skip tier 1, use raw or fallback."""
