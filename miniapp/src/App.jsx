@@ -762,6 +762,8 @@ function App() {
   const pollCartAttemptStatus = useCallback(async (product, attemptId) => {
     const pid = String(product.id)
     const wait = (ms) => new Promise(resolve => window.setTimeout(resolve, ms))
+    const pollT0 = performance.now()
+    console.log(`[CART-POLL] START | product=${pid} attempt=${attemptId} max_polls=20`)
 
     pendingCartAttemptsRef.current.set(pid, attemptId)
 
@@ -769,6 +771,7 @@ function App() {
       await wait(attempt === 0 ? 700 : 900)
 
       if (pendingCartAttemptsRef.current.get(pid) !== attemptId) {
+        console.log(`[CART-POLL] CANCELLED | product=${pid} attempt=${attemptId} poll#=${attempt} | ${(performance.now()-pollT0).toFixed(0)}ms`)
         return
       }
 
@@ -790,6 +793,7 @@ function App() {
         }
 
         const data = await res.json()
+        console.log(`[CART-POLL] RESPONSE | product=${pid} poll#=${attempt} status=${data.status} | ${(performance.now()-pollT0).toFixed(0)}ms`)
         if (data.status === 'pending') {
           continue
         }
@@ -852,6 +856,7 @@ function App() {
     }
 
     if (pendingCartAttemptsRef.current.get(pid) === attemptId) {
+      console.log(`[CART-POLL] EXHAUSTED | product=${pid} attempt=${attemptId} polls=20 | ${(performance.now()-pollT0).toFixed(0)}ms — giving up`)
       pendingCartAttemptsRef.current.delete(pid)
       setCartStates(s => ({ ...s, [pid]: 'error' }))
       setToastMessage({ text: 'Не удалось подтвердить корзину', type: 'error' })
@@ -868,6 +873,8 @@ function App() {
 
     const pid = product.id
     setCartStates(s => ({ ...s, [pid]: 'loading' }))
+    const t0 = performance.now()
+    console.log(`[CART-ADD] START | product=${pid} name=${product.name?.substring(0, 30)}`)
 
     try {
       const isGreen = product.type === 'green' ? 1 : 0
@@ -890,8 +897,9 @@ function App() {
       })
 
       const data = await res.json()
-      console.log('[cart/add]', res.status, data)
+      console.log(`[CART-ADD] RESPONSE | product=${pid} status=${res.status} success=${data.success} pending=${data.pending} | ${(performance.now()-t0).toFixed(0)}ms`)
       if (res.ok && data.success) {
+        console.log(`[CART-ADD] SUCCESS | product=${pid} cart_items=${data.cart_items} | ${(performance.now()-t0).toFixed(0)}ms`)
         pendingCartAttemptsRef.current.delete(String(pid))
         setCartItemIds(prev => {
           const next = new Set(prev)
@@ -919,6 +927,7 @@ function App() {
       }
 
       if (res.status === 202 && data.pending && data.status === 'pending' && data.attempt_id) {
+        console.log(`[CART-ADD] PENDING → POLLING | product=${pid} attempt=${data.attempt_id} | ${(performance.now()-t0).toFixed(0)}ms`)
         setCartStates(s => ({ ...s, [pid]: 'pending' }))
         setToastMessage({ text: 'Проверяем корзину…', type: 'info' })
         window.setTimeout(() => {
@@ -959,7 +968,7 @@ function App() {
       setCartStates(s => ({ ...s, [pid]: 'error' }))
       setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), 2000)
     } catch (err) {
-      console.error(err)
+      console.error(`[CART-ADD] NETWORK ERROR | product=${pid} error=${err.message} | ${(performance.now()-t0).toFixed(0)}ms`)
       pendingCartAttemptsRef.current.delete(String(pid))
       setCartStates(s => ({ ...s, [pid]: 'error' }))
       setToastMessage({ text: 'Ошибка сети', type: 'error' })

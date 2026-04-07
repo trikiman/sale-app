@@ -229,13 +229,16 @@ class VkusVillCart:
         Returns:
             dict with keys: success (bool), product_name, cart_total, error
         """
+        t_start = time.monotonic()
         self._ensure_session()
+        t_session = time.monotonic()
+        logger.info(f"🛒 [CART-ADD] product={product_id} | _ensure_session took {(t_session - t_start)*1000:.0f}ms")
         deadline = time.monotonic() + CART_ADD_HOT_PATH_DEADLINE_SECONDS
-        
+
         last_result = None
         for _ in range(quantity):
             is_green_val = 1 if is_green else 0
-            
+
             # Full 16-field payload (see docs/memory/KNOWLEDGE_BASE.md)
             data = {
                 'id': product_id,
@@ -260,13 +263,16 @@ class VkusVillCart:
             
             try:
                 request_timeout_seconds = max(0.1, deadline - time.monotonic())
+                logger.info(f"🛒 [CART-ADD] product={product_id} | sending request, timeout={request_timeout_seconds:.2f}s, elapsed={(time.monotonic() - t_start)*1000:.0f}ms")
+                t_req = time.monotonic()
                 last_result = self._request(
                     BASKET_ADD_URL,
                     data,
                     timeout=httpx.Timeout(request_timeout_seconds),
                 )
+                logger.info(f"🛒 [CART-ADD] product={product_id} | VkusVill responded in {(time.monotonic() - t_req)*1000:.0f}ms, total={(time.monotonic() - t_start)*1000:.0f}ms")
             except httpx.TimeoutException as e:
-                logger.error(f"Cart API request timed out: {e}")
+                logger.error(f"🛒 [CART-ADD] product={product_id} | TIMEOUT after {(time.monotonic() - t_start)*1000:.0f}ms: {e}")
                 return {
                     'success': False,
                     'pending': True,
@@ -275,10 +281,10 @@ class VkusVillCart:
                     'raw': {'deadline_seconds': CART_ADD_HOT_PATH_DEADLINE_SECONDS},
                 }
             except httpx.HTTPError as e:
-                logger.error(f"Cart API request failed: {e}")
+                logger.error(f"🛒 [CART-ADD] product={product_id} | HTTP error after {(time.monotonic() - t_start)*1000:.0f}ms: {e}")
                 return {'success': False, 'error': str(e), 'error_type': 'http'}
             except json.JSONDecodeError:
-                logger.error("Cart API returned non-JSON")
+                logger.error(f"🛒 [CART-ADD] product={product_id} | non-JSON after {(time.monotonic() - t_start)*1000:.0f}ms")
                 return {'success': False, 'error': 'Invalid response from VkusVill', 'error_type': 'invalid_response'}
         
         if not last_result:
