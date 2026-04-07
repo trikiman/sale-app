@@ -1,33 +1,34 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.11
-milestone_name: Cart Responsiveness & Truth Recovery
-status: Milestone archived
-last_updated: "2026-04-06T12:45:45.734Z"
-last_activity: 2026-04-06
+milestone: v1.12
+milestone_name: Add-to-Cart 5s Hard Cap
+status: Defining requirements
+last_updated: "2026-04-07T07:00:00.000Z"
+last_activity: 2026-04-07
 progress:
-  total_phases: 3
-  completed_phases: 3
-  total_plans: 9
-  completed_plans: 9
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-06)
+See: .planning/PROJECT.md (updated 2026-04-07)
 
 **Core value:** Family members see every VkusVill discount and can add to cart in one tap
-**Current focus:** Start the next milestone from a clean requirements/roadmap cycle
+**Current focus:** Enforce 5s hard cap on add-to-cart UX end-to-end
 
 ## Current Position
 
-Milestone: v1.11 — Cart Responsiveness & Truth Recovery
-Phase: Complete
-Plan: Archived
-Last activity: 2026-04-06
+Milestone: v1.12 — Add-to-Cart 5s Hard Cap
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-04-07 — Milestone v1.12 started
 Status: Milestone archived
 
 ## Milestone Goal
