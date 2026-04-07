@@ -759,26 +759,45 @@ function App() {
     return { ok: false, itemsCount: cartCount, itemIds: cartItemIds, itemsById: cartItemsById }
   }, [cartCount, cartItemIds, cartItemsById, userId])
 
-  const pollCartAttemptStatus = useCallback(async (product, attemptId) => {
+  const pollCartAttemptStatus = useCallback(async (product, attemptId, t0) => {
     const pid = String(product.id)
     const wait = (ms) => new Promise(resolve => window.setTimeout(resolve, ms))
     const pollT0 = performance.now()
-    console.log(`[CART-POLL] START | product=${pid} attempt=${attemptId} max_polls=20`)
+    console.log(`[CART-POLL] START | product=${pid} attempt=${attemptId} budget=${(5000 - (performance.now() - t0)).toFixed(0)}ms`)
 
     pendingCartAttemptsRef.current.set(pid, attemptId)
 
-    for (let attempt = 0; attempt < 20; attempt++) {
-      await wait(attempt === 0 ? 700 : 900)
+    let pollCount = 0
+    while (true) {
+      const remainingMs = 5000 - (performance.now() - t0)
+      if (remainingMs < 800) {
+        console.log(`[CART-POLL] BUDGET EXHAUSTED | product=${pid} attempt=${attemptId} polls=${pollCount} remaining=${remainingMs.toFixed(0)}ms | ${(performance.now()-pollT0).toFixed(0)}ms`)
+        break
+      }
+
+      await wait(Math.min(pollCount === 0 ? 700 : 900, remainingMs - 800))
+      pollCount++
 
       if (pendingCartAttemptsRef.current.get(pid) !== attemptId) {
-        console.log(`[CART-POLL] CANCELLED | product=${pid} attempt=${attemptId} poll#=${attempt} | ${(performance.now()-pollT0).toFixed(0)}ms`)
+        console.log(`[CART-POLL] CANCELLED | product=${pid} attempt=${attemptId} poll#=${pollCount} | ${(performance.now()-pollT0).toFixed(0)}ms`)
         return
       }
 
+      const pollRemainingMs = 5000 - (performance.now() - t0)
+      const pollController = new AbortController()
+      const pollTimer = setTimeout(() => pollController.abort(), Math.min(1500, pollRemainingMs - 100))
+
       try {
         const res = await fetch(`/api/cart/add-status/${attemptId}`, {
+          signal: pollController.signal,
           headers: getAuthHeaders(userId),
         })
+        clearTimeout(pollTimer)
+
+        if (res.status === 404) {
+          console.log(`[CART-POLL] 404 STOP | product=${pid} attempt=${attemptId} poll#=${pollCount} | ${(performance.now()-pollT0).toFixed(0)}ms`)
+          break
+        }
 
         if (res.status === 401) {
           pendingCartAttemptsRef.current.delete(pid)
@@ -793,7 +812,7 @@ function App() {
         }
 
         const data = await res.json()
-        console.log(`[CART-POLL] RESPONSE | product=${pid} poll#=${attempt} status=${data.status} | ${(performance.now()-pollT0).toFixed(0)}ms`)
+        console.log(`[CART-POLL] RESPONSE | product=${pid} poll#=${pollCount} status=${data.status} | ${(performance.now()-pollT0).toFixed(0)}ms`)
         if (data.status === 'pending') {
           continue
         }
@@ -851,12 +870,17 @@ function App() {
         window.setTimeout(() => setToastMessage(null), 3000)
         return
       } catch (err) {
+        clearTimeout(pollTimer)
+        if (err.name === 'AbortError') {
+          console.log(`[CART-POLL] POLL TIMEOUT | product=${pid} poll#=${pollCount} | ${(performance.now()-pollT0).toFixed(0)}ms`)
+          break
+        }
         console.error(err)
       }
     }
 
     if (pendingCartAttemptsRef.current.get(pid) === attemptId) {
-      console.log(`[CART-POLL] EXHAUSTED | product=${pid} attempt=${attemptId} polls=20 | ${(performance.now()-pollT0).toFixed(0)}ms — giving up`)
+      console.log(`[CART-POLL] EXHAUSTED | product=${pid} attempt=${attemptId} polls=${pollCount} | ${(performance.now()-pollT0).toFixed(0)}ms — budget expired`)
       pendingCartAttemptsRef.current.delete(pid)
       setCartStates(s => ({ ...s, [pid]: 'error' }))
       setToastMessage({ text: 'Не удалось подтвердить корзину', type: 'error' })
