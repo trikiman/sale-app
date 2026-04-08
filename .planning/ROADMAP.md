@@ -8,10 +8,10 @@
 
 **Depends on:** None (self-contained frontend + backend changes)
 
-**Plans:** 1 plan
+**Plans:** 1/1 plans complete
 
 Plans:
-- [ ] 46-01-PLAN.md — AbortController 5s cap + budget-aware poll loop in App.jsx
+- [x] 46-01-PLAN.md — AbortController 5s cap + budget-aware poll loop in App.jsx
 
 **Success Criteria:**
 1. User taps add-to-cart → sees success checkmark or error X within 5s

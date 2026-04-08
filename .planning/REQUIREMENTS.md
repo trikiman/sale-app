@@ -18,11 +18,11 @@ Enforce a hard 5-second wall-clock budget from tap to final UI state for add-to-
 
 ### Cart UX Budget
 
-- [ ] **CART-10**: Add-to-cart tap-to-result completes within 5 seconds total (success, error, or timeout)
-- [ ] **CART-11**: Frontend enforces 5s hard cap via AbortController on `/api/cart/add` fetch
-- [ ] **CART-12**: Poll loop uses remaining time budget (5s minus initial add duration) instead of fixed 20-poll loop
-- [ ] **CART-13**: Polling stops immediately on 404/non-recoverable error instead of retrying
-- [ ] **CART-14**: Backend pending attempt TTL aligned with frontend 5s budget (no premature pruning causing 404s)
+- [x] **CART-10**: Add-to-cart tap-to-result completes within 5 seconds total (success, error, or timeout)
+- [x] **CART-11**: Frontend enforces 5s hard cap via AbortController on `/api/cart/add` fetch
+- [x] **CART-12**: Poll loop uses remaining time budget (5s minus initial add duration) instead of fixed 20-poll loop
+- [x] **CART-13**: Polling stops immediately on 404/non-recoverable error instead of retrying
+- [x] **CART-14**: Backend pending attempt TTL aligned with frontend 5s budget (no premature pruning causing 404s)
 
 ### Non-Goals
 
