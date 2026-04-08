@@ -6,7 +6,7 @@ status: Roadmap created
 last_updated: "2026-04-08T12:30:00.000Z"
 last_activity: 2026-04-08
 progress:
-  total_phases: 4
+  total_phases: 3
   completed_phases: 0
   total_plans: 0
   completed_plans: 0

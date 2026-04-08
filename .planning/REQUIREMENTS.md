@@ -15,13 +15,7 @@ Requirements for Instant Cart & Reliability milestone. Each maps to roadmap phas
 ### Performance
 
 - [ ] **PERF-01**: Session sessid/user_id are pre-cached on app load so first cart add doesn't block on warmup GET
-- [ ] **PERF-02**: Cart add hot path completes in under 5 seconds end-to-end including API response
-
-### Optimistic UX
-
-- [ ] **UX-20**: User sees instant success feedback (checkmark + cart count update) on tap, before API response
-- [ ] **UX-21**: If background API call fails, optimistic state reverts and user sees brief error toast
-- [ ] **UX-22**: Button returns to tappable state within 2 seconds after revert
+- [ ] **PERF-02**: Cart add completes with real VkusVill API confirmation in under 5 seconds end-to-end
 
 ### Error Recovery
 
@@ -32,8 +26,7 @@ Requirements for Instant Cart & Reliability milestone. Each maps to roadmap phas
 
 ### Deferred from v1.13
 
-- **UX-23**: Cart count badge updates optimistically on tap (selected but bundled into UX-20)
-- **ERR-03**: Gentle revert + toast on optimistic failure (bundled into UX-21)
+- **UX-20**: Optimistic cart UX — deferred, user wants real API confirmation not fake instant success
 - **HAPTIC-01**: Haptic feedback on add-to-cart tap
 - **BATCH-01**: Batch add multiple items at once
 
@@ -41,11 +34,11 @@ Requirements for Instant Cart & Reliability milestone. Each maps to roadmap phas
 
 | Feature | Reason |
 |---------|--------|
+| Optimistic cart UI | User wants real API confirmation, not fake instant success |
 | Offline cart queue | VkusVill cart is server-authoritative; Telegram MiniApp has no ServiceWorker |
 | Automatic retry on failure | VkusVill bans concurrent connections; retries risk rate limits |
 | Speculative pre-add | Absurd for grocery discount aggregator; wastes VkusVill session budget |
 | Real-time cart sync via WebSocket | Overkill for 5-user family app; SSE + polling sufficient |
-| React 19 useOptimistic migration | Manual snapshot+rollback is simpler and avoids framework migration |
 | Persistent pending state across restarts | 5s hard cap makes pending states transient by design |
 
 ## Traceability
@@ -56,15 +49,12 @@ Requirements for Instant Cart & Reliability milestone. Each maps to roadmap phas
 | CART-16 | Phase 47 | Pending |
 | PERF-01 | Phase 48 | Pending |
 | PERF-02 | Phase 48 | Pending |
-| UX-20 | Phase 49 | Pending |
-| UX-21 | Phase 49 | Pending |
-| UX-22 | Phase 49 | Pending |
-| ERR-01 | Phase 50 | Pending |
-| ERR-02 | Phase 50 | Pending |
+| ERR-01 | Phase 49 | Pending |
+| ERR-02 | Phase 49 | Pending |
 
 **Coverage:**
-- v1.13 requirements: 9 total
-- Mapped to phases: 9
+- v1.13 requirements: 6 total
+- Mapped to phases: 6
 - Unmapped: 0
 
 ---
