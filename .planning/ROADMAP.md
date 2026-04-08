@@ -40,7 +40,10 @@
   1. User can tap add-to-cart and the product actually appears in their VkusVill cart
   2. When cart add fails, backend logs show the specific root cause (expired sessid, proxy failure, API change, etc.)
   3. Cart-add endpoint returns a typed error_type field (auth_expired, product_gone, transient, etc.) instead of generic 500
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 47-01-PLAN.md — SSH diagnose production failure, fix root cause in vkusvill_api.py
+- [ ] 47-02-PLAN.md — Propagate error_type through endpoint, add unit tests
 
 ### Phase 48: Session Warmup Optimization
 **Goal**: First cart add is fast because session metadata is already cached; real API confirmation under 5s
@@ -67,7 +70,7 @@
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 47. Diagnose & Fix Cart Failures | 0/? | Not started | - |
+| 47. Diagnose & Fix Cart Failures | 0/2 | Not started | - |
 | 48. Session Warmup Optimization | 0/? | Not started | - |
 | 49. Error Recovery & Polish | 0/? | Not started | - |
 
