@@ -52,21 +52,21 @@ Requirements for Instant Cart & Reliability milestone. Each maps to roadmap phas
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CART-15 | — | Pending |
-| CART-16 | — | Pending |
-| PERF-01 | — | Pending |
-| PERF-02 | — | Pending |
-| UX-20 | — | Pending |
-| UX-21 | — | Pending |
-| UX-22 | — | Pending |
-| ERR-01 | — | Pending |
-| ERR-02 | — | Pending |
+| CART-15 | Phase 47 | Pending |
+| CART-16 | Phase 47 | Pending |
+| PERF-01 | Phase 48 | Pending |
+| PERF-02 | Phase 48 | Pending |
+| UX-20 | Phase 49 | Pending |
+| UX-21 | Phase 49 | Pending |
+| UX-22 | Phase 49 | Pending |
+| ERR-01 | Phase 50 | Pending |
+| ERR-02 | Phase 50 | Pending |
 
 **Coverage:**
 - v1.13 requirements: 9 total
-- Mapped to phases: 0
-- Unmapped: 9 ⚠️
+- Mapped to phases: 9
+- Unmapped: 0
 
 ---
 *Requirements defined: 2026-04-08*
-*Last updated: 2026-04-08 after initial definition*
+*Last updated: 2026-04-08 after roadmap creation*

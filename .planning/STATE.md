@@ -2,11 +2,11 @@
 gsd_state_version: 1.0
 milestone: v1.13
 milestone_name: Instant Cart & Reliability
-status: Defining requirements
-last_updated: "2026-04-08T12:00:00.000Z"
+status: Roadmap created
+last_updated: "2026-04-08T12:30:00.000Z"
 last_activity: 2026-04-08
 progress:
-  total_phases: 0
+  total_phases: 4
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -20,14 +20,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-08)
 
 **Core value:** Family members see every VkusVill discount and can add to cart in one tap
-**Current focus:** Defining requirements for v1.13
+**Current focus:** v1.13 Instant Cart & Reliability -- roadmap created, ready for phase planning
 
 ## Current Position
 
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-04-08 — Milestone v1.13 started
+Phase: 47 (Diagnose & Fix Cart Failures) -- not yet planned
+Plan: --
+Status: Roadmap created, awaiting phase planning
+Last activity: 2026-04-08 -- Roadmap created for v1.13
 
 ## Completed Milestones
 
@@ -59,15 +59,15 @@ Last activity: 2026-04-08 — Milestone v1.13 started
 - v1.10 shipped: continuous sale sessions, dual-cadence scheduler, per-source freshness, and cached MiniApp hydration
 - v1.11 shipped: pending cart add contract, background reconciliation, synced quantity controls, cart diagnostics
 - v1.12 shipped: AbortController 5s hard cap, time-budget polling, D3 budget gate, immediate 404 stop
-- Auto-deploy is active via GitHub webhook → EC2 and Vercel frontend deploys
+- Auto-deploy is active via GitHub webhook -> EC2 and Vercel frontend deploys
 
 ### Pending Todos
 
-- Clarify stale banner freshness vs updated time — the stale warning is driven by per-color source age, while the header shows the latest merged payload time, so the UI currently looks contradictory even when backend freshness logic is correct.
+- Clarify stale banner freshness vs updated time -- the stale warning is driven by per-color source age, while the header shows the latest merged payload time, so the UI currently looks contradictory even when backend freshness logic is correct.
 
 ## Known Bugs
 
-(none — the 5s add-to-cart stuck issue from v1.11 is resolved by v1.12)
+(none -- the 5s add-to-cart stuck issue from v1.11 is resolved by v1.12)
 
 ## Timeline
 
@@ -88,6 +88,8 @@ Last activity: 2026-04-08 — Milestone v1.13 started
 | v1.12 milestone started | 2026-04-07 |
 | v1.12 phase 46 executed | 2026-04-07 |
 | v1.12 milestone archived | 2026-04-08 |
+| v1.13 milestone started | 2026-04-08 |
+| v1.13 roadmap created | 2026-04-08 |
 
 ---
-*Last updated: 2026-04-08 after archiving v1.12 milestone*
+*Last updated: 2026-04-08 after roadmap creation*
