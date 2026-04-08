@@ -20,7 +20,7 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-08)
 
 **Core value:** Family members see every VkusVill discount and can add to cart in one tap
-**Current focus:** Instant Cart & Reliability
+**Current focus:** Defining requirements for v1.13
 
 ## Current Position
 

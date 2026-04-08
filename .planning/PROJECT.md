@@ -93,17 +93,17 @@ Family members see every VkusVill discount (green/red/yellow) the moment it appe
 
 <!-- Current scope. Building toward these. -->
 
-- [ ] Diagnose and fix current cart add failures (spinner → error)
+- [ ] Fix current cart add failures (spinner → error)
 - [ ] Optimistic cart UX — immediate visual success on tap, background API call, revert on failure
 - [ ] Session warmup optimization — pre-cache sessid/user_id to eliminate hot-path blocking
 - [ ] Clear error recovery with retry when VkusVill is genuinely unavailable
 
 ## Current Milestone: v1.13 Instant Cart & Reliability
 
-**Goal:** Make add-to-cart feel instant with optimistic UI and fix the current failures so cart adds actually succeed in under 5 seconds.
+**Goal:** Make add-to-cart feel instant with optimistic UI and fix current failures so cart adds actually succeed with API response under 5 seconds.
 
 **Target features:**
-- Diagnose and fix current cart add failures (spinner → error)
+- Fix current cart add failures (spinner → error)
 - Optimistic cart UX — immediate visual success on tap, background API call, revert on failure
 - Session warmup optimization — pre-cache sessid/user_id to eliminate hot-path blocking
 - Clear error recovery with retry when VkusVill is genuinely unavailable
@@ -271,5 +271,5 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-08 after starting v1.13 milestone*
+*Last updated: 2026-04-08 after v1.13 milestone start*
 
