@@ -1,26 +1,21 @@
-# Roadmap — v1.12 Add-to-Cart 5s Hard Cap
+# Roadmap — VkusVill Sale Monitor
 
-## Phase 46: Enforce 5s Add-to-Cart Budget
+## Milestones
 
-**Goal:** Make add-to-cart complete (success or error) within 5 seconds from tap, every time.
+- ✅ **v1.0** Bug Fix & Stability — Phases 1-9 (shipped 2026-03-31)
+- ✅ **v1.1** Testing & QA — Phases 10-12 (shipped 2026-03-31)
+- ✅ **v1.2** Price History — Phases 13-18 (shipped 2026-04-01)
+- ✅ **v1.3** Performance & Optimization — Phases 19-20 (shipped 2026-04-01)
+- ✅ **v1.4** Proxy Centralization — Phases 21-23 (shipped 2026-04-01)
+- ✅ **v1.5** History Search & Polish — Phases 24-26 (shipped 2026-04-01)
+- ✅ **v1.6** Green Scraper Robustness — Phases 27-28 (shipped 2026-04-02)
+- ✅ **v1.7** Categories & Subgroups — Phases 29-33 (shipped 2026-04-03)
+- ✅ **v1.8** History Search Completeness — Phases 34-35 (shipped 2026-04-04)
+- ✅ **v1.9** Catalog Coverage Expansion — Phases 36-38 (shipped 2026-04-04)
+- ✅ **v1.10** Scraper Freshness & Reliability — Phases 39-42 (shipped 2026-04-05)
+- ✅ **v1.11** Cart Responsiveness & Truth Recovery — Phases 43-45 (shipped 2026-04-06)
+- ✅ **v1.12** Add-to-Cart 5s Hard Cap — Phase 46 (shipped 2026-04-08)
 
-**Requirements:** CART-10, CART-11, CART-12, CART-13, CART-14
+## Archives
 
-**Depends on:** None (self-contained frontend + backend changes)
-
-**Plans:** 1/1 plans complete
-
-Plans:
-- [x] 46-01-PLAN.md — AbortController 5s cap + budget-aware poll loop in App.jsx
-
-**Success Criteria:**
-1. User taps add-to-cart → sees success checkmark or error X within 5s
-2. No pending/clock state visible beyond 5s from tap
-3. Frontend AbortController kills `/api/cart/add` fetch at 5s if no response
-4. Poll loop respects remaining time budget and stops when budget exhausted
-5. Backend attempt not pruned while frontend is still polling (no 404 mid-poll)
-
-**Implementation Notes:**
-- Frontend: wrap fetch in AbortController with 5s signal; pass `t0` to pollCartAttemptStatus; poll loop checks `performance.now() - t0 > 4500` as exit condition
-- Backend: reduce `_CART_PENDING_ATTEMPT_TTL_SECONDS` from 30 to 10 (enough for 5s frontend + margin)
-- Poll: replace fixed 20-iteration loop with time-budget loop; stop on 404 immediately
+See `.planning/milestones/v{X.Y}-ROADMAP.md` for full phase details of each milestone.

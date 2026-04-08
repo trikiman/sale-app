@@ -1,5 +1,43 @@
 # Retrospective
 
+## Milestone: v1.12 — Add-to-Cart 5s Hard Cap
+
+**Shipped:** 2026-04-08
+**Phases:** 1 | **Plans:** 1
+
+### What Was Built
+
+- AbortController 5s hard cap on add-to-cart fetch with D3 budget gate at 4s
+- Time-budget polling loop replacing fixed 20-iteration design, with per-poll AbortController
+- Immediate 404/non-recoverable stop in poll loop
+
+### What Worked
+
+- Live diagnosis session (timing the actual 41s tap-to-error flow) produced exact requirements — no guesswork needed
+- Single-phase, single-plan milestone kept overhead minimal for a focused bug fix
+- Code review and verification artifacts were written same-day as implementation
+
+### What Was Inefficient
+
+- Nothing notable — this was the cleanest milestone-to-archive cycle so far due to tight scope
+
+### Patterns Established
+
+- Time-budget loops are strictly better than fixed-iteration loops for user-facing timeout scenarios
+- D3 budget gates (skip downstream work when budget is nearly exhausted) prevent wasted effort on the hot path
+
+### Key Lessons
+
+- A 41s stuck state was caused by just two missing AbortControllers and one unbounded loop — small fixes, huge UX impact
+- Diagnosing timing problems with actual measurements before coding prevents scope creep
+
+### Cost Observations
+
+- Sessions: 1 implementation session + 1 verification/archive session
+- Notable: entire milestone from diagnosis to archive in ~24h with 56 lines changed in 1 file
+
+---
+
 ## Milestone: v1.10 — Scraper Freshness & Reliability
 
 **Shipped:** 2026-04-05

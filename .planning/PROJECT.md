@@ -87,26 +87,17 @@ Family members see every VkusVill discount (green/red/yellow) the moment it appe
 - ✓ **CART-04..09**: Hard 5.0-second add-to-cart UX budget on the click path, with neutral pending state and background reconciliation — v1.11
 - ✓ **UI-19**: User sees non-blocking "checking cart" message when truth recovery takes longer than 5 seconds — v1.11
 - ✓ **OPS-04, QA-04**: Cart diagnostics surfaced in admin payloads, and bounded add contract protected by targeted regression tests — v1.11
+- ✓ **CART-10..14**: AbortController 5s hard cap on add-to-cart fetch, time-budget polling loop, immediate 404 stop, and aligned backend attempt TTL — v1.12
 
 ### Active
 
 <!-- Current scope. Building toward these. -->
 
-- [ ] **CART-10**: Add-to-cart tap-to-result completes within 5 seconds total (success, error, or timeout)
-- [ ] **CART-11**: Frontend enforces 5s hard cap via AbortController on `/api/cart/add` fetch
-- [ ] **CART-12**: Poll loop uses remaining time budget (5s minus initial add duration) instead of fixed 20-poll loop
-- [ ] **CART-13**: Polling stops immediately on 404/non-recoverable error instead of retrying
-- [ ] **CART-14**: Backend pending attempt TTL aligned with frontend 5s budget (no premature pruning causing 404s)
+(None — next milestone not yet defined)
 
-## Current Milestone: v1.12 Add-to-Cart 5s Hard Cap
+## Previous Shipped Milestone: v1.12 Add-to-Cart 5s Hard Cap (2026-04-08)
 
-**Goal:** Enforce a hard 5-second wall-clock budget from tap to final UI state for add-to-cart — no loading spinners, pending clocks, or error transitions beyond 5s.
-
-**Target features:**
-- Frontend 5s AbortController timeout on `/api/cart/add`
-- Time-budgeted poll loop (remaining ms after initial add)
-- Immediate stop on 404/timeout during polling
-- Backend attempt TTL aligned to prevent mid-poll pruning
+Shipped: AbortController 5s hard cap, time-budget polling loop, D3 budget gate at 4s, immediate 404 stop.
 
 ## Previous Shipped Milestone: v1.11 Cart Responsiveness & Truth Recovery
 
@@ -246,6 +237,8 @@ Search and polish improvements for the History page:
 | Pending cart UI is neutral, not failure-first | Ambiguous add results should show "checking cart" and keep the app usable instead of turning red before truth is known | ✓ Good |
 | In-cart products use synced quantity controls | Cards and detail drawer should switch into the same typed `шт/кг` quantity control instead of reverting to a plain add button | ✓ Good |
 | Cart diagnostics belong in admin/status + logs | Operators should inspect cart attempt timing and reconciliation through existing admin surfaces rather than adding new end-user diagnostics UI | ✓ Good |
+| 4s D3 budget gate for late 202 responses | If 202 arrives after 4s, skip polling entirely and show background message — remaining budget too small for useful polling | ✓ Good |
+| Time-budget polling over fixed iteration count | Remaining-ms check at loop top prevents unbounded polling regardless of per-poll latency variance | ✓ Good |
 
 ## Evolution
 
@@ -265,5 +258,5 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-06 after archiving v1.11 milestone*
+*Last updated: 2026-04-08 after v1.12 milestone*
 
