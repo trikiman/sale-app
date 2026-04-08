@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.12
-milestone_name: Add-to-Cart 5s Hard Cap
-status: Milestone archived
-last_updated: "2026-04-08T11:20:00.000Z"
+milestone: v1.13
+milestone_name: Instant Cart & Reliability
+status: Defining requirements
+last_updated: "2026-04-08T12:00:00.000Z"
 last_activity: 2026-04-08
 progress:
-  total_phases: 1
-  completed_phases: 1
-  total_plans: 1
-  completed_plans: 1
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -20,19 +20,14 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-08)
 
 **Core value:** Family members see every VkusVill discount and can add to cart in one tap
-**Current focus:** Planning next milestone
+**Current focus:** Instant Cart & Reliability
 
 ## Current Position
 
-Milestone: v1.12 — Add-to-Cart 5s Hard Cap
-Phase: 46
-Plan: 1/1 complete
-Status: Milestone archived
-Last activity: 2026-04-08
-
-## Next Up
-
-- `/gsd-new-milestone` — define the next milestone and create fresh requirements/roadmap
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-04-08 — Milestone v1.13 started
 
 ## Completed Milestones
 
