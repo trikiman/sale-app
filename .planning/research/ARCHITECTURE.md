@@ -54,30 +54,36 @@
 - `cartItemIds` — Set of product IDs currently in cart
 - `cartItemsById` — Map of product ID to cart item details (quantity, unit, step, etc.)
 - `cartBusyIds` — Set of product IDs with in-flight quantity changes
-- `pendingCartAttemptsRef` — Map of product ID to pending attempt ID
+- `pendingCartAttemptsRef` — Map of product ID to pending attempt ID (ref, not state)
 - `cartCount` — total cart items count
 
 **What changes for optimistic UI:**
 
 The current `handleAddToCart` flow is:
 ```
-tap → setCartStates('loading') → fetch /api/cart/add → wait for response → setCartStates('success'/'error')
+tap → setCartStates('loading') → fetch /api/cart/add (AbortController 5s)
+    → 200 success → setCartStates('success'), add to cartItemIds
+    → 202 pending → setCartStates('pending'), poll add-status in remaining budget
+    → error/abort → setCartStates('error')
 ```
 
-Optimistic flow should be:
+Optimistic flow:
 ```
-tap → immediately setCartStates('success') + add to cartItemIds/cartItemsById + bump cartCount
-    → fire-and-forget fetch /api/cart/add
-    → on failure: revert cartItemIds/cartItemsById/cartCount + show toast
+tap → IMMEDIATELY: setCartStates('success'), add to cartItemIds/cartItemsById, bump cartCount
+    → BACKGROUND: fetch /api/cart/add (longer timeout, 15s, no abort needed for UX)
+    → on 200 success → update cartItemsById with real server data (no-op visually)
+    → on 202 pending → poll as before, but user already sees checkmark
+    → on failure → revertCartOptimistic(snapshot), show toast with retry
 ```
 
 **New vs modified components:**
 
 | Component | Change Type | What Changes |
 |-----------|-------------|--------------|
-| `App.jsx` `handleAddToCart` | **MODIFY** | Immediately update cartItemIds, cartItemsById, cartCount, cartStates BEFORE fetch. On failure, revert using pre-snapshot. |
-| `App.jsx` `handleSetCartQuantity` | **MODIFY** | Same optimistic pattern for quantity changes. |
-| `App.jsx` new `revertCartOptimistic()` | **NEW helper** | Accepts snapshot, restores cart state, shows error toast. Reusable by both add and quantity handlers. |
+| `App.jsx` `handleAddToCart` | **MODIFY** | Immediately update cartItemIds, cartItemsById, cartCount, cartStates BEFORE fetch. On failure, revert using pre-snapshot. Remove 5s AbortController (background can run longer). |
+| `App.jsx` `pollCartAttemptStatus` | **MINOR MODIFY** | Keep existing logic but skip setting 'pending' state visually (user already sees success). Only revert on terminal failure. |
+| `App.jsx` new `revertCartOptimistic()` | **NEW helper** | Accepts snapshot, restores cart state, shows error toast with retry action. Reusable by both add and quantity handlers. |
+| `App.jsx` new `optimisticAddsRef` | **NEW ref** | Map tracking products with optimistic-but-unconfirmed adds. Key: pid, value: {snapshot, addedAt}. Guards against stale reverts and duplicate taps. |
 | `ProductCard` | **NO CHANGE** | Already reads cartState/cartItem props — will show success immediately from parent state. |
 | `ProductDetail` | **NO CHANGE** | Same — already prop-driven. |
 | `CartPanel` | **NO CHANGE** | Opens separately, fetches own state from API. |
@@ -92,7 +98,7 @@ tap → immediately setCartStates('success') + add to cartItemIds/cartItemsById 
 2. Builds cookie string (fast)
 3. If `sessid` or `user_id` missing from cookie metadata: **GET vkusvill.ru** (slow, 500-2000ms via proxy)
 
-The login flow already saves `sessid` and `user_id` into cookie metadata (line ~2957-2961 in main.py). So the warmup GET only fires when metadata was not captured at login time (race, error, or old cookie files).
+The login flow already saves `sessid` and `user_id` into cookie metadata. So the warmup GET only fires when metadata was not captured at login time (race, error, or old cookie files).
 
 **Where warmup should live:**
 
@@ -102,20 +108,18 @@ The login flow already saves `sessid` and `user_id` into cookie metadata (line ~
 | **B: Eager warmup on auth check** | `main.py` `/api/auth/status/{user_id}` endpoint | MODIFY existing endpoint |
 | **C: Dedicated warmup endpoint** | `main.py` NEW `POST /api/cart/warmup` | Frontend calls after auth confirmed |
 
-**Recommendation: Approach B** — Modify `/api/auth/status/{user_id}` to trigger session warmup as a side effect. This endpoint is already called on every page load (App.jsx line ~527). If the cookie file has `sessid` and `user_id` in metadata, warmup is a no-op. If missing, do the warmup GET there (off the cart add hot path).
+**Recommendation: Approach B** — Modify `/api/auth/status/{user_id}` to trigger session warmup as a side effect. This endpoint is already called on every page load. If the cookie file has `sessid` and `user_id` in metadata, warmup is a no-op. If missing, do the warmup GET there (off the cart add hot path).
 
 **Implementation:**
 
 ```python
 # In /api/auth/status/{user_id} endpoint, after confirming authenticated:
 if data.get("authenticated"):
-    # Side-effect: ensure session metadata is cached
     cookies_path = _resolve_cart_cookies_path(user_id)
     if os.path.exists(cookies_path):
         with open(cookies_path, 'r') as f:
             cookie_data = json.load(f)
         if isinstance(cookie_data, dict) and (not cookie_data.get('sessid') or not cookie_data.get('user_id')):
-            # Warmup: extract sessid/user_id and save back
             background_tasks.add_task(_warmup_session_metadata, user_id, cookies_path)
 ```
 
@@ -135,9 +139,9 @@ if data.get("authenticated"):
 **Current failure flow:**
 1. Frontend sends `POST /api/cart/add` with `allow_pending: true`
 2. Backend creates VkusVillCart, calls `cart.add()` with 1.5s hot-path deadline
-3. If VkusVill times out → returns 202 + pending attempt
+3. If VkusVill times out: returns 202 + pending attempt
 4. Frontend polls `/api/cart/add-status/{id}` within remaining 5s budget
-5. If poll finds item in cart → success; if not found → failure; if budget expires → error
+5. If poll finds item in cart: success; if not found: failure; if budget expires: error
 
 **Where failures happen (to diagnose):**
 - `_ensure_session` warmup GET taking too long (session warmup fix addresses this)
@@ -151,7 +155,7 @@ if data.get("authenticated"):
 |-----------|-------------|--------------|
 | `App.jsx` `handleAddToCart` | **MODIFY** | After revert from optimistic failure, show actionable retry toast instead of generic error |
 | `App.jsx` new `retryCartAdd()` | **NEW helper** | Re-fires same add request, called from toast action |
-| `backend/main.py` cart_add_endpoint | **MODIFY** | Return structured error types: `session_expired`, `vkusvill_unavailable`, `sold_out`, `timeout` |
+| `backend/main.py` cart_add_endpoint | **MODIFY** | Return structured error types in JSON: `session_expired`, `vkusvill_unavailable`, `sold_out`, `timeout` |
 | `cart/vkusvill_api.py` add() | **MODIFY** | Distinguish session errors from API errors in return dict |
 
 ### 4. Data Flow: Optimistic Add-to-Cart
@@ -167,30 +171,59 @@ handleAddToCart(product)
     │    setCartStates(pid → 'success')
     │    setToastMessage('Добавлено')
     │    setTimeout(() => setCartStates(pid → null), 2000)
+    │    optimisticAddsRef.set(pid, {snapshot, addedAt})
     │
     ├──► ASYNC: fetch('/api/cart/add', { allow_pending: true })
     │    │
-    │    ├── 200 success → refreshCartState(1, 3000) to get real qty/price
+    │    ├── 200 success → optimisticAddsRef.delete(pid)
+    │    │    refreshCartState(delay=3000) to get real qty/price
     │    │
-    │    ├── 202 pending → pollCartAttemptStatus (existing flow, unchanged)
-    │    │    ├── poll success → refreshCartState
-    │    │    └── poll fail → revertCartOptimistic(snapshot) + error toast with retry
+    │    ├── 202 pending → pollCartAttemptStatus (existing flow)
+    │    │    ├── poll success → optimisticAddsRef.delete(pid), refreshCartState
+    │    │    └── poll fail → revertCartOptimistic(pid) + error toast with retry
     │    │
-    │    ├── 400 sold out → revertCartOptimistic(snapshot) + "Раскупили" toast
+    │    ├── 400 sold out → revertCartOptimistic(pid) + "Раскупили" toast
     │    │
-    │    ├── 401 unauthorized → revertCartOptimistic(snapshot) + show login
+    │    ├── 401 unauthorized → revertCartOptimistic(pid) + show login
     │    │
-    │    ├── 502/504 unavailable → revertCartOptimistic(snapshot) + retry toast
+    │    ├── 502/504 unavailable → revertCartOptimistic(pid) + retry toast
     │    │
-    │    └── AbortError (5s) → revertCartOptimistic(snapshot) + timeout toast with retry
+    │    └── Network error / 15s timeout → revertCartOptimistic(pid) + timeout toast
     │
     ▼
-revertCartOptimistic(snapshot):
-    setCartItemIds(snapshot.cartItemIds)
-    setCartItemsById(snapshot.cartItemsById)
-    setCartCount(snapshot.cartCount)
+revertCartOptimistic(pid):
+    entry = optimisticAddsRef.get(pid)
+    if (!entry) return  // already confirmed or already reverted
+    setCartItemIds(entry.snapshot.cartItemIds)
+    setCartItemsById(entry.snapshot.cartItemsById)
+    setCartCount(entry.snapshot.cartCount)
     setCartStates(pid → 'error')
+    optimisticAddsRef.delete(pid)
     setTimeout(() => setCartStates(pid → null), 2000)
+```
+
+**Important edge case:** If user taps product A, then product B before A confirms, the snapshot for B must include A's optimistic state. This works naturally because snapshots capture current state (which already includes A's optimistic add). Revert for B only reverts B, not A. But if A then fails too, A's revert must also undo A. This means snapshots should capture the state *before* each individual add, not a full cart snapshot. Implementation: store only the per-product delta (was pid in cartItemIds before?), not a full snapshot.
+
+**Revised revert strategy:** Instead of full cart snapshots:
+```javascript
+optimisticAddsRef.set(pid, {
+  wasInCart: cartItemIds.has(pid),
+  previousItem: cartItemsById[pid] || null,
+  previousCount: cartCount,
+  addedAt: Date.now()
+})
+
+revertCartOptimistic(pid):
+  entry = optimisticAddsRef.get(pid)
+  if entry.wasInCart:
+    // Was already in cart, restore previous item
+    setCartItemsById(prev => ({...prev, [pid]: entry.previousItem}))
+  else:
+    // Was not in cart, remove entirely
+    setCartItemIds(prev => { const n = new Set(prev); n.delete(pid); return n })
+    setCartItemsById(prev => { const n = {...prev}; delete n[pid]; return n })
+    setCartCount(prev => Math.max(0, prev - 1))
+  optimisticAddsRef.delete(pid)
 ```
 
 ### 5. Data Flow: Session Warmup
@@ -223,19 +256,38 @@ VkusVillCart._ensure_session() → reads cookie file
     → proceed directly to basket_add.php
 ```
 
+## State Machine: Cart Button
+
+```
+CURRENT:
+  null → loading → success → null (2s)
+  null → loading → pending → success/error → null (2s)
+  null → loading → error → null (2s)
+
+OPTIMISTIC (v1.13):
+  null → success (instant) → null (2s, confirmed by API)
+  null → success (instant) → error (API failed, reverted) → null (2s)
+  
+  Key change: 'loading' state is ELIMINATED for add-to-cart.
+  'pending' state no longer shown to user (background poll, user sees success).
+  
+  Quantity changes (CartQuantityControl) keep 'loading' spinner — 
+  don't optimistically update quantity, only initial add.
+```
+
 ## Suggested Build Order
 
 Build order is driven by dependencies and value delivery:
 
-### Phase 1: Diagnose Cart Failures
-**Why first:** Need to understand what's actually failing before building optimistic UI on top. If the backend can't reliably add to cart, optimistic UI just hides the problem.
+### Phase 1: Diagnose and Fix Cart Failures
+**Why first:** Need to understand what's actually failing before building optimistic UI on top. If the backend can't reliably add to cart, optimistic UI just hides the problem and reverts constantly, destroying user trust.
 - Add structured error types to `cart/vkusvill_api.py` return dicts
 - Add error classification to `cart_add_endpoint` responses
-- Add diagnostic logging for _ensure_session timing
+- Add diagnostic logging for `_ensure_session` timing
 - **Modifies:** `cart/vkusvill_api.py`, `backend/main.py` cart endpoint
 - **No frontend changes**
 
-### Phase 2: Session Warmup
+### Phase 2: Session Warmup Optimization
 **Why second:** Reduces the most common latency source (warmup GET) before changing UI flow. Makes subsequent optimistic UI more reliable because backend responds faster.
 - Add `_warmup_session_metadata()` to backend
 - Modify `/api/auth/status` to trigger warmup as BackgroundTask
@@ -244,19 +296,26 @@ Build order is driven by dependencies and value delivery:
 
 ### Phase 3: Optimistic Cart UX
 **Why third:** Now that backend is faster and errors are classified, build the instant UI.
-- Add `revertCartOptimistic()` helper to App.jsx
-- Modify `handleAddToCart` for immediate state update + async fire
-- Handle revert on all failure paths
+- Add `optimisticAddsRef` and `revertCartOptimistic()` to App.jsx
+- Modify `handleAddToCart` for immediate state update + async background fire
+- Handle revert on all failure paths with per-product delta tracking
+- Remove 5s AbortController for optimistic adds (use 15s background timeout)
 - **Modifies:** `miniapp/src/App.jsx`
 - **No backend changes**
 
 ### Phase 4: Error Recovery with Retry
 **Why last:** Depends on structured error types (Phase 1) and optimistic revert (Phase 3).
-- Add retry action to error toasts
-- Add `retryCartAdd()` helper
+- Add retry action to error toasts (retryCartAdd helper)
 - Show specific messages per error type (expired session vs unavailable vs sold out)
+- Auto-retry once for transient 502/504
 - **Modifies:** `miniapp/src/App.jsx`
 - **No backend changes**
+
+**Phase ordering rationale:**
+- Phase 1 before 2: Must know what fails before optimizing warmup
+- Phase 2 before 3: Backend must be reliable/fast enough that optimistic reverts are rare (<10%)
+- Phase 3 before 4: Core optimistic flow must work before adding retry/recovery polish
+- Phase 4 last: Error recovery is polish that enhances Phase 3's revert UX
 
 ## Anti-Patterns to Avoid
 
@@ -264,13 +323,13 @@ Build order is driven by dependencies and value delivery:
 
 **What people do:** Create a React context or external store (Zustand/Redux) for optimistic cart state.
 **Why it's wrong here:** App.jsx already owns all cart state and passes it via props. Adding a separate store creates two sources of truth and sync complexity for a 5-user app.
-**Do this instead:** Keep optimistic mutations in the same `useState` hooks. Use a snapshot-and-revert pattern.
+**Do this instead:** Keep optimistic mutations in the same `useState` hooks. Use per-product delta revert.
 
 ### Anti-Pattern 2: Optimistic UI Without Revert
 
 **What people do:** Show success immediately but never revert if the API fails.
 **Why it's wrong:** User thinks item is in cart, goes to checkout, item is missing. Trust is destroyed.
-**Do this instead:** Always capture pre-mutation snapshot. Always revert on any non-success path. Show clear error message.
+**Do this instead:** Always track optimistic adds in a ref. Always revert on any non-success path. Set a 15s hard ceiling on unconfirmed optimistic adds.
 
 ### Anti-Pattern 3: Warmup on Every Cart Request
 
@@ -278,11 +337,17 @@ Build order is driven by dependencies and value delivery:
 **Why it's wrong:** Doubles latency for every add. The warmup only needs to happen once per session.
 **Do this instead:** Warmup once on auth check (page load). Persist to cookie metadata. All subsequent cart ops skip warmup.
 
-### Anti-Pattern 4: Frontend-Side Session Caching
+### Anti-Pattern 4: Full Cart Snapshot for Revert
 
-**What people do:** Cache sessid/user_id in frontend localStorage and send it with cart requests.
-**Why it's wrong:** sessid is a CSRF token tied to server-side PHP session. Frontend has no business caching it. Backend already handles this via cookie file metadata.
-**Do this instead:** Let backend own session state entirely. Frontend just sends user_id and auth headers.
+**What people do:** Snapshot the entire cart state before each optimistic add, revert to full snapshot on failure.
+**Why it's wrong:** If user adds product A then B, and B fails, reverting B's full snapshot also reverts A.
+**Do this instead:** Track per-product delta (was this pid in cart before? what was its item data?). Revert only the specific product.
+
+### Anti-Pattern 5: Optimistic for Destructive Actions
+
+**What people do:** Apply optimistic UI to remove/clear/quantity changes too.
+**Why it's wrong here:** Removing an item optimistically and failing to revert is worse than a brief spinner. Quantity changes have complex unit/step logic.
+**Do this instead:** Keep loading spinner for remove/clear/quantity changes. Only optimize the initial add-to-cart tap.
 
 ## Sources
 
