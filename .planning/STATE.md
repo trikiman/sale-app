@@ -1,33 +1,46 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.13
-milestone_name: Instant Cart & Reliability
-status: Roadmap created
-last_updated: "2026-04-08T12:30:00.000Z"
+milestone: v1.12
+milestone_name: milestone
+status: Defining requirements
+last_updated: "2026-04-08T08:21:43.882Z"
 last_activity: 2026-04-08
 progress:
-  total_phases: 3
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
+  total_phases: 1
+  completed_phases: 1
+  total_plans: 1
+  completed_plans: 1
+  percent: 100
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-08)
+See: .planning/PROJECT.md (updated 2026-04-07)
 
 **Core value:** Family members see every VkusVill discount and can add to cart in one tap
-**Current focus:** v1.13 Instant Cart & Reliability -- roadmap created, ready for phase planning
+**Current focus:** Enforce 5s hard cap on add-to-cart UX end-to-end
 
 ## Current Position
 
-Phase: 47 (Diagnose & Fix Cart Failures) -- not yet planned
-Plan: --
-Status: Roadmap created, awaiting phase planning
-Last activity: 2026-04-08 -- Roadmap created for v1.13
+Milestone: v1.12 — Add-to-Cart 5s Hard Cap
+Phase: 46
+Plan: Not started
+Status: Defining requirements
+Last activity: 2026-04-08
+Status: Milestone archived
+
+## Milestone Goal
+
+- Stop add-to-cart from keeping the user in a loading state longer than 5 seconds
+- Move cart truth reconciliation after ambiguous timeouts into a background path instead of chaining extra waits inside one click
+- Tighten backend cart/session recovery so slow upstream behavior does not stretch the visible user wait budget
+- Make slow-add latency, timeout causes, and reconciliation outcomes visible enough to debug confidently
+
+## Next Up
+
+- `$gsd-new-milestone` — define the next milestone and create fresh requirements/roadmap
 
 ## Completed Milestones
 
@@ -44,8 +57,6 @@ Last activity: 2026-04-08 -- Roadmap created for v1.13
 | v1.8 History Search Completeness | 34-35 | 2026-04-04 |
 | v1.9 Catalog Coverage Expansion | 36-38 | 2026-04-04 |
 | v1.10 Scraper Freshness & Reliability | 39-42 | 2026-04-05 |
-| v1.11 Cart Responsiveness & Truth Recovery | 43-45 | 2026-04-06 |
-| v1.12 Add-to-Cart 5s Hard Cap | 46 | 2026-04-08 |
 
 ## Accumulated Context
 
@@ -56,18 +67,22 @@ Last activity: 2026-04-08 -- Roadmap created for v1.13
 - v1.7 shipped: group/subgroup hierarchy scraped, drill-down filters on main/history, category favorites, and Telegram category alerts
 - v1.8 shipped: History search now covers the full local catalog during active queries and clearly labels mixed result states
 - v1.9 shipped: supplemental catalog discovery/backfill now expands local search coverage with parity reporting and regression gates
-- v1.10 shipped: continuous sale sessions, dual-cadence scheduler, per-source freshness, and cached MiniApp hydration
-- v1.11 shipped: pending cart add contract, background reconciliation, synced quantity controls, cart diagnostics
-- v1.12 shipped: AbortController 5s hard cap, time-budget polling, D3 budget gate, immediate 404 stop
-- Auto-deploy is active via GitHub webhook -> EC2 and Vercel frontend deploys
+- Auto-deploy is active via GitHub webhook → EC2 and Vercel frontend deploys
+- Scheduler now runs full cycles on a 5-minute target with extra green-only refresh opportunities on a 1-minute target between them
+- Sale sessions now stay continuous across transient misses and only close after 60 healthy minutes of absence
+- New-item alerts now follow confirmed session reentry instead of first-ever-seen product IDs
+- `/api/products` and `/admin/status` now expose per-source freshness and cycle-state visibility
+- MiniApp now hydrates from the last good product payload and uses a lower-pressure enrichment queue for missing card metadata
+- The milestone verification set now includes continuity, scheduler freshness, notifier, admin-status, history-search, catalog-merge, and API coverage together
+- v1.10 archived to `.planning/milestones/` with roadmap, requirements, and audit snapshots
 
 ### Pending Todos
 
-- Clarify stale banner freshness vs updated time -- the stale warning is driven by per-color source age, while the header shows the latest merged payload time, so the UI currently looks contradictory even when backend freshness logic is correct.
+- Clarify stale banner freshness vs updated time — the stale warning is driven by per-color source age, while the header shows the latest merged payload time, so the UI currently looks contradictory even when backend freshness logic is correct.
 
 ## Known Bugs
 
-(none -- the 5s add-to-cart stuck issue from v1.11 is resolved by v1.12)
+- Add-to-cart can still feel stuck well past 5 seconds because the frontend timeout path continues into extra cart refresh/reconciliation work while VkusVill add requests may complete late upstream
 
 ## Timeline
 
@@ -78,18 +93,26 @@ Last activity: 2026-04-08 -- Roadmap created for v1.13
 | v1.8 milestone completed | 2026-04-04 |
 | v1.8 milestone archived | 2026-04-04 |
 | v1.9 milestone started | 2026-04-04 |
-| v1.9 phase 36-38 completed | 2026-04-04 |
+| v1.9 phase 36 context gathered | 2026-04-04 |
+| v1.9 phase 36 planned | 2026-04-04 |
+| v1.9 phase 36 completed | 2026-04-04 |
+| v1.9 phase 37 completed | 2026-04-04 |
+| v1.9 phase 38 completed | 2026-04-04 |
 | v1.10 milestone started | 2026-04-05 |
+| v1.10 phase 39 context gathered | 2026-04-05 |
+| v1.10 phase 39 planned | 2026-04-05 |
+| v1.10 phase 40 context gathered | 2026-04-05 |
 | v1.10 phases 39-42 implemented | 2026-04-05 |
+| v1.10 verification artifacts written | 2026-04-05 |
 | v1.10 milestone archived | 2026-04-05 |
 | v1.11 milestone started | 2026-04-06 |
-| v1.11 phases 43-45 executed | 2026-04-06 |
+| v1.11 roadmap created | 2026-04-06 |
+| v1.11 phase 43 executed | 2026-04-06 |
+| v1.11 phase 44 context gathered | 2026-04-06 |
+| v1.11 phase 44 executed | 2026-04-06 |
+| v1.11 phase 45 context gathered | 2026-04-06 |
+| v1.11 phase 45 executed | 2026-04-06 |
 | v1.11 milestone archived | 2026-04-06 |
-| v1.12 milestone started | 2026-04-07 |
-| v1.12 phase 46 executed | 2026-04-07 |
-| v1.12 milestone archived | 2026-04-08 |
-| v1.13 milestone started | 2026-04-08 |
-| v1.13 roadmap created | 2026-04-08 |
 
 ---
-*Last updated: 2026-04-08 after roadmap creation*
+*Last updated: 2026-04-06 after archiving v1.11 milestone*

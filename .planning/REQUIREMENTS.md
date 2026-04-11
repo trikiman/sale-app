@@ -1,62 +1,41 @@
-# Requirements: VkusVill Sale Monitor
+# Requirements — v1.12 Add-to-Cart 5s Hard Cap
 
-**Defined:** 2026-04-08
-**Core Value:** Family members see every VkusVill discount and can add to cart in one tap
+## Milestone Goal
 
-## v1.13 Requirements
+Enforce a hard 5-second wall-clock budget from tap to final UI state for add-to-cart.
 
-Requirements for Instant Cart & Reliability milestone. Each maps to roadmap phases.
+## Diagnosed Problems (2026-04-07)
 
-### Cart Reliability
+| Issue | Measured | Expected |
+|-------|----------|----------|
+| Initial `/api/cart/add` fetch | 3748ms | <2s |
+| Each poll `/api/cart/add-status/` | ~5000ms | N/A (shouldn't poll this long) |
+| Pending attempt TTL | 30s (pruned mid-poll → 404) | Aligned with frontend budget |
+| Total tap-to-error | 41s | ≤5s |
+| Poll count | 20 × 900ms + VkusVill read | Budget-capped |
 
-- [ ] **CART-15**: User's add-to-cart succeeds reliably instead of showing spinner then error
-- [ ] **CART-16**: Backend logs expose clear root cause for current cart failures (expired session, proxy issue, VkusVill API change)
+## Requirements
 
-### Performance
+### Cart UX Budget
 
-- [ ] **PERF-01**: Session sessid/user_id are pre-cached on app load so first cart add doesn't block on warmup GET
-- [ ] **PERF-02**: Cart add completes with real VkusVill API confirmation in under 5 seconds end-to-end
+- [x] **CART-10**: Add-to-cart tap-to-result completes within 5 seconds total (success, error, or timeout)
+- [x] **CART-11**: Frontend enforces 5s hard cap via AbortController on `/api/cart/add` fetch
+- [x] **CART-12**: Poll loop uses remaining time budget (5s minus initial add duration) instead of fixed 20-poll loop
+- [x] **CART-13**: Polling stops immediately on 404/non-recoverable error instead of retrying
+- [x] **CART-14**: Backend pending attempt TTL aligned with frontend 5s budget (no premature pruning causing 404s)
 
-### Error Recovery
+### Non-Goals
 
-- [ ] **ERR-01**: User sees distinct error messages for sold-out, session-expired, VkusVill-down, and network-error states
-- [ ] **ERR-02**: Session-expired errors prompt re-login instead of showing cart error
-
-## Future Requirements
-
-### Deferred from v1.13
-
-- **UX-20**: Optimistic cart UX — deferred, user wants real API confirmation not fake instant success
-- **HAPTIC-01**: Haptic feedback on add-to-cart tap
-- **BATCH-01**: Batch add multiple items at once
-
-## Out of Scope
-
-| Feature | Reason |
-|---------|--------|
-| Optimistic cart UI | User wants real API confirmation, not fake instant success |
-| Offline cart queue | VkusVill cart is server-authoritative; Telegram MiniApp has no ServiceWorker |
-| Automatic retry on failure | VkusVill bans concurrent connections; retries risk rate limits |
-| Speculative pre-add | Absurd for grocery discount aggregator; wastes VkusVill session budget |
-| Real-time cart sync via WebSocket | Overkill for 5-user family app; SSE + polling sufficient |
-| Persistent pending state across restarts | 5s hard cap makes pending states transient by design |
+- No changes to VkusVill API interaction or cart session management
+- No changes to cart UI appearance (buttons, toasts, states stay the same)
+- No background reconciliation changes — that path stays as-is for late success detection
 
 ## Traceability
 
-| Requirement | Phase | Status |
-|-------------|-------|--------|
-| CART-15 | Phase 47 | Pending |
-| CART-16 | Phase 47 | Pending |
-| PERF-01 | Phase 48 | Pending |
-| PERF-02 | Phase 48 | Pending |
-| ERR-01 | Phase 49 | Pending |
-| ERR-02 | Phase 49 | Pending |
-
-**Coverage:**
-- v1.13 requirements: 6 total
-- Mapped to phases: 6
-- Unmapped: 0
-
----
-*Requirements defined: 2026-04-08*
-*Last updated: 2026-04-08 after roadmap creation*
+| REQ | Phase |
+|-----|-------|
+| CART-10 | 46 |
+| CART-11 | 46 |
+| CART-12 | 46 |
+| CART-13 | 46 |
+| CART-14 | 46 |

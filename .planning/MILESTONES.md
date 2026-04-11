@@ -1,19 +1,5 @@
 # Milestones
 
-## v1.12 Add-to-Cart 5s Hard Cap (Shipped: 2026-04-08)
-
-**Phases completed:** 1 phases, 1 plans, 0 tasks
-
-**Key accomplishments:**
-
-- Add-to-cart tap now completes (success, error, or background handoff) within 5 seconds via AbortController hard cap on `/api/cart/add` fetch
-- Poll loop replaced fixed 20-iteration design with time-budget loop that checks remaining milliseconds and exits at 800ms threshold
-- D3 budget gate at 4s threshold: if 202 arrives late, polling is skipped entirely and user sees "checking in background" instead of hanging
-- Each poll iteration capped at min(1500ms, remaining) via per-poll AbortController to prevent single slow response from exceeding budget
-- Polling stops immediately on 404/non-recoverable instead of retrying through the full iteration count
-
----
-
 ## v1.11 Cart Responsiveness & Truth Recovery (Shipped: 2026-04-06)
 
 **Phases completed:** 3 phases, 9 plans, 0 tasks

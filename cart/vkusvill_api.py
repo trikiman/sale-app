@@ -106,9 +106,12 @@ class VkusVillCart:
         # If sessid or user_id not provided, try to extract from a page GET
         if not self.sessid or not self.user_id:
             self._extract_session_params()
-        
+
+        if not self.sessid or not self.user_id:
+            logger.warning(f"Session params missing after init: sessid={'present' if self.sessid else 'MISSING'}, user_id={'present' if self.user_id else 'MISSING'}")
+
         self._initialized = True
-        logger.info(f"Session ready (user_id={self.user_id}, sessid={self.sessid[:8]}...)")
+        logger.info(f"Session ready (user_id={self.user_id}, sessid={self.sessid[:8] if self.sessid else 'NONE'}...)")
     
     def _get_proxy_url(self):
         """Get a cached proxy URL from ProxyManager without blocking on pool refresh."""
@@ -126,7 +129,9 @@ class VkusVillCart:
         sessid and user_id matching the session from the cookies.
         """
         try:
-            client_kwargs = dict(timeout=CART_REQUEST_TIMEOUT)
+            # Use longer timeout for warmup — proxy SOCKS5 handshake needs more than 2s
+            warmup_timeout = httpx.Timeout(connect=5.0, read=5.0, write=3.0, pool=3.0)
+            client_kwargs = dict(timeout=warmup_timeout)
             proxy_url = self._get_proxy_url()
             if proxy_url:
                 client_kwargs['proxy'] = proxy_url
@@ -233,6 +238,12 @@ class VkusVillCart:
         self._ensure_session()
         t_session = time.monotonic()
         logger.info(f"🛒 [CART-ADD] product={product_id} | _ensure_session took {(t_session - t_start)*1000:.0f}ms")
+
+        if not self.sessid:
+            return {'success': False, 'error': 'No sessid available after session init', 'error_type': 'auth_expired'}
+        if not self.user_id:
+            return {'success': False, 'error': 'No user_id available after session init', 'error_type': 'auth_expired'}
+
         deadline = time.monotonic() + CART_ADD_HOT_PATH_DEADLINE_SECONDS
 
         last_result = None
@@ -280,6 +291,9 @@ class VkusVillCart:
                     'error_type': 'pending_timeout',
                     'raw': {'deadline_seconds': CART_ADD_HOT_PATH_DEADLINE_SECONDS},
                 }
+            except httpx.ConnectError as e:
+                logger.error(f"🛒 [CART-ADD] product={product_id} | ConnectError after {(time.monotonic() - t_start)*1000:.0f}ms: {e}")
+                return {'success': False, 'error': str(e), 'error_type': 'transient'}
             except httpx.HTTPError as e:
                 logger.error(f"🛒 [CART-ADD] product={product_id} | HTTP error after {(time.monotonic() - t_start)*1000:.0f}ms: {e}")
                 return {'success': False, 'error': str(e), 'error_type': 'http'}
@@ -295,15 +309,26 @@ class VkusVillCart:
         success = str(success_val).upper() in ['Y', 'TRUE', '1']
         error = last_result.get('error', '')
         
-        # Check for out-of-stock (POPUP_ANALOGS)
-        if not success and last_result.get('POPUP_ANALOGS') and last_result.get('POPUP_ANALOGS') != 'N':
-            error = "Товар распродан или недоступен для заказа"
-            logger.warning(f"Failed to add {product_id}: {error}")
-        
+        # Classify error_type based on response content
+        error_type = None
+        if not success:
+            popup_analogs = last_result.get('POPUP_ANALOGS')
+            basket_added = last_result.get('basketAdded')
+            if popup_analogs and popup_analogs != 'N':
+                error = "Товар распродан или недоступен для заказа"
+                error_type = 'product_gone'
+                logger.warning(f"Failed to add {product_id}: {error}")
+            elif not basket_added and success_val and str(success_val).upper() == 'N':
+                error_type = 'auth_expired'
+            else:
+                error_type = last_result.get('error_type', 'api')
+            # Log raw response for debugging (truncated to 500 chars, never sent to frontend)
+            logger.warning(f"VkusVill raw response for product={product_id}: {json.dumps(last_result, ensure_ascii=False, default=str)[:500]}")
+
         result = {
             'success': success,
             'error': error,
-            'error_type': last_result.get('error_type', 'api') if not success else None,
+            'error_type': error_type,
             'raw': last_result,
         }
         
