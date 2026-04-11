@@ -29,7 +29,7 @@ except Exception:
 from fastapi import FastAPI, HTTPException, BackgroundTasks, Header, Query, Body, Request
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
-from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse, Response
+from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse, Response, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from typing import Any, Dict, List, Optional
@@ -3352,12 +3352,18 @@ def cart_add_endpoint(req: CartAddRequest, request: Request):
                     status_code=202,
                     media_type="application/json",
                 )
+            if error_type == "auth_expired":
+                logger.warning(f"[CART-ADD] AUTH_EXPIRED 401 | user={req.user_id} product={req.product_id} | {(_time.monotonic()-t0)*1000:.0f}ms")
+                return JSONResponse(status_code=401, content={"success": False, "error": error, "error_type": "auth_expired"})
+            if error_type == "product_gone":
+                logger.warning(f"[CART-ADD] PRODUCT_GONE 410 | user={req.user_id} product={req.product_id} | {(_time.monotonic()-t0)*1000:.0f}ms")
+                return JSONResponse(status_code=410, content={"success": False, "error": error, "error_type": "product_gone"})
             if error_type == "timeout" or "timed out" in lowered or "timeout" in lowered:
                 logger.warning(f"[CART-ADD] TIMEOUT 504 | user={req.user_id} product={req.product_id} | {(_time.monotonic()-t0)*1000:.0f}ms")
-                raise HTTPException(status_code=504, detail="Cart API timeout")
-            if "temporarily unreachable" in lowered or "failed to communicate" in lowered:
+                return JSONResponse(status_code=504, content={"success": False, "error": "Cart API timeout", "error_type": error_type or "timeout"})
+            if error_type == "transient" or "temporarily unreachable" in lowered or "failed to communicate" in lowered:
                 logger.warning(f"[CART-ADD] UNAVAILABLE 502 | user={req.user_id} product={req.product_id} | {(_time.monotonic()-t0)*1000:.0f}ms")
-                raise HTTPException(status_code=502, detail="Cart API unavailable")
+                return JSONResponse(status_code=502, content={"success": False, "error": error, "error_type": "transient"})
             if req.allow_pending and 'pending_attempt' in locals():
                 _update_cart_add_attempt(
                     pending_attempt["attempt_id"],
@@ -3365,13 +3371,11 @@ def cart_add_endpoint(req: CartAddRequest, request: Request):
                     source="cart_add_error",
                     last_error=error,
                 )
-            logger.warning(f"[CART-ADD] FAILED 400 | user={req.user_id} product={req.product_id} error={error} | {(_time.monotonic()-t0)*1000:.0f}ms")
-            raise HTTPException(status_code=400, detail=error)
-    except HTTPException:
-        raise
+            logger.warning(f"[CART-ADD] FAILED 400 | user={req.user_id} product={req.product_id} error={error} error_type={error_type} | {(_time.monotonic()-t0)*1000:.0f}ms")
+            return JSONResponse(status_code=400, content={"success": False, "error": error, "error_type": error_type or "api"})
     except Exception as e:
         logger.error(f"[CART-ADD] EXCEPTION 500 | user={req.user_id} product={req.product_id} error={e} | {(_time.monotonic()-t0)*1000:.0f}ms")
-        raise HTTPException(status_code=500, detail="Failed to communicate with Cart API")
+        return JSONResponse(status_code=500, content={"success": False, "error": "Failed to communicate with Cart API", "error_type": "unknown"})
 
 
 @app.get("/api/cart/add-status/{attempt_id}")
