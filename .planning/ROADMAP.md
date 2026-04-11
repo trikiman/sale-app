@@ -26,7 +26,7 @@
 
 ### Phases
 
-- [x] **Phase 47: Diagnose & Fix Cart Failures** - Reliable cart-add backend with structured error classification and diagnostic logging (completed 2026-04-11)
+- [ ] **Phase 47: Diagnose & Fix Cart Failures** - Reliable cart-add backend with structured error classification and diagnostic logging
 - [ ] **Phase 48: Session Warmup Optimization** - Pre-cache sessid/user_id so first cart add skips blocking warmup, real API confirm under 5s
 - [ ] **Phase 49: Error Recovery & Polish** - Actionable error messages with session-expired redirect and retry capability
 
@@ -40,10 +40,10 @@
   1. User can tap add-to-cart and the product actually appears in their VkusVill cart
   2. When cart add fails, backend logs show the specific root cause (expired sessid, proxy failure, API change, etc.)
   3. Cart-add endpoint returns a typed error_type field (auth_expired, product_gone, transient, etc.) instead of generic 500
-**Plans:** 2/2 plans complete
+**Plans:** 2 plans
 Plans:
-- [x] 47-01-PLAN.md — SSH diagnose production failure, fix root cause in vkusvill_api.py
-- [x] 47-02-PLAN.md — Propagate error_type through endpoint, add unit tests
+- [ ] 47-01-PLAN.md — SSH diagnose production failure, fix root cause in vkusvill_api.py
+- [ ] 47-02-PLAN.md — Propagate error_type through endpoint, add unit tests
 
 ### Phase 48: Session Warmup Optimization
 **Goal**: First cart add is fast because session metadata is already cached; real API confirmation under 5s
@@ -53,10 +53,7 @@ Plans:
   1. On app load, sessid and user_id are pre-extracted and cached so no warmup GET blocks the first cart add
   2. Cart add completes with real VkusVill API confirmation in under 5 seconds end-to-end
   3. Stale sessid (older than 30 min) is auto-refreshed before it causes a cart failure
-**Plans:** 2 plans
-Plans:
-- [ ] 48-01-PLAN.md — Eliminate warmup GET from cart-add hot path, persist sessid_ts at login
-- [ ] 48-02-PLAN.md — Stale sessid detection (>30 min) and auto-refresh before cart add
+**Plans**: TBD
 
 ### Phase 49: Error Recovery & Polish
 **Goal**: Users see actionable error messages and can recover from failures without confusion
@@ -73,8 +70,8 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 47. Diagnose & Fix Cart Failures | 2/2 | Complete    | 2026-04-11 |
-| 48. Session Warmup Optimization | 0/2 | Not started | - |
+| 47. Diagnose & Fix Cart Failures | 0/2 | Not started | - |
+| 48. Session Warmup Optimization | 0/? | Not started | - |
 | 49. Error Recovery & Polish | 0/? | Not started | - |
 
 ## Archives

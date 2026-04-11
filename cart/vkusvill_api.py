@@ -65,7 +65,8 @@ class VkusVillCart:
         self._proxy_manager = proxy_manager
         self._cookie_str = ""
         self._initialized = False
-    
+        self._sessid_ts = None
+
     def _ensure_session(self):
         """Load cookies and build raw Cookie header string."""
         if self._initialized:
@@ -92,8 +93,10 @@ class VkusVillCart:
                         self.user_id = int(metadata_user_id)
                     except (TypeError, ValueError):
                         self.user_id = metadata_user_id
+            self._sessid_ts = data.get('sessid_ts')  # Unix timestamp when sessid was extracted
         else:
             cookies_list = data
+            self._sessid_ts = None
         
         # Build raw Cookie header string
         # This bypasses requests cookie jar which mangles __Host-PHPSESSID
@@ -103,9 +106,10 @@ class VkusVillCart:
         
         logger.info(f"Loaded {len(cookies_list)} cookies from {self.cookies_path}")
         
-        # If sessid or user_id not provided, try to extract from a page GET
+        # Do NOT call _extract_session_params() here — warmup GET is too slow for cart-add hot path.
+        # If sessid/user_id not in cookie metadata, cart.add() will return auth_expired.
         if not self.sessid or not self.user_id:
-            self._extract_session_params()
+            logger.warning("sessid/user_id not found in cookie metadata — skipping warmup GET (hot path)")
 
         if not self.sessid or not self.user_id:
             logger.warning(f"Session params missing after init: sessid={'present' if self.sessid else 'MISSING'}, user_id={'present' if self.user_id else 'MISSING'}")
