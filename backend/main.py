@@ -2958,6 +2958,7 @@ async def _run_verify_job(job_id: str, user_id: str, code: str):
             "cookies": cookies_list,
             "sessid": session_sessid,
             "user_id": session_user_id,
+            "sessid_ts": _time.time() if session_sessid else None,
             "saved_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
         }
 
