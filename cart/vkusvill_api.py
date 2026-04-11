@@ -29,6 +29,8 @@ VKUSVILL_BASE = "https://vkusvill.ru"
 CART_REQUEST_TIMEOUT = httpx.Timeout(connect=2.0, read=3.0, write=3.0, pool=2.0)
 CART_ADD_HOT_PATH_DEADLINE_SECONDS = 1.5
 CART_ADD_REQUEST_TIMEOUT = httpx.Timeout(CART_ADD_HOT_PATH_DEADLINE_SECONDS)
+SESSID_STALE_SECONDS = 1800  # 30 minutes — refresh sessid if older than this
+SESSID_REFRESH_TIMEOUT = httpx.Timeout(connect=10.0, read=10.0, write=3.0, pool=3.0)
 
 
 def _coerce_numeric(value, default=0):
@@ -106,6 +108,13 @@ class VkusVillCart:
         
         logger.info(f"Loaded {len(cookies_list)} cookies from {self.cookies_path}")
         
+        # Stale sessid detection: refresh if sessid_ts is older than 30 minutes
+        if self.sessid and self.user_id and self._sessid_ts:
+            age_seconds = time.time() - self._sessid_ts
+            if age_seconds > SESSID_STALE_SECONDS:
+                logger.info(f"sessid is stale ({age_seconds:.0f}s old > {SESSID_STALE_SECONDS}s), refreshing via warmup GET")
+                self._refresh_stale_session()
+
         # Do NOT call _extract_session_params() here — warmup GET is too slow for cart-add hot path.
         # If sessid/user_id not in cookie metadata, cart.add() will return auth_expired.
         if not self.sessid or not self.user_id:
@@ -167,7 +176,65 @@ class VkusVillCart:
                     
         except httpx.HTTPError as e:
             logger.warning(f"Failed to extract session params: {e}")
-    
+
+    def _refresh_stale_session(self):
+        """Refresh a stale sessid via warmup GET and persist updated metadata."""
+        old_sessid = self.sessid
+        try:
+            # Use longer timeout for refresh — this is pre-cart-add, not in hot path
+            client_kwargs = dict(timeout=SESSID_REFRESH_TIMEOUT)
+            proxy_url = self._get_proxy_url()
+            if proxy_url:
+                client_kwargs['proxy'] = proxy_url
+            with httpx.Client(**client_kwargs) as client:
+                r = client.get(VKUSVILL_BASE, headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36',
+                    'Cookie': self._cookie_str,
+                })
+
+                if r.status_code != 200:
+                    logger.warning(f"Stale refresh GET returned status {r.status_code}")
+                    return
+
+                match = re.search(r"name=['\"]sessid['\"].*?value=['\"]([^'\"]+)['\"]", r.text)
+                if match:
+                    self.sessid = match.group(1)
+
+                uid_match = re.search(r'id=["\']lk-user-id["\'].*?value=["\'](\d+)["\']', r.text)
+                if not uid_match:
+                    uid_match = re.search(r'"USER_ID"\s*:\s*"(\d+)"', r.text)
+                if uid_match:
+                    self.user_id = int(uid_match.group(1))
+
+            # Persist updated metadata back to cookies.json
+            self._sessid_ts = time.time()
+            self._persist_session_metadata()
+
+            if self.sessid != old_sessid:
+                logger.info(f"Stale refresh: sessid changed {old_sessid[:8]}... -> {self.sessid[:8]}...")
+            else:
+                logger.info(f"Stale refresh: sessid confirmed (unchanged), ts updated")
+
+        except httpx.HTTPError as e:
+            logger.warning(f"Stale refresh failed: {e} — using existing sessid as best-effort")
+
+    def _persist_session_metadata(self):
+        """Write updated sessid, user_id, sessid_ts back to cookies.json without touching cookie list."""
+        try:
+            with open(self.cookies_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                data['sessid'] = self.sessid
+                data['user_id'] = self.user_id
+                data['sessid_ts'] = self._sessid_ts
+                with open(self.cookies_path, 'w', encoding='utf-8') as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+                logger.info(f"Persisted refreshed session metadata to {self.cookies_path}")
+            else:
+                logger.warning("Cannot persist session metadata — cookies.json is list format, not dict")
+        except Exception as e:
+            logger.warning(f"Failed to persist session metadata: {e}")
+
     def _request(self, url: str, data: dict, referer: str = '/', timeout=None) -> dict:
         """Make a POST request using raw Cookie header via ProxyManager rotation."""
         headers = {
