@@ -53,7 +53,10 @@ Plans:
   1. On app load, sessid and user_id are pre-extracted and cached so no warmup GET blocks the first cart add
   2. Cart add completes with real VkusVill API confirmation in under 5 seconds end-to-end
   3. Stale sessid (older than 30 min) is auto-refreshed before it causes a cart failure
-**Plans**: TBD
+**Plans:** 2 plans
+Plans:
+- [ ] 48-01-PLAN.md — Eliminate warmup GET from cart-add hot path, persist sessid_ts at login
+- [ ] 48-02-PLAN.md — Stale sessid detection (>30 min) and auto-refresh before cart add
 
 ### Phase 49: Error Recovery & Polish
 **Goal**: Users see actionable error messages and can recover from failures without confusion
@@ -71,7 +74,7 @@ Plans:
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 47. Diagnose & Fix Cart Failures | 2/2 | Complete    | 2026-04-11 |
-| 48. Session Warmup Optimization | 0/? | Not started | - |
+| 48. Session Warmup Optimization | 0/2 | Not started | - |
 | 49. Error Recovery & Polish | 0/? | Not started | - |
 
 ## Archives
