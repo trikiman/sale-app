@@ -69,6 +69,7 @@ chrome_portable/
 .agents/
 .swarm/
 .claude-flow/
+.windsurf/
 .tmp/
 
 # SSH keys
