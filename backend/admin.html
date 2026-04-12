@@ -414,7 +414,13 @@
 
       <!-- Proxy Pool Dashboard -->
       <div class="card">
-        <h2>🌐 Proxy Pool</h2>
+        <div class="row" style="justify-content:space-between; margin-bottom:10px">
+          <h2 style="margin:0">🌐 Proxy Pool</h2>
+          <div class="row">
+            <button id="proxy-refresh-btn" class="btn btn-gray btn-sm" onclick="refreshProxyPool()">🔄 Обновить пул</button>
+          </div>
+        </div>
+        <div id="proxy-refresh-status" class="hidden" style="margin-bottom:10px; padding:8px 12px; border-radius:6px; background:#1e293b; font-size:12px; color:#94a3b8"></div>
         <div class="row" style="gap:16px; margin-bottom:12px">
           <div style="display:flex; align-items:center; gap:8px">
             <span id="proxy-badge" class="badge badge-off">—</span>
@@ -459,6 +465,16 @@
               </tbody>
             </table>
           </div>
+        </div>
+
+        <!-- Proxy Event Logs -->
+        <div style="margin-top:14px">
+          <div class="row" style="justify-content:space-between; margin-bottom:8px">
+            <h2 style="margin:0">📜 Логи прокси</h2>
+            <button class="btn btn-gray btn-sm" onclick="loadProxyLogs()">🔄 Обновить</button>
+          </div>
+          <div id="proxy-logs" style="max-height:300px; overflow-y:auto; background:#0f172a; border-radius:6px; padding:8px; font-family:monospace; font-size:11px; white-space:pre-wrap; color:#94a3b8">Загрузка...</div>
+          <div id="proxy-logs-count" class="text-muted mt2" style="text-align:right; font-size:11px"></div>
         </div>
       </div>
 
@@ -517,6 +533,7 @@
           loadLogs();
           loadProxyStats();
           loadProxyHistory();
+          loadProxyLogs();
         })
         .catch(function (err) {
           var errEl = document.getElementById('auth-error');
@@ -916,6 +933,108 @@
         })
         .catch(function() {
           document.getElementById('proxy-history-tbody').innerHTML = '<tr><td colspan="6" style="text-align:center; padding:12px; color:#f87171">Ошибка загрузки</td></tr>';
+        });
+    }
+
+    var _proxyRefreshPollId = null;
+
+    function refreshProxyPool() {
+      var btn = document.getElementById('proxy-refresh-btn');
+      var statusEl = document.getElementById('proxy-refresh-status');
+      btn.disabled = true;
+      btn.textContent = '⏳ Обновляем...';
+      statusEl.classList.remove('hidden');
+      statusEl.textContent = '🔄 Запуск обновления прокси-пула...';
+
+      fetch('/admin/proxy-refresh', {
+        method: 'POST',
+        headers: { 'X-Admin-Token': token }
+      })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          if (data.started) {
+            statusEl.textContent = '🔄 Обновление запущено — ожидаем (до 2 мин)...';
+            _proxyRefreshPollId = setInterval(pollProxyRefreshStatus, 3000);
+          } else {
+            statusEl.textContent = '⚠️ ' + (data.message || 'Не удалось запустить');
+            btn.disabled = false;
+            btn.textContent = '🔄 Обновить пул';
+          }
+        })
+        .catch(function(e) {
+          statusEl.textContent = '❌ Ошибка: ' + e.message;
+          btn.disabled = false;
+          btn.textContent = '🔄 Обновить пул';
+        });
+    }
+
+    function pollProxyRefreshStatus() {
+      fetch('/admin/proxy-refresh-status', { headers: { 'X-Admin-Token': token } })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          var statusEl = document.getElementById('proxy-refresh-status');
+          var btn = document.getElementById('proxy-refresh-btn');
+          if (data.running) {
+            var elapsed = data.started_at ? Math.round(Date.now() / 1000 - data.started_at) : '?';
+            statusEl.textContent = '🔄 Обновление... ' + elapsed + 'с';
+          } else {
+            clearInterval(_proxyRefreshPollId);
+            _proxyRefreshPollId = null;
+            btn.disabled = false;
+            btn.textContent = '🔄 Обновить пул';
+            if (data.last_result && data.last_result.error) {
+              statusEl.textContent = '❌ Ошибка: ' + data.last_result.error;
+              statusEl.style.color = '#f87171';
+            } else if (data.last_result) {
+              var r = data.last_result;
+              statusEl.textContent = '✅ Готово: +' + r.new_proxies + ' новых, пул=' + r.pool_size + ' (' + r.duration_s + 'с)';
+              statusEl.style.color = '#4ade80';
+            }
+            loadProxyStats();
+            loadProxyHistory();
+            setTimeout(function() {
+              statusEl.classList.add('hidden');
+              statusEl.style.color = '#94a3b8';
+            }, 10000);
+          }
+        })
+        .catch(function() {});
+    }
+
+    function loadProxyLogs() {
+      var el = document.getElementById('proxy-logs');
+      var countEl = document.getElementById('proxy-logs-count');
+      el.textContent = 'Загрузка...';
+      fetch('/admin/proxy-logs?n=200', { headers: { 'X-Admin-Token': token } })
+        .then(function(r) { return r.json(); })
+        .then(function(data) {
+          countEl.textContent = 'Показано ' + data.lines.length + ' из ' + data.total + ' событий';
+          if (!data.lines || data.lines.length === 0) {
+            el.textContent = 'Нет событий прокси';
+            return;
+          }
+          var html = '';
+          var eventColors = {
+            found: '#4ade80', removed: '#f87171', test_fail: '#fbbf24',
+            refresh: '#818cf8', timeout: '#fb923c', error: '#f87171'
+          };
+          for (var i = 0; i < data.lines.length; i++) {
+            var ev = data.lines[i];
+            if (ev.raw) { html += '<div style="color:#64748b">' + ev.raw + '</div>'; continue; }
+            var ts = (ev.ts || '').replace('T', ' ').substring(0, 19);
+            var color = eventColors[ev.event] || '#94a3b8';
+            var extra = '';
+            if (ev.addr) extra += ' ' + ev.addr;
+            if (ev.speed) extra += ' ' + ev.speed.toFixed(1) + 's';
+            if (ev.pool_after !== undefined) extra += ' pool=' + ev.pool_after;
+            if (ev.new_count !== undefined) extra += ' new=' + ev.new_count;
+            if (ev.total !== undefined) extra += ' total=' + ev.total;
+            html += '<div><span style="color:#475569">' + ts + '</span> <span style="color:' + color + '; font-weight:600">' + (ev.event || '?').toUpperCase() + '</span>' + extra + '</div>';
+          }
+          el.innerHTML = html;
+        })
+        .catch(function(e) {
+          el.textContent = '❌ Ошибка: ' + e.message;
         });
     }
 

@@ -4512,6 +4512,78 @@ def admin_proxy_history(
         return {"error": str(e), "periods": {}, "recent": []}
 
 
+_proxy_refresh_status = {"running": False, "last_result": None, "started_at": None}
+
+@app.post("/admin/proxy-refresh")
+def admin_proxy_refresh(
+    background_tasks: BackgroundTasks,
+    token: Optional[str] = Header(None, alias="X-Admin-Token"),
+):
+    """Trigger a proxy pool refresh in the background."""
+    _require_token(token)
+    if _proxy_refresh_status["running"]:
+        return {"started": False, "message": "Refresh already in progress", "status": _proxy_refresh_status}
+
+    def _do_refresh():
+        import time as _t
+        _proxy_refresh_status["running"] = True
+        _proxy_refresh_status["started_at"] = _t.time()
+        try:
+            existing = {p["addr"] for p in _proxy_manager._cache.get("proxies", [])}
+            n = _proxy_manager.refresh_proxy_list(exclude=existing)
+            _proxy_refresh_status["last_result"] = {
+                "new_proxies": n,
+                "pool_size": _proxy_manager.pool_count(),
+                "finished_at": _t.time(),
+                "duration_s": round(_t.time() - _proxy_refresh_status["started_at"], 1),
+            }
+            logger.info(f"[PROXY-REFRESH] Done: {n} new proxies, pool={_proxy_manager.pool_count()}")
+        except Exception as e:
+            _proxy_refresh_status["last_result"] = {"error": str(e)}
+            logger.error(f"[PROXY-REFRESH] Failed: {e}")
+        finally:
+            _proxy_refresh_status["running"] = False
+
+    background_tasks.add_task(_do_refresh)
+    return {"started": True, "message": "Proxy refresh started in background"}
+
+
+@app.get("/admin/proxy-refresh-status")
+def admin_proxy_refresh_status(
+    token: Optional[str] = Header(None, alias="X-Admin-Token"),
+):
+    """Check status of a running proxy refresh."""
+    _require_token(token)
+    return _proxy_refresh_status
+
+
+@app.get("/admin/proxy-logs")
+def admin_proxy_logs(
+    n: int = Query(100, ge=1, le=500),
+    token: Optional[str] = Header(None, alias="X-Admin-Token"),
+):
+    """Return recent proxy event logs from the JSONL file."""
+    _require_token(token)
+    events_file = os.path.join(BASE_PROJECT_DIR, "data", "proxy_events.jsonl")
+    if not os.path.exists(events_file):
+        return {"lines": [], "total": 0}
+    try:
+        with open(events_file, "r", encoding="utf-8") as f:
+            all_lines = f.readlines()
+        recent = all_lines[-n:]
+        parsed = []
+        for line in reversed(recent):
+            line = line.strip()
+            if line:
+                try:
+                    parsed.append(json.loads(line))
+                except json.JSONDecodeError:
+                    parsed.append({"raw": line})
+        return {"lines": parsed, "total": len(all_lines)}
+    except Exception as e:
+        return {"lines": [], "total": 0, "error": str(e)}
+
+
 # ─── Admin Panel (HTML served from backend/admin.html) ───────────────────────
 
 ADMIN_HTML_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "admin.html")
