@@ -1,15 +1,15 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.12
-milestone_name: milestone
+milestone: v1.13
+milestone_name: Instant Cart & Reliability
 status: Defining requirements
-last_updated: "2026-04-08T08:21:43.882Z"
-last_activity: 2026-04-08
+last_updated: "2026-04-12T07:51:30.123Z"
+last_activity: 2026-04-12
 progress:
-  total_phases: 1
-  completed_phases: 1
-  total_plans: 1
-  completed_plans: 1
+  total_phases: 3
+  completed_phases: 2
+  total_plans: 4
+  completed_plans: 4
   percent: 100
 ---
 
@@ -25,10 +25,10 @@ See: .planning/PROJECT.md (updated 2026-04-07)
 ## Current Position
 
 Milestone: v1.12 — Add-to-Cart 5s Hard Cap
-Phase: 46
+Phase: 49
 Plan: Not started
 Status: Defining requirements
-Last activity: 2026-04-08
+Last activity: 2026-04-12
 Status: Milestone archived
 
 ## Milestone Goal
