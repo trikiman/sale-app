@@ -850,7 +850,9 @@ function App() {
         }
 
         const lastError = String(data.last_error || '')
-        const soldOut = lastError.toLowerCase().includes('popup_analogs') || lastError.toLowerCase().includes('распрод')
+        const pollErrorType = data.error_type || ''
+        const soldOut = pollErrorType === 'product_gone' || lastError.toLowerCase().includes('popup_analogs') || lastError.toLowerCase().includes('распрод')
+        const pollRetryable = ['transient', 'timeout'].includes(pollErrorType)
         if (soldOut) {
           setSoldOutIds(s => {
             const next = new Set([...s, pid])
@@ -861,13 +863,13 @@ function App() {
             return next
           })
         }
-        setCartStates(s => ({ ...s, [pid]: 'error' }))
+        setCartStates(s => ({ ...s, [pid]: pollRetryable ? 'retry' : 'error' }))
         setToastMessage({
           text: soldOut ? 'Этот продукт уже раскупили' : 'Не удалось добавить товар',
           type: 'error',
         })
-        window.setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), 2000)
-        window.setTimeout(() => setToastMessage(null), 3000)
+        window.setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), pollRetryable ? 4000 : 2000)
+        window.setTimeout(() => setToastMessage(null), pollRetryable ? 4000 : 3000)
         return
       } catch (err) {
         clearTimeout(pollTimer)
@@ -882,10 +884,10 @@ function App() {
     if (pendingCartAttemptsRef.current.get(pid) === attemptId) {
       console.log(`[CART-POLL] EXHAUSTED | product=${pid} attempt=${attemptId} polls=${pollCount} | ${(performance.now()-pollT0).toFixed(0)}ms — budget expired`)
       pendingCartAttemptsRef.current.delete(pid)
-      setCartStates(s => ({ ...s, [pid]: 'error' }))
+      setCartStates(s => ({ ...s, [pid]: 'retry' }))
       setToastMessage({ text: 'Не удалось подтвердить корзину', type: 'error' })
-      window.setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), 2000)
-      window.setTimeout(() => setToastMessage(null), 3000)
+      window.setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), 4000)
+      window.setTimeout(() => setToastMessage(null), 4000)
     }
   }, [userId])
 
@@ -974,53 +976,58 @@ function App() {
       }
 
       clearTimeout(timer)
-      if (res.status === 401) {
+      const errorType = data?.error_type || ''
+
+      if (errorType === 'auth_expired' || res.status === 401) {
         setIsAuthenticated(false)
         setShowLogin(true)
-      } else {
-        const detail = String(data?.detail || data?.error || '').toLowerCase()
-        const soldOut =
-          res.status === 400 &&
-          (detail.includes('распрод') ||
-           detail.includes('недоступ') ||
-           detail.includes('out of stock') ||
-           detail.includes('popup_analogs'))
-
-        setToastMessage({
-          text: soldOut ? 'Этот продукт уже раскупили' : 'Корзина временно недоступна',
-          type: 'error'
-        })
-        setTimeout(() => setToastMessage(null), 4000)
-        if (soldOut) {
-          setSoldOutIds(s => {
-            const next = new Set([...s, pid])
-            try {
-              localStorage.setItem('soldOutIds', JSON.stringify([...next]))
-              localStorage.setItem('soldOutIds_expiry', String(Date.now() + 4 * 60 * 60 * 1000))
-            } catch { }
-            return next
-          })
-        }
+        setCartStates(s => ({ ...s, [pid]: null }))
+        return
       }
-      setCartStates(s => ({ ...s, [pid]: 'error' }))
-      setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), 2000)
+
+      const isRetryable = ['transient', 'timeout'].includes(errorType)
+      const soldOut = errorType === 'product_gone'
+
+      const messageMap = {
+        product_gone: 'Этот продукт уже раскупили',
+        transient: 'ВкусВилл временно недоступен',
+        timeout: 'Корзина не ответила вовремя',
+      }
+      const toastText = messageMap[errorType] || 'Корзина временно недоступна'
+
+      setToastMessage({ text: toastText, type: 'error' })
+      setTimeout(() => setToastMessage(null), isRetryable ? 4000 : 3000)
+
+      if (soldOut) {
+        setSoldOutIds(s => {
+          const next = new Set([...s, pid])
+          try {
+            localStorage.setItem('soldOutIds', JSON.stringify([...next]))
+            localStorage.setItem('soldOutIds_expiry', String(Date.now() + 4 * 60 * 60 * 1000))
+          } catch { }
+          return next
+        })
+      }
+
+      setCartStates(s => ({ ...s, [pid]: isRetryable ? 'retry' : 'error' }))
+      setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), isRetryable ? 4000 : 2000)
     } catch (err) {
       clearTimeout(timer)
       if (err.name === 'AbortError') {
         console.error(`[CART-ADD] TIMEOUT 5s | product=${pid} | ${(performance.now()-t0).toFixed(0)}ms`)
         pendingCartAttemptsRef.current.delete(String(pid))
-        setCartStates(s => ({ ...s, [pid]: 'error' }))
+        setCartStates(s => ({ ...s, [pid]: 'retry' }))
         setToastMessage({ text: 'Корзина не ответила вовремя', type: 'error' })
-        setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), 2000)
-        setTimeout(() => setToastMessage(null), 3000)
+        setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), 4000)
+        setTimeout(() => setToastMessage(null), 4000)
         return
       }
       console.error(`[CART-ADD] NETWORK ERROR | product=${pid} error=${err.message} | ${(performance.now()-t0).toFixed(0)}ms`)
       pendingCartAttemptsRef.current.delete(String(pid))
-      setCartStates(s => ({ ...s, [pid]: 'error' }))
+      setCartStates(s => ({ ...s, [pid]: 'retry' }))
       setToastMessage({ text: 'Ошибка сети', type: 'error' })
-      setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), 2000)
-      setTimeout(() => setToastMessage(null), 3000)
+      setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), 4000)
+      setTimeout(() => setToastMessage(null), 4000)
     }
   }, [cartCount, isAuthenticated, pollCartAttemptStatus, userId])
 
