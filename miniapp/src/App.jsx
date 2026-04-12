@@ -206,7 +206,7 @@ const ProductCard = memo(function ProductCard({ product, index, isFavorite, onTo
             />
           ) : (
             <button
-              className={`cart-btn tap-scale-sm ${cartState === 'success' ? 'cart-btn-success' : ''} ${cartState === 'error' ? 'cart-btn-error' : ''} ${cartState === 'pending' ? 'cart-btn-pending' : ''}`}
+              className={`cart-btn tap-scale-sm ${cartState === 'success' ? 'cart-btn-success' : ''} ${cartState === 'error' || cartState === 'retry' ? 'cart-btn-error' : ''} ${cartState === 'pending' ? 'cart-btn-pending' : ''}`}
               onClick={(e) => {
                 e.stopPropagation()
                 if (cartState !== 'loading' && cartState !== 'pending') onAddToCart(product)
@@ -224,6 +224,11 @@ const ProductCard = memo(function ProductCard({ product, index, isFavorite, onTo
               ) : cartState === 'success' ? (
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              ) : cartState === 'retry' ? (
+                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M1 4v6h6" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3.51 15a9 9 0 105.64-11.36L1 10" />
                 </svg>
               ) : cartState === 'error' ? (
                 <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
