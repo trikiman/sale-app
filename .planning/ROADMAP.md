@@ -28,7 +28,7 @@
 
 - [ ] **Phase 47: Diagnose & Fix Cart Failures** - Reliable cart-add backend with structured error classification and diagnostic logging
 - [x] **Phase 48: Session Warmup Optimization** - Pre-cache sessid/user_id so first cart add skips blocking warmup, real API confirm under 5s (completed 2026-04-11)
-- [ ] **Phase 49: Error Recovery & Polish** - Actionable error messages with session-expired redirect and retry capability
+- [x] **Phase 49: Error Recovery & Polish** - Actionable error messages with session-expired redirect and retry capability (completed 2026-04-12)
 
 ### Phase Details
 
@@ -72,7 +72,7 @@ Plans:
 |-------|----------------|--------|-----------|
 | 47. Diagnose & Fix Cart Failures | 0/2 | Not started | - |
 | 48. Session Warmup Optimization | 2/2 | Complete    | 2026-04-12 |
-| 49. Error Recovery & Polish | 0/? | Not started | - |
+| 49. Error Recovery & Polish | 1/1 | Complete    | 2026-04-12 |
 
 ## Archives
 
