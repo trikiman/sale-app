@@ -48,6 +48,7 @@ export default function ProductDetail({ product, onClose, onAddToCart, onSetCart
     && cartState !== 'pending'
     && cartState !== 'success'
     && cartState !== 'error'
+    && cartState !== 'retry'
     && Number(cartItem?.quantity || 0) > 0
 
   return (
@@ -133,15 +134,16 @@ export default function ProductDetail({ product, onClose, onAddToCart, onSetCart
             />
           ) : (
             <button
-              className={`detail-cart-btn ${cartState === 'success' ? 'success' : cartState === 'error' ? 'error' : cartState === 'pending' ? 'pending' : ''}`}
+              className={`detail-cart-btn ${cartState === 'success' ? 'success' : cartState === 'error' || cartState === 'retry' ? 'error' : cartState === 'pending' ? 'pending' : ''}`}
               onClick={() => onAddToCart(product)}
               disabled={cartState === 'loading' || cartState === 'pending'}
             >
               {cartState === 'loading' ? '⏳ Добавляем…'
                 : cartState === 'pending' ? '🕓 Проверяем…'
                 : cartState === 'success' ? '✅ Добавлено'
-                  : cartState === 'error' ? '❌ Ошибка'
-                    : '🛒 В корзину'}
+                  : cartState === 'retry' ? '🔄 Повторить'
+                    : cartState === 'error' ? '❌ Ошибка'
+                      : '🛒 В корзину'}
             </button>
           )}
 
