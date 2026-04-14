@@ -764,17 +764,18 @@ function App() {
     return { ok: false, itemsCount: cartCount, itemIds: cartItemIds, itemsById: cartItemsById }
   }, [cartCount, cartItemIds, cartItemsById, userId])
 
-  const pollCartAttemptStatus = useCallback(async (product, attemptId, t0) => {
+  const pollCartAttemptStatus = useCallback(async (product, attemptId, _t0) => {
     const pid = String(product.id)
     const wait = (ms) => new Promise(resolve => window.setTimeout(resolve, ms))
     const pollT0 = performance.now()
-    console.log(`[CART-POLL] START | product=${pid} attempt=${attemptId} budget=${(5000 - (performance.now() - t0)).toFixed(0)}ms`)
+    const POLL_BUDGET = 8000
+    console.log(`[CART-POLL] START | product=${pid} attempt=${attemptId} budget=${POLL_BUDGET}ms`)
 
     pendingCartAttemptsRef.current.set(pid, attemptId)
 
     let pollCount = 0
     while (true) {
-      const remainingMs = 5000 - (performance.now() - t0)
+      const remainingMs = POLL_BUDGET - (performance.now() - pollT0)
       if (remainingMs < 800) {
         console.log(`[CART-POLL] BUDGET EXHAUSTED | product=${pid} attempt=${attemptId} polls=${pollCount} remaining=${remainingMs.toFixed(0)}ms | ${(performance.now()-pollT0).toFixed(0)}ms`)
         break
@@ -788,9 +789,9 @@ function App() {
         return
       }
 
-      const pollRemainingMs = 5000 - (performance.now() - t0)
+      const pollRemainingMs = POLL_BUDGET - (performance.now() - pollT0)
       const pollController = new AbortController()
-      const pollTimer = setTimeout(() => pollController.abort(), Math.min(1500, pollRemainingMs - 100))
+      const pollTimer = setTimeout(() => pollController.abort(), Math.min(2000, pollRemainingMs - 100))
 
       try {
         const res = await fetch(`/api/cart/add-status/${attemptId}`, {
@@ -906,7 +907,7 @@ function App() {
     setCartStates(s => ({ ...s, [pid]: 'loading' }))
     const t0 = performance.now()
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), 5000)
+    const timer = setTimeout(() => controller.abort(), 8000)
     console.log(`[CART-ADD] START | product=${pid} name=${product.name?.substring(0, 30)}`)
 
     try {
@@ -964,7 +965,7 @@ function App() {
       if (res.status === 202 && data.pending && data.status === 'pending' && data.attempt_id) {
         const elapsed = performance.now() - t0
         console.log(`[CART-ADD] PENDING → POLLING | product=${pid} attempt=${data.attempt_id} elapsed=${elapsed.toFixed(0)}ms | ${(performance.now()-t0).toFixed(0)}ms`)
-        if (elapsed > 4000) {
+        if (elapsed > 7000) {
           // D3: not worth polling, show background message
           setToastMessage({ text: 'Добавляем в фоне', type: 'info' })
           setCartStates(s => ({ ...s, [pid]: null }))
@@ -1019,7 +1020,7 @@ function App() {
     } catch (err) {
       clearTimeout(timer)
       if (err.name === 'AbortError') {
-        console.error(`[CART-ADD] TIMEOUT 5s | product=${pid} | ${(performance.now()-t0).toFixed(0)}ms`)
+        console.error(`[CART-ADD] TIMEOUT 8s | product=${pid} | ${(performance.now()-t0).toFixed(0)}ms`)
         pendingCartAttemptsRef.current.delete(String(pid))
         setCartStates(s => ({ ...s, [pid]: 'retry' }))
         setToastMessage({ text: 'Корзина не ответила вовремя', type: 'error' })
