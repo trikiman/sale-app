@@ -540,7 +540,7 @@ function App() {
           })
             .then(r => r.json())
             .then(cart => {
-                if (cart.items_count != null) {
+                if (!cart.source_unavailable && cart.items_count != null) {
                   const { itemIds, itemsById } = buildCartItemMap(cart.items || [])
                   setCartCount(cart.items_count)
                   setCartItemIds(itemIds)
@@ -749,6 +749,10 @@ function App() {
           headers: getAuthHeaders(userId)
         })
         const cart = await res.json()
+        if (cart.source_unavailable) {
+          // Backend couldn't reach VkusVill — keep optimistic state
+          continue
+        }
         if (cart.items_count != null) {
           const { itemIds, itemsById } = buildCartItemMap(cart.items || [])
           setCartCount(cart.items_count)
