@@ -15,20 +15,22 @@
 - ✅ **v1.10** Scraper Freshness & Reliability — Phases 39-42 (shipped 2026-04-05)
 - ✅ **v1.11** Cart Responsiveness & Truth Recovery — Phases 43-45 (shipped 2026-04-06)
 - ✅ **v1.12** Add-to-Cart 5s Hard Cap — Phase 46 (shipped 2026-04-08)
-- [ ] **v1.13** Instant Cart & Reliability — Phases 47-49
+- [ ] **v1.13** Instant Cart & Reliability — Phases 47-51
 
 ## v1.13 Instant Cart & Reliability
 
 **Goal:** Make add-to-cart feel instant with optimistic UI and fix current failures so cart adds actually succeed.
 **Granularity:** Fine
-**Phases:** 3 (47-49)
-**Requirements:** 6
+**Phases:** 5 (47-51)
+**Requirements:** 8
 
 ### Phases
 
 - [ ] **Phase 47: Diagnose & Fix Cart Failures** - Reliable cart-add backend with structured error classification and diagnostic logging
 - [x] **Phase 48: Session Warmup Optimization** - Pre-cache sessid/user_id so first cart add skips blocking warmup, real API confirm under 5s (completed 2026-04-11)
-- [x] **Phase 49: Error Recovery & Polish** - Actionable error messages with session-expired redirect and retry capability (completed 2026-04-12)
+- [x] **Phase 49: Error Recovery & Polish** - Actionable error messages with session-expired redirect and retry capability (completed 2026-04-12)
+- [ ] **Phase 50: Requirements Formalization** - Define orphaned requirement IDs in REQUIREMENTS.md (gap closure)
+- [ ] **Phase 51: Cart Optimistic State Verification** - Verify quantity stepper and optimistic state fixes on production (gap closure)
 
 ### Phase Details
 
@@ -66,13 +68,36 @@ Plans:
 **Plans**: TBD
 **UI hint**: yes
 
+### Phase 50: Requirements Formalization
+**Goal**: Define all orphaned v1.13 requirement IDs (CART-15, CART-16, PERF-01, PERF-02, ERR-01, ERR-02) in REQUIREMENTS.md with traceability
+**Depends on**: Phases 47-49
+**Requirements**: CART-15, CART-16, PERF-01, PERF-02, ERR-01, ERR-02
+**Gap Closure**: Closes 6 orphaned requirements from v1.13 audit
+**Success Criteria** (what must be TRUE):
+  1. All 6 requirement IDs have formal definitions in REQUIREMENTS.md
+  2. Traceability table maps each requirement to its implementing phase
+**Plans**: 1 plan
+
+### Phase 51: Cart Optimistic State Verification
+**Goal**: Verify cart-add → quantity stepper flow works end-to-end on production after source_unavailable fix
+**Depends on**: Phase 50
+**Requirements**: CART-17, CART-18
+**Gap Closure**: Closes 1 integration gap (optimistic state overwrite) and 1 flow gap (quantity stepper)
+**Success Criteria** (what must be TRUE):
+  1. After cart-add success, the quantity stepper (CartQuantityControl) appears on the product card
+  2. refreshCartState does not overwrite optimistic cart items when backend returns source_unavailable
+  3. Post-milestone timeout/CSS/auth fixes verified on production
+**Plans**: 1 plan
+
 ### Progress
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 47. Diagnose & Fix Cart Failures | 0/2 | Not started | - |
-| 48. Session Warmup Optimization | 2/2 | Complete    | 2026-04-12 |
-| 49. Error Recovery & Polish | 1/1 | Complete    | 2026-04-12 |
+| 47. Diagnose & Fix Cart Failures | 2/2 | Complete | 2026-04-11 |
+| 48. Session Warmup Optimization | 2/2 | Complete | 2026-04-12 |
+| 49. Error Recovery & Polish | 1/1 | Complete | 2026-04-12 |
+| 50. Requirements Formalization | 0/1 | Not started | - |
+| 51. Cart Optimistic State Verification | 0/1 | Not started | - |
 
 ## Archives
 

@@ -1,41 +1,45 @@
-# Requirements — v1.12 Add-to-Cart 5s Hard Cap
+# Requirements — v1.13 Instant Cart & Reliability
 
 ## Milestone Goal
 
-Enforce a hard 5-second wall-clock budget from tap to final UI state for add-to-cart.
-
-## Diagnosed Problems (2026-04-07)
-
-| Issue | Measured | Expected |
-|-------|----------|----------|
-| Initial `/api/cart/add` fetch | 3748ms | <2s |
-| Each poll `/api/cart/add-status/` | ~5000ms | N/A (shouldn't poll this long) |
-| Pending attempt TTL | 30s (pruned mid-poll → 404) | Aligned with frontend budget |
-| Total tap-to-error | 41s | ≤5s |
-| Poll count | 20 × 900ms + VkusVill read | Budget-capped |
+Make add-to-cart feel instant with optimistic UI and fix current failures so cart adds actually succeed.
 
 ## Requirements
 
-### Cart UX Budget
+### Cart Reliability (Phase 47)
 
-- [x] **CART-10**: Add-to-cart tap-to-result completes within 5 seconds total (success, error, or timeout)
-- [x] **CART-11**: Frontend enforces 5s hard cap via AbortController on `/api/cart/add` fetch
-- [x] **CART-12**: Poll loop uses remaining time budget (5s minus initial add duration) instead of fixed 20-poll loop
-- [x] **CART-13**: Polling stops immediately on 404/non-recoverable error instead of retrying
-- [x] **CART-14**: Backend pending attempt TTL aligned with frontend 5s budget (no premature pruning causing 404s)
+- [x] **CART-15**: Cart-add endpoint returns structured error_type field (auth_expired, product_gone, transient, timeout) instead of generic 500
+- [x] **CART-16**: Backend logs show specific root cause for every cart-add failure with diagnostic context
+
+### Performance (Phase 48)
+
+- [x] **PERF-01**: On login, sessid and user_id are pre-extracted and cached so no warmup GET blocks the first cart add
+- [x] **PERF-02**: Stale sessid (older than 30 min) is auto-refreshed before it causes a cart failure
+
+### Error Recovery (Phase 49)
+
+- [x] **ERR-01**: User sees distinct messages for sold-out, session-expired, VkusVill-down, and network-error states
+- [x] **ERR-02**: After a transient error, user can retry the add without refreshing the page (🔄 retry state)
+
+### Cart Optimistic State (Phase 51)
+
+- [ ] **CART-17**: Quantity stepper appears on product card after successful cart-add (optimistic state not overwritten by fallback)
+- [ ] **CART-18**: refreshCartState preserves optimistic cart items when backend returns source_unavailable fallback
 
 ### Non-Goals
 
-- No changes to VkusVill API interaction or cart session management
-- No changes to cart UI appearance (buttons, toasts, states stay the same)
-- No background reconciliation changes — that path stays as-is for late success detection
+- No changes to VkusVill API interaction protocol
+- No background reconciliation changes
 
 ## Traceability
 
-| REQ | Phase |
-|-----|-------|
-| CART-10 | 46 |
-| CART-11 | 46 |
-| CART-12 | 46 |
-| CART-13 | 46 |
-| CART-14 | 46 |
+| REQ | Phase | Status |
+|-----|-------|--------|
+| CART-15 | 47 | Satisfied |
+| CART-16 | 47 | Satisfied |
+| PERF-01 | 48 | Satisfied |
+| PERF-02 | 48 | Satisfied |
+| ERR-01 | 49 | Satisfied |
+| ERR-02 | 49 | Satisfied |
+| CART-17 | 51 | Pending |
+| CART-18 | 51 | Pending |
