@@ -3223,6 +3223,31 @@ def auth_verify_pin(req: AuthPinRequest):
         else:
             raise HTTPException(status_code=404, detail="Cookies не найдены. Войдите через SMS.")
 
+    # Upgrade raw cookie list to dict format with sessid/user_id metadata (BUG-PIN-META)
+    try:
+        with open(cp, 'r', encoding='utf-8') as f:
+            cookie_data = json.load(f)
+        if isinstance(cookie_data, list):
+            logger.info(f"[PIN-AUTH] Upgrading raw cookie list to dict format for {phone}")
+            cart = VkusVillCart(cookies_path=cp, proxy_manager=_proxy_manager)
+            try:
+                cart._ensure_session()
+                cart._extract_session_params()
+            except Exception as e:
+                logger.warning(f"[PIN-AUTH] Warmup failed for {phone}: {e}")
+            upgraded = {
+                "cookies": cookie_data,
+                "sessid": cart.sessid or "",
+                "user_id": cart.user_id or 0,
+                "sessid_ts": _time.time() if cart.sessid else None,
+                "saved_at": datetime.utcnow().replace(microsecond=0).isoformat() + "Z",
+            }
+            with open(cp, 'w', encoding='utf-8') as f:
+                json.dump(upgraded, f, ensure_ascii=False, indent=2)
+            logger.info(f"[PIN-AUTH] Upgraded cookies for {phone} (sessid={'present' if cart.sessid else 'MISSING'})")
+    except Exception as e:
+        logger.warning(f"[PIN-AUTH] Cookie upgrade failed for {phone}: {e}")
+
     # Save user→phone mapping
     _save_user_phone_mapping(req.user_id, phone)
     return {"success": True, "message": "Авторизация успешна"}
