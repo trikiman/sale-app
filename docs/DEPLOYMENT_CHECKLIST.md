@@ -1,7 +1,7 @@
 # 🚀 VkusVill Sale Monitor — Deployment Checklist
 
 > **Site**: https://vkusvillsale.vercel.app/  
-> **Last verified**: 2026-03-26 19:16  
+> **Last verified**: 2026-04-16  
 > ✅ = passed | ❌ = failed | ⏭️ = skipped (with reason)
 
 ---
