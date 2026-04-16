@@ -125,7 +125,6 @@ const ProductCard = memo(function ProductCard({ product, index, isFavorite, onTo
   const normalizedUnit = normalizeUnit(cartItem?.unit || product.unit)
   const showQuantityControl = cartState !== 'loading'
     && cartState !== 'pending'
-    && cartState !== 'success'
     && cartState !== 'error'
     && Number(cartItem?.quantity || 0) > 0
   const step = getCartStep(normalizedUnit, cartItem)
