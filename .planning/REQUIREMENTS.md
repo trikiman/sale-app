@@ -23,8 +23,8 @@ Make add-to-cart feel instant with optimistic UI and fix current failures so car
 
 ### Cart Optimistic State (Phase 51)
 
-- [ ] **CART-17**: Quantity stepper appears on product card after successful cart-add (optimistic state not overwritten by fallback)
-- [ ] **CART-18**: refreshCartState preserves optimistic cart items when backend returns source_unavailable fallback
+- [x] **CART-17**: Quantity stepper appears on product card after successful cart-add (optimistic state not overwritten by fallback)
+- [x] **CART-18**: refreshCartState preserves optimistic cart items when backend returns source_unavailable fallback
 
 ### Non-Goals
 
@@ -41,5 +41,5 @@ Make add-to-cart feel instant with optimistic UI and fix current failures so car
 | PERF-02 | 48 | Satisfied |
 | ERR-01 | 49 | Satisfied |
 | ERR-02 | 49 | Satisfied |
-| CART-17 | 51 | Pending |
-| CART-18 | 51 | Pending |
+| CART-17 | 51 | Satisfied |
+| CART-18 | 51 | Satisfied |
