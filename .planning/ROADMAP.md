@@ -15,7 +15,8 @@
 - ✅ **v1.10** Scraper Freshness & Reliability — Phases 39-42 (shipped 2026-04-05)
 - ✅ **v1.11** Cart Responsiveness & Truth Recovery — Phases 43-45 (shipped 2026-04-06)
 - ✅ **v1.12** Add-to-Cart 5s Hard Cap — Phase 46 (shipped 2026-04-08)
-- [ ] **v1.13** Instant Cart & Reliability — Phases 47-51
+- [ ] **v1.13** Instant Cart & Reliability — Phases 47-51 (implemented 2026-04-16, but live user outcomes still disputed)
+- [ ] **v1.14** Cart Truth & History Semantics — Phases 52-55
 
 ## v1.13 Instant Cart & Reliability
 
@@ -98,6 +99,73 @@ Plans:
 | 49. Error Recovery & Polish | 1/1 | Complete | 2026-04-12 |
 | 50. Requirements Formalization | 1/1 | Complete   | 2026-04-16 |
 | 51. Cart Optimistic State Verification | 1/1 | Complete   | 2026-04-16 |
+
+## v1.14 Cart Truth & History Semantics
+
+**Goal:** Make add-to-cart work in real user flows and make history/restock semantics reflect real sale transitions instead of fake reentries.
+**Granularity:** Fine
+**Phases:** 4 (52-55)
+**Requirements:** 8
+
+### Phases
+
+- [ ] **Phase 52: Real Cart Failure Reproduction & Diagnostics** - Reproduce the live MiniApp cart failure and capture enough evidence to stop guessing
+- [ ] **Phase 53: Cart Truth Path Fixes** - Make add-to-cart and quantity-state transitions truth-backed end-to-end
+- [ ] **Phase 54: History Reentry Semantics Correction** - Remove fake restocks/reentries from history, notifier, and session logic
+- [ ] **Phase 55: Live Verification & Release Decision** - Verify cart and history behavior against fresh production-like evidence before closure
+
+### Phase Details
+
+### Phase 52: Real Cart Failure Reproduction & Diagnostics
+**Goal**: Reproduce the real user-facing add-to-cart failure and capture concrete backend/admin evidence for the failing path
+**Depends on**: Nothing (first phase)
+**Requirements**: OPS-05
+**Success Criteria** (what must be TRUE):
+  1. The broken add-to-cart flow is reproduced end-to-end from MiniApp interaction through backend/cart logs
+  2. Admin/status or logs show exactly why the failing cart attempt was classified the way it was
+  3. The next fix scope is based on observed failure evidence, not inferred code-path theory
+**Plans**: TBD
+
+### Phase 53: Cart Truth Path Fixes
+**Goal**: Make MiniApp add-to-cart succeed reliably and keep frontend cart state aligned with confirmed cart truth
+**Depends on**: Phase 52
+**Requirements**: CART-19, CART-20, CART-21
+**Success Criteria** (what must be TRUE):
+  1. User can add a product from the MiniApp and the product actually appears in the real VkusVill cart
+  2. Success and quantity-stepper UI only appear when backed by confirmed add/cart truth
+  3. Ambiguous or failed add flows end in a truthful stable state with a clear retry/recovery path
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 54: History Reentry Semantics Correction
+**Goal**: Make history, notifier, and "new again" behavior reflect only true sale exits and true sale returns, and repair the already-corrupted current data
+**Depends on**: Phase 53
+**Requirements**: HIST-09, HIST-10, HIST-11
+**Success Criteria** (what must be TRUE):
+  1. Stale or missing scrape cycles do not create fake restocks or fake reentries
+  2. Session reopening only happens when the product truly left sale and then returned
+  3. User-visible history/notifier semantics distinguish continued sale from genuine return-to-sale events
+  4. Existing persisted history/session records are repaired or rebuilt so current data no longer shows fake restocks/reentries
+**Plans**: TBD
+
+### Phase 55: Live Verification & Release Decision
+**Goal**: Prove cart truth and corrected history semantics with fresh evidence before deciding whether the milestone can close
+**Depends on**: Phase 54
+**Requirements**: QA-05
+**Success Criteria** (what must be TRUE):
+  1. Verification includes a live or production-like proof that add-to-cart works for a real user path
+  2. Verification includes evidence that fake restock/reentry behavior is no longer present in history semantics
+  3. Milestone closure decision is based on fresh evidence, not only code review or inferred behavior
+**Plans**: TBD
+
+### Progress
+
+| Phase | Plans Complete | Status | Completed |
+|-------|----------------|--------|-----------|
+| 52. Real Cart Failure Reproduction & Diagnostics | 0/0 | Pending | — |
+| 53. Cart Truth Path Fixes | 0/0 | Pending | — |
+| 54. History Reentry Semantics Correction | 0/0 | Pending | — |
+| 55. Live Verification & Release Decision | 0/0 | Pending | — |
 
 ## Archives
 

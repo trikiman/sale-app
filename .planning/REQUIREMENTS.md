@@ -1,45 +1,61 @@
-# Requirements — v1.13 Instant Cart & Reliability
+# Requirements — v1.14 Cart Truth & History Semantics
 
 ## Milestone Goal
 
-Make add-to-cart feel instant with optimistic UI and fix current failures so cart adds actually succeed.
+Make add-to-cart work in real user flows and make history/restock semantics reflect real sale transitions instead of fake reentries.
 
 ## Requirements
 
-### Cart Reliability (Phase 47)
+### Cart Truth
 
-- [x] **CART-15**: Cart-add endpoint returns structured error_type field (auth_expired, product_gone, transient, timeout) instead of generic 500
-- [x] **CART-16**: Backend logs show specific root cause for every cart-add failure with diagnostic context
+- [ ] **CART-19**: User can tap add-to-cart in the MiniApp and the selected product actually appears in the user's real VkusVill cart
+- [ ] **CART-20**: Cart UI only transitions into success/quantity-control state when backend truth confirms the item is in cart or the add succeeded definitively
+- [ ] **CART-21**: When cart add is ambiguous or fails, the user sees a truthful stable state and can retry or recover without reloading the app manually
 
-### Performance (Phase 48)
+### History Semantics
 
-- [x] **PERF-01**: On login, sessid and user_id are pre-extracted and cached so no warmup GET blocks the first cart add
-- [x] **PERF-02**: Stale sessid (older than 30 min) is auto-refreshed before it causes a cart failure
+- [ ] **HIST-09**: Sale history does not create fake restocks or fake session reentries from stale scrape gaps, merge artifacts, or continuity heuristics
+- [ ] **HIST-10**: History UI and notifier semantics distinguish continued sale, first appearance, and true return-to-sale events using the corrected session model
+- [ ] **HIST-11**: Existing persisted history/session data is repaired or rebuilt so current user-visible history no longer contains already-recorded fake restocks or fake reentries
 
-### Error Recovery (Phase 49)
+### Observability & Verification
 
-- [x] **ERR-01**: User sees distinct messages for sold-out, session-expired, VkusVill-down, and network-error states
-- [x] **ERR-02**: After a transient error, user can retry the add without refreshing the page (🔄 retry state)
+- [ ] **OPS-05**: Admin/status surfaces and logs expose enough evidence to explain why a cart attempt or sale-session transition received its classification
+- [ ] **QA-05**: Milestone verification includes live cart-add proof and history-semantic checks against fresh production-like data
 
-### Cart Optimistic State (Phase 51)
+## v2 Requirements
 
-- [x] **CART-17**: Quantity stepper appears on product card after successful cart-add (optimistic state not overwritten by fallback)
-- [x] **CART-18**: refreshCartState preserves optimistic cart items when backend returns source_unavailable fallback
+### Future Follow-Ups
 
-### Non-Goals
+- **CART-22**: Users can self-diagnose cart failures from end-user-visible diagnostics without opening admin/operator tools
+- **HIST-12**: History detail explains exactly which source transitions caused a session to close or reopen
 
-- No changes to VkusVill API interaction protocol
-- No background reconciliation changes
+## Out of Scope
+
+| Feature | Reason |
+|---------|--------|
+| New auth system or non-VkusVill checkout flow | Not related to the user-reported failures |
+| Replacing the current stack or deployment model | Existing Python + React + EC2/Vercel setup is sufficient for this milestone |
+| New discovery/search features | The priority is fixing cart truth and session semantics first |
 
 ## Traceability
 
-| REQ | Phase | Status |
-|-----|-------|--------|
-| CART-15 | 47 | Satisfied |
-| CART-16 | 47 | Satisfied |
-| PERF-01 | 48 | Satisfied |
-| PERF-02 | 48 | Satisfied |
-| ERR-01 | 49 | Satisfied |
-| ERR-02 | 49 | Satisfied |
-| CART-17 | 51 | Satisfied |
-| CART-18 | 51 | Satisfied |
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| OPS-05 | Phase 52 | Pending |
+| CART-19 | Phase 53 | Pending |
+| CART-20 | Phase 53 | Pending |
+| CART-21 | Phase 53 | Pending |
+| HIST-09 | Phase 54 | Pending |
+| HIST-10 | Phase 54 | Pending |
+| HIST-11 | Phase 54 | Pending |
+| QA-05 | Phase 55 | Pending |
+
+**Coverage:**
+- v1 requirements: 8 total
+- Mapped to phases: 8
+- Unmapped: 0 ✓
+
+---
+*Requirements defined: 2026-04-21*
+*Last updated: 2026-04-21 after starting v1.14 milestone*
