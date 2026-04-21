@@ -68,6 +68,7 @@ class VkusVillCart:
         self._cookie_str = ""
         self._initialized = False
         self._sessid_ts = None
+        self._session_stale = False
 
     def _ensure_session(self):
         """Load cookies and build raw Cookie header string."""
@@ -108,12 +109,16 @@ class VkusVillCart:
         
         logger.info(f"Loaded {len(cookies_list)} cookies from {self.cookies_path}")
         
-        # Stale sessid detection: refresh if sessid_ts is older than 30 minutes
+        # Stale sessid detection: do not refresh here.
+        # Inline stale refresh was consuming the full cart hot-path budget in live use.
         if self.sessid and self.user_id and self._sessid_ts:
             age_seconds = time.time() - self._sessid_ts
             if age_seconds > SESSID_STALE_SECONDS:
-                logger.info(f"sessid is stale ({age_seconds:.0f}s old > {SESSID_STALE_SECONDS}s), refreshing via warmup GET")
-                self._refresh_stale_session()
+                self._session_stale = True
+                logger.info(
+                    f"sessid is stale ({age_seconds:.0f}s old > {SESSID_STALE_SECONDS}s), "
+                    "using existing session first"
+                )
 
         # Do NOT call _extract_session_params() here — warmup GET is too slow for cart-add hot path.
         # If sessid/user_id not in cookie metadata, cart.add() will return auth_expired.
@@ -126,13 +131,83 @@ class VkusVillCart:
         self._initialized = True
         logger.info(f"Session ready (user_id={self.user_id}, sessid={self.sessid[:8] if self.sessid else 'NONE'}...)")
     
-    def _get_proxy_url(self):
-        """Get a cached proxy URL from ProxyManager without blocking on pool refresh."""
+    def _transport_candidates(self):
+        """Return transport order for cart requests.
+
+        Prefer direct when recent connectivity says VkusVill is reachable, but keep
+        a proxy fallback available when direct goes unhealthy.
+        """
+        proxy_url = None
+        direct_ok = False
+
         if self._proxy_manager:
+            if hasattr(self._proxy_manager, "check_direct_cached"):
+                try:
+                    direct_ok = bool(self._proxy_manager.check_direct_cached())
+                except Exception:
+                    direct_ok = False
             addr = self._proxy_manager.get_working_proxy(allow_refresh=False)
             if addr:
-                return f"socks5://{addr}"
+                proxy_url = f"socks5://{addr}"
+
+        candidates = []
+        if direct_ok or not proxy_url:
+            candidates.append(None)
+            if proxy_url:
+                candidates.append(proxy_url)
+        else:
+            candidates.append(proxy_url)
+            candidates.append(None)
+        return candidates
+
+    def _get_proxy_url(self):
+        """Compatibility helper for older call sites/tests."""
+        for candidate in self._transport_candidates():
+            if candidate:
+                return candidate
         return None
+
+    def _perform_http_request(self, method: str, url: str, *, headers: dict, data=None, timeout=None, follow_redirects: bool = False):
+        """Run a request with direct/proxy fallback and direct-health cache updates."""
+        client_kwargs = dict(timeout=timeout or CART_REQUEST_TIMEOUT)
+        last_exc = None
+        candidates = self._transport_candidates()
+
+        for idx, proxy_url in enumerate(candidates):
+            attempt_kwargs = dict(client_kwargs)
+            attempt_label = "direct"
+            if proxy_url:
+                attempt_kwargs["proxy"] = proxy_url
+                attempt_label = proxy_url
+
+            try:
+                with httpx.Client(**attempt_kwargs) as client:
+                    if method == "GET":
+                        response = client.get(url, headers=headers, follow_redirects=follow_redirects)
+                    else:
+                        response = client.post(url, data=data, headers=headers, follow_redirects=follow_redirects)
+                if self._proxy_manager and proxy_url is None and hasattr(self._proxy_manager, "note_direct_result"):
+                    self._proxy_manager.note_direct_result(True)
+                if idx > 0:
+                    logger.info(f"{method} {url} fallback via {attempt_label} succeeded")
+                return response
+            except httpx.HTTPError as exc:
+                last_exc = exc
+                if self._proxy_manager and proxy_url is None and hasattr(self._proxy_manager, "note_direct_result"):
+                    self._proxy_manager.note_direct_result(False)
+                if proxy_url and self._proxy_manager and hasattr(self._proxy_manager, "remove_proxy"):
+                    try:
+                        self._proxy_manager.remove_proxy(proxy_url.removeprefix("socks5://"))
+                    except Exception:
+                        pass
+                if idx < len(candidates) - 1:
+                    logger.warning(f"{method} {url} via {attempt_label} failed: {exc} — retrying fallback")
+                    continue
+                raise
+
+        if last_exc:
+            raise last_exc
+        raise RuntimeError(f"{method} {url} failed without attempts")
 
     def _extract_session_params(self):
         """GET the main page to extract sessid and user_id.
@@ -144,35 +219,35 @@ class VkusVillCart:
         try:
             # Use longer timeout for warmup — proxy SOCKS5 handshake needs more than 2s
             warmup_timeout = httpx.Timeout(connect=5.0, read=5.0, write=3.0, pool=3.0)
-            client_kwargs = dict(timeout=warmup_timeout)
-            proxy_url = self._get_proxy_url()
-            if proxy_url:
-                client_kwargs['proxy'] = proxy_url
-            with httpx.Client(**client_kwargs) as client:
-                r = client.get(VKUSVILL_BASE, headers={
+            r = self._perform_http_request(
+                "GET",
+                VKUSVILL_BASE,
+                timeout=warmup_timeout,
+                headers={
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36',
                     'Cookie': self._cookie_str,
-                })
-            
-                if r.status_code != 200:
-                    logger.warning(f"Warmup GET returned status {r.status_code}")
-                    return
-            
-                # Extract sessid
-                if not self.sessid:
-                    match = re.search(r"name=['\"]sessid['\"].*?value=['\"]([^'\"]+)['\"]", r.text)
-                    if match:
-                        self.sessid = match.group(1)
-                        logger.info(f"Extracted sessid from page: {self.sessid[:8]}...")
-            
-                # Extract user_id
-                if not self.user_id:
-                    uid_match = re.search(r'id=["\']lk-user-id["\'].*?value=["\'](\d+)["\']', r.text)
-                    if not uid_match:
-                        uid_match = re.search(r'"USER_ID"\s*:\s*"(\d+)"', r.text)
-                    if uid_match:
-                        self.user_id = int(uid_match.group(1))
-                        logger.info(f"Extracted user_id from page: {self.user_id}")
+                },
+            )
+
+            if r.status_code != 200:
+                logger.warning(f"Warmup GET returned status {r.status_code}")
+                return
+
+            # Extract sessid
+            if not self.sessid:
+                match = re.search(r"name=['\"]sessid['\"].*?value=['\"]([^'\"]+)['\"]", r.text)
+                if match:
+                    self.sessid = match.group(1)
+                    logger.info(f"Extracted sessid from page: {self.sessid[:8]}...")
+
+            # Extract user_id
+            if not self.user_id:
+                uid_match = re.search(r'id=["\']lk-user-id["\'].*?value=["\'](\d+)["\']', r.text)
+                if not uid_match:
+                    uid_match = re.search(r'"USER_ID"\s*:\s*"(\d+)"', r.text)
+                if uid_match:
+                    self.user_id = int(uid_match.group(1))
+                    logger.info(f"Extracted user_id from page: {self.user_id}")
                     
         except httpx.HTTPError as e:
             logger.warning(f"Failed to extract session params: {e}")
@@ -182,32 +257,33 @@ class VkusVillCart:
         old_sessid = self.sessid
         try:
             # Use longer timeout for refresh — this is pre-cart-add, not in hot path
-            client_kwargs = dict(timeout=SESSID_REFRESH_TIMEOUT)
-            proxy_url = self._get_proxy_url()
-            if proxy_url:
-                client_kwargs['proxy'] = proxy_url
-            with httpx.Client(**client_kwargs) as client:
-                r = client.get(VKUSVILL_BASE, headers={
+            r = self._perform_http_request(
+                "GET",
+                VKUSVILL_BASE,
+                timeout=SESSID_REFRESH_TIMEOUT,
+                headers={
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36',
                     'Cookie': self._cookie_str,
-                })
+                },
+            )
 
-                if r.status_code != 200:
-                    logger.warning(f"Stale refresh GET returned status {r.status_code}")
-                    return
+            if r.status_code != 200:
+                logger.warning(f"Stale refresh GET returned status {r.status_code}")
+                return
 
-                match = re.search(r"name=['\"]sessid['\"].*?value=['\"]([^'\"]+)['\"]", r.text)
-                if match:
-                    self.sessid = match.group(1)
+            match = re.search(r"name=['\"]sessid['\"].*?value=['\"]([^'\"]+)['\"]", r.text)
+            if match:
+                self.sessid = match.group(1)
 
-                uid_match = re.search(r'id=["\']lk-user-id["\'].*?value=["\'](\d+)["\']', r.text)
-                if not uid_match:
-                    uid_match = re.search(r'"USER_ID"\s*:\s*"(\d+)"', r.text)
-                if uid_match:
-                    self.user_id = int(uid_match.group(1))
+            uid_match = re.search(r'id=["\']lk-user-id["\'].*?value=["\'](\d+)["\']', r.text)
+            if not uid_match:
+                uid_match = re.search(r'"USER_ID"\s*:\s*"(\d+)"', r.text)
+            if uid_match:
+                self.user_id = int(uid_match.group(1))
 
             # Persist updated metadata back to cookies.json
             self._sessid_ts = time.time()
+            self._session_stale = False
             self._persist_session_metadata()
 
             if self.sessid != old_sessid:
@@ -246,12 +322,7 @@ class VkusVillCart:
             'Cookie': self._cookie_str,
         }
 
-        client_kwargs = dict(timeout=timeout or CART_REQUEST_TIMEOUT)
-        proxy_url = self._get_proxy_url()
-        if proxy_url:
-            client_kwargs['proxy'] = proxy_url
-        with httpx.Client(**client_kwargs) as client:
-            r = client.post(url, data=data, headers=headers)
+        r = self._perform_http_request("POST", url, data=data, headers=headers, timeout=timeout or CART_REQUEST_TIMEOUT)
         try:
             return r.json()
         except json.JSONDecodeError:
@@ -269,19 +340,16 @@ class VkusVillCart:
         """Check if the current session is logged in to VkusVill."""
         self._ensure_session()
         try:
-            client_kwargs = dict(timeout=CART_REQUEST_TIMEOUT)
-            proxy_url = self._get_proxy_url()
-            if proxy_url:
-                client_kwargs['proxy'] = proxy_url
-            with httpx.Client(**client_kwargs) as client:
-                r = client.get(
-                    f"{VKUSVILL_BASE}/personal/",
-                    headers={
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                        'Cookie': self._cookie_str,
-                    },
-                    follow_redirects=False
-                )
+            r = self._perform_http_request(
+                "GET",
+                f"{VKUSVILL_BASE}/personal/",
+                timeout=CART_REQUEST_TIMEOUT,
+                headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                    'Cookie': self._cookie_str,
+                },
+                follow_redirects=False,
+            )
             return r.status_code == 200
         except httpx.HTTPError:
             return False

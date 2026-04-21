@@ -77,7 +77,11 @@ def test_cart_add_maps_upstream_timeout_to_504(monkeypatch, tmp_path):
     )
 
     assert response.status_code == 504
-    assert response.json() == {"detail": "Cart API timeout"}
+    assert response.json() == {
+        "success": False,
+        "error": "Cart API timeout",
+        "error_type": "timeout",
+    }
 
 
 def test_cart_uses_cached_proxy_without_refresh(monkeypatch, tmp_path):

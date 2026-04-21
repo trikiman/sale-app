@@ -458,6 +458,102 @@ def update_product_stats():
         print(f"📈 Updated stats for {updated} products")
 
 
+def repair_false_reentries(max_gap_minutes: int = SESSION_GAP_MINUTES) -> Dict[str, int]:
+    """Merge obviously fake short-gap session reentries in existing data.
+
+    Old history data may contain many consecutive sessions for the same product/sale type
+    separated by just a few scrape minutes. Those are not real restocks; they are stale-gap
+    artifacts and should be collapsed back into one continuous session.
+    """
+    merged_groups = 0
+    removed_rows = 0
+    touched_products = set()
+
+    with get_connection() as conn:
+        c = conn.cursor()
+        c.execute("""
+            SELECT id, product_id, sale_type, price, old_price, discount_pct,
+                   first_seen, last_seen, duration_minutes, is_active, new_entry_pending
+            FROM sale_sessions
+            ORDER BY product_id, sale_type, first_seen, id
+        """)
+        rows = [dict(row) for row in c.fetchall()]
+
+        i = 0
+        while i < len(rows):
+            base = rows[i]
+            group_product = base["product_id"]
+            group_type = base["sale_type"]
+            chain = [base]
+            j = i + 1
+
+            while j < len(rows):
+                candidate = rows[j]
+                if candidate["product_id"] != group_product or candidate["sale_type"] != group_type:
+                    break
+
+                prev = chain[-1]
+                gap_minutes = (
+                    datetime.fromisoformat(candidate["first_seen"]) - datetime.fromisoformat(prev["last_seen"])
+                ).total_seconds() / 60.0
+
+                if gap_minutes < max_gap_minutes:
+                    chain.append(candidate)
+                    j += 1
+                    continue
+                break
+
+            if len(chain) > 1:
+                first_seen = chain[0]["first_seen"]
+                last_seen = max(session["last_seen"] for session in chain)
+                duration_minutes = int(
+                    (
+                        datetime.fromisoformat(last_seen) - datetime.fromisoformat(first_seen)
+                    ).total_seconds() / 60
+                )
+                latest = max(chain, key=lambda session: session["last_seen"])
+                base_id = chain[0]["id"]
+                merged_ids = [session["id"] for session in chain[1:]]
+
+                c.execute("""
+                    UPDATE sale_sessions
+                    SET price = ?,
+                        old_price = ?,
+                        discount_pct = ?,
+                        first_seen = ?,
+                        last_seen = ?,
+                        duration_minutes = ?,
+                        is_active = ?,
+                        new_entry_pending = 0
+                    WHERE id = ?
+                """, (
+                    latest["price"],
+                    latest["old_price"],
+                    latest["discount_pct"],
+                    first_seen,
+                    last_seen,
+                    duration_minutes,
+                    max(session["is_active"] for session in chain),
+                    base_id,
+                ))
+
+                c.executemany("DELETE FROM sale_sessions WHERE id = ?", [(session_id,) for session_id in merged_ids])
+                merged_groups += 1
+                removed_rows += len(merged_ids)
+                touched_products.add(group_product)
+
+            i = j
+
+    if merged_groups:
+        update_product_stats()
+
+    return {
+        "merged_groups": merged_groups,
+        "removed_rows": removed_rows,
+        "touched_products": len(touched_products),
+    }
+
+
 def seed_product_catalog():
     """
     Seed product_catalog from category_db.json.

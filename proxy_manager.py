@@ -45,6 +45,7 @@ TEST_TIMEOUT = 10
 CACHE_TTL = 86400  # 24 hours
 # VkusVill probe timeout
 PROBE_TIMEOUT = 8
+DIRECT_CHECK_TTL = 60
 
 VKUSVILL_URL = "https://vkusvill.ru/"
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36"
@@ -54,6 +55,7 @@ class ProxyManager:
     def __init__(self, log_func=None):
         self._log = log_func or (lambda msg: print(f"  [PROXY] {msg}"))
         self._cache = self._load_cache()
+        self._direct_check = {"checked_at": 0.0, "ok": None}
 
     def _track_event(self, event_type: str, data: dict | None = None):
         """Append a proxy event to the JSONL log for historical stats."""
@@ -75,6 +77,21 @@ class ProxyManager:
     def check_direct(self) -> bool:
         """Check if VkusVill is reachable WITHOUT a proxy (direct IP)."""
         return self._probe_vkusvill(proxy=None)
+
+    def note_direct_result(self, ok: bool):
+        """Update cached direct-connectivity result after a live request attempt."""
+        self._direct_check = {"checked_at": time.time(), "ok": bool(ok)}
+
+    def check_direct_cached(self, ttl: int = DIRECT_CHECK_TTL) -> bool:
+        """Use a short-lived cache so hot paths do not probe direct connectivity every call."""
+        cached_ok = self._direct_check.get("ok")
+        checked_at = self._direct_check.get("checked_at", 0.0)
+        if cached_ok is not None and (time.time() - checked_at) < ttl:
+            return bool(cached_ok)
+
+        ok = self.check_direct()
+        self.note_direct_result(ok)
+        return ok
 
     def get_working_proxy(self, allow_refresh: bool = True) -> str | None:
         """Get a SOCKS5 proxy for VkusVill. Returns 'ip:port' or None.
@@ -194,9 +211,13 @@ class ProxyManager:
         tested = 0
         start_time = time.time()
         pool = concurrent.futures.ThreadPoolExecutor(max_workers=TEST_WORKERS)
+        futures = {}
+        pending = set()
         try:
             futures = {pool.submit(self._test_proxy, p): p for p in proxies[:max_tests]}
+            pending = set(futures)
             for future in concurrent.futures.as_completed(futures):
+                pending.discard(future)
                 tested += 1
                 result = future.result()
                 if result:
@@ -213,7 +234,11 @@ class ProxyManager:
                     self._log(f"  Time limit ({max_time}s) — got {len(working)} of {need} needed.")
                     break
         finally:
-            pool.shutdown(wait=False, cancel_futures=True)
+            for future in pending:
+                future.cancel()
+            # Drain active probe workers before returning so repeated refreshes
+            # do not accumulate open proxy sockets in the scheduler process.
+            pool.shutdown(wait=True, cancel_futures=True)
 
         # Merge with existing pool
         existing = self._cache.get("proxies", [])

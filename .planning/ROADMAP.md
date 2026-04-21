@@ -109,10 +109,10 @@ Plans:
 
 ### Phases
 
-- [ ] **Phase 52: Real Cart Failure Reproduction & Diagnostics** - Reproduce the live MiniApp cart failure and capture enough evidence to stop guessing
-- [ ] **Phase 53: Cart Truth Path Fixes** - Make add-to-cart and quantity-state transitions truth-backed end-to-end
-- [ ] **Phase 54: History Reentry Semantics Correction** - Remove fake restocks/reentries from history, notifier, and session logic
-- [ ] **Phase 55: Live Verification & Release Decision** - Verify cart and history behavior against fresh production-like evidence before closure
+- [x] **Phase 52: Real Cart Failure Reproduction & Diagnostics** - Reproduce the live MiniApp cart failure and capture enough evidence to stop guessing (completed 2026-04-21)
+- [x] **Phase 53: Cart Truth Path Fixes** - Make add-to-cart and quantity-state transitions truth-backed end-to-end (completed 2026-04-21)
+- [x] **Phase 54: History Reentry Semantics Correction** - Remove fake restocks/reentries from history, notifier, and session logic (completed 2026-04-21)
+- [x] **Phase 55: Live Verification & Release Decision** - Verify cart and history behavior against fresh production-like evidence before closure (completed 2026-04-21)
 
 ### Phase Details
 
@@ -162,10 +162,10 @@ Plans:
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 52. Real Cart Failure Reproduction & Diagnostics | 0/0 | Pending | — |
-| 53. Cart Truth Path Fixes | 0/0 | Pending | — |
-| 54. History Reentry Semantics Correction | 0/0 | Pending | — |
-| 55. Live Verification & Release Decision | 0/0 | Pending | — |
+| 52. Real Cart Failure Reproduction & Diagnostics | 1/1 | Complete | 2026-04-21 |
+| 53. Cart Truth Path Fixes | 1/1 | Complete | 2026-04-21 |
+| 54. History Reentry Semantics Correction | 1/1 | Complete | 2026-04-21 |
+| 55. Live Verification & Release Decision | 1/1 | Complete | 2026-04-21 |
 
 ## Archives
 
