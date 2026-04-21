@@ -1,45 +1,45 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.13
-milestone_name: Instant Cart & Reliability
-status: completed
-last_updated: "2026-04-16T02:31:00.000Z"
-last_activity: 2026-04-16 -- Phase 51 completed, v1.13 milestone ready for archive
+milestone: v1.14
+milestone_name: Cart Truth & History Semantics
+status: active
+last_updated: "2026-04-21T08:40:00.000Z"
+last_activity: 2026-04-21 -- Milestone v1.14 started from unresolved cart/history bugs
 progress:
-  total_phases: 5
-  completed_phases: 5
-  total_plans: 7
-  completed_plans: 7
-  percent: 100
+  total_phases: 4
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-07)
+See: .planning/PROJECT.md (updated 2026-04-21)
 
 **Core value:** Family members see every VkusVill discount and can add to cart in one tap
-**Current focus:** v1.13 milestone complete — run `/gsd-complete-milestone` to archive
+**Current focus:** v1.14 milestone setup — fix real cart truth and fake history/restock semantics
 
 ## Current Position
 
-Milestone: v1.13 — Instant Cart & Reliability
-Phase: 51 (Cart Optimistic State Verification) — COMPLETE
-Plan: 1 of 1 — Complete
-Status: v1.13 milestone complete, ready for archive
-Last activity: 2026-04-16 -- Phase 51 completed
+Milestone: v1.14 — Cart Truth & History Semantics
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements and roadmap for unresolved cart/history truth bugs
+Last activity: 2026-04-21 -- Milestone v1.14 started
 
 ## Milestone Goal
 
-- Stop add-to-cart from keeping the user in a loading state longer than 5 seconds
-- Move cart truth reconciliation after ambiguous timeouts into a background path instead of chaining extra waits inside one click
-- Tighten backend cart/session recovery so slow upstream behavior does not stretch the visible user wait budget
-- Make slow-add latency, timeout causes, and reconciliation outcomes visible enough to debug confidently
+- Make MiniApp add-to-cart actually work for real users, not just in code-path theory
+- Remove fake restock/reentry semantics from sale history and related user-visible flows
+- Repair current persisted history data so already-recorded fake restocks/reentries disappear
+- Verify cart and history behavior against fresh production-like evidence before treating the work as done
 
 ## Next Up
 
-- `$gsd-new-milestone` — define the next milestone and create fresh requirements/roadmap
+- `$gsd-discuss-phase 52` — gather context for real cart-failure reproduction and diagnostics
 
 ## Completed Milestones
 
@@ -81,7 +81,9 @@ Last activity: 2026-04-16 -- Phase 51 completed
 
 ## Known Bugs
 
-- Add-to-cart can still feel stuck well past 5 seconds because the frontend timeout path continues into extra cart refresh/reconciliation work while VkusVill add requests may complete late upstream
+- Add-to-cart still does not reliably place products into the real VkusVill cart in live user flows
+- History still appears to create fake restocks/reentries instead of only reflecting true sale return
+- Current persisted history data already contains fake restock/reentry artifacts that need cleanup, not just forward-looking logic fixes
 
 ## Timeline
 
@@ -114,4 +116,4 @@ Last activity: 2026-04-16 -- Phase 51 completed
 | v1.11 milestone archived | 2026-04-06 |
 
 ---
-*Last updated: 2026-04-06 after archiving v1.11 milestone*
+*Last updated: 2026-04-21 after starting v1.14 milestone*

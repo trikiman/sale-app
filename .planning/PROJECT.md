@@ -92,21 +92,34 @@ Family members see every VkusVill discount (green/red/yellow) the moment it appe
 
 <!-- Current scope. Building toward these. -->
 
-- [ ] **CART-10**: Add-to-cart tap-to-result completes within 5 seconds total (success, error, or timeout)
-- [ ] **CART-11**: Frontend enforces 5s hard cap via AbortController on `/api/cart/add` fetch
-- [ ] **CART-12**: Poll loop uses remaining time budget (5s minus initial add duration) instead of fixed 20-poll loop
-- [ ] **CART-13**: Polling stops immediately on 404/non-recoverable error instead of retrying
-- [ ] **CART-14**: Backend pending attempt TTL aligned with frontend 5s budget (no premature pruning causing 404s)
+- [ ] **CART-19**: MiniApp add-to-cart actually places the selected product into the user's real VkusVill cart
+- [ ] **CART-20**: Cart UI only shows success and quantity-state transitions when they are backed by cart truth, not fake optimistic recovery
+- [ ] **CART-21**: Timeout and ambiguous cart-add paths end in a truthful stable state with a clear recovery path instead of silent failure
+- [ ] **HIST-09**: Sale history does not create fake restocks or fake reentries from stale scrape gaps, merge artifacts, or continuity heuristics
+- [ ] **HIST-10**: History UI, notifier behavior, and "new again" semantics distinguish continued sale from true sale return
+- [ ] **HIST-11**: Existing persisted history/session data is repaired so users no longer see already-recorded fake restocks or fake "new again" events
+- [ ] **OPS-05**: Operators can inspect why a cart attempt or sale-session transition was classified the way it was
+- [ ] **QA-05**: Milestone verification includes live cart-add proof and history-semantic evidence against fresh production-like data
 
-## Current Milestone: v1.12 Add-to-Cart 5s Hard Cap
+## Current Milestone: v1.14 Cart Truth & History Semantics
 
-**Goal:** Enforce a hard 5-second wall-clock budget from tap to final UI state for add-to-cart — no loading spinners, pending clocks, or error transitions beyond 5s.
+**Goal:** Make add-to-cart work in real user flows and make history/restock semantics reflect real sale transitions instead of fake reentries.
 
 **Target features:**
-- Frontend 5s AbortController timeout on `/api/cart/add`
-- Time-budgeted poll loop (remaining ms after initial add)
-- Immediate stop on 404/timeout during polling
-- Backend attempt TTL aligned to prevent mid-poll pruning
+- Real add-to-cart success from MiniApp to the user's VkusVill cart
+- Truthful cart UI states and recovery when upstream add/refresh is ambiguous
+- History/session logic that stops inventing fake restocks or fake "new again" events
+- Repair of current persisted history/session data so old fake events are removed, not just prevented going forward
+- Verification based on live behavior and operational evidence, not only code-path reasoning
+
+## Previous Milestone: v1.13 Instant Cart & Reliability (Implementation Incomplete In Practice)
+
+**Goal:** Make add-to-cart feel instant with optimistic UI and fix current failures so cart adds actually succeed.
+
+**Reality check from user feedback (2026-04-21):**
+- Add-to-cart still does not reliably work in the real MiniApp flow
+- History still appears to invent fake restocks/reentries instead of reflecting true sale return
+- v1.14 exists to close those outcome gaps before treating the cart/history work as done
 
 ## Previous Shipped Milestone: v1.11 Cart Responsiveness & Truth Recovery
 
@@ -211,7 +224,7 @@ Search and polish improvements for the History page:
 ### Deployment
 - **EC2**: `13.60.174.46:8000`, 3 systemd services, Xvfb for headless Chrome
 - **Vercel**: `vkusvillsale.vercel.app`, rewrites /api/* to EC2
-- **Last verified**: 2026-04-03, live history filter fix + notifier dry-run confirmed on EC2/Vercel
+- **Last verified**: 2026-04-21, scheduler recovery + fresh product payload confirmed on EC2/Vercel
 
 ## Constraints
 
@@ -265,5 +278,5 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-06 after archiving v1.11 milestone*
+*Last updated: 2026-04-21 after starting v1.14 milestone*
 
