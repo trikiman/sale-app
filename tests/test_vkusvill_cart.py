@@ -46,7 +46,7 @@ def test_transport_candidates_prefer_direct_when_direct_is_healthy(tmp_path):
             return "1.2.3.4:1080"
 
     cart = vv.VkusVillCart(cookies_path=str(cookies), proxy_manager=FakeProxyManager())
-    assert cart._transport_candidates() == [None, "socks5://1.2.3.4:1080"]
+    assert cart._transport_candidates() == [None]
 
 
 def test_perform_http_request_falls_back_from_proxy_to_direct(monkeypatch, tmp_path):

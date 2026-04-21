@@ -137,7 +137,6 @@ class VkusVillCart:
         Prefer direct when recent connectivity says VkusVill is reachable, but keep
         a proxy fallback available when direct goes unhealthy.
         """
-        proxy_url = None
         direct_ok = False
 
         if self._proxy_manager:
@@ -146,19 +145,16 @@ class VkusVillCart:
                     direct_ok = bool(self._proxy_manager.check_direct_cached())
                 except Exception:
                     direct_ok = False
+
+        if direct_ok:
+            return [None]
+
+        if self._proxy_manager:
             addr = self._proxy_manager.get_working_proxy(allow_refresh=False)
             if addr:
-                proxy_url = f"socks5://{addr}"
+                return [f"socks5://{addr}", None]
 
-        candidates = []
-        if direct_ok or not proxy_url:
-            candidates.append(None)
-            if proxy_url:
-                candidates.append(proxy_url)
-        else:
-            candidates.append(proxy_url)
-            candidates.append(None)
-        return candidates
+        return [None]
 
     def _get_proxy_url(self):
         """Compatibility helper for older call sites/tests."""
