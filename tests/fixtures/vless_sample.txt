@@ -1,0 +1,19 @@
+# Representative sample of VLESS+Reality URLs for parser / config-gen tests.
+# Hosts use RFC 5737 (TEST-NET) / private-ish addresses; UUIDs are placeholders.
+# Intentional malformed lines are included to exercise tolerant parsing.
+
+vless://00000000-0000-0000-0000-000000000001@203.0.113.10:443?encryption=none&flow=xtls-rprx-vision&security=reality&sni=www.microsoft.com&fp=chrome&pbk=PBK1&sid=01&spx=%2F&type=tcp&headerType=none#%F0%9F%87%B7%F0%9F%87%BA%20RU%20Node%20A
+vless://00000000-0000-0000-0000-000000000002@203.0.113.11:443?encryption=none&security=reality&sni=www.google.com&fp=chrome&pbk=PBK2&type=tcp#RU%20Node%20B
+vless://00000000-0000-0000-0000-000000000003@203.0.113.12:8443?encryption=none&flow=xtls-rprx-vision&security=reality&sni=yahoo.com&fp=firefox&pbk=PBK3&sid=ab01&type=tcp#Node%20C
+vless://00000000-0000-0000-0000-000000000004@198.51.100.5:443?encryption=none&security=reality&sni=cdn.example.com&fp=chrome&pbk=PBK4&spx=%2Fpath#Node%20D
+vless://00000000-0000-0000-0000-000000000005@198.51.100.6:443?encryption=none&security=reality&sni=www.apple.com&fp=chrome&pbk=PBK5&sid=&flow=&type=tcp#
+
+# The next two lines are intentionally malformed and must be tolerated by
+# parse_vless_list (errors reported, good lines still accepted afterwards).
+vless://@203.0.113.99:443?security=reality&pbk=PBK
+notaurl-at-all
+
+vless://00000000-0000-0000-0000-000000000006@198.51.100.7:443?encryption=none&security=reality&sni=news.example.net&fp=chrome&pbk=PBK6&type=tcp&unknown_param=preserveme#Node%20E
+vless://00000000-0000-0000-0000-000000000007@198.51.100.8:443?encryption=none&security=reality&sni=static.example.org&fp=chrome&pbk=PBK7&type=tcp#Node%20F
+vless://00000000-0000-0000-0000-000000000008@203.0.113.20:443?encryption=none&security=reality&sni=video.example.com&fp=chrome&pbk=PBK8&type=tcp#Node%20G
+vless://00000000-0000-0000-0000-000000000009@203.0.113.21:443?encryption=none&security=reality&sni=assets.example.com&fp=chrome&pbk=PBK9&type=tcp#Node%20H
