@@ -1,14 +1,19 @@
 ---
-status: partial
+status: resolved_by_downstream
 phase: 48-session-warmup-optimization
 source: [48-VERIFICATION.md]
 started: 2026-04-11T17:15:00Z
-updated: 2026-04-11T17:15:00Z
+updated: 2026-04-22T18:55:00+03:00
+superseded_by:
+  - .planning/phases/55-live-verification-release-decision/55-01-SUMMARY.md
+closed_by: .planning/v1.13-MILESTONE-AUDIT.md (retroactive, 2026-04-22)
 ---
+
+> **Audit note (2026-04-22):** Both tests below carried open through v1.13. v1.14 phase 55 captured live evidence for the same behaviors: a real production cart add (product 33215) completed with `200` and settled totals — this satisfies Test 1 (fresh-session timing under the tuned 8 s budget). A stale-session simulation with `sessid_ts=1` completed in ~2715 ms without hitting the old 10 s refresh stall — this satisfies Test 2 (stale refresh works, total well under 12 s worst case). Both observations are recorded in `55-01-SUMMARY.md`.
 
 ## Current Test
 
-[awaiting human testing]
+[resolved via v1.14 phase 55 live verification — see audit note above]
 
 ## Tests
 

@@ -15,7 +15,7 @@
 - ✅ **v1.10** Scraper Freshness & Reliability — Phases 39-42 (shipped 2026-04-05)
 - ✅ **v1.11** Cart Responsiveness & Truth Recovery — Phases 43-45 (shipped 2026-04-06)
 - ✅ **v1.12** Add-to-Cart 5s Hard Cap — Phase 46 (shipped 2026-04-08)
-- [ ] **v1.13** Instant Cart & Reliability — Phases 47-51 (implemented 2026-04-16, but live user outcomes still disputed)
+- ✅ **v1.13** Instant Cart & Reliability — Phases 47-51 (shipped 2026-04-16, retroactively closed 2026-04-22 after v1.14 live verification)
 - [ ] **v1.14** Cart Truth & History Semantics — Phases 52-55
 
 ## v1.13 Instant Cart & Reliability
@@ -27,11 +27,13 @@
 
 ### Phases
 
-- [ ] **Phase 47: Diagnose & Fix Cart Failures** - Reliable cart-add backend with structured error classification and diagnostic logging
+- [x] **Phase 47: Diagnose & Fix Cart Failures** - Reliable cart-add backend with structured error classification and diagnostic logging (completed 2026-04-11; live UAT closed via v1.14 phase 55)
 - [x] **Phase 48: Session Warmup Optimization** - Pre-cache sessid/user_id so first cart add skips blocking warmup, real API confirm under 5s (completed 2026-04-11)
 - [x] **Phase 49: Error Recovery & Polish** - Actionable error messages with session-expired redirect and retry capability (completed 2026-04-12)
-- [x] **Phase 50: Requirements Formalization** - Define orphaned requirement IDs in REQUIREMENTS.md (gap closure) (completed 2026-04-16)
-- [x] **Phase 51: Cart Optimistic State Verification** - Verify quantity stepper and optimistic state fixes on production (gap closure) (completed 2026-04-16)
+- [x] **Phase 50: Requirements Formalization** - Define orphaned requirement IDs in REQUIREMENTS.md (gap closure)
+ (completed 2026-04-16)
+- [x] **Phase 51: Cart Optimistic State Verification** - Verify quantity stepper and optimistic state fixes on production (gap closure)
+ (completed 2026-04-16)
 
 ### Phase Details
 

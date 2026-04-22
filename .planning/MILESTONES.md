@@ -1,5 +1,23 @@
 # Milestones
 
+## v1.13 Instant Cart & Reliability (Shipped: 2026-04-16, closed: 2026-04-22)
+
+**Phases completed:** 5 phases (47-51), 7 plans
+
+**Audit status:** passed (retroactive closure 2026-04-22 — supersedes the 2026-04-21 `gaps_found` audit — see `.planning/milestones/v1.13-MILESTONE-AUDIT.md`)
+
+**Key accomplishments:**
+
+- The cart-add endpoint now returns a typed `error_type` field (`auth_expired`, `product_gone`, `transient`, `timeout`, `api`, `unknown`) so the frontend can route distinct user-visible states instead of showing a generic 500
+- Every cart failure path in the backend now logs the specific root cause with proxy/session/upstream context so operators can attribute why a given attempt was classified the way it was
+- Login now persists `sessid` + `user_id` + `sessid_ts` into `cookies.json` so the first cart add no longer blocks on a warmup GET
+- Stale sessid (>30 min) now auto-refreshes via a bounded warmup GET before it can cause a cart failure, with the refreshed timestamp written back to disk
+- Users now see distinct messages for sold-out, session-expired, VkusVill-down, and network-error states, and transient errors leave the button in a retry state
+- The quantity stepper now appears immediately after a successful cart add, and `refreshCartState` no longer overwrites optimistic rows when the backend returns `source_unavailable`
+- Live verification was completed via v1.14 phase 55 (real production cart add for product 33215 returned `200`, stale `sessid_ts=1` add completed in ~2715 ms without the old refresh stall)
+
+---
+
 ## v1.12 Add-to-Cart 5s Hard Cap (Shipped: 2026-04-08)
 
 **Phases completed:** 1 phase (46), 1 plan, 2 tasks
