@@ -71,10 +71,51 @@ Those three items remain grounded only in the phase 55 live evidence captured on
 
 ## Verdict
 
-The retroactive closures stand. The most risk-bearing claims from the v1.14 milestone \u2014 HIST-11's 56\u21925 repair and the scheduler staying healthy after the Apr 22 hotfix \u2014 are **grounded in live 2026-04-22 production reads**, not only in `55-01-SUMMARY.md`.
+The retroactive closures stand. The most risk-bearing claims from the v1.14 milestone — HIST-11's 56→5 repair and the scheduler staying healthy after the Apr 22 hotfix — are **grounded in live 2026-04-22 production reads**, not only in `55-01-SUMMARY.md`.
 
 The authenticated cart-add success still relies on the 2026-04-21 live evidence for its most specific numbers (product 33215, the 2715 ms figure), which is noted explicitly in each audit and cross-referenced here.
 
 ---
 
-_Generated: 2026-04-22T20:17+03:00 \u2014 live probes against `vkusvillsale.vercel.app`._
+_Generated: 2026-04-22T20:17+03:00 — live probes against `vkusvillsale.vercel.app`._
+
+## Addendum — 2026-04-22T20:28+03:00 — DevTools MCP (Chrome DevTools Protocol)
+
+**Method change:** The earlier probes used PowerShell `Invoke-RestMethod` because `computer-control` MCP kept losing the active-window race to Windsurf. Re-ran the verification end-to-end through `chrome-devtools` MCP, which talks to Chrome via DevTools Protocol and bypasses the focus problem entirely.
+
+### What was exercised in the real browser
+
+1. **Full-page load of `https://vkusvillsale.vercel.app/`** — clean. `mcp1_list_console_messages(types=[error, warn])` returned zero messages.
+2. **14 API calls observed** on initial load, all `200`:
+   - `/api/products`, `/api/auth/status/{guest}`, `/api/favorites/{guest}`, `/api/favorites/{guest}/categories`, `/api/link/status/{guest}`, `/api/link/generate`, plus 8 × `/api/product/{id}/details` detail calls for top cards.
+3. **`/api/products` response inspected directly** (reqid 109): `cycleState.overall_status:"healthy"`, `continuity_safe:true`, cycle `20:16:45 → 20:19:23` = **2 m 38 s**, 165 products, per-source freshness all `status:"ok"` with ages ≤9.6 min. Matches the PowerShell probe.
+4. **History view (`📊 История`)** opened and rendered `1,866 товаров` — backend `/api/history/products` count reproduced in the UI. Multiple products show `🔥 5×` session counts (not the old inflated numbers), with 7-day charts and `🔮 обычно ~HH:MM` predictions.
+5. **Stale-data degradation UX fired** after several minutes: `⚠️ Данные устарели: зелёные — товары и цены могут не совпадать с сайтом`, matching the `/api/products.dataStale:true` flag. The OPS-02/03 source-freshness UX works as designed.
+6. **In-browser `fetch` latency (median over 3 runs + single-shot):**
+
+| Endpoint | Status | Latency | Notes |
+|----------|--------|---------|-------|
+| `/api/history/product/100069` | 200 | **89 ms** | `sessions.length == 5` — HIST-11 reproduced live via Chrome |
+| `/api/products` | 200 | **159 ms** | `cycle_overall:"healthy"`, `continuity_safe:true`, 165 products |
+| `/api/cart/add` (valid shape, guest auth mismatch) | 403 | **82 / 83 / 135 ms** | `"User ID mismatch"` — IDOR guard from v1.9 fires cleanly, far under 8 s cap |
+| `/api/cart/items/{guest}` | 403 | **106 ms** | Clean JSON error, no `source_unavailable` fallback |
+
+### What this MCP pass adds over the PowerShell pass
+
+- **Real browser stack:** TLS + CORS + Service Worker + gzip all exercised — not just raw HTTPS.
+- **Zero console errors** on load and on navigation into the history view. That rules out a class of client-side regressions the PowerShell probe cannot see.
+- **HIST-11 visually grounded:** the history UI renders post-repair session counts, not inflated ones.
+- **Stale-data warning UI grounded:** it fires on real staleness without a reload. The OPS-02/03 UX path is not just present in API JSON, it is surfaced in the app.
+
+### Artifacts
+
+- `live-verification-2026-04-22-devtools.png` — screenshot of the main page with the stale-data banner captured by `mcp1_take_screenshot`.
+
+### Verdict update
+
+All claims previously marked **Grounded** remain so, now with a second independent evidence path (DevTools + live Chrome + in-browser `fetch`). The two claims previously marked **Partially grounded** (authenticated cart-add to product 33215, and the specific 2715 ms stale-session refresh number) are unchanged — exercising them would still require logging into a real user's VkusVill account, which was deliberately avoided.
+
+---
+
+_Generated: 2026-04-22T20:17+03:00 — initial PowerShell probes._
+_Addendum: 2026-04-22T20:28+03:00 — Chrome DevTools MCP re-verification._
