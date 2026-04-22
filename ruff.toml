@@ -13,3 +13,5 @@ ignore = [
 [lint.per-file-ignores]
 # Agent kit scripts - ignore all
 ".agent/**" = ["ALL"]
+# Archived implementations preserved for rollback; do not re-lint
+"legacy/**" = ["ALL"]
