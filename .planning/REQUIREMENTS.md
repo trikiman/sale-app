@@ -1,61 +1,57 @@
-# Requirements — v1.14 Cart Truth & History Semantics
+# Requirements — v1.15 Proxy Infrastructure Migration
 
 ## Milestone Goal
 
-Make add-to-cart work in real user flows and make history/restock semantics reflect real sale transitions instead of fake reentries.
+Replace the dead free-SOCKS5 proxy pool (0% alive across 269 tested nodes as of 2026-04-22) with a VLESS+Reality proxy pool tunneled through a local `xray-core` SOCKS5 bridge, so scraper and cart-add traffic reliably exits from a Russian IP without depending on short-lived free SOCKS5 proxies. Archive the legacy SOCKS5 infrastructure (do not delete) so a rollback is a single git operation.
 
 ## Requirements
 
-### Cart Truth
+### Proxy Infrastructure
 
-- [x] **CART-19**: User can tap add-to-cart in the MiniApp and the selected product actually appears in the user's real VkusVill cart
-- [x] **CART-20**: Cart UI only transitions into success/quantity-control state when backend truth confirms the item is in cart or the add succeeded definitively
-- [x] **CART-21**: When cart add is ambiguous or fails, the user sees a truthful stable state and can retry or recover without reloading the app manually
-
-### History Semantics
-
-- [x] **HIST-09**: Sale history does not create fake restocks or fake session reentries from stale scrape gaps, merge artifacts, or continuity heuristics
-- [x] **HIST-10**: History UI and notifier semantics distinguish continued sale, first appearance, and true return-to-sale events using the corrected session model
-- [x] **HIST-11**: Existing persisted history/session data is repaired or rebuilt so current user-visible history no longer contains already-recorded fake restocks or fake reentries
-
-### Observability & Verification
-
-- [x] **OPS-05**: Admin/status surfaces and logs expose enough evidence to explain why a cart attempt or sale-session transition received its classification
-- [x] **QA-05**: Milestone verification includes live cart-add proof and history-semantic checks against fresh production-like data
+- [ ] **PROXY-06**: A curated pool of VLESS+Reality exit nodes, geo-verified to exit from Russian IP addresses, is fetched from public sources and stored locally with per-node metadata (host, port, uuid, reality params, last-seen timestamp)
+- [ ] **PROXY-07**: A local `xray-core` process runs on both dev (Windows) and production (EC2 / systemd), exposing a SOCKS5 listener on `127.0.0.1:10808` that tunnels outbound traffic over the VLESS+Reality pool; the process is managed (start, health-check, graceful restart) by the application
+- [ ] **PROXY-08**: The proxy pool refreshes once per day, and also early-refreshes when the current node fails with a timeout and no other healthy nodes are available
+- [ ] **PROXY-09**: Proxy failures are classified by cause: VkusVill-specific blocks (timeout, HTTP 403/429/451, content mismatch) enter a 4-hour quarantine cooldown; node-level failures (TLS handshake fail, outbound unreachable, xray-reported error) cause immediate removal from the active pool
+- [ ] **PROXY-10**: `from proxy_manager import ProxyManager` continues to work unchanged in all 7 production files and 3 test files via a compatibility shim; the legacy SOCKS5 implementation is archived under `legacy/proxy-socks5/` with a documented one-git-operation rollback procedure
 
 ## v2 Requirements
 
 ### Future Follow-Ups
 
-- **CART-22**: Users can self-diagnose cart failures from end-user-visible diagnostics without opening admin/operator tools
-- **HIST-12**: History detail explains exactly which source transitions caused a session to close or reopen
+- **PROXY-11**: Support a paid/commercial RU proxy tier as an optional fallback when the free VLESS pool drops below a healthy threshold
+- **PROXY-12**: Expose proxy pool health (alive count, cooldown count, last-refresh-at, last-node-used) on `/admin/status` so the operator can diagnose pool exhaustion from the browser
+- **PROXY-13**: Auto-rotate between VLESS nodes inside xray on every outbound request (round-robin / least-recently-used) rather than sticky-per-process
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| New auth system or non-VkusVill checkout flow | Not related to the user-reported failures |
-| Replacing the current stack or deployment model | Existing Python + React + EC2/Vercel setup is sufficient for this milestone |
-| New discovery/search features | The priority is fixing cart truth and session semantics first |
+| Paid RU proxy providers | v1 relies entirely on free public VLESS pool; paid fallback deferred to PROXY-11 |
+| New auth system or checkout changes | v1.15 is infrastructure-only; cart-truth / history semantics were handled in v1.13-v1.14 |
+| Replacing EC2 or Vercel deployment | The migration is at the network layer only — the application servers stay where they are |
+| Admin UI redesign | Proxy health surface (PROXY-12) is deferred — out of scope for v1.15 |
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| OPS-05 | Phase 52 | Complete |
-| CART-19 | Phase 53 | Complete |
-| CART-20 | Phase 53 | Complete |
-| CART-21 | Phase 53 | Complete |
-| HIST-09 | Phase 54 | Complete |
-| HIST-10 | Phase 54 | Complete |
-| HIST-11 | Phase 54 | Complete |
-| QA-05 | Phase 55 | Complete |
+| PROXY-06 | Phase 56 | Not started |
+| PROXY-07 | Phase 56 | Not started |
+| PROXY-08 | Phase 56 | Not started |
+| PROXY-09 | Phase 56 | Not started |
+| PROXY-10 | Phase 56 | Not started |
 
 **Coverage:**
-- v1 requirements: 8 total
-- Mapped to phases: 8
+- v1.15 requirements: 5 total
+- Mapped to phases: 5
 - Unmapped: 0 ✓
 
+## Prior Milestone (v1.14) — Archived
+
+v1.14 Cart Truth & History Semantics shipped 2026-04-21 and was archived 2026-04-22. See `.planning/milestones/v1.14-REQUIREMENTS.md` for the archived requirements.
+
+The user-facing cart-add failure observed at the end of v1.14 was determined to be proxy-pool exhaustion (0% alive), not a cart-logic regression — which is the direct driver of this v1.15 milestone.
+
 ---
-*Requirements defined: 2026-04-21*
-*Last updated: 2026-04-21 after completing phases 52-55*
+*Requirements defined: 2026-04-22*
+*Prior milestone v1.14 archived: 2026-04-22*

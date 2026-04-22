@@ -17,6 +17,39 @@
 - ✅ **v1.12** Add-to-Cart 5s Hard Cap — Phase 46 (shipped 2026-04-08)
 - ✅ **v1.13** Instant Cart & Reliability — Phases 47-51 (shipped 2026-04-16, retroactively closed 2026-04-22 after v1.14 live verification)
 - ✅ **v1.14** Cart Truth & History Semantics — Phases 52-55 (shipped and closed 2026-04-21, archived 2026-04-22)
+- 🚧 **v1.15** Proxy Infrastructure Migration — Phase 56 (planning started 2026-04-22)
+
+## v1.15 Proxy Infrastructure Migration
+
+**Goal:** Replace the 0%-alive SOCKS5 proxy pool with VLESS+Reality via local xray-core bridge so scraper and cart-add traffic reliably exits from a Russian IP without depending on short-lived free SOCKS5 proxies.
+**Granularity:** Coarse (architectural migration, single phase, multiple plans)
+**Phases:** 1 (56)
+**Requirements:** 5 (PROXY-06 through PROXY-10)
+
+### Phases
+
+- [ ] **Phase 56: VLESS Proxy Migration** - Replace SOCKS5 proxy_manager with xray-core VLESS+Reality bridge, preserve public API via shim, archive legacy for rollback, daily refresh with 4h VkusVill quarantine
+
+### Phase Details
+
+### Phase 56: VLESS Proxy Migration
+**Goal**: Route all VkusVill-facing traffic through a local xray-core SOCKS5 bridge that tunnels over VLESS+Reality to RU exit nodes, with a shim preserving `from proxy_manager import ProxyManager` so no business-logic code changes
+**Depends on**: Nothing (architectural migration)
+**Requirements**: PROXY-06, PROXY-07, PROXY-08, PROXY-09, PROXY-10
+**Success Criteria** (what must be TRUE):
+  1. `from proxy_manager import ProxyManager` still works in all 7 production files and 3 test files — resolves to the new VLESS-backed implementation via a shim
+  2. xray-core runs on both local dev (Windows) and EC2 production (systemd), listening on `socks5://127.0.0.1:10808`
+  3. A real VkusVill cart-add request succeeds through the bridge on production (live evidence, not code review)
+  4. Daily refresh (fetch → parse → geo-filter RU → test nodes → rebuild xray config) completes in under 15 minutes, finds at least 5 alive RU exit nodes on average
+  5. Failure classification routes VkusVill-specific blocks (ReadTimeout / 403 / 429 / 451 / content_mismatch) into the existing 4h cooldown and routes node-level failures (TLS handshake fail, outbound unreachable) into immediate permanent removal
+  6. Old SOCKS5 infrastructure is archived under `legacy/proxy-socks5/` (not deleted) and has a documented rollback procedure that restores it within one git operation
+**Plans:** 5 plans
+Plans:
+- [ ] 56-01-PLAN.md — VLESS URL parser + xray config generator (pure Python, tested)
+- [ ] 56-02-PLAN.md — xray-core bootstrap + subprocess bridge (download, verify, manage lifecycle)
+- [ ] 56-03-PLAN.md — vless_manager.py as drop-in ProxyManager replacement
+- [ ] 56-04-PLAN.md — Archive old SOCKS5 infrastructure and install shim
+- [ ] 56-05-PLAN.md — Production verification on EC2 and rollback rehearsal
 
 ## v1.13 Instant Cart & Reliability
 
