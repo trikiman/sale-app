@@ -1,0 +1,25 @@
+[Unit]
+Description=saleapp scheduler (sale-history + cart-add driver)
+Documentation=file:///home/ubuntu/saleapp/docs/PROXY_MIGRATION.md
+After=network-online.target saleapp-xray.service
+Wants=network-online.target
+Requires=saleapp-xray.service
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/saleapp
+Environment=PYTHONUNBUFFERED=1
+EnvironmentFile=-/home/ubuntu/saleapp/.env
+ExecStart=/usr/bin/python3 /home/ubuntu/saleapp/scheduler_service.py
+Restart=always
+RestartSec=10s
+StandardOutput=append:/home/ubuntu/saleapp/logs/scheduler.stdout.log
+StandardError=append:/home/ubuntu/saleapp/logs/scheduler.stderr.log
+
+# Resource limits matching xray to keep the pair tidy
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

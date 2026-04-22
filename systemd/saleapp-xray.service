@@ -1,0 +1,30 @@
+[Unit]
+Description=Xray-core SOCKS5 bridge for saleapp (VLESS+Reality)
+Documentation=file:///home/ubuntu/saleapp/docs/PROXY_MIGRATION.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/saleapp
+ExecStart=/home/ubuntu/saleapp/bin/xray/current/xray -config /home/ubuntu/saleapp/bin/xray/configs/active.json
+Restart=always
+RestartSec=5s
+KillMode=process
+StandardOutput=append:/home/ubuntu/saleapp/bin/xray/logs/xray.stdout.log
+StandardError=append:/home/ubuntu/saleapp/bin/xray/logs/xray.stderr.log
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/ubuntu/saleapp/bin/xray /home/ubuntu/saleapp/data /home/ubuntu/saleapp/.cache /home/ubuntu/saleapp/logs
+PrivateTmp=true
+
+# Resource limits
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
