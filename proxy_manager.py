@@ -12,6 +12,7 @@ Usage:
 """
 import json
 import os
+import socket
 import time
 import concurrent.futures
 from datetime import datetime
@@ -46,6 +47,12 @@ CACHE_TTL = 86400  # 24 hours
 # VkusVill probe timeout
 PROBE_TIMEOUT = 8
 DIRECT_CHECK_TTL = 60
+# SOCKS5 preflight timeouts (kernel-level, always honored). Keeps dead proxies
+# from reaching the httpx layer, where SOCKS recv() may hang indefinitely.
+SOCKS5_CONNECT_TIMEOUT = 3.0
+SOCKS5_HANDSHAKE_TIMEOUT = 2.0
+# Hard outer ceiling for refresh_proxy_list — main thread never blocks past this.
+REFRESH_OUTER_TIMEOUT_SLACK = 15.0
 
 VKUSVILL_URL = "https://vkusvill.ru/"
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36"
@@ -213,32 +220,45 @@ class ProxyManager:
         pool = concurrent.futures.ThreadPoolExecutor(max_workers=TEST_WORKERS)
         futures = {}
         pending = set()
+        outer_timeout = max_time + REFRESH_OUTER_TIMEOUT_SLACK
         try:
             futures = {pool.submit(self._test_proxy, p): p for p in proxies[:max_tests]}
             pending = set(futures)
-            for future in concurrent.futures.as_completed(futures):
-                pending.discard(future)
-                tested += 1
-                result = future.result()
-                if result:
-                    addr, speed = result
-                    working.append({"addr": addr, "speed": speed,
-                                    "tested_at": datetime.now().isoformat()})
-                    self._log(f"  ✓ {addr} ({speed:.1f}s) [{tested}/{max_tests}]")
-                elif tested % 100 == 0:
-                    self._log(f"  ... {tested}/{max_tests} tested, {len(working)} good so far")
-                if len(working) >= need:
-                    self._log(f"  Found {len(working)} new proxies, stopping.")
-                    break
-                if time.time() - start_time > max_time:
-                    self._log(f"  Time limit ({max_time}s) — got {len(working)} of {need} needed.")
-                    break
+            try:
+                for future in concurrent.futures.as_completed(futures, timeout=outer_timeout):
+                    pending.discard(future)
+                    tested += 1
+                    try:
+                        result = future.result()
+                    except Exception as exc:
+                        result = None
+                        self._log(f"  probe error: {exc}")
+                    if result:
+                        addr, speed = result
+                        working.append({"addr": addr, "speed": speed,
+                                        "tested_at": datetime.now().isoformat()})
+                        self._log(f"  ✓ {addr} ({speed:.1f}s) [{tested}/{max_tests}]")
+                    elif tested % 100 == 0:
+                        self._log(f"  ... {tested}/{max_tests} tested, {len(working)} good so far")
+                    if len(working) >= need:
+                        self._log(f"  Found {len(working)} new proxies, stopping.")
+                        break
+                    if time.time() - start_time > max_time:
+                        self._log(f"  Time limit ({max_time}s) — got {len(working)} of {need} needed.")
+                        break
+            except concurrent.futures.TimeoutError:
+                self._log(
+                    f"  Outer timeout {outer_timeout:.0f}s hit — aborting with "
+                    f"{len(working)} working, {tested} tested."
+                )
         finally:
             for future in pending:
                 future.cancel()
-            # Drain active probe workers before returning so repeated refreshes
-            # do not accumulate open proxy sockets in the scheduler process.
-            pool.shutdown(wait=True, cancel_futures=True)
+            # NEVER wait for probe workers. SOCKS5 recv() can hang in the kernel
+            # beyond any Python-level timeout; wait=True would deadlock the main
+            # thread. Cancelled-but-running threads exit on their own once their
+            # socket times out; _socks5_preflight guarantees short tails.
+            pool.shutdown(wait=False, cancel_futures=True)
 
         # Merge with existing pool
         existing = self._cache.get("proxies", [])
@@ -384,10 +404,62 @@ class ProxyManager:
                 self._log(f"  Failed to fetch from {src}: {e}")
         return list(all_proxies)
 
+    @staticmethod
+    def _socks5_preflight(
+        proxy_addr: str,
+        connect_timeout: float = SOCKS5_CONNECT_TIMEOUT,
+        handshake_timeout: float = SOCKS5_HANDSHAKE_TIMEOUT,
+    ) -> bool:
+        """Raw-socket SOCKS5 greeting check with kernel-level timeouts.
+
+        This runs BEFORE handing the proxy to httpx. It's the only layer that
+        reliably enforces a timeout on recv(): httpx's SOCKS5 transport can
+        leave recv() blocked in the kernel indefinitely when a proxy accepts
+        TCP but never completes the handshake.
+
+        Sends the SOCKS5 greeting (VER=5, NMETHODS=1, METHODS=[no-auth]) and
+        expects a 2-byte reply starting with 0x05. Returns True only if the
+        proxy speaks SOCKS5 within the timeout budget.
+        """
+        try:
+            host, _, port_raw = proxy_addr.partition(":")
+            port = int(port_raw)
+        except (ValueError, TypeError):
+            return False
+        if not host or port <= 0:
+            return False
+        sock = None
+        try:
+            sock = socket.create_connection((host, port), timeout=connect_timeout)
+            sock.settimeout(handshake_timeout)
+            sock.sendall(b"\x05\x01\x00")
+            reply = b""
+            while len(reply) < 2:
+                chunk = sock.recv(2 - len(reply))
+                if not chunk:
+                    return False
+                reply += chunk
+            return reply[0] == 0x05
+        except (OSError, socket.timeout):
+            return False
+        finally:
+            if sock is not None:
+                try:
+                    sock.close()
+                except OSError:
+                    pass
+
     def _test_proxy(self, proxy_addr: str):
         """Test a single proxy against VkusVill HTTPS (with SSL verification).
-        Returns (addr, speed) or None. Rejects MITM proxies."""
+        Returns (addr, speed) or None. Rejects MITM proxies.
+
+        Performs a raw-socket SOCKS5 preflight first so the expensive httpx
+        probe never runs against a proxy that would hang its recv().
+        """
         start = time.time()
+        if not self._socks5_preflight(proxy_addr):
+            self._track_event("test_fail", {"addr": proxy_addr, "reason": "socks5_preflight"})
+            return None
         if self._probe_vkusvill(proxy_addr, verify_ssl=True):
             speed = time.time() - start
             self._track_event("found", {"addr": proxy_addr, "speed": round(speed, 2)})

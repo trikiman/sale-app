@@ -12,6 +12,7 @@ import subprocess
 import sys
 import os
 import json
+import threading
 from datetime import datetime
 
 # Fix Windows console encoding for emoji in scraper output
@@ -24,6 +25,12 @@ FULL_CYCLE_INTERVAL_SECONDS = 300
 GREEN_TARGET_INTERVAL_SECONDS = 60
 DEFAULT_GREEN_RUNTIME_SECONDS = 60
 SCRAPER_TIMEOUT = 300  # 5 minutes max per scraper
+# Watchdog: if the main loop hasn't ticked for this long, assume we're hung
+# (e.g. stuck in a C-level syscall that Python timeouts can't interrupt) and
+# hard-exit so systemd restarts us. Must comfortably exceed the slowest
+# legitimate scraper cycle (~5 min per scrape × 3 + proxy refresh ≤ 25 min).
+WATCHDOG_TIMEOUT_SECONDS = 30 * 60
+WATCHDOG_CHECK_INTERVAL_SECONDS = 30
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 PAUSE_FILE = os.path.join(DATA_DIR, "login_pause")
@@ -538,6 +545,39 @@ def run_green_only_cycle(proxy_state):
     return proxy_state
 
 
+_last_heartbeat_monotonic = time.monotonic()
+_watchdog_lock = threading.Lock()
+
+
+def _heartbeat():
+    """Record that the main loop is still alive."""
+    global _last_heartbeat_monotonic
+    with _watchdog_lock:
+        _last_heartbeat_monotonic = time.monotonic()
+
+
+def _watchdog_loop():
+    """Hard-exit if the main loop hasn't ticked for WATCHDOG_TIMEOUT_SECONDS.
+
+    Guards against any hang that Python-level timeouts can't interrupt —
+    most notably kernel-level recv() on stuck SOCKS5 sockets. systemd has
+    Restart=always, so os._exit(1) brings us back in RestartSec.
+    """
+    while True:
+        time.sleep(WATCHDOG_CHECK_INTERVAL_SECONDS)
+        with _watchdog_lock:
+            age = time.monotonic() - _last_heartbeat_monotonic
+        if age > WATCHDOG_TIMEOUT_SECONDS:
+            try:
+                log(
+                    f"WATCHDOG: no heartbeat for {age:.0f}s "
+                    f"(limit {WATCHDOG_TIMEOUT_SECONDS}s) — forcing exit for systemd restart"
+                )
+            except Exception:
+                pass
+            os._exit(1)
+
+
 def main():
     log(
         "Scheduler service started. "
@@ -545,6 +585,11 @@ def main():
         f"Green target: {GREEN_TARGET_INTERVAL_SECONDS}s."
     )
     log(f"Logs: {LOG_FILE}")
+    log(f"Watchdog: {WATCHDOG_TIMEOUT_SECONDS}s timeout, {WATCHDOG_CHECK_INTERVAL_SECONDS}s interval")
+
+    _heartbeat()
+    watchdog_thread = threading.Thread(target=_watchdog_loop, name="scheduler-watchdog", daemon=True)
+    watchdog_thread.start()
 
     proxy_state = {
         "active_proxy": None,
@@ -556,10 +601,12 @@ def main():
 
     while True:
         try:
+            _heartbeat()
             # Check if login is active — pause scrapers to let Chrome be used for login
             if os.path.exists(PAUSE_FILE):
                 log("Login in progress — pausing scrapers...")
                 while os.path.exists(PAUSE_FILE):
+                    _heartbeat()
                     time.sleep(5)
                 log("Login finished — resuming scrapers.")
                 time.sleep(3)  # Give Chrome a moment to settle
