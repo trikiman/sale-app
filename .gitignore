@@ -88,3 +88,6 @@ backend_test.log
 backend/fix_systemd.sh
 backend/test_*.py
 backend/parse_lens.py
+
+# xray-core binary (per-machine, downloaded by vless/installer.py)
+bin/

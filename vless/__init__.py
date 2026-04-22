@@ -11,11 +11,22 @@ from vless.config_gen import (
     XRAY_LISTEN_PORT,
     build_xray_config,
 )
+from vless.installer import (
+    XRAY_VERSION,
+    InstallError,
+    install,
+    is_installed,
+)
 from vless.parser import (
     VlessNode,
     VlessParseError,
     parse_vless_list,
     parse_vless_url,
+)
+from vless.xray import (
+    XrayCrashedError,
+    XrayProcess,
+    XrayStartupError,
 )
 
 # ``vless.sources`` is deliberately NOT imported eagerly: importing it from a
@@ -32,4 +43,11 @@ __all__ = [
     "build_xray_config",
     "XRAY_LISTEN_HOST",
     "XRAY_LISTEN_PORT",
+    "XRAY_VERSION",
+    "InstallError",
+    "install",
+    "is_installed",
+    "XrayProcess",
+    "XrayStartupError",
+    "XrayCrashedError",
 ]
