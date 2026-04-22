@@ -23,6 +23,7 @@ from vless.parser import (
     parse_vless_list,
     parse_vless_url,
 )
+from vless.manager import VlessProxyManager
 from vless.xray import (
     XrayCrashedError,
     XrayProcess,
@@ -50,4 +51,5 @@ __all__ = [
     "XrayProcess",
     "XrayStartupError",
     "XrayCrashedError",
+    "VlessProxyManager",
 ]
