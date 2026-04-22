@@ -1,5 +1,21 @@
 # Milestones
 
+## v1.12 Add-to-Cart 5s Hard Cap (Shipped: 2026-04-08)
+
+**Phases completed:** 1 phase (46), 1 plan, 2 tasks
+
+**Audit status:** passed (superseded by v1.13 tuning — see `.planning/milestones/v1.12-MILESTONE-AUDIT.md`)
+
+**Key accomplishments:**
+
+- The add-to-cart fetch now uses an AbortController with a hard cap on the visible wait so no request can silently outlive the budget
+- The pending-attempt poll loop now uses a remaining-time budget instead of a fixed iteration count, with a per-poll AbortController capped to the remaining budget
+- The poll loop exits immediately on a 404 status so missing attempts can no longer keep users waiting
+- A "Добавляем в фоне" background-handoff message now fires before polling when the initial fetch already consumed most of the budget
+- The original 5-second cap was tuned to 8 seconds by v1.13 after live testing showed 5 s was too tight on real VkusVill latency; the architectural contract and all diagnostic logs carry over
+
+---
+
 ## v1.11 Cart Responsiveness & Truth Recovery (Shipped: 2026-04-06)
 
 **Phases completed:** 3 phases, 9 plans, 0 tasks
