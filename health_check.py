@@ -189,9 +189,14 @@ def auto_fix():
     return fixes_applied
 
 def main():
+    # Parse args
+    check_only = '--check-only' in sys.argv
+    
     print("=" * 60)
     print("VkusVill Sale Monitor - Health Check")
     print(f"Time: {datetime.now().isoformat()}")
+    if check_only:
+        print("Mode: CHECK ONLY (no auto-fixes)")
     print("=" * 60)
     
     # Run checks
@@ -211,9 +216,10 @@ def main():
             log("FAIL", f"{name} check crashed: {e}")
             results[name] = False
     
-    # Auto-fix
-    print()
-    fixes = auto_fix()
+    # Auto-fix (unless check-only mode)
+    if not check_only:
+        print()
+        fixes = auto_fix()
     
     # Summary
     print()
@@ -225,6 +231,8 @@ def main():
         sys.exit(1)
     else:
         log("OK", "All checks passed!")
+        if check_only:
+            print("\nNote: Run without --check-only to apply auto-fixes")
         sys.exit(0)
 
 if __name__ == "__main__":
