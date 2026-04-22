@@ -17,7 +17,7 @@
 - ✅ **v1.12** Add-to-Cart 5s Hard Cap — Phase 46 (shipped 2026-04-08)
 - ✅ **v1.13** Instant Cart & Reliability — Phases 47-51 (shipped 2026-04-16, retroactively closed 2026-04-22 after v1.14 live verification)
 - ✅ **v1.14** Cart Truth & History Semantics — Phases 52-55 (shipped and closed 2026-04-21, archived 2026-04-22)
-- 🚧 **v1.15** Proxy Infrastructure Migration — Phase 56 (planning started 2026-04-22)
+- 🚧 **v1.15** Proxy Infrastructure Migration — Phase 56 (code complete 2026-04-22; EC2 rollout pending operator)
 
 ## v1.15 Proxy Infrastructure Migration
 
@@ -28,7 +28,7 @@
 
 ### Phases
 
-- [ ] **Phase 56: VLESS Proxy Migration** - Replace SOCKS5 proxy_manager with xray-core VLESS+Reality bridge, preserve public API via shim, archive legacy for rollback, daily refresh with 4h VkusVill quarantine
+- [~] **Phase 56: VLESS Proxy Migration** - Replace SOCKS5 proxy_manager with xray-core VLESS+Reality bridge, preserve public API via shim, archive legacy for rollback, daily refresh with 4h VkusVill quarantine *(code + systemd + scripts + docs + dev verification + rollback rehearsal complete; EC2 rollout pending operator)*
 
 ### Phase Details
 
@@ -37,19 +37,19 @@
 **Depends on**: Nothing (architectural migration)
 **Requirements**: PROXY-06, PROXY-07, PROXY-08, PROXY-09, PROXY-10
 **Success Criteria** (what must be TRUE):
-  1. `from proxy_manager import ProxyManager` still works in all 7 production files and 3 test files — resolves to the new VLESS-backed implementation via a shim
-  2. xray-core runs on both local dev (Windows) and EC2 production (systemd), listening on `socks5://127.0.0.1:10808`
-  3. A real VkusVill cart-add request succeeds through the bridge on production (live evidence, not code review)
-  4. Daily refresh (fetch → parse → geo-filter RU → test nodes → rebuild xray config) completes in under 15 minutes, finds at least 5 alive RU exit nodes on average
-  5. Failure classification routes VkusVill-specific blocks (ReadTimeout / 403 / 429 / 451 / content_mismatch) into the existing 4h cooldown and routes node-level failures (TLS handshake fail, outbound unreachable) into immediate permanent removal
-  6. Old SOCKS5 infrastructure is archived under `legacy/proxy-socks5/` (not deleted) and has a documented rollback procedure that restores it within one git operation
+  1. [x] `from proxy_manager import ProxyManager` still works in all 7 production files and 3 test files — resolves to the new VLESS-backed implementation via a shim
+  2. [~] xray-core runs on both local dev (Windows) and EC2 production (systemd), listening on `socks5://127.0.0.1:10808` *(dev verified; EC2 systemd units shipped but rollout pending operator)*
+  3. [ ] A real VkusVill cart-add request succeeds through the bridge on production (live evidence, not code review) *(pending EC2 rollout via `scripts/verify_v1_15.sh`)*
+  4. [x] Daily refresh (fetch → parse → geo-filter RU → test nodes → rebuild xray config) completes in under 15 minutes, finds at least 5 alive RU exit nodes on average *(live test admitted 28 RU nodes in 5m21s)*
+  5. [x] Failure classification routes VkusVill-specific blocks (ReadTimeout / 403 / 429 / 451 / content_mismatch) into the existing 4h cooldown and routes node-level failures (TLS handshake fail, outbound unreachable) into immediate permanent removal
+  6. [x] Old SOCKS5 infrastructure is archived under `legacy/proxy-socks5/` (not deleted) and has a documented rollback procedure that restores it within one git operation *(rehearsed: `git revert cc70185` leaves pytest green at 167/2)*
 **Plans:** 5 plans
 Plans:
-- [ ] 56-01-PLAN.md — VLESS URL parser + xray config generator (pure Python, tested)
-- [ ] 56-02-PLAN.md — xray-core bootstrap + subprocess bridge (download, verify, manage lifecycle)
-- [ ] 56-03-PLAN.md — vless_manager.py as drop-in ProxyManager replacement
-- [ ] 56-04-PLAN.md — Archive old SOCKS5 infrastructure and install shim
-- [ ] 56-05-PLAN.md — Production verification on EC2 and rollback rehearsal
+- [x] 56-01-PLAN.md — VLESS URL parser + xray config generator (pure Python, tested) (eceb5bd)
+- [x] 56-02-PLAN.md — xray-core bootstrap + subprocess bridge (download, verify, manage lifecycle) (fdb64dc)
+- [x] 56-03-PLAN.md — vless_manager.py as drop-in ProxyManager replacement (e32a7d9)
+- [x] 56-04-PLAN.md — Archive old SOCKS5 infrastructure and install shim (cc70185)
+- [~] 56-05-PLAN.md — Production verification on EC2 and rollback rehearsal (94826d9 deploy infra + verification evidence; EC2 rollout pending operator)
 
 ## v1.13 Instant Cart & Reliability
 

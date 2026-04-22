@@ -14,9 +14,20 @@ This only affects runs under ``legacy/proxy-socks5/tests``; the normal
 """
 from __future__ import annotations
 
+import importlib.util
 import sys
 from pathlib import Path
 
 _LEGACY_DIR = Path(__file__).resolve().parent.parent
-if str(_LEGACY_DIR) not in sys.path:
-    sys.path.insert(0, str(_LEGACY_DIR))
+_ARCHIVED_MODULE = _LEGACY_DIR / "proxy_manager.py"
+
+# Always bind ``proxy_manager`` to the archived file before these tests run,
+# even if a sibling suite already imported the production shim in the same
+# pytest session (e.g. ``pytest tests/ legacy/``). Rebinding via
+# ``importlib`` wins over any sys.path ordering the outer suite may have
+# established, so the archived tests' ``import proxy_manager`` reliably
+# hits the SOCKS5 implementation.
+_spec = importlib.util.spec_from_file_location("proxy_manager", _ARCHIVED_MODULE)
+_archived = importlib.util.module_from_spec(_spec)
+sys.modules["proxy_manager"] = _archived
+_spec.loader.exec_module(_archived)

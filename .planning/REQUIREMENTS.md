@@ -8,11 +8,11 @@ Replace the dead free-SOCKS5 proxy pool (0% alive across 269 tested nodes as of 
 
 ### Proxy Infrastructure
 
-- [ ] **PROXY-06**: A curated pool of VLESS+Reality exit nodes, geo-verified to exit from Russian IP addresses, is fetched from public sources and stored locally with per-node metadata (host, port, uuid, reality params, last-seen timestamp)
-- [ ] **PROXY-07**: A local `xray-core` process runs on both dev (Windows) and production (EC2 / systemd), exposing a SOCKS5 listener on `127.0.0.1:10808` that tunnels outbound traffic over the VLESS+Reality pool; the process is managed (start, health-check, graceful restart) by the application
-- [ ] **PROXY-08**: The proxy pool refreshes once per day, and also early-refreshes when the current node fails with a timeout and no other healthy nodes are available
-- [ ] **PROXY-09**: Proxy failures are classified by cause: VkusVill-specific blocks (timeout, HTTP 403/429/451, content mismatch) enter a 4-hour quarantine cooldown; node-level failures (TLS handshake fail, outbound unreachable, xray-reported error) cause immediate removal from the active pool
-- [ ] **PROXY-10**: `from proxy_manager import ProxyManager` continues to work unchanged in all 7 production files and 3 test files via a compatibility shim; the legacy SOCKS5 implementation is archived under `legacy/proxy-socks5/` with a documented one-git-operation rollback procedure
+- [x] **PROXY-06**: A curated pool of VLESS+Reality exit nodes, geo-verified to exit from Russian IP addresses, is fetched from public sources and stored locally with per-node metadata (host, port, uuid, reality params, last-seen timestamp)
+- [x] **PROXY-07**: A local `xray-core` process runs on both dev (Windows) and production (EC2 / systemd), exposing a SOCKS5 listener on `127.0.0.1:10808` that tunnels outbound traffic over the VLESS+Reality pool; the process is managed (start, health-check, graceful restart) by the application *(code + systemd units + deploy/verify scripts shipped; dev live-verified; EC2 rollout pending operator — see `phases/56-vless-proxy-migration/56-VERIFICATION.md`)*
+- [x] **PROXY-08**: The proxy pool refreshes once per day, and also early-refreshes when the current node fails with a timeout and no other healthy nodes are available
+- [x] **PROXY-09**: Proxy failures are classified by cause: VkusVill-specific blocks (timeout, HTTP 403/429/451, content mismatch) enter a 4-hour quarantine cooldown; node-level failures (TLS handshake fail, outbound unreachable, xray-reported error) cause immediate removal from the active pool
+- [x] **PROXY-10**: `from proxy_manager import ProxyManager` continues to work unchanged in all 7 production files and 3 test files via a compatibility shim; the legacy SOCKS5 implementation is archived under `legacy/proxy-socks5/` with a documented one-git-operation rollback procedure
 
 ## v2 Requirements
 
@@ -35,11 +35,11 @@ Replace the dead free-SOCKS5 proxy pool (0% alive across 269 tested nodes as of 
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PROXY-06 | Phase 56 | Not started |
-| PROXY-07 | Phase 56 | Not started |
-| PROXY-08 | Phase 56 | Not started |
-| PROXY-09 | Phase 56 | Not started |
-| PROXY-10 | Phase 56 | Not started |
+| PROXY-06 | Phase 56 | Complete |
+| PROXY-07 | Phase 56 | Complete (code + dev live-verify); EC2 rollout pending operator |
+| PROXY-08 | Phase 56 | Complete |
+| PROXY-09 | Phase 56 | Complete |
+| PROXY-10 | Phase 56 | Complete |
 
 **Coverage:**
 - v1.15 requirements: 5 total
