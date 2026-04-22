@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.14
 milestone_name: Cart Truth & History Semantics
-status: completed
-last_updated: "2026-04-21T10:55:00.000Z"
-last_activity: 2026-04-21 -- Phases 52-55 completed with live cart and history verification
+status: archived
+last_updated: "2026-04-22T19:15:00+03:00"
+last_activity: 2026-04-22 -- v1.12/v1.13/v1.14 retroactively audited, archived, and closed; Apr 22 scheduler hotfix shipped in commit 4c7f271
 progress:
   total_phases: 4
   completed_phases: 4
@@ -17,18 +17,18 @@ progress:
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-04-21)
+See: .planning/PROJECT.md (updated 2026-04-22)
 
 **Core value:** Family members see every VkusVill discount and can add to cart in one tap
-**Current focus:** v1.14 milestone complete — audit and archive if no more issues surface
+**Current focus:** no active milestone — awaiting next milestone kickoff
 
 ## Current Position
 
-Milestone: v1.14 — Cart Truth & History Semantics
+Milestone: v1.14 — Cart Truth & History Semantics — ARCHIVED (2026-04-22)
 Phase: 55 (Live Verification & Release Decision) — COMPLETE
 Plan: 1 of 1 — Complete
-Status: v1.14 milestone complete, ready for audit/closure
-Last activity: 2026-04-21 -- Live cart and history verification completed
+Status: v1.14 audited (`passed`), archived to `.planning/milestones/v1.14-*.md`, `MILESTONES.md` updated
+Last activity: 2026-04-22 -- retroactive closure of v1.12, v1.13, v1.14 completed
 
 ## Milestone Goal
 
@@ -39,7 +39,8 @@ Last activity: 2026-04-21 -- Live cart and history verification completed
 
 ## Next Up
 
-- `$gsd-audit-milestone` — verify milestone closure and decide whether to archive
+- `$gsd-new-milestone` — define the next milestone; no active scope right now
+- Follow-ups tracked outside a formal milestone: 2026-04-22 scheduler SOCKS5 recv() deadlock hotfix (proxy_manager preflight + bounded as_completed + scheduler heartbeat watchdog) was shipped in commit `4c7f271` and is not represented in any v1.x milestone; consider folding into a future reliability milestone if similar issues recur
 
 ## Completed Milestones
 
@@ -56,6 +57,10 @@ Last activity: 2026-04-21 -- Live cart and history verification completed
 | v1.8 History Search Completeness | 34-35 | 2026-04-04 |
 | v1.9 Catalog Coverage Expansion | 36-38 | 2026-04-04 |
 | v1.10 Scraper Freshness & Reliability | 39-42 | 2026-04-05 |
+| v1.11 Cart Responsiveness & Truth Recovery | 43-45 | 2026-04-06 |
+| v1.12 Add-to-Cart 5s Hard Cap | 46 | 2026-04-08 |
+| v1.13 Instant Cart & Reliability | 47-51 | 2026-04-16 (closed 2026-04-22) |
+| v1.14 Cart Truth & History Semantics | 52-55 | 2026-04-21 (closed 2026-04-22) |
 
 ## Accumulated Context
 
@@ -78,12 +83,11 @@ Last activity: 2026-04-21 -- Live cart and history verification completed
 ### Pending Todos
 
 - Clarify stale banner freshness vs updated time — the stale warning is driven by per-color source age, while the header shows the latest merged payload time, so the UI currently looks contradictory even when backend freshness logic is correct.
+- Consider a small reliability milestone to formalize the Apr 22 scheduler SOCKS5 deadlock fix (commit `4c7f271`), extract learnings, and extend the proxy/preflight regression coverage so future hangs are caught sooner.
 
 ## Known Bugs
 
-- Add-to-cart still does not reliably place products into the real VkusVill cart in live user flows
-- History still appears to create fake restocks/reentries instead of only reflecting true sale return
-- Current persisted history data already contains fake restock/reentry artifacts that need cleanup, not just forward-looking logic fixes
+- (none open — the three bugs previously listed here were fixed and verified by v1.14: cart add now works live, history no longer fakes reentries, and persisted data was repaired)
 
 ## Timeline
 
@@ -114,6 +118,10 @@ Last activity: 2026-04-21 -- Live cart and history verification completed
 | v1.11 phase 45 context gathered | 2026-04-06 |
 | v1.11 phase 45 executed | 2026-04-06 |
 | v1.11 milestone archived | 2026-04-06 |
+| v1.12 milestone closed (retroactive audit) | 2026-04-22 |
+| v1.13 milestone closed (retroactive audit, supersedes gaps_found) | 2026-04-22 |
+| v1.14 milestone closed and archived | 2026-04-22 |
+| Scheduler SOCKS5 deadlock hotfix (commit 4c7f271) | 2026-04-22 |
 
 ---
-*Last updated: 2026-04-21 after completing phases 52-55*
+*Last updated: 2026-04-22 after retroactive closure of v1.12, v1.13, v1.14 and scheduler hotfix*

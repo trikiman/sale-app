@@ -87,39 +87,51 @@ Family members see every VkusVill discount (green/red/yellow) the moment it appe
 - ✓ **CART-04..09**: Hard 5.0-second add-to-cart UX budget on the click path, with neutral pending state and background reconciliation — v1.11
 - ✓ **UI-19**: User sees non-blocking "checking cart" message when truth recovery takes longer than 5 seconds — v1.11
 - ✓ **OPS-04, QA-04**: Cart diagnostics surfaced in admin payloads, and bounded add contract protected by targeted regression tests — v1.11
+- ✓ **CART-10..14**: AbortController hard cap (tuned 5s→8s in v1.13), time-budget polling, 404 immediate stop, D3 background-handoff gate — v1.12
+- ✓ **CART-15..16**: Cart-add endpoint returns typed `error_type` and logs root cause with diagnostic context — v1.13
+- ✓ **PERF-01..02**: Login persists `sessid`/`user_id`/`sessid_ts`; stale sessid auto-refreshes before it can cause a cart failure — v1.13
+- ✓ **ERR-01..02**: Distinct error messages per failure mode; retry-without-refresh capability — v1.13
+- ✓ **CART-17..18**: Quantity stepper appears immediately after success; `refreshCartState` preserves optimistic rows on `source_unavailable` — v1.13
+- ✓ **CART-19**: MiniApp add-to-cart places the selected product into the user's real VkusVill cart — live verified, POST /api/cart/add 200 for product 33215 — v1.14
+- ✓ **CART-20**: Cart UI only transitions to success/quantity-control state when backend truth confirms the add — v1.14
+- ✓ **CART-21**: Ambiguous/failed adds land in a truthful stable state with retry/recovery path — v1.14
+- ✓ **HIST-09**: Stale scrape gaps and merge artifacts no longer create fake restocks or fake reentries — v1.14
+- ✓ **HIST-10**: History/notifier semantics distinguish continued sale, first appearance, and true return-to-sale — v1.14
+- ✓ **HIST-11**: Persisted history/session data was repaired — product 100069 sessions 56→5, `short_gaps_remaining = 0` — v1.14
+- ✓ **OPS-05**: Admin/status and logs now explain why a cart attempt or sale-session transition received its classification — v1.14
+- ✓ **QA-05**: Milestone verification includes live production cart-add proof and history-semantic checks — v1.14
 
 ### Active
 
 <!-- Current scope. Building toward these. -->
 
-- [ ] **CART-19**: MiniApp add-to-cart actually places the selected product into the user's real VkusVill cart
-- [ ] **CART-20**: Cart UI only shows success and quantity-state transitions when they are backed by cart truth, not fake optimistic recovery
-- [ ] **CART-21**: Timeout and ambiguous cart-add paths end in a truthful stable state with a clear recovery path instead of silent failure
-- [ ] **HIST-09**: Sale history does not create fake restocks or fake reentries from stale scrape gaps, merge artifacts, or continuity heuristics
-- [ ] **HIST-10**: History UI, notifier behavior, and "new again" semantics distinguish continued sale from true sale return
-- [ ] **HIST-11**: Existing persisted history/session data is repaired so users no longer see already-recorded fake restocks or fake "new again" events
-- [ ] **OPS-05**: Operators can inspect why a cart attempt or sale-session transition was classified the way it was
-- [ ] **QA-05**: Milestone verification includes live cart-add proof and history-semantic evidence against fresh production-like data
+- (none — v1.14 closed 2026-04-22. Next milestone TBD.)
 
-## Current Milestone: v1.14 Cart Truth & History Semantics
+## Current Milestone: (none — awaiting next milestone kickoff)
+
+## Previous Shipped Milestone: v1.14 Cart Truth & History Semantics (2026-04-21, closed 2026-04-22)
 
 **Goal:** Make add-to-cart work in real user flows and make history/restock semantics reflect real sale transitions instead of fake reentries.
 
-**Target features:**
-- Real add-to-cart success from MiniApp to the user's VkusVill cart
+**Shipped features:**
+- Real add-to-cart success from MiniApp to the user's VkusVill cart (live verified on production)
 - Truthful cart UI states and recovery when upstream add/refresh is ambiguous
-- History/session logic that stops inventing fake restocks or fake "new again" events
-- Repair of current persisted history/session data so old fake events are removed, not just prevented going forward
-- Verification based on live behavior and operational evidence, not only code-path reasoning
+- History/session logic that no longer invents fake restocks or fake "new again" events
+- Persisted history/session data repaired — thousands of fake short-gap session splits removed
+- Live verification captured real cart add/remove cycle + stale-session simulation + post-repair history counts
 
-## Previous Milestone: v1.13 Instant Cart & Reliability (Implementation Incomplete In Practice)
+## Previous Shipped Milestone: v1.13 Instant Cart & Reliability (2026-04-16, closed 2026-04-22)
 
-**Goal:** Make add-to-cart feel instant with optimistic UI and fix current failures so cart adds actually succeed.
+**Goal:** Make add-to-cart feel instant and fix the failures that made cart adds silently drop on the user-facing path.
 
-**Reality check from user feedback (2026-04-21):**
-- Add-to-cart still does not reliably work in the real MiniApp flow
-- History still appears to invent fake restocks/reentries instead of reflecting true sale return
-- v1.14 exists to close those outcome gaps before treating the cart/history work as done
+**Shipped features:**
+- Classified `error_type` contract on `/api/cart/add` with diagnostic logging
+- Sessid/user_id/sessid_ts pre-cached at login so the first cart add skips warmup GET
+- Stale sessid (>30 min) auto-refresh path
+- Distinct user-visible error messages per failure mode, with retry-without-refresh
+- Quantity stepper + optimistic state preservation on `source_unavailable`
+
+_v1.13 was initially audit-blocked (missing `50-VERIFICATION.md`, pending live UAT). Both gaps were closed retroactively on 2026-04-22 using v1.14 phase 55 live evidence._
 
 ## Previous Shipped Milestone: v1.11 Cart Responsiveness & Truth Recovery
 
@@ -278,5 +290,5 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-21 after starting v1.14 milestone*
+*Last updated: 2026-04-22 after retroactive closure of v1.12, v1.13, and v1.14 milestones and documenting the Apr 22 scheduler SOCKS5 deadlock hotfix (commit `4c7f271`).*
 

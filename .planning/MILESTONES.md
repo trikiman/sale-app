@@ -1,5 +1,22 @@
 # Milestones
 
+## v1.14 Cart Truth & History Semantics (Shipped: 2026-04-21, closed: 2026-04-22)
+
+**Phases completed:** 4 phases (52-55), 4 plans
+
+**Audit status:** passed (see `.planning/milestones/v1.14-MILESTONE-AUDIT.md`)
+
+**Key accomplishments:**
+
+- MiniApp add-to-cart now actually lands the selected product in the user's real VkusVill cart, live-verified on production with `POST /api/cart/add` returning 200 for product 33215 on a real guest session and updated basket totals
+- `/api/cart/items` now returns real basket lines instead of `source_unavailable` fallback, so the cart UI no longer needs to compensate for a lying backend
+- Stale-session cart add now completes in ~2.7 s without hitting the old 10 s refresh stall, making the fast path fast for every user not just warm ones
+- Sale history no longer invents fake restocks or fake reentries from stale scrape gaps, merge artifacts, or sub-60-minute gap continuity heuristics
+- Already-persisted fake session splits were repaired in production — yellow product 100069 collapsed from 56 sessions back to 5, and the production gap query now reports `short_gaps_remaining = 0`
+- Milestone closure was gated on fresh live evidence (QA-05) rather than code-path review alone, so "we verified it" means a real production transaction
+
+---
+
 ## v1.13 Instant Cart & Reliability (Shipped: 2026-04-16, closed: 2026-04-22)
 
 **Phases completed:** 5 phases (47-51), 7 plans
