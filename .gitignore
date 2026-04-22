@@ -59,6 +59,9 @@ tmp_*.txt
 data/
 miniapp/public/data.json
 
+# Local research / runtime cache (geo lookups, cooldowns, proxy scan results)
+.cache/
+
 # Chrome portable (Windows only)
 chrome_portable/
 

@@ -53,6 +53,11 @@ SOCKS5_CONNECT_TIMEOUT = 3.0
 SOCKS5_HANDSHAKE_TIMEOUT = 2.0
 # Hard outer ceiling for refresh_proxy_list — main thread never blocks past this.
 REFRESH_OUTER_TIMEOUT_SLACK = 15.0
+# VkusVill applies a temporary ~4h block on IPs that hit its rate limits.
+# A proxy in cooldown is NOT dead — it's usable again after the window expires.
+# We therefore keep such IPs out of the active pool for this duration and skip
+# them during refresh, without deleting the record, so they recycle naturally.
+VKUSVILL_COOLDOWN_S = 4 * 3600  # 4 hours
 
 VKUSVILL_URL = "https://vkusvill.ru/"
 UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36"
@@ -63,6 +68,8 @@ class ProxyManager:
         self._log = log_func or (lambda msg: print(f"  [PROXY] {msg}"))
         self._cache = self._load_cache()
         self._direct_check = {"checked_at": 0.0, "ok": None}
+        # Prune any cooldown entries that have already expired on disk
+        self._prune_expired_cooldowns()
 
     def _track_event(self, event_type: str, data: dict | None = None):
         """Append a proxy event to the JSONL log for historical stats."""
@@ -148,6 +155,85 @@ class ProxyManager:
         if after < MIN_HEALTHY:
             self._log(f"Pool below {MIN_HEALTHY} — will refresh on next use")
 
+    def mark_vkusvill_blocked(self, addr: str, reason: str = "timeout") -> None:
+        """Mark a proxy as temporarily blocked by VkusVill (not permanently dead).
+
+        The proxy is pulled out of the active pool and placed in cooldown for
+        ``VKUSVILL_COOLDOWN_S`` (4 hours). After the window elapses it is
+        eligible for testing / re-entry again. Use this — not :meth:`remove_proxy`
+        — when the failure signature is VkusVill-specific (403/429/451, timeout
+        during a vkusvill request, or content-mismatch on a page that should
+        contain "vkusvill"). Proxy-level dead signals (preflight fail,
+        ProtocolError, connection refused) should still call ``remove_proxy``.
+        """
+        now = time.time()
+        cooldowns = self._cache.setdefault("vkusvill_cooldowns", {})
+        cooldowns[addr] = {"blocked_at": now, "reason": reason}
+        # Pull from the active pool; record will recycle naturally after TTL.
+        proxies = self._cache.get("proxies", [])
+        before = len(proxies)
+        self._cache["proxies"] = [p for p in proxies if p["addr"] != addr]
+        after = len(self._cache["proxies"])
+        self._save_cache()
+        until = datetime.fromtimestamp(now + VKUSVILL_COOLDOWN_S).strftime("%H:%M")
+        self._log(
+            f"VkusVill cooldown ({reason}) for {addr} until ~{until} "
+            f"(pool: {after}, was {before})"
+        )
+        self._track_event(
+            "vkusvill_cooldown",
+            {"addr": addr, "reason": reason, "until_ts": now + VKUSVILL_COOLDOWN_S},
+        )
+        if after < MIN_HEALTHY:
+            self._log(f"Pool below {MIN_HEALTHY} — will refresh on next use")
+
+    def is_in_vkusvill_cooldown(self, addr: str) -> bool:
+        """True if ``addr`` is currently serving a VkusVill cooldown window.
+
+        Expired entries are treated as absent and will be pruned on the next
+        ``_prune_expired_cooldowns`` pass (called at startup and during refresh).
+        """
+        entry = self._cache.get("vkusvill_cooldowns", {}).get(addr)
+        if not entry:
+            return False
+        blocked_at = float(entry.get("blocked_at", 0.0))
+        return (time.time() - blocked_at) < VKUSVILL_COOLDOWN_S
+
+    def cooldown_addrs(self) -> set[str]:
+        """Return the set of IPs currently in VkusVill cooldown."""
+        cooldowns = self._cache.get("vkusvill_cooldowns", {})
+        now = time.time()
+        return {
+            addr
+            for addr, entry in cooldowns.items()
+            if (now - float(entry.get("blocked_at", 0.0))) < VKUSVILL_COOLDOWN_S
+        }
+
+    def _prune_expired_cooldowns(self) -> int:
+        """Remove cooldown entries older than ``VKUSVILL_COOLDOWN_S``.
+
+        Returns the number of entries evicted. Called from ``__init__`` and
+        whenever we're about to consult the cooldown list (refresh, get).
+        """
+        cooldowns = self._cache.get("vkusvill_cooldowns")
+        if not cooldowns:
+            return 0
+        now = time.time()
+        stale = [
+            addr
+            for addr, entry in cooldowns.items()
+            if (now - float(entry.get("blocked_at", 0.0))) >= VKUSVILL_COOLDOWN_S
+        ]
+        if stale:
+            for addr in stale:
+                cooldowns.pop(addr, None)
+            self._save_cache()
+            self._log(
+                f"VkusVill cooldown expired for {len(stale)} proxy/proxies "
+                f"(eligible for retest)"
+            )
+        return len(stale)
+
     def next_proxy(self) -> str | None:
         """Remove current (first) proxy and return the next one.
         Used for rotation after a proxy fails.
@@ -201,6 +287,20 @@ class ProxyManager:
         if exclude:
             proxies = [p for p in proxies if p not in exclude]
             self._log(f"  {len(proxies)} new (excluded {len(exclude)} existing)")
+
+        # Prune any stale cooldown entries, then skip IPs still in cooldown.
+        # These are NOT dead — they're just waiting out a 4h VkusVill block.
+        self._prune_expired_cooldowns()
+        cooling = self.cooldown_addrs()
+        if cooling:
+            before = len(proxies)
+            proxies = [p for p in proxies if p not in cooling]
+            skipped = before - len(proxies)
+            if skipped:
+                self._log(
+                    f"  skipped {skipped} in VkusVill cooldown "
+                    f"(will re-test after 4h window)"
+                )
 
         # How many more do we need?
         existing = self._cache.get("proxies", [])
