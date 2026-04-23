@@ -262,6 +262,40 @@ def test_remove_proxy_with_local_endpoint_is_noop(stub_xray, paths) -> None:
     assert pm.pool_count() == 3
 
 
+def test_cache_property_exposes_bridge_when_pool_non_empty(stub_xray, paths) -> None:
+    """Backend endpoints (``product_details``, admin refresh) still read
+    ``pm._cache["proxies"]`` from the legacy SOCKS5 contract. The bridge
+    must appear as a single synthetic entry so ``socks5://{addr}`` points
+    at the local xray inbound."""
+    _make_pool(paths["pool"], n=3)
+    pm = _manager(paths)
+    cache = pm._cache
+    assert isinstance(cache, dict)
+    assert list(cache["proxies"]) == [
+        {"addr": "127.0.0.1:10808", "speed": 0.0, "added_at": cache["updated_at"]}
+    ]
+    # Callers compose ``socks5://{addr}`` — must yield the xray endpoint.
+    assert f"socks5://{cache['proxies'][0]['addr']}" == "socks5://127.0.0.1:10808"
+
+
+def test_cache_property_empty_when_pool_empty(stub_xray, paths) -> None:
+    pm = _manager(paths)
+    assert pm._cache["proxies"] == []
+
+
+def test_cache_property_is_read_only_snapshot(stub_xray, paths) -> None:
+    """Mutating the returned dict must not leak into real manager state —
+    it's a view, not a handle."""
+    _make_pool(paths["pool"], n=2)
+    pm = _manager(paths)
+    snapshot = pm._cache
+    snapshot["proxies"].clear()
+    snapshot["vkusvill_cooldowns"]["9.9.9.9"] = {"blocked_at": 0, "reason": "oops"}
+    fresh = pm._cache
+    assert len(fresh["proxies"]) == 1  # still has the bridge entry
+    assert "9.9.9.9" not in fresh["vkusvill_cooldowns"]
+
+
 def test_remove_proxy_with_vless_host_removes_and_restarts(stub_xray, paths) -> None:
     _make_pool(paths["pool"], n=3)
     pm = _manager(paths)
