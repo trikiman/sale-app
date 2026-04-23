@@ -243,6 +243,37 @@ class VlessProxyManager:
             if (now - float(entry.get("blocked_at", 0.0))) < VKUSVILL_COOLDOWN_S
         }
 
+    @property
+    def _cache(self) -> dict:
+        """Read-only view compatible with the legacy SOCKS5 ``ProxyManager._cache``.
+
+        Legacy callers (``backend/main.py::product_details``, admin refresh
+        endpoint) treat ``_cache["proxies"]`` as a list of ``{"addr": ...}``
+        dicts and then build ``socks5://<addr>`` URLs from them. The VLESS
+        architecture collapses the whole pool behind a single local xray
+        SOCKS5 inbound, so we expose exactly one synthetic entry pointing at
+        the bridge when the pool is non-empty. The returned dict is a fresh
+        copy — mutating it has no effect on real state, matching the
+        semantics the shim contract promises.
+        """
+        nodes = self._pool.get("nodes", [])
+        proxies: list[dict] = []
+        if nodes:
+            proxies.append(
+                {
+                    "addr": f"{XRAY_LISTEN_HOST}:{XRAY_LISTEN_PORT}",
+                    "speed": 0.0,
+                    "added_at": self._pool.get("updated_at"),
+                }
+            )
+        return {
+            "updated_at": self._pool.get("updated_at"),
+            "proxies": proxies,
+            "vkusvill_cooldowns": {
+                host: dict(entry) for host, entry in self._cooldowns.items()
+            },
+        }
+
     def ensure_pool(self) -> int:
         """Refresh if the pool is below :data:`MIN_HEALTHY` or stale (>24h)."""
         count = self.pool_count()
