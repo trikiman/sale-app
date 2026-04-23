@@ -340,22 +340,26 @@ def _install_fake_httpx(monkeypatch, *, status_code: int, url: str, body: str) -
     monkeypatch.setattr(httpx, "Client", _factory)
 
 
+# Real catalog homepage is ~380 KB — pad a brand-containing body past the
+# 20 KB floor so the probe treats it as a real response.
 _HOMEPAGE_SNIPPET = (
     "<html><head><title>ВкусВилл</title></head><body>"
     "<script>window.SITE=\"vkusvill\";</script>"
     "<a class=\"favoritesBtn\">favs</a>"
     "<nav id=\"shopsMenu\">shops</nav>"
     "</body></html>"
+    + ("<!-- filler to exceed 20KB floor -->\n" * 800)
 )
 _VPN_PAGE_SNIPPET = (
     "<html><head><title>VkusVill — VPN</title></head><body>"
-    "<h1>Доступ ограничен: используется VPN</h1>"
+    "<h1>Доступ ограничен: используется VPN. "
+    "Please visit /vpn-detected/</h1>"
     "</body></html>"
 )
 
 
 def test_probe_vkusvill_admits_real_homepage(stub_xray, paths, monkeypatch) -> None:
-    """Real catalog homepage (200 + markers + non-/vpn-detected/ URL) passes."""
+    """Real catalog homepage (200, >20 KB, brand, no /vpn-detected/) passes."""
     pm = _manager(paths)
     _install_fake_httpx(
         monkeypatch,
@@ -367,35 +371,46 @@ def test_probe_vkusvill_admits_real_homepage(stub_xray, paths, monkeypatch) -> N
 
 
 def test_probe_vkusvill_rejects_vpn_detected_landing(stub_xray, paths, monkeypatch) -> None:
-    """200 that final-redirects to /vpn-detected/ must be rejected.
-
-    This is the exact failure mode that admitted EU-exit nodes in v1.15:
-    VkusVill returns 200 with a VPN-warning page at /vpn-detected/, and
-    the legacy loose probe passed it because the body still contained
-    the word "vkusvill".
-    """
+    """200 that final-redirects to /vpn-detected/ must be rejected."""
     pm = _manager(paths)
     _install_fake_httpx(
         monkeypatch,
         status_code=200,
         url="https://vkusvill.ru/vpn-detected/?back_vpn_url=%2F",
-        body=_VPN_PAGE_SNIPPET + "vkusvill",
+        body=_HOMEPAGE_SNIPPET,  # size OK, but URL is the VPN landing
     )
     assert pm._probe_vkusvill(proxy=None) is False
 
 
-def test_probe_vkusvill_rejects_branded_but_markerless_body(stub_xray, paths, monkeypatch) -> None:
-    """Body contains 'vkusvill' but none of the catalog markers — reject.
+def test_probe_vkusvill_rejects_body_with_vpn_detected_marker(
+    stub_xray, paths, monkeypatch
+) -> None:
+    """A 200 whose body contains 'vpn-detected' (client-side bounce) rejects.
 
-    Covers the case where the VPN-warning page is served at the regular
-    URL (no redirect) but without the catalog chrome. Must still fail.
+    Covers the case where the initial response arrives at ``/`` but contains
+    a JS redirect / warning referencing ``vpn-detected``. Independent of the
+    final URL check so we catch pages that redirect the user agent but
+    haven't been followed by the HTTP client yet.
     """
+    pm = _manager(paths)
+    big_vpn_body = _VPN_PAGE_SNIPPET + ("x" * 30_000) + " vkusvill"
+    _install_fake_httpx(
+        monkeypatch,
+        status_code=200,
+        url="https://vkusvill.ru/",
+        body=big_vpn_body,
+    )
+    assert pm._probe_vkusvill(proxy=None) is False
+
+
+def test_probe_vkusvill_rejects_tiny_body(stub_xray, paths, monkeypatch) -> None:
+    """A 200 with a < 20 KB body (captive portal / error shim) rejects."""
     pm = _manager(paths)
     _install_fake_httpx(
         monkeypatch,
         status_code=200,
         url="https://vkusvill.ru/",
-        body="<html>vkusvill maintenance</html>",
+        body="<html>vkusvill tiny</html>",
     )
     assert pm._probe_vkusvill(proxy=None) is False
 

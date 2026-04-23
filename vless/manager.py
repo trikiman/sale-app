@@ -567,21 +567,30 @@ class VlessProxyManager:
         """HTTP probe of vkusvill.ru; returns True only when the real catalog
         homepage is served — i.e. the IP is NOT VPN-flagged by VkusVill.
 
-        VkusVill serves 200 for both the real homepage and the VPN-warning
-        page, and both contain the word "vkusvill", so the historical
-        "status=200 and body contains vkusvill" check silently admitted
-        VPN-blocked egresses (igareck's RU-frontend, EU-exit nodes). We now
-        additionally require:
+        VkusVill serves the real homepage for RU-egress IPs (final URL is
+        ``https://vkusvill.ru/``, body never mentions ``vpn-detected``) and
+        redirects VPN-flagged egresses to ``/vpn-detected/`` (either via a
+        Location header we follow, or via a client-side bounce whose HTML
+        still contains the literal ``vpn-detected`` substring).
 
-        1. The final URL (after redirects) is **not** ``/vpn-detected/`` —
-           that's the anti-VPN landing page.
-        2. The body contains at least one catalog-only marker (``favoritesbtn``,
-           ``shopsmenu``, ``personalcabinetmenu``) that is absent from the
-           compact VPN-warning page.
+        The admission check therefore requires:
 
-        These two signals together reject VPN-flagged exits at admission
-        time, which is the root cause of the ``status_code=vpn`` failures
-        cart-add hits on prod.
+        1. ``status_code == 200``
+        2. The final URL (after ``follow_redirects=True``) does not contain
+           ``/vpn-detected/``.
+        3. The body does not contain the literal ``vpn-detected`` substring
+           (catches client-side bounces whose initial status is still 200).
+        4. The body contains ``vkusvill`` (defensive — rules out captive
+           portals / DNS hijacks / connection-reset HTML from broken nodes).
+        5. The body is at least ~20 KB — the real homepage is ~380 KB; the
+           VPN-warning page we observed was ~35 KB but contained the marker;
+           this floor just rules out tiny error pages without being brittle
+           to VkusVill changing the VPN-page wording.
+
+        The previous (PR #6) marker-list check has been removed: the markers
+        we picked (``favoritesbtn`` / ``shopsmenu`` / ``personalcabinetmenu``)
+        don't appear on the current homepage at all, so the check rejected
+        100 % of otherwise-good RU-exit nodes.
         """
         if not HAS_HTTPX:
             return False
@@ -598,17 +607,16 @@ class VlessProxyManager:
         try:
             with httpx.Client(**kwargs) as client:
                 resp = client.get(VKUSVILL_URL)
-                if resp.status_code != 200:
-                    return False
-                if "/vpn-detected/" in str(resp.url):
-                    return False
-                body = resp.text[:20000].lower()
-                if "vkusvill" not in body:
-                    return False
-                return any(
-                    marker in body
-                    for marker in ("favoritesbtn", "shopsmenu", "personalcabinetmenu")
-                )
+            if resp.status_code != 200:
+                return False
+            if "/vpn-detected/" in str(resp.url):
+                return False
+            if len(resp.text) < 20_000:
+                return False
+            body = resp.text.lower()
+            if "vpn-detected" in body:
+                return False
+            return "vkusvill" in body
         except Exception:  # noqa: BLE001 — probe is best-effort
             return False
 
