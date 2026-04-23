@@ -27,20 +27,51 @@ _BALANCER_TAG = "ru-balancer"
 
 
 def _build_outbound(node: VlessNode, tag: str) -> dict:
-    """Translate a :class:`VlessNode` into an xray VLESS outbound dict."""
+    """Translate a :class:`VlessNode` into an xray VLESS outbound dict.
+
+    Two security modes are supported:
+
+    * ``security == "reality"`` — the igareck "black" / Reality-masked lists.
+      Produces a ``realitySettings`` block with pbk/sni/sid/spx.
+    * ``security == "tls"`` — plain VLESS+TLS+xtls-rprx-vision (the "white
+      list" CIDR/SNI entries that actually egress on RU residential ranges).
+      Produces a ``tlsSettings`` block with serverName + allowInsecure.
+    """
     user: dict[str, object] = {"id": node.uuid, "encryption": node.encryption}
     if node.flow:
         user["flow"] = node.flow
 
-    reality_settings: dict[str, object] = {
-        "show": False,
-        "fingerprint": node.reality_fp or "chrome",
-        "serverName": node.reality_sni,
-        "publicKey": node.reality_pbk,
-        "shortId": node.reality_sid,
+    stream_settings: dict[str, object] = {
+        "network": node.transport or "tcp",
     }
-    if node.reality_spx:
-        reality_settings["spiderX"] = node.reality_spx
+    if node.header_type and node.header_type != "none" and (node.transport or "tcp") == "tcp":
+        stream_settings["tcpSettings"] = {
+            "header": {"type": node.header_type},
+        }
+
+    if node.security == "tls":
+        stream_settings["security"] = "tls"
+        tls_settings: dict[str, object] = {
+            "allowInsecure": bool(node.tls_allow_insecure),
+            "fingerprint": node.reality_fp or "chrome",
+        }
+        # serverName defaults to the node host when no SNI was provided —
+        # this matches what xray infers automatically but being explicit
+        # keeps the generated config self-documenting.
+        tls_settings["serverName"] = node.tls_sni or node.host
+        stream_settings["tlsSettings"] = tls_settings
+    else:
+        stream_settings["security"] = "reality"
+        reality_settings: dict[str, object] = {
+            "show": False,
+            "fingerprint": node.reality_fp or "chrome",
+            "serverName": node.reality_sni,
+            "publicKey": node.reality_pbk,
+            "shortId": node.reality_sid,
+        }
+        if node.reality_spx:
+            reality_settings["spiderX"] = node.reality_spx
+        stream_settings["realitySettings"] = reality_settings
 
     return {
         "tag": tag,
@@ -54,11 +85,7 @@ def _build_outbound(node: VlessNode, tag: str) -> dict:
                 }
             ]
         },
-        "streamSettings": {
-            "network": node.transport or "tcp",
-            "security": "reality",
-            "realitySettings": reality_settings,
-        },
+        "streamSettings": stream_settings,
     }
 
 
