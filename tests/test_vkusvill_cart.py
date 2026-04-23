@@ -96,6 +96,10 @@ def test_perform_http_request_falls_back_from_proxy_to_direct(monkeypatch, tmp_p
     response = cart._perform_http_request("POST", "https://example.com", headers={}, data={})
 
     assert response.status_code == 200
-    assert calls == ["socks5://1.2.3.4:1080", None]
+    # xray round-robins per fresh connection, so proxied TLS timeouts are
+    # retried _BRIDGE_RETRY_ATTEMPTS times before we fall back to direct.
+    assert calls == (
+        ["socks5://1.2.3.4:1080"] * vv._BRIDGE_RETRY_ATTEMPTS + [None]
+    )
     assert removed == ["1.2.3.4:1080"]
     assert direct_notes[-1] is True

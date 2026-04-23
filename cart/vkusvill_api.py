@@ -32,6 +32,29 @@ CART_ADD_REQUEST_TIMEOUT = httpx.Timeout(CART_ADD_HOT_PATH_DEADLINE_SECONDS)
 SESSID_STALE_SECONDS = 1800  # 30 minutes — refresh sessid if older than this
 SESSID_REFRESH_TIMEOUT = httpx.Timeout(connect=10.0, read=10.0, write=3.0, pool=3.0)
 
+# xray balances each NEW SOCKS5 connection across its VLESS outbounds, so
+# a fresh httpx.Client after a TLS handshake timeout usually lands on a
+# different (healthy) backend. Retrying through the bridge 3x is cheap and
+# covers ~60-70%-success-rate nodes without exploding the hot-path budget.
+_BRIDGE_RETRY_ATTEMPTS = 3
+
+
+def _is_transient_proxy_error(exc: Exception) -> bool:
+    """Return True when a fresh connection is likely to succeed.
+
+    Covers the common xray-balancer failure modes — handshake timeouts,
+    mid-stream EOFs, socket resets — where the proxy itself is healthy but
+    the backend it picked this time around isn't.
+    """
+    if isinstance(exc, (httpx.TimeoutException, httpx.ReadError, httpx.RemoteProtocolError)):
+        return True
+    msg = str(exc).lower()
+    return (
+        "handshake" in msg
+        or "unexpected_eof" in msg
+        or "connection reset" in msg
+    )
+
 
 def _coerce_numeric(value, default=0):
     try:
@@ -164,7 +187,12 @@ class VkusVillCart:
         return None
 
     def _perform_http_request(self, method: str, url: str, *, headers: dict, data=None, timeout=None, follow_redirects: bool = False):
-        """Run a request with direct/proxy fallback and direct-health cache updates."""
+        """Run a request with direct/proxy fallback and direct-health cache updates.
+
+        Proxied attempts retry up to ``_BRIDGE_RETRY_ATTEMPTS`` times on transient
+        TLS/handshake errors — xray round-robins connections across VLESS
+        backends, and a fresh client typically lands on a healthy one.
+        """
         client_kwargs = dict(timeout=timeout or CART_REQUEST_TIMEOUT)
         last_exc = None
         candidates = self._transport_candidates()
@@ -176,30 +204,44 @@ class VkusVillCart:
                 attempt_kwargs["proxy"] = proxy_url
                 attempt_label = proxy_url
 
-            try:
-                with httpx.Client(**attempt_kwargs) as client:
-                    if method == "GET":
-                        response = client.get(url, headers=headers, follow_redirects=follow_redirects)
-                    else:
-                        response = client.post(url, data=data, headers=headers, follow_redirects=follow_redirects)
-                if self._proxy_manager and proxy_url is None and hasattr(self._proxy_manager, "note_direct_result"):
-                    self._proxy_manager.note_direct_result(True)
-                if idx > 0:
-                    logger.info(f"{method} {url} fallback via {attempt_label} succeeded")
-                return response
-            except httpx.HTTPError as exc:
-                last_exc = exc
-                if self._proxy_manager and proxy_url is None and hasattr(self._proxy_manager, "note_direct_result"):
-                    self._proxy_manager.note_direct_result(False)
-                if proxy_url and self._proxy_manager and hasattr(self._proxy_manager, "remove_proxy"):
-                    try:
-                        self._proxy_manager.remove_proxy(proxy_url.removeprefix("socks5://"))
-                    except Exception:
-                        pass
-                if idx < len(candidates) - 1:
-                    logger.warning(f"{method} {url} via {attempt_label} failed: {exc} — retrying fallback")
-                    continue
-                raise
+            max_attempts = _BRIDGE_RETRY_ATTEMPTS if proxy_url else 1
+            attempt_exc: Exception | None = None
+            for attempt in range(max_attempts):
+                try:
+                    with httpx.Client(**attempt_kwargs) as client:
+                        if method == "GET":
+                            response = client.get(url, headers=headers, follow_redirects=follow_redirects)
+                        else:
+                            response = client.post(url, data=data, headers=headers, follow_redirects=follow_redirects)
+                    if self._proxy_manager and proxy_url is None and hasattr(self._proxy_manager, "note_direct_result"):
+                        self._proxy_manager.note_direct_result(True)
+                    if idx > 0 or attempt > 0:
+                        logger.info(f"{method} {url} via {attempt_label} succeeded on attempt {attempt + 1}")
+                    return response
+                except httpx.HTTPError as exc:
+                    attempt_exc = exc
+                    last_exc = exc
+                    if proxy_url and attempt + 1 < max_attempts and _is_transient_proxy_error(exc):
+                        logger.warning(
+                            f"{method} {url} via {attempt_label} attempt "
+                            f"{attempt + 1}/{max_attempts} failed: {exc} — retrying fresh connection"
+                        )
+                        continue
+                    break
+
+            if self._proxy_manager and proxy_url is None and hasattr(self._proxy_manager, "note_direct_result"):
+                self._proxy_manager.note_direct_result(False)
+            if proxy_url and self._proxy_manager and hasattr(self._proxy_manager, "remove_proxy"):
+                try:
+                    self._proxy_manager.remove_proxy(proxy_url.removeprefix("socks5://"))
+                except Exception:
+                    pass
+            if idx < len(candidates) - 1:
+                logger.warning(f"{method} {url} via {attempt_label} failed: {attempt_exc} — retrying fallback")
+                continue
+            if attempt_exc is not None:
+                raise attempt_exc
+            break
 
         if last_exc:
             raise last_exc
