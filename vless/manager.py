@@ -32,7 +32,7 @@ except ImportError:  # pragma: no cover — CI installs httpx
 from vless import installer, pool_state, sources
 from vless.config_gen import XRAY_LISTEN_HOST, XRAY_LISTEN_PORT, build_xray_config
 from vless.parser import VlessNode
-from vless.xray import XrayProcess, XrayStartupError
+from vless.xray import XrayProcess, XrayStartupError, _atomic_write_text
 
 _BASE_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = _BASE_DIR / "data"
@@ -697,8 +697,25 @@ class VlessProxyManager:
             self._last_crash_at = datetime.now().isoformat(timespec="seconds")
             raise
 
+    def _write_active_config(self, config: dict) -> None:
+        """Atomically write the xray config to :attr:`_xray_config_path`.
+
+        The write is independent of the in-process ``XrayProcess`` so the
+        file is available for an out-of-process (systemd) xray to consume.
+        """
+        _atomic_write_text(
+            self._xray_config_path,
+            json.dumps(config, indent=2, ensure_ascii=False),
+        )
+
     def _rebuild_and_restart_xray(self) -> None:
-        """Regenerate xray config from current pool and restart if already up."""
+        """Regenerate xray config from current pool and restart if already up.
+
+        Always writes ``active.json`` to disk when the pool is non-empty, so
+        an out-of-process (e.g. systemd-managed) xray can pick up the new
+        config on its own restart cycle. The in-process xray, if any, is
+        additionally restarted to pick up the change immediately.
+        """
         nodes = pool_state.nodes_from(self._pool)
         if not nodes:
             # Empty pool — stop any running xray so callers see get_working_proxy=None.
@@ -707,8 +724,11 @@ class VlessProxyManager:
                 self._track_event("xray_stop", {"graceful": True, "reason": "empty pool"})
             return
         config = build_xray_config(nodes)
+        # Persist config regardless of whether an in-process xray is tracked
+        # — systemd-managed xray reads this file directly on restart.
+        self._write_active_config(config)
         if self._xray is None:
-            return  # xray never started — next get_working_proxy() lazy-starts it
+            return  # in-process xray not tracked; systemd xray will pick up active.json
         try:
             self._xray.restart(new_config=config)
             self._last_config_reload = datetime.now().isoformat(timespec="seconds")
