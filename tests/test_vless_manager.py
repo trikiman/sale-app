@@ -774,5 +774,53 @@ def _load_events(path: Path) -> list[dict]:
     return out
 
 
+def test_pool_state_roundtrip_preserves_tls_fields(tmp_path) -> None:
+    """Regression: security / tls_sni / tls_allow_insecure must survive save→load.
+
+    Prior to this check, the pool file dropped those fields so TLS nodes
+    came back as Reality with an empty public key, causing xray to emit a
+    Reality outbound that could never complete its handshake.
+    """
+    from vless import pool_state
+
+    tls_node = VlessNode(
+        uuid="75807638-6f19-07d0-ae08-38492ee85c88",
+        host="5.178.87.140",
+        port=52006,
+        name="\U0001f1f7\U0001f1fa Russia [*CIDR]",
+        flow="xtls-rprx-vision",
+        transport="tcp",
+        encryption="none",
+        header_type="none",
+        security="tls",
+        tls_sni="cluster-russia-1.firstvideocdn.ru",
+        tls_allow_insecure=True,
+    )
+    reality_node = VlessNode(
+        uuid="4036688f-4e87-502d-82e0-3f0203a6f004",
+        host="94.103.2.194",
+        port=443,
+        name="reality-sample",
+        reality_pbk="CxSsLf7XPhNjhqp0QBOI699kkudkiJCoCVfqqXSllyU",
+        reality_sni="business.max.ru",
+        reality_sid="18ec",
+        security="reality",
+    )
+
+    pool = pool_state.replace_nodes({"updated_at": None, "nodes": []}, [tls_node, reality_node])
+    pool_path = tmp_path / "vless_pool.json"
+    pool_state.save(pool, pool_path)
+
+    reloaded = pool_state.load(pool_path)
+    nodes = pool_state.nodes_from(reloaded)
+
+    by_host = {n.host: n for n in nodes}
+    assert by_host["5.178.87.140"].security == "tls"
+    assert by_host["5.178.87.140"].tls_sni == "cluster-russia-1.firstvideocdn.ru"
+    assert by_host["5.178.87.140"].tls_allow_insecure is True
+    assert by_host["94.103.2.194"].security == "reality"
+    assert by_host["94.103.2.194"].reality_pbk != ""
+
+
 # Silence Iterable "unused" in non-type-check runs.
 _ = Iterable
