@@ -104,16 +104,56 @@ def test_rejects_missing_port():
         parse_vless_url("vless://uuid@example.com?security=reality&pbk=P&sni=s")
 
 
-def test_rejects_non_reality_security():
+def test_accepts_security_tls():
+    """VLESS+TLS+xtls-rprx-vision nodes (igareck white-lists) must parse."""
+    url = (
+        "vless://75807638-6f19-07d0-ae08-38492ee85c88@178.72.181.28:52006"
+        "?encryption=none&flow=xtls-rprx-vision&security=tls&fp=chrome"
+        "&insecure=1&allowInsecure=1&type=tcp&headerType=none"
+        "#%F0%9F%87%B7%F0%9F%87%BA%20Russia%20%5B%2ACIDR%5D"
+    )
+    node = parse_vless_url(url)
+    assert node.security == "tls"
+    assert node.flow == "xtls-rprx-vision"
+    assert node.host == "178.72.181.28"
+    assert node.port == 52006
+    assert node.tls_allow_insecure is True
+    # Reality-specific fields stay empty for TLS nodes.
+    assert node.reality_pbk == ""
+    assert node.reality_sni == ""
+    assert "Russia" in node.name
+
+
+def test_accepts_security_tls_with_sni():
+    url = (
+        "vless://uuid@5.178.87.140:52006?encryption=none&flow=xtls-rprx-vision"
+        "&security=tls&sni=cluster-russia-1.firstvideocdn.ru&fp=chrome"
+        "&insecure=0&type=tcp#RU"
+    )
+    node = parse_vless_url(url)
+    assert node.security == "tls"
+    assert node.tls_sni == "cluster-russia-1.firstvideocdn.ru"
+    assert node.tls_allow_insecure is False
+
+
+def test_rejects_unknown_security():
     with pytest.raises(VlessParseError, match="security"):
         parse_vless_url(
-            "vless://uuid@1.2.3.4:443?security=tls&pbk=P&sni=s"
+            "vless://uuid@1.2.3.4:443?security=weirdproto&pbk=P&sni=s"
         )
 
 
-def test_rejects_missing_public_key():
+def test_rejects_missing_public_key_when_reality():
     with pytest.raises(VlessParseError, match="public key"):
         parse_vless_url("vless://uuid@1.2.3.4:443?security=reality&sni=s")
+
+
+def test_tls_does_not_require_public_key():
+    """TLS mode has no pbk — parser must not complain."""
+    node = parse_vless_url(
+        "vless://uuid@1.2.3.4:443?security=tls&type=tcp#RU"
+    )
+    assert node.security == "tls"
 
 
 def test_parse_vless_list_skips_blanks_and_comments():

@@ -146,42 +146,56 @@ def _build_default_resolver():
     )
 
 
+# Russian-flag emoji (regional indicators R + U) — U+1F1F7 U+1F1FA. Some
+# exporters lose the second regional indicator in transit, others insert a
+# variation selector between them, so we match on the leading indicator and
+# on the plain-text "russia" / "ru" fallbacks too.
+_RU_FLAG = "\U0001f1f7\U0001f1fa"
+_RU_FLAG_LEADER = "\U0001f1f7"  # regional indicator "R"
+_RU_TEXT_MARKERS = ("russia", "россия", "рф", "ru ", "[ru]", "(ru)")
+
+
+def _has_ru_marker(name: str) -> bool:
+    """Return True when ``name`` contains an RU flag or textual marker.
+
+    The igareck lists label every entry with ``🇷🇺 Russia [...]`` or
+    ``🇷🇺 Russia [*CIDR]`` / ``🇷🇺 Russia [*SNI]``. Non-RU entries use
+    other flags (🇺🇸, 🇩🇪, 🇳🇱, etc.), so a pure flag-based filter is
+    enough to split RU-exit nodes from the rest without any external
+    geo-DB query.
+    """
+    if not name:
+        return False
+    if _RU_FLAG in name or _RU_FLAG_LEADER in name:
+        return True
+    lowered = name.lower()
+    return any(marker in lowered for marker in _RU_TEXT_MARKERS)
+
+
 def filter_ru_nodes(
     nodes: list[VlessNode],
     *,
-    geo_resolver=None,
-    min_agree: int = 2,
+    geo_resolver=None,  # noqa: ARG001 — kept for signature compatibility
+    min_agree: int = 2,  # noqa: ARG001 — kept for signature compatibility
 ) -> tuple[list[VlessNode], list[VlessNode]]:
-    """Split ``nodes`` into ``(ru_nodes, rejected_nodes)`` by consensus country.
+    """Split ``nodes`` into ``(ru_nodes, rejected_nodes)`` by fragment label.
 
-    ``geo_resolver`` must either be ``None`` (build the default consensus
-    resolver using ``scripts.geo_providers``) or any object exposing a
-    ``resolve_consensus(ips, min_agree=...)`` that returns
-    ``{ip: ConsensusResult}``. Nodes whose host fails DNS resolution are
-    rejected without querying the geo resolver.
+    Prior to v1.16 we ran every host through a multi-provider consensus geo
+    resolver, but the igareck lists already label every entry with a country
+    flag emoji in the URL fragment (the part after ``#``). Trusting that
+    label is both faster (no DNS, no third-party API) and more accurate for
+    our use case: the label reflects the *exit* country the operator cares
+    about, whereas a geo-DB lookup on ``host`` returns the frontend IP —
+    which is often a Cloudflare / OVH edge that doesn't map to the real
+    egress.
     """
     if not nodes:
         return [], []
 
-    resolver = geo_resolver if geo_resolver is not None else _build_default_resolver()
-
-    # Build the per-node IP list by position; VlessNode is not hashable so we
-    # cannot use a dict keyed on it. Positional resolution is equally cheap.
-    resolved: list[str | None] = [_resolve_host_ip(node.host) for node in nodes]
-    unique_ips = sorted({ip for ip in resolved if ip})
-
-    # Query resolver once for the whole batch; cached entries are free.
-    consensus = resolver.resolve_consensus(unique_ips, min_agree=min_agree) if unique_ips else {}
-
     ru_nodes: list[VlessNode] = []
     rejected_nodes: list[VlessNode] = []
-    for node, ip in zip(nodes, resolved):
-        if not ip:
-            rejected_nodes.append(node)
-            continue
-        result = consensus.get(ip)
-        country = getattr(result, "country", "") if result is not None else ""
-        if country == "RU":
+    for node in nodes:
+        if _has_ru_marker(node.name):
             ru_nodes.append(node)
         else:
             rejected_nodes.append(node)

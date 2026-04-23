@@ -28,20 +28,24 @@ class VlessParseError(ValueError):
 
 @dataclass
 class VlessNode:
-    """Typed representation of a single VLESS+Reality outbound.
+    """Typed representation of a single VLESS outbound.
 
-    Attributes map 1:1 to the fields the xray-core VLESS outbound needs. The
-    defaults mirror what igareck-style RU configs typically ship with. Unknown
-    query params are preserved in :attr:`extra` so future param additions do
-    not require a parser change.
+    Supports both VLESS+Reality (the igareck "black" lists) and plain
+    VLESS+TLS+xtls-rprx-vision (the "CIDR/SNI white-list" entries that
+    actually egress in RU). Reality-specific fields are ignored when
+    ``security != "reality"``; TLS-specific fields (``tls_sni``,
+    ``tls_allow_insecure``) are ignored when ``security == "reality"``.
+
+    Unknown query params are preserved in :attr:`extra` so future param
+    additions do not require a parser change.
     """
 
     uuid: str
     host: str
     port: int
     name: str
-    reality_pbk: str
-    reality_sni: str
+    reality_pbk: str = ""
+    reality_sni: str = ""
     reality_sid: str = ""
     reality_spx: str = ""
     reality_fp: str = "chrome"
@@ -49,6 +53,9 @@ class VlessNode:
     transport: str = "tcp"
     encryption: str = "none"
     header_type: str = "none"
+    security: str = "reality"
+    tls_sni: str = ""
+    tls_allow_insecure: bool = False
     extra: dict = field(default_factory=dict)
 
     @property
@@ -71,8 +78,12 @@ _KNOWN_PARAMS = frozenset(
         "type",
         "encryption",
         "headerType",
+        "insecure",
+        "allowInsecure",
     }
 )
+
+_SUPPORTED_SECURITY = frozenset({"reality", "tls", ""})
 
 
 def _first(values: list[str]) -> str:
@@ -114,16 +125,19 @@ def parse_vless_url(url: str) -> VlessNode:
     params = urllib.parse.parse_qs(parsed.query, keep_blank_values=True)
 
     security = _first(params.get("security", [])).lower()
-    if security and security != "reality":
+    if security not in _SUPPORTED_SECURITY:
         raise VlessParseError(
-            f"unsupported security={security!r}; this parser is Reality-only"
+            f"unsupported security={security!r}; expected one of reality/tls/<empty>"
         )
-
-    pbk = _first(params.get("pbk", []))
-    if not pbk:
-        raise VlessParseError("missing reality public key (pbk=...)")
+    # Empty ``security=`` is treated as reality for backwards compatibility
+    # with pre-v1.16 lists that never set the param explicitly.
+    effective_security = security or "reality"
 
     sni = _first(params.get("sni", []))
+    pbk = _first(params.get("pbk", []))
+    if effective_security == "reality" and not pbk:
+        raise VlessParseError("missing reality public key (pbk=...)")
+
     sid = _first(params.get("sid", []))
     spx = _first(params.get("spx", []))
     fp = _first(params.get("fp", [])) or "chrome"
@@ -131,6 +145,15 @@ def parse_vless_url(url: str) -> VlessNode:
     transport = _first(params.get("type", [])) or "tcp"
     encryption = _first(params.get("encryption", [])) or "none"
     header_type = _first(params.get("headerType", [])) or "none"
+
+    # TLS-only: accept both ``insecure=1`` and ``allowInsecure=1`` (the two
+    # forms igareck's white-list exporters produce).
+    insecure_raw = (
+        _first(params.get("allowInsecure", []))
+        or _first(params.get("insecure", []))
+    )
+    tls_allow_insecure = insecure_raw.strip() in {"1", "true", "True"}
+    tls_sni = sni if effective_security == "tls" else ""
 
     extra: dict[str, str] = {}
     for key, values in params.items():
@@ -148,8 +171,8 @@ def parse_vless_url(url: str) -> VlessNode:
         host=host,
         port=port,
         name=name,
-        reality_pbk=pbk,
-        reality_sni=sni,
+        reality_pbk=pbk if effective_security == "reality" else "",
+        reality_sni=sni if effective_security == "reality" else "",
         reality_sid=sid,
         reality_spx=spx,
         reality_fp=fp,
@@ -157,6 +180,9 @@ def parse_vless_url(url: str) -> VlessNode:
         transport=transport,
         encryption=encryption,
         header_type=header_type,
+        security=effective_security,
+        tls_sni=tls_sni,
+        tls_allow_insecure=tls_allow_insecure,
         extra=extra,
     )
 
