@@ -35,6 +35,9 @@ _NODE_FIELDS = (
     "transport",
     "encryption",
     "header_type",
+    "security",
+    "tls_sni",
+    "tls_allow_insecure",
 )
 
 
@@ -63,10 +66,19 @@ def _node_from_entry(entry: dict) -> VlessNode:
         kwargs["port"] = int(port)
     except (TypeError, ValueError):
         kwargs["port"] = 0
-    kwargs.setdefault("transport", "tcp")
-    kwargs.setdefault("encryption", "none")
-    kwargs.setdefault("header_type", "none")
-    kwargs.setdefault("reality_fp", "chrome")
+    if not kwargs.get("transport"):
+        kwargs["transport"] = "tcp"
+    if not kwargs.get("encryption"):
+        kwargs["encryption"] = "none"
+    if not kwargs.get("header_type"):
+        kwargs["header_type"] = "none"
+    if not kwargs.get("reality_fp"):
+        kwargs["reality_fp"] = "chrome"
+    # Older pool files pre-date the TLS branch — empty ``security`` means
+    # "Reality" (the only mode before v1.16).
+    if not kwargs.get("security"):
+        kwargs["security"] = "reality"
+    kwargs["tls_allow_insecure"] = bool(kwargs.get("tls_allow_insecure"))
     return VlessNode(extra=extra, **kwargs)
 
 
