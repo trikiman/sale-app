@@ -549,19 +549,21 @@ async def product_details(product_id: str):
     dead_proxies = []
     working_proxy = None
 
-    # Phase 1: Quick 1s HEAD check to find a live proxy
+    # Phase 1: HEAD check to find a live proxy. TLS handshake through the
+    # VLESS bridge routinely takes 3-5s, so 4s is the floor; anything less
+    # drops healthy backends on a slow balancer pick.
     for entry in pool:
         addr = entry["addr"]
         proxy_url = f"socks5://{addr}"
         try:
             async with httpx.AsyncClient(
-                timeout=httpx.Timeout(connect=1.0, read=1.0, write=1.0, pool=1.0),
+                timeout=httpx.Timeout(connect=4.0, read=4.0, write=2.0, pool=2.0),
                 proxy=proxy_url
             ) as client:
                 await client.head("https://vkusvill.ru/", headers={"User-Agent": ua})
             # HEAD succeeded — this proxy is alive
             working_proxy = addr
-            logger.info(f"[DETAIL-PROXY] Product {product_id}: proxy {addr} passed 1s health check")
+            logger.info(f"[DETAIL-PROXY] Product {product_id}: proxy {addr} passed health check")
             break
         except httpx.ConnectError:
             logger.info(f"[DETAIL-PROXY] Product {product_id}: proxy {addr} dead (ConnectError)")
@@ -571,16 +573,19 @@ async def product_details(product_id: str):
         except Exception:
             logger.info(f"[DETAIL-PROXY] Product {product_id}: proxy {addr} check failed, trying next")
 
-    # Remove confirmed dead proxies
+    # Remove confirmed dead proxies (remove_proxy guards against the bridge
+    # endpoint 127.0.0.1:10808 internally, so no-op there).
     for addr in dead_proxies:
         pm.remove_proxy(addr)
 
-    # Phase 2: If we found a working proxy, do the full page fetch
-    if working_proxy:
+    # Phase 2: Full page fetch with retries. xray round-robins per fresh
+    # connection, so retrying a failed fetch usually lands on a healthy node.
+    fetch_attempts = 3 if working_proxy else 0
+    for attempt in range(fetch_attempts):
         proxy_url = f"socks5://{working_proxy}"
         try:
             async with httpx.AsyncClient(
-                timeout=httpx.Timeout(connect=3.0, read=5.0, write=3.0, pool=3.0),
+                timeout=httpx.Timeout(connect=4.0, read=6.0, write=3.0, pool=3.0),
                 follow_redirects=True, proxy=proxy_url
             ) as client:
                 resp = await client.get(url, headers={
@@ -589,15 +594,18 @@ async def product_details(product_id: str):
                 })
                 if resp.status_code == 200 and len(resp.text) > 500:
                     html = resp.text
-                    logger.info(f"[DETAIL-PROXY] Product {product_id}: fetched {len(html)} bytes via proxy {working_proxy} in {resp.elapsed.total_seconds():.1f}s")
-                else:
-                    logger.warning(f"[DETAIL-PROXY] Product {product_id}: proxy {working_proxy} returned status {resp.status_code}")
+                    logger.info(f"[DETAIL-PROXY] Product {product_id}: fetched {len(html)} bytes via proxy {working_proxy} on attempt {attempt + 1} in {resp.elapsed.total_seconds():.1f}s")
+                    break
+                logger.warning(f"[DETAIL-PROXY] Product {product_id}: proxy {working_proxy} returned status {resp.status_code} on attempt {attempt + 1}")
         except httpx.ConnectError:
             pm.remove_proxy(working_proxy)
-            logger.warning(f"[DETAIL-PROXY] Product {product_id}: proxy {working_proxy} died during fetch")
+            logger.warning(f"[DETAIL-PROXY] Product {product_id}: proxy {working_proxy} died during fetch (attempt {attempt + 1})")
+            break
         except Exception as e:
-            logger.warning(f"[DETAIL-PROXY] Product {product_id}: fetch via {working_proxy} failed ({e})")
-    else:
+            logger.warning(f"[DETAIL-PROXY] Product {product_id}: fetch via {working_proxy} attempt {attempt + 1}/{fetch_attempts} failed ({e})")
+            continue
+
+    if not working_proxy:
         if dead_proxies:
             logger.info(f"[DETAIL-PROXY] Product {product_id}: removed {len(dead_proxies)} dead proxies, none working")
         else:
