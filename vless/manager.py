@@ -666,9 +666,36 @@ class VlessProxyManager:
             installer.install()
         return installer.binary_path()
 
+    def _external_xray_listening(self) -> bool:
+        """Return True if something (e.g. systemd xray) already listens on the bridge port.
+
+        We only probe the default port — the in-process xray is tracked via
+        :attr:`_xray` and takes precedence over this check.
+        """
+        try:
+            with socket.create_connection(
+                (XRAY_LISTEN_HOST, XRAY_LISTEN_PORT), timeout=1.0
+            ):
+                return True
+        except OSError:
+            return False
+
     def _ensure_xray_running(self) -> None:
-        """Start xray on demand, rebuilding config from the current pool."""
+        """Start xray on demand, rebuilding config from the current pool.
+
+        If an external xray (e.g. ``saleapp-xray.service`` under systemd) is
+        already bound to :data:`XRAY_LISTEN_PORT`, we skip the spawn and reuse
+        that bridge — this lets multiple Python callers (backend, scheduler,
+        ad-hoc scripts) share one supervised xray instead of racing to bind
+        the same port.
+        """
         if self._xray is not None and self._xray.is_running():
+            return
+        if self._external_xray_listening():
+            self._log(
+                f"External xray already listening on {XRAY_LISTEN_HOST}:"
+                f"{XRAY_LISTEN_PORT} — reusing bridge"
+            )
             return
         nodes = pool_state.nodes_from(self._pool)
         if not nodes:
