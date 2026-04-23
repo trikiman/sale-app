@@ -27,7 +27,7 @@ BASKET_RECALC_URL = "https://vkusvill.ru/ajax/delivery_order/basket_recalc.php"
 BASKET_CLEAR_URL = "https://vkusvill.ru/ajax/delivery_order/basket_clear.php"
 VKUSVILL_BASE = "https://vkusvill.ru"
 CART_REQUEST_TIMEOUT = httpx.Timeout(connect=2.0, read=3.0, write=3.0, pool=2.0)
-CART_ADD_HOT_PATH_DEADLINE_SECONDS = 3.5
+CART_ADD_HOT_PATH_DEADLINE_SECONDS = 10.0
 CART_ADD_REQUEST_TIMEOUT = httpx.Timeout(CART_ADD_HOT_PATH_DEADLINE_SECONDS)
 SESSID_STALE_SECONDS = 1800  # 30 minutes — refresh sessid if older than this
 SESSID_REFRESH_TIMEOUT = httpx.Timeout(connect=10.0, read=10.0, write=3.0, pool=3.0)
