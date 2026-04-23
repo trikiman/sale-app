@@ -564,7 +564,25 @@ class VlessProxyManager:
         return len(stale)
 
     def _probe_vkusvill(self, proxy: str | None = None, verify_ssl: bool = False) -> bool:
-        """HTTP probe of vkusvill.ru; returns True only on 200 + content marker."""
+        """HTTP probe of vkusvill.ru; returns True only when the real catalog
+        homepage is served — i.e. the IP is NOT VPN-flagged by VkusVill.
+
+        VkusVill serves 200 for both the real homepage and the VPN-warning
+        page, and both contain the word "vkusvill", so the historical
+        "status=200 and body contains vkusvill" check silently admitted
+        VPN-blocked egresses (igareck's RU-frontend, EU-exit nodes). We now
+        additionally require:
+
+        1. The final URL (after redirects) is **not** ``/vpn-detected/`` —
+           that's the anti-VPN landing page.
+        2. The body contains at least one catalog-only marker (``favoritesbtn``,
+           ``shopsmenu``, ``personalcabinetmenu``) that is absent from the
+           compact VPN-warning page.
+
+        These two signals together reject VPN-flagged exits at admission
+        time, which is the root cause of the ``status_code=vpn`` failures
+        cart-add hits on prod.
+        """
         if not HAS_HTTPX:
             return False
         import httpx
@@ -582,8 +600,15 @@ class VlessProxyManager:
                 resp = client.get(VKUSVILL_URL)
                 if resp.status_code != 200:
                     return False
-                body = resp.text[:5000].lower()
-                return "vkusvill" in body
+                if "/vpn-detected/" in str(resp.url):
+                    return False
+                body = resp.text[:20000].lower()
+                if "vkusvill" not in body:
+                    return False
+                return any(
+                    marker in body
+                    for marker in ("favoritesbtn", "shopsmenu", "personalcabinetmenu")
+                )
         except Exception:  # noqa: BLE001 — probe is best-effort
             return False
 
