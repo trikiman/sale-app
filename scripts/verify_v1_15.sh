@@ -27,14 +27,19 @@ echo ">>> [1/5] xray is running and accepting on 127.0.0.1:10808"
 "${SSH[@]}" "timeout 2 bash -c '</dev/tcp/127.0.0.1/10808' && echo 'port 10808 accepting'"
 
 echo ">>> [2/5] Egress country == RU"
-"${SSH[@]}" "curl -sSfL --socks5-hostname 127.0.0.1:10808 https://ipinfo.io/json | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d); assert d[\"country\"]==\"RU\", f\"unexpected country {d[\\\"country\\\"]}\"'"
+# Use grep instead of nested python to avoid multi-level quote escaping.
+# ipinfo.io returns e.g. '"country": "RU"' — the single-quoted extended
+# regex tolerates whitespace between the colon and the value.
+"${SSH[@]}" 'curl -sSfL --socks5-hostname 127.0.0.1:10808 https://ipinfo.io/json | tee /tmp/v1_15_ipinfo.json && grep -qE "\"country\"[[:space:]]*:[[:space:]]*\"RU\"" /tmp/v1_15_ipinfo.json && echo country=RU confirmed'
 
 echo ">>> [3/5] vkusvill.ru reachable through bridge (200 + content marker)"
 "${SSH[@]}" "curl -sSfL --socks5-hostname 127.0.0.1:10808 https://vkusvill.ru/ | grep -qi vkusvill && echo 'marker found'"
 
 echo ">>> [4/5] Scraper cycle succeeds end-to-end"
 "${SSH[@]}" "cd $REPO_PATH && timeout 300 python3 scrape_green.py 2>&1 | tail -n 30"
-"${SSH[@]}" "ls -la $REPO_PATH/data/green_products.json && python3 -c 'import json; d=json.load(open(\"$REPO_PATH/data/green_products.json\")); assert len(d[\"products\"])>0; print(f\"scraped {len(d[\\\"products\\\"])} products\")'"
+"${SSH[@]}" "ls -la $REPO_PATH/data/green_products.json"
+# Count products via grep to avoid double-quote escaping in python -c.
+"${SSH[@]}" "grep -oE '\"products\"[[:space:]]*:[[:space:]]*\\[[^]]' $REPO_PATH/data/green_products.json >/dev/null && echo 'green_products.json contains non-empty products array'"
 
 echo ">>> [5/5] Live cart add/remove through bridge"
 if [ -z "$PHPSESSID" ]; then
