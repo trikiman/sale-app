@@ -25,7 +25,10 @@ echo ">>> [1/8] Pulling latest code on EC2"
 "${SSH[@]}" "cd $REPO_PATH && git fetch origin && git checkout main && git pull origin main"
 
 echo ">>> [2/8] Ensuring Python deps"
-"${SSH[@]}" "cd $REPO_PATH && python3 -m pip install -r requirements.txt --upgrade"
+# Ubuntu 24.04 enforces PEP 668 on system python, so --break-system-packages
+# is required. The EC2 scheduler.service runs /usr/bin/python3 directly (no
+# venv), so we must install into the system site-packages.
+"${SSH[@]}" "cd $REPO_PATH && python3 -m pip install -r requirements.txt --upgrade --break-system-packages"
 
 echo ">>> [3/8] Installing xray-core (pinned version)"
 "${SSH[@]}" "cd $REPO_PATH && python3 scripts/bootstrap_xray.py"
@@ -34,9 +37,14 @@ echo ">>> [4/8] Running initial VLESS pool refresh (>=5 nodes required)"
 "${SSH[@]}" "cd $REPO_PATH && python3 -c 'from vless.manager import VlessProxyManager; pm = VlessProxyManager(); n = pm.refresh_proxy_list(); print(f\"admitted {n} nodes\"); assert n >= 5, \"pool below minimum\"'"
 
 echo ">>> [5/8] Installing systemd units"
+# saleapp-xray.service is brand new, so we install it as a full unit.
+# saleapp-scheduler.service already exists on EC2 and wraps python3 in
+# xvfb-run for Chromium cart-add. Instead of overwriting it (which would
+# drop the xvfb wrapper), we install a drop-in override that adds the
+# xray dependency while preserving the existing ExecStart/Environment.
 "${SCP[@]}" systemd/saleapp-xray.service "$HOST:/tmp/"
-"${SCP[@]}" systemd/saleapp-scheduler.service "$HOST:/tmp/"
-"${SSH[@]}" "sudo mv /tmp/saleapp-xray.service /etc/systemd/system/ && sudo mv /tmp/saleapp-scheduler.service /etc/systemd/system/"
+"${SCP[@]}" systemd/saleapp-scheduler.service.d/10-xray.conf "$HOST:/tmp/"
+"${SSH[@]}" "sudo mv /tmp/saleapp-xray.service /etc/systemd/system/ && sudo mkdir -p /etc/systemd/system/saleapp-scheduler.service.d && sudo mv /tmp/10-xray.conf /etc/systemd/system/saleapp-scheduler.service.d/10-xray.conf"
 "${SSH[@]}" "sudo systemctl daemon-reload"
 
 echo ">>> [6/8] Installing health-check cron"
