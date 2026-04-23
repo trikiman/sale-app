@@ -296,6 +296,136 @@ def test_cache_property_is_read_only_snapshot(stub_xray, paths) -> None:
     assert "9.9.9.9" not in fresh["vkusvill_cooldowns"]
 
 
+class _FakeHTTPXClient:
+    """Minimal httpx.Client stand-in for :meth:`_probe_vkusvill` tests.
+
+    The real probe does ``with httpx.Client(**kwargs) as client: client.get(...)``
+    and inspects ``resp.status_code``, ``resp.url``, and ``resp.text``. We
+    record the kwargs the probe passed so the pytest can assert on them, and
+    serve a canned response shaped like an httpx response.
+    """
+
+    last_kwargs: dict = {}
+
+    def __init__(self, **kwargs):
+        type(self).last_kwargs = kwargs
+        self._response = kwargs.pop("_response")
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def get(self, url):  # noqa: ARG002 — URL fixed by the probe
+        return self._response
+
+
+class _FakeResponse:
+    def __init__(self, status_code: int, url: str, text: str) -> None:
+        self.status_code = status_code
+        self.url = url
+        self.text = text
+
+
+def _install_fake_httpx(monkeypatch, *, status_code: int, url: str, body: str) -> None:
+    """Patch ``httpx.Client`` inside the probe to return a canned response."""
+    import httpx
+
+    response = _FakeResponse(status_code=status_code, url=url, text=body)
+
+    def _factory(**kwargs):
+        return _FakeHTTPXClient(_response=response, **kwargs)
+
+    monkeypatch.setattr(httpx, "Client", _factory)
+
+
+_HOMEPAGE_SNIPPET = (
+    "<html><head><title>ВкусВилл</title></head><body>"
+    "<script>window.SITE=\"vkusvill\";</script>"
+    "<a class=\"favoritesBtn\">favs</a>"
+    "<nav id=\"shopsMenu\">shops</nav>"
+    "</body></html>"
+)
+_VPN_PAGE_SNIPPET = (
+    "<html><head><title>VkusVill — VPN</title></head><body>"
+    "<h1>Доступ ограничен: используется VPN</h1>"
+    "</body></html>"
+)
+
+
+def test_probe_vkusvill_admits_real_homepage(stub_xray, paths, monkeypatch) -> None:
+    """Real catalog homepage (200 + markers + non-/vpn-detected/ URL) passes."""
+    pm = _manager(paths)
+    _install_fake_httpx(
+        monkeypatch,
+        status_code=200,
+        url="https://vkusvill.ru/",
+        body=_HOMEPAGE_SNIPPET,
+    )
+    assert pm._probe_vkusvill(proxy=None) is True
+
+
+def test_probe_vkusvill_rejects_vpn_detected_landing(stub_xray, paths, monkeypatch) -> None:
+    """200 that final-redirects to /vpn-detected/ must be rejected.
+
+    This is the exact failure mode that admitted EU-exit nodes in v1.15:
+    VkusVill returns 200 with a VPN-warning page at /vpn-detected/, and
+    the legacy loose probe passed it because the body still contained
+    the word "vkusvill".
+    """
+    pm = _manager(paths)
+    _install_fake_httpx(
+        monkeypatch,
+        status_code=200,
+        url="https://vkusvill.ru/vpn-detected/?back_vpn_url=%2F",
+        body=_VPN_PAGE_SNIPPET + "vkusvill",
+    )
+    assert pm._probe_vkusvill(proxy=None) is False
+
+
+def test_probe_vkusvill_rejects_branded_but_markerless_body(stub_xray, paths, monkeypatch) -> None:
+    """Body contains 'vkusvill' but none of the catalog markers — reject.
+
+    Covers the case where the VPN-warning page is served at the regular
+    URL (no redirect) but without the catalog chrome. Must still fail.
+    """
+    pm = _manager(paths)
+    _install_fake_httpx(
+        monkeypatch,
+        status_code=200,
+        url="https://vkusvill.ru/",
+        body="<html>vkusvill maintenance</html>",
+    )
+    assert pm._probe_vkusvill(proxy=None) is False
+
+
+def test_probe_vkusvill_rejects_non_200(stub_xray, paths, monkeypatch) -> None:
+    pm = _manager(paths)
+    _install_fake_httpx(
+        monkeypatch,
+        status_code=503,
+        url="https://vkusvill.ru/",
+        body=_HOMEPAGE_SNIPPET,
+    )
+    assert pm._probe_vkusvill(proxy=None) is False
+
+
+def test_probe_vkusvill_builds_socks5h_proxy_url(stub_xray, paths, monkeypatch) -> None:
+    """When a proxy addr is passed, the probe must use ``socks5h://`` so DNS
+    resolves inside the SOCKS proxy (so VLESS bridges get vkusvill.ru's
+    real IP, not the local resolver's)."""
+    pm = _manager(paths)
+    _install_fake_httpx(
+        monkeypatch,
+        status_code=200,
+        url="https://vkusvill.ru/",
+        body=_HOMEPAGE_SNIPPET,
+    )
+    pm._probe_vkusvill(proxy="127.0.0.1:10808")
+    assert _FakeHTTPXClient.last_kwargs.get("proxy") == "socks5h://127.0.0.1:10808"
+
+
 def test_remove_proxy_with_vless_host_removes_and_restarts(stub_xray, paths) -> None:
     _make_pool(paths["pool"], n=3)
     pm = _manager(paths)
