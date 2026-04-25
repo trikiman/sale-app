@@ -633,7 +633,22 @@ class VlessProxyManager:
             return False
 
     def _probe_candidates_in_parallel(self, candidates: list[VlessNode]) -> list[VlessNode]:
-        """Stand up a single-node xray per candidate on unique ports, probe, keep survivors."""
+        """Stand up a single-node xray per candidate on unique ports, probe, keep survivors.
+
+        The probe is two-stage:
+
+        1. ``_probe_vkusvill`` confirms the candidate can reach the real
+           VkusVill catalog (rejects /vpn-detected/ and DNS failures).
+        2. ``XrayProcess.verify_egress`` confirms the egress IP geolocates
+           to RU. Restores plan-56 decision D-05 which v1.16 PR #7 dropped
+           in favor of trusting the 🇷🇺 emoji label — see
+           ``.planning/phases/56-vless-proxy-migration/INSPECTION-2026-04-23.md``
+           section S5.
+
+        Both stages run through the same per-candidate xray subprocess and
+        share its lifetime — the subprocess is started once and stopped once
+        per candidate.
+        """
         if not candidates:
             return []
         binary = self._resolve_xray_binary()
@@ -670,20 +685,35 @@ class VlessProxyManager:
                 return None
             start = time.monotonic()
             try:
-                ok = self._probe_vkusvill(
+                vkusvill_ok = self._probe_vkusvill(
                     proxy=f"{XRAY_LISTEN_HOST}:{test_port}",
                     verify_ssl=False,
                 )
+                if not vkusvill_ok:
+                    return None
+                # Restore plan-56 D-05: verify the egress IP actually
+                # geolocates to RU. Phase-56 PR #7 dropped this check and
+                # admitted FI/DE/NL/FR/PL exits labeled with 🇷🇺 emojis.
+                egress_ok, egress_country = proc.verify_egress(
+                    expected_country="RU",
+                    timeout=10.0,
+                    url="https://ipinfo.io/json",
+                )
+                if not egress_ok:
+                    self._log(
+                        f"Rejected {node.host} — egress_country={egress_country}"
+                    )
+                    node.extra["rejected_reason"] = f"egress_country={egress_country}"
+                    return None
+                node.extra["egress_country"] = egress_country
+                node.extra["probe_speed_s"] = round(time.monotonic() - start, 2)
+                return node
             finally:
                 proc.stop(timeout=3.0)
                 try:
                     test_config.unlink()
                 except FileNotFoundError:
                     pass
-            if not ok:
-                return None
-            node.extra["probe_speed_s"] = round(time.monotonic() - start, 2)
-            return node
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=_NODE_TEST_CONCURRENCY) as pool:
             futures = {
