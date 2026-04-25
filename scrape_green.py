@@ -43,6 +43,87 @@ async def _step_screenshot(page, step_name: str):
         print(f"  [GREEN] 📸 screenshot failed ({step_name}): {e}")
 
 
+def _is_dead_ws_error(exc: BaseException) -> bool:
+    """Detect Chromium CDP WebSocket failure modes.
+
+    nodriver propagates two patterns when the underlying CDP target was
+    closed/replaced under us (page reload, tab swap, browser process
+    eviction): ``server rejected WebSocket connection: HTTP 500`` from
+    websockets, and assorted ``ConnectionClosed*`` errors from the same
+    library. Both mean: the page handle we hold is stale, retrying with
+    a fresh tab handle is the right move.
+    """
+    msg = str(exc)
+    if "WebSocket" in msg and "HTTP 500" in msg:
+        return True
+    name = type(exc).__name__
+    return name in {
+        "ConnectionClosed",
+        "ConnectionClosedError",
+        "ConnectionClosedOK",
+        "InvalidStatusCode",
+        "InvalidStatus",
+    }
+
+
+async def _refresh_page_handle(browser, fallback_url: str = GREEN_URL):
+    """Return a live tab handle after a CDP WebSocket failure.
+
+    Tries the browser's recorded tabs (newest first) before falling back
+    to a fresh ``browser.get(fallback_url)``. We never want this helper
+    to raise: callers use it as a recovery path and the caller's own
+    error handling decides what to do if even this fails.
+    """
+    tabs = getattr(browser, "tabs", None) or []
+    for candidate in reversed(list(tabs)):
+        try:
+            await candidate.evaluate("1")
+        except Exception:  # noqa: BLE001 — recovery path
+            continue
+        return candidate
+    return await browser.get(fallback_url)
+
+
+async def _navigate_and_settle(browser, url: str, sleep_seconds: float = 8.0):
+    """``browser.get(url)`` + sleep, with one CDP-WS retry.
+
+    After a navigation triggered by an in-page action (e.g. add-to-cart
+    forcing a reload), the next ``page.evaluate`` against the returned
+    handle sometimes fails with HTTP 500 from the websockets library —
+    Chromium replaced the target while the old WS was still held. The
+    legacy code path crashed the whole scraper cycle right after seed
+    insertion. We probe the new handle once and rebuild it on failure.
+    """
+    page = await browser.get(url)
+    await asyncio.sleep(sleep_seconds)
+    try:
+        await page.evaluate("1")
+        return page
+    except Exception as exc:  # noqa: BLE001 — diagnostic path
+        if not _is_dead_ws_error(exc):
+            return page
+        print(f"  [GREEN] CDP WS dead after navigate ({exc}); re-acquiring tab")
+        return await _refresh_page_handle(browser, fallback_url=url)
+
+
+async def _safe_js(page, browser, script: str):
+    """``_js(page, script)`` that survives one CDP-WS hiccup by retrying
+    on a freshly-acquired tab handle.
+
+    Returns ``(result, page)`` so callers can keep using the (possibly
+    refreshed) page handle for subsequent operations without each step
+    needing its own retry.
+    """
+    try:
+        return await _js(page, script), page
+    except Exception as exc:  # noqa: BLE001 — diagnostic path
+        if not _is_dead_ws_error(exc):
+            raise
+        print(f"  [GREEN] CDP WS dead during eval ({exc}); re-acquiring tab")
+        page = await _refresh_page_handle(browser)
+        return await _js(page, script), page
+
+
 def _normalize_unit(unit_raw):
     raw = str(unit_raw or 'шт').strip().lower()
     if not raw:
@@ -1171,8 +1252,7 @@ async def scrape_green_prices_async():
         if not cookies_ok:
             print("⚠️ [GREEN] No cookies loaded. Run tech-login from admin panel first.")
 
-        page = await browser.get(GREEN_URL)
-        await asyncio.sleep(10)
+        page = await _navigate_and_settle(browser, GREEN_URL, sleep_seconds=10)
 
         # Check for 403 block
         title = await _js(page, 'document.title')
@@ -1364,8 +1444,7 @@ async def scrape_green_prices_async():
 
             if toggle_state != 'on':
                 # Reload page so the expanded assortment loads
-                page = await browser.get(GREEN_URL)
-                await asyncio.sleep(8)
+                page = await _navigate_and_settle(browser, GREEN_URL, sleep_seconds=8)
 
         # ── STEP 2.5: Seed item — if cart is empty, page force-reloads on first
         # add-to-cart, which kills the green modal. Add one cheap item first. ──
@@ -1457,9 +1536,12 @@ async def scrape_green_prices_async():
                 # Wait for page to reload after first cart addition
                 await asyncio.sleep(5)
                 await _step_screenshot(page, "after_seed_reload")
-                # Navigate back to cart page (page may have reloaded)
-                page = await browser.get(GREEN_URL)
-                await asyncio.sleep(8)
+                # Navigate back to cart page (page may have reloaded).
+                # Phase 58-02: this navigation followed by `_js(page, ...)`
+                # was the recurring CDP-WS-HTTP-500 crash site after seed
+                # insertion — Chromium had swapped the target out from
+                # under us while the old handle was still held.
+                page = await _navigate_and_settle(browser, GREEN_URL, sleep_seconds=8)
                 await _step_screenshot(page, "after_seed_navigate")
                 print("  [GREEN] Seed item added — cart is now non-empty")
             else:
@@ -1470,8 +1552,13 @@ async def scrape_green_prices_async():
         # ── STEP 2.9: Clear unavailable items from cart ──
         # VkusVill cart has ~300 item limit. Unavailable (faded/half-alpha)
         # items are dead weight that block adding new green items for stock check.
+        # Phase 58-02: Step 2.9 was the historical crash site — `_js(page,...)`
+        # right after a force-reload would surface the CDP-WS HTTP 500 from
+        # the prior navigation and abort the whole cycle. _safe_js retries
+        # once on a fresh tab handle; if that also fails we skip cleanup
+        # rather than aborting (cleanup is best-effort, not critical).
         print("  [GREEN] Step 2.9: Clearing unavailable items from cart...")
-        clear_result = await _js(page, r"""
+        clear_result, page = await _safe_js(page, browser, r"""
             (() => {
                 // SAFE button: removes ONLY unavailable items (faded/alpha)
                 // Selector: button.js-delivery__basket_unavailable--clear
@@ -1517,9 +1604,8 @@ async def scrape_green_prices_async():
         if isinstance(clear_result, dict) and clear_result.get('status') == 'clicked':
             await asyncio.sleep(2)  # Wait for VkusVill to process deletion
             print(f"  [GREEN] ✅ Cleared unavailable items via {clear_result.get('method')}")
-            # Reload page after clearing (per plan step 2.9)
-            page = await browser.get(GREEN_URL)
-            await asyncio.sleep(8)
+            # Reload page after clearing (per plan step 2.9).
+            page = await _navigate_and_settle(browser, GREEN_URL, sleep_seconds=8)
             await _step_screenshot(page, "after_clear_unavailable")
         else:
             status = clear_result.get('status', 'unknown') if isinstance(clear_result, dict) else str(clear_result)
