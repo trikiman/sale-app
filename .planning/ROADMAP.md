@@ -18,6 +18,31 @@
 - ✅ **v1.13** Instant Cart & Reliability — Phases 47-51 (shipped 2026-04-16, retroactively closed 2026-04-22 after v1.14 live verification)
 - ✅ **v1.14** Cart Truth & History Semantics — Phases 52-55 (shipped and closed 2026-04-21, archived 2026-04-22)
 - ✅ **v1.15** Proxy Infrastructure Migration — Phase 56 (shipped and closed 2026-04-23 after EC2 rollout on `ubuntu@13.60.174.46`; systemd xray active, live cart-add of 76 items confirmed via scheduler)
+- ✅ **v1.17** VLESS Timeout Hardening — Phase 57 (shipped and closed 2026-04-25 after EC2 redeploy; `policy` + `observatory` + `leastPing` live in `bin/xray/configs/active.json`, 5/5 RU egress confirmed, Vercel miniapp `/api/cart/add` returns HTTP 200 with `success=true` ×2)
+
+## v1.17 VLESS Timeout Hardening (SHIPPED 2026-04-25)
+
+Follow-up to v1.15/v1.16. Fixed three root causes for the
+"middle-of-cart-add timeout" bug reported by the user after the v1.15
+rollout:
+
+1. xray config was missing the `policy` block → default `connIdle=300s`
+   kept dead connections alive for 5 minutes. Now set to `connIdle=30s`,
+   `handshake=8s`.
+2. xray had no `observatory` → dead outbounds stayed in the random
+   balancer forever. Now probed every 5 minutes via `probeURL`, balancer
+   strategy switched to `leastPing`.
+3. `remove_proxy("127.0.0.1:10808")` was a silent no-op. Now rotates
+   via `mark_current_node_blocked`, breaking the hang-retry loop.
+
+Plus timeout alignment in cart + backend for VLESS handshake cost (3-5s
+observed) and restored egress geo-verification in admission probes
+(v1.16 PR #7 had removed it, violating plan D-05). Phase 56's earlier
+0/15 RU-egress caveat is now 5/5 RU.
+
+Phase: `.planning/phases/57-vless-timeout-hardening/`
+Inspection: `.planning/phases/56-vless-proxy-migration/INSPECTION-2026-04-23.md`
+Verification: `.planning/phases/57-vless-timeout-hardening/57-VERIFICATION.md`
 
 ## v1.15 Proxy Infrastructure Migration
 
