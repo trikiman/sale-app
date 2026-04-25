@@ -62,7 +62,7 @@ def test_balancer_references_every_node_tag():
     assert len(balancers) == 1
     balancer = balancers[0]
     assert balancer["tag"] == "ru-balancer"
-    assert balancer["strategy"]["type"] == "random"
+    assert balancer["strategy"] == {"type": "leastPing"}
     assert balancer["selector"] == [f"node-{i}" for i in range(len(nodes))]
     # One routing rule that sends all inbound traffic to the balancer.
     rules = config["routing"]["rules"]
@@ -96,6 +96,43 @@ def test_custom_listen_host_port_is_honored():
     )
     assert config["inbounds"][0]["listen"] == "0.0.0.0"
     assert config["inbounds"][0]["port"] == 20808
+
+
+def test_build_xray_config_has_policy_block():
+    config = build_xray_config(_sample_nodes(1))
+    assert "policy" in config
+    level0 = config["policy"]["levels"]["0"]
+    assert level0["connIdle"] == 30, "connIdle must be 30s, not xray default 300s"
+    assert level0["handshake"] == 8, "handshake must be 8s to fit VLESS+Reality (3-5s observed)"
+    assert level0["bufferSize"] == 4096
+    assert level0["statsUserUplink"] is False
+    assert level0["statsUserDownlink"] is False
+
+
+def test_build_xray_config_has_observatory():
+    config = build_xray_config(_sample_nodes(1))
+    assert "observatory" in config
+    obs = config["observatory"]
+    assert obs["subjectSelector"] == ["node-"]
+    assert obs["probeUrl"] == "https://www.google.com/generate_204"
+    assert obs["probeInterval"] == "5m"
+
+
+def test_build_xray_config_balancer_uses_least_ping():
+    nodes = _sample_nodes(2)
+    config = build_xray_config(nodes)
+    balancer = config["routing"]["balancers"][0]
+    assert balancer["strategy"] == {"type": "leastPing"}
+    assert set(balancer["selector"]) == {"node-0", "node-1"}
+
+
+def test_build_xray_config_is_json_serializable_with_new_sections():
+    config = build_xray_config(_sample_nodes(1))
+    serialized = json.dumps(config, indent=2)
+    roundtripped = json.loads(serialized)
+    assert roundtripped["policy"]["levels"]["0"]["connIdle"] == 30
+    assert roundtripped["observatory"]["probeInterval"] == "5m"
+    assert roundtripped["routing"]["balancers"][0]["strategy"] == {"type": "leastPing"}
 
 
 def test_spider_x_only_included_when_present():
