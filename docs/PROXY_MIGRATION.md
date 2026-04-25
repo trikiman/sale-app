@@ -197,6 +197,72 @@ After rollback the SOCKS5 code path is restored but the pool is still 0%
 alive — you have minutes to hours of normal scheduler startup while you
 re-land v1.15 with the fix.
 
+## xray Policy & Observatory (v1.17)
+
+Phase 57 added two xray sub-blocks to `vless/config_gen.py` that the
+default xray config does NOT include. They're load-bearing — without
+them, every transient TLS hiccup turns into a 5-minute hang.
+
+### Why `policy.levels["0"]`
+
+```json
+"policy": {"levels": {"0": {"handshake": 8, "connIdle": 30}}}
+```
+
+xray defaults `connIdle` to **300 seconds** (5 minutes). When a VLESS
+outbound dies mid-stream the TCP socket isn't reaped for 5 min — every
+new request stuck behind that connection's keepalive queues. Setting
+`connIdle=30s` reaps dead connections fast enough that the next request
+pays at most one 30s penalty, not five minutes. `handshake=8` caps the
+TLS handshake budget per outbound (matches phase 57-02 timeout
+alignment).
+
+### Why `observatory`
+
+```json
+"observatory": {
+  "subjectSelector": ["vless-"],
+  "probeURL": "http://www.gstatic.com/generate_204",
+  "probeInterval": "5m"
+}
+```
+
+Without observatory the balancer has zero signal about which outbounds
+are alive. With it, xray actively probes each outbound every 5 minutes
+and feeds latency buckets to the balancer. Critical: the JSON tag is
+`probeURL` (capital URL — matches xray-core Go source). Earlier drafts
+used `probeUrl` and xray silently ignored the URL, falling back to its
+default endpoint. (Caught in PR #13 by Devin Review.)
+
+### Why `leastPing` instead of `random`
+
+```json
+"routing": {"balancers": [{"strategy": {"type": "leastPing"}, ...}]}
+```
+
+`random` picks an outbound for every connection regardless of health —
+50% of requests hit dead nodes when half the pool is bad. `leastPing`
+uses observatory data to prefer outbounds with low recent ping. Required
+companion to the observatory block; without one the other is dead
+weight.
+
+### Troubleshooting
+
+- **"my refresh admits 0 nodes"** — check the rejection log for
+  `egress_country=...`. Phase 57-03 rejects non-RU exits and ipinfo.io
+  rate-limited probes. Pool floor is `MIN_HEALTHY=7`; falling below
+  means upstream sources need broadening.
+- **"requests still time out after v1.17"** — read `bin/xray/logs/xray.log`:
+  - `connection refused` → upstream is blocking us (rotate via
+    `manager.remove_proxy("127.0.0.1:10808")` which now properly
+    triggers `mark_current_node_blocked`).
+  - `handshake timeout` → upstream is slow; observatory will demote
+    them on the next 5-minute probe cycle.
+- **"observatory data missing"** — check `active.json` actually has
+  the `observatory` key (`jq '.observatory' bin/xray/configs/active.json`).
+  If null, the deploy was stale; re-run `scripts/deploy_v1_17.sh` to
+  force a refresh.
+
 ## Upgrading xray-core
 
 1. Edit `vless/installer.py`:
