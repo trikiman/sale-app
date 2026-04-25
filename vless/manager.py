@@ -694,10 +694,14 @@ class VlessProxyManager:
                 # Restore plan-56 D-05: verify the egress IP actually
                 # geolocates to RU. Phase-56 PR #7 dropped this check and
                 # admitted FI/DE/NL/FR/PL exits labeled with 🇷🇺 emojis.
+                # Phase 58-01: drop the explicit ``url=`` kwarg so the
+                # call uses the multi-provider fallback chain. ipinfo.io
+                # alone rate-limits ~70% of refresh probes; with the
+                # chain (ipinfo.io → ipapi.co → ip-api.com) the same
+                # refresh admits 2-3x more nodes.
                 egress_ok, egress_country = proc.verify_egress(
                     expected_country="RU",
                     timeout=10.0,
-                    url="https://ipinfo.io/json",
                 )
                 if not egress_ok:
                     self._log(

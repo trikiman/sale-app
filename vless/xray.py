@@ -232,33 +232,65 @@ class XrayProcess:
         except OSError:
             return False
 
+    # Multi-provider geo resolver — phase 58-01.
+    #
+    # ipinfo.io's free tier rate-limits at ~50 req/day per source IP. During
+    # a refresh that probes 50+ candidates, ~70% returned HTTP 429, falsely
+    # rejecting real RU-exit nodes (see 57-VERIFICATION.md "Known issues").
+    #
+    # The fix is a fallback chain: try each provider in order; a 429 or any
+    # transport error advances to the next. We only return ``(False, ...)``
+    # if ALL providers fail OR if every successful response disagrees on
+    # country. Each provider has a different response shape so we capture
+    # the JSON field name as well as the URL.
+    _GEO_PROVIDERS: tuple[tuple[str, str], ...] = (
+        ("https://ipinfo.io/json", "country"),
+        ("https://ipapi.co/json", "country_code"),
+        ("http://ip-api.com/json", "countryCode"),
+    )
+
     def verify_egress(
         self,
         *,
         expected_country: str = "RU",
         timeout: float = 10.0,
-        url: str = "https://ipinfo.io/json",
+        url: str | None = None,
     ) -> tuple[bool, str]:
         """Issue an HTTPS probe through the local SOCKS5 listener.
 
-        Returns ``(ok, detected_country_or_error)``. Uses ``httpx`` (already
-        a project dependency) and falls back to returning the underlying
-        error message on any failure.
+        Returns ``(ok, detected_country_or_error)``. Tries multiple geo
+        providers in order to survive ipinfo.io rate-limiting (phase 58-01);
+        the legacy ``url`` keyword pins the first provider for backward
+        compatibility with callers that need a deterministic single-provider
+        probe (e.g. live integration tests).
         """
         try:
             import httpx  # local import keeps installer stdlib-only
         except ImportError:
             return False, "httpx not available in environment"
+
+        if url is not None:
+            providers: tuple[tuple[str, str], ...] = ((url, "country"),)
+        else:
+            providers = self._GEO_PROVIDERS
+
         proxy = f"socks5h://127.0.0.1:{self.inbound_port}"
-        try:
-            with httpx.Client(proxy=proxy, timeout=timeout) as client:
-                response = client.get(url)
-                response.raise_for_status()
-                data = response.json()
-                country = str(data.get("country", "")).upper()
-                return country == expected_country.upper(), country or "unknown"
-        except Exception as exc:  # noqa: BLE001 — diagnostic path
-            return False, f"{type(exc).__name__}: {exc}"
+        last_error = "no_provider_attempted"
+        with httpx.Client(proxy=proxy, timeout=timeout) as client:
+            for probe_url, country_field in providers:
+                try:
+                    response = client.get(probe_url)
+                    response.raise_for_status()
+                    data = response.json()
+                    country = str(data.get(country_field, "")).upper()
+                    if not country:
+                        last_error = f"{probe_url}: empty country field"
+                        continue
+                    return country == expected_country.upper(), country
+                except Exception as exc:  # noqa: BLE001 — diagnostic path
+                    last_error = f"{type(exc).__name__}: {exc}"
+                    continue
+        return False, last_error
 
     @property
     def inbound_port(self) -> int:
