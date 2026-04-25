@@ -19,6 +19,29 @@
 - ✅ **v1.14** Cart Truth & History Semantics — Phases 52-55 (shipped and closed 2026-04-21, archived 2026-04-22)
 - ✅ **v1.15** Proxy Infrastructure Migration — Phase 56 (shipped and closed 2026-04-23 after EC2 rollout on `ubuntu@13.60.174.46`; systemd xray active, live cart-add of 76 items confirmed via scheduler)
 - ✅ **v1.17** VLESS Timeout Hardening — Phase 57 (shipped and closed 2026-04-25 after EC2 redeploy; `policy` + `observatory` + `leastPing` live in `bin/xray/configs/active.json`, 5/5 RU egress confirmed, Vercel miniapp `/api/cart/add` returns HTTP 200 with `success=true` ×2)
+- ✅ **v1.18** Geo Resolver & Scraper Recovery — Phase 58 (shipped and closed 2026-04-25; multi-provider geo resolver lifts pool 15 → 25 nodes, scraper survives Chromium CDP-WS HTTP 500 mid-cycle, miniapp cart-add still HTTP 200)
+
+## v1.18 Geo Resolver & Scraper Recovery (SHIPPED 2026-04-25)
+
+Closes the two known issues punted from v1.17 (`57-VERIFICATION.md`):
+
+1. **ipinfo.io rate-limiting** — single-provider `verify_egress` saw ~70% HTTP 429s during refresh, capping the admitted pool well below upstream availability. `vless/xray.py` now iterates a 3-provider chain (ipinfo.io → ipapi.co → ip-api.com); `vless/manager.py::_probe_one` drops the explicit `url=` kwarg so refresh probes use the chain.
+2. **Chromium CDP WebSocket HTTP 500 mid-scrape** — `scrape_green.py` crashed deterministically at "Step 2.9: Clearing unavailable items..." right after a force-reload (Chromium swapped the CDP target while we still held the old `page` handle). Three new helpers (`_is_dead_ws_error`, `_refresh_page_handle`, `_safe_js`) plus `_navigate_and_settle` detect the dead WebSocket and re-acquire a fresh tab handle, falling through to `browser.get(url)` only when no live tab is recoverable.
+
+Live evidence (2026-04-25, on `ubuntu@13.60.174.46`):
+
+| Metric | v1.17 | v1.18 |
+|---|---|---|
+| Pool size after refresh | 15 nodes | **25 nodes** (+67%) |
+| Active outbounds in `active.json` | 16 | 27 |
+| `policy.handshake / connIdle` | 8s / 30s | 8s / 30s (unchanged) |
+| Balancer strategy | `leastPing` | `leastPing` (unchanged) |
+| Geo provider chain | ipinfo.io only | ipinfo.io → ipapi.co → ip-api.com |
+| Scraper recovery helpers | absent | `_is_dead_ws_error`, `_refresh_page_handle`, `_safe_js`, `_navigate_and_settle` present |
+| Vercel miniapp `/api/cart/add` | HTTP 200, `success=true` | **HTTP 200, `success=true, cart_items=3, cart_total=971.6`** |
+| `verify_egress(country='RU')` through bridge | RU | RU (multi-provider AND single-provider both confirm) |
+
+PRs: #17 (58-01), #18 (58-02), #19 (58-03 deploy + verify + docs).
 
 ## v1.17 VLESS Timeout Hardening (SHIPPED 2026-04-25)
 
