@@ -303,6 +303,168 @@ def test_inbound_port_falls_back_to_default_on_invalid_config(xray_paths) -> Non
     assert proc.inbound_port == 10808
 
 
+class _FakeGeoResponse:
+    def __init__(self, status_code: int, payload: dict) -> None:
+        self.status_code = status_code
+        self._payload = payload
+
+    def raise_for_status(self) -> None:
+        if self.status_code >= 400:
+            import httpx
+
+            raise httpx.HTTPStatusError(
+                f"HTTP {self.status_code}",
+                request=httpx.Request("GET", "https://example/"),
+                response=httpx.Response(self.status_code),
+            )
+
+    def json(self) -> dict:
+        return self._payload
+
+
+class _FakeGeoClient:
+    """Records GETs and replays scripted responses for verify_egress tests."""
+
+    def __init__(self, responses: list[_FakeGeoResponse]) -> None:
+        self._responses = list(responses)
+        self.calls: list[str] = []
+
+    def __enter__(self) -> "_FakeGeoClient":
+        return self
+
+    def __exit__(self, *args) -> None:
+        return None
+
+    def get(self, url: str) -> _FakeGeoResponse:
+        self.calls.append(url)
+        if not self._responses:
+            raise RuntimeError("no fake response left")
+        return self._responses.pop(0)
+
+
+def _patch_geo_client(monkeypatch, fake: _FakeGeoClient) -> None:
+    import httpx
+
+    monkeypatch.setattr(httpx, "Client", lambda *a, **kw: fake)
+
+
+def test_verify_egress_returns_first_provider_success(monkeypatch, xray_paths) -> None:
+    """Phase 58-01: ipinfo.io alone keeps the legacy fast path."""
+    _make_stub_config(xray_paths["config"])
+    fake = _FakeGeoClient([_FakeGeoResponse(200, {"country": "RU"})])
+    _patch_geo_client(monkeypatch, fake)
+    proc = XrayProcess(
+        binary=xray_paths["binary"],
+        config_path=xray_paths["config"],
+        log_path=xray_paths["log"],
+    )
+    ok, country = proc.verify_egress(expected_country="RU", timeout=1.0)
+    assert (ok, country) == (True, "RU")
+    assert fake.calls == ["https://ipinfo.io/json"]
+
+
+def test_verify_egress_falls_back_when_first_provider_429s(
+    monkeypatch, xray_paths
+) -> None:
+    """Phase 58-01: when ipinfo.io rate-limits, ipapi.co takes over.
+
+    Without the fallback chain, ~70% of refresh probes failed during the
+    v1.17 rollout because ipinfo.io's free tier rate-limits at ~50/day per
+    IP. The chain tries each provider until one returns 200.
+    """
+    _make_stub_config(xray_paths["config"])
+    fake = _FakeGeoClient(
+        [
+            _FakeGeoResponse(429, {}),
+            _FakeGeoResponse(200, {"country_code": "RU"}),
+        ]
+    )
+    _patch_geo_client(monkeypatch, fake)
+    proc = XrayProcess(
+        binary=xray_paths["binary"],
+        config_path=xray_paths["config"],
+        log_path=xray_paths["log"],
+    )
+    ok, country = proc.verify_egress(expected_country="RU", timeout=1.0)
+    assert (ok, country) == (True, "RU")
+    assert fake.calls == [
+        "https://ipinfo.io/json",
+        "https://ipapi.co/json",
+    ]
+
+
+def test_verify_egress_uses_third_provider_when_first_two_fail(
+    monkeypatch, xray_paths
+) -> None:
+    """All providers in the chain should be tried before giving up."""
+    _make_stub_config(xray_paths["config"])
+    fake = _FakeGeoClient(
+        [
+            _FakeGeoResponse(429, {}),
+            _FakeGeoResponse(503, {}),
+            _FakeGeoResponse(200, {"countryCode": "DE"}),
+        ]
+    )
+    _patch_geo_client(monkeypatch, fake)
+    proc = XrayProcess(
+        binary=xray_paths["binary"],
+        config_path=xray_paths["config"],
+        log_path=xray_paths["log"],
+    )
+    ok, country = proc.verify_egress(expected_country="RU", timeout=1.0)
+    assert (ok, country) == (False, "DE")
+    assert fake.calls == [
+        "https://ipinfo.io/json",
+        "https://ipapi.co/json",
+        "http://ip-api.com/json",
+    ]
+
+
+def test_verify_egress_returns_last_error_when_all_providers_fail(
+    monkeypatch, xray_paths
+) -> None:
+    """If every provider rate-limits, the rejection reason must capture
+    *which* provider's error so operators can diagnose pool shrink."""
+    _make_stub_config(xray_paths["config"])
+    fake = _FakeGeoClient(
+        [
+            _FakeGeoResponse(429, {}),
+            _FakeGeoResponse(429, {}),
+            _FakeGeoResponse(429, {}),
+        ]
+    )
+    _patch_geo_client(monkeypatch, fake)
+    proc = XrayProcess(
+        binary=xray_paths["binary"],
+        config_path=xray_paths["config"],
+        log_path=xray_paths["log"],
+    )
+    ok, detail = proc.verify_egress(expected_country="RU", timeout=1.0)
+    assert ok is False
+    assert "429" in detail
+    assert len(fake.calls) == 3
+
+
+def test_verify_egress_explicit_url_keeps_single_provider_path(
+    monkeypatch, xray_paths
+) -> None:
+    """Live integration tests pin a single provider via the legacy ``url=``
+    kwarg and expect the call to NOT fall back. Backwards-compat guard."""
+    _make_stub_config(xray_paths["config"])
+    fake = _FakeGeoClient([_FakeGeoResponse(429, {})])
+    _patch_geo_client(monkeypatch, fake)
+    proc = XrayProcess(
+        binary=xray_paths["binary"],
+        config_path=xray_paths["config"],
+        log_path=xray_paths["log"],
+    )
+    ok, _ = proc.verify_egress(
+        expected_country="RU", timeout=1.0, url="https://example/json"
+    )
+    assert ok is False
+    assert fake.calls == ["https://example/json"]
+
+
 def test_inbound_port_reads_custom_socks_port(xray_paths) -> None:
     port = 19999
     _make_stub_config(xray_paths["config"], port=port)
