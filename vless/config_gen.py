@@ -8,8 +8,12 @@ The shape follows xray-core v24.x:
 
 * One SOCKS5 inbound on ``127.0.0.1:10808`` (loopback, no auth, UDP enabled)
 * One VLESS+Reality outbound per node, tagged ``node-<idx>``
-* A ``balancer`` named ``ru-balancer`` referencing every node tag, strategy
-  ``random`` (leastPing is deferred per 56-CONTEXT D-08)
+* A ``balancer`` named ``ru-balancer`` referencing every node tag with
+  strategy ``leastPing``, fed by an ``observatory`` block that probes every
+  outbound matching ``node-*`` against ``generate_204`` every 5 minutes
+* An explicit ``policy.levels["0"]`` block (handshake=8, connIdle=30) so a
+  stalled VLESS upstream surfaces as a fast failure rather than xray's
+  default 300s connection-idle hang
 * A single routing rule that directs all traffic to the balancer
 * ``log.loglevel = "warning"`` — the production default
 
@@ -127,14 +131,36 @@ def build_xray_config(
                 "sniffing": {"enabled": True, "destOverride": ["http", "tls"]},
             }
         ],
+        "policy": {
+            "levels": {
+                "0": {
+                    "handshake": 8,
+                    "connIdle": 30,
+                    "uplinkOnly": 5,
+                    "downlinkOnly": 10,
+                    "bufferSize": 4096,
+                    "statsUserUplink": False,
+                    "statsUserDownlink": False,
+                },
+            },
+            "system": {
+                "statsInboundUplink": False,
+                "statsInboundDownlink": False,
+            },
+        },
         "outbounds": outbounds,
+        "observatory": {
+            "subjectSelector": ["node-"],
+            "probeURL": "https://www.google.com/generate_204",
+            "probeInterval": "5m",
+        },
         "routing": {
             "domainStrategy": "AsIs",
             "balancers": [
                 {
                     "tag": _BALANCER_TAG,
                     "selector": list(node_tags),
-                    "strategy": {"type": "random"},
+                    "strategy": {"type": "leastPing"},
                 }
             ],
             "rules": [
