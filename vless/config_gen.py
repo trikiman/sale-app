@@ -151,7 +151,7 @@ def build_xray_config(
         "outbounds": outbounds,
         "observatory": {
             "subjectSelector": ["node-"],
-            "probeUrl": "https://www.google.com/generate_204",
+            "probeURL": "https://www.google.com/generate_204",
             "probeInterval": "5m",
         },
         "routing": {

@@ -114,7 +114,10 @@ def test_build_xray_config_has_observatory():
     assert "observatory" in config
     obs = config["observatory"]
     assert obs["subjectSelector"] == ["node-"]
-    assert obs["probeUrl"] == "https://www.google.com/generate_204"
+    assert obs["probeURL"] == "https://www.google.com/generate_204", (
+        "xray-core ObservatoryConfig.ProbeURL has json tag 'probeURL' (capital URL); "
+        "using 'probeUrl' is silently ignored by Go JSON deserialization"
+    )
     assert obs["probeInterval"] == "5m"
 
 
