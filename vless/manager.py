@@ -163,23 +163,35 @@ class VlessProxyManager:
         return self.pool_count() >= MIN_HEALTHY
 
     def remove_proxy(self, addr: str) -> None:
-        """Remove a node from the pool.
+        """Remove a node from the pool or rotate away from the current bridge.
 
-        Accepts either ``"127.0.0.1:10808"`` (the local xray endpoint) or a
-        VLESS host:port. The local endpoint form is ambiguous (we don't know
-        which upstream node the caller actually failed against), so we log a
-        warning and do nothing — callers should use :meth:`remove_vless_node`
-        or :meth:`mark_current_node_blocked` when node identity is known.
+        Two forms:
+
+        * ``addr == "127.0.0.1:10808"`` — the local xray bridge. The caller
+          failed against "some upstream" but doesn't know which. We rotate
+          by calling :meth:`mark_current_node_blocked`, which puts the
+          presumed head-of-list node into the 4h VkusVill cooldown. With
+          xray's ``leastPing`` balancer (phase 57-01) the head-of-list is
+          as good a suspect as any.
+        * ``addr`` is a VLESS host or host:port — direct node removal as
+          before. Used by tests and tools that know the upstream identity.
         """
+        rotate_local = False
         with self._lock:
             if addr.startswith(f"{XRAY_LISTEN_HOST}:"):
                 self._log(
-                    "remove_proxy called with local xray endpoint — ambiguous, "
-                    "no node removed. Use remove_vless_node(host) instead."
+                    "remove_proxy called with local xray endpoint — "
+                    "rotating via mark_current_node_blocked"
                 )
-                return
-            host = addr.split(":", 1)[0]
-            self._remove_host_and_restart(host, reason="remove_proxy")
+                rotate_local = True
+            else:
+                host = addr.split(":", 1)[0]
+                self._remove_host_and_restart(host, reason="remove_proxy")
+        if rotate_local:
+            # Released the lock above; mark_current_node_blocked re-acquires
+            # it. RLock would also work but explicit release keeps the lock
+            # graph obvious.
+            self.mark_current_node_blocked("remove_proxy_local_addr")
 
     def next_proxy(self) -> str | None:
         """Rotate away from the currently-active VLESS node.
