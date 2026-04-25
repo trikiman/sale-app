@@ -39,6 +39,11 @@ class FakeXrayProcess:
     """
 
     instances: list["FakeXrayProcess"] = []
+    # Default egress verification result. Tests that exercise the candidate
+    # admission path can override this class-level attribute (or the
+    # per-instance attribute) to simulate non-RU egress without touching the
+    # real ipinfo.io probe.
+    verify_egress_result: tuple[bool, str] = (True, "RU")
 
     def __init__(self, *args, **kwargs) -> None:
         self.config_path = Path(kwargs["config_path"])
@@ -49,6 +54,7 @@ class FakeXrayProcess:
         self._stopped = 0
         self._restarted = 0
         self._writes = 0
+        self._verify_egress_calls: list[dict] = []
         self.fail_next_start = False
         self._proc = _FakeProcHandle()
         type(self).instances.append(self)
@@ -81,6 +87,18 @@ class FakeXrayProcess:
         self.config_path.write_text(json.dumps(config, indent=2), encoding="utf-8")
 
     # diagnostics -------------------------------------------------
+
+    def verify_egress(
+        self,
+        *,
+        expected_country: str = "RU",
+        timeout: float = 10.0,
+        url: str = "https://ipinfo.io/json",
+    ) -> tuple[bool, str]:
+        self._verify_egress_calls.append(
+            {"expected_country": expected_country, "timeout": timeout, "url": url}
+        )
+        return type(self).verify_egress_result
 
     def is_running(self) -> bool:
         return self._running
@@ -118,6 +136,7 @@ def stub_xray(monkeypatch: pytest.MonkeyPatch):
     network dependencies.
     """
     FakeXrayProcess.instances.clear()
+    FakeXrayProcess.verify_egress_result = (True, "RU")
     monkeypatch.setattr(manager_mod, "XrayProcess", FakeXrayProcess)
     monkeypatch.setattr(
         manager_mod.installer, "is_installed", lambda: True
@@ -444,6 +463,90 @@ def test_probe_vkusvill_rejects_non_200(stub_xray, paths, monkeypatch) -> None:
         body=_HOMEPAGE_SNIPPET,
     )
     assert pm._probe_vkusvill(proxy=None) is False
+
+
+def _ru_candidates(n: int) -> list[VlessNode]:
+    """Build ``n`` synthetic candidates for ``_probe_candidates_in_parallel``."""
+    out: list[VlessNode] = []
+    for i in range(n):
+        out.append(
+            VlessNode(
+                uuid=f"{i:08x}-0000-0000-0000-000000000000",
+                host=f"10.0.0.{10 + i}",
+                port=443,
+                name=f"RU Probe {i}",
+                reality_pbk=f"pbk-{i}",
+                reality_sni="www.microsoft.com",
+                reality_sid="",
+                reality_spx="",
+                reality_fp="chrome",
+                flow="xtls-rprx-vision",
+                transport="tcp",
+                encryption="none",
+                header_type="none",
+                extra={},
+                security="reality",
+            )
+        )
+    return out
+
+
+def test_probe_candidates_admits_ru_egress(stub_xray, paths, monkeypatch) -> None:
+    """Phase 57-03: candidates with verified RU egress are admitted and
+    annotated with ``extra["egress_country"] = "RU"`` for diagnostics."""
+    pm = _manager(paths)
+    monkeypatch.setattr(pm, "_probe_vkusvill", lambda **_kw: True)
+    FakeXrayProcess.verify_egress_result = (True, "RU")
+    admitted = pm._probe_candidates_in_parallel(_ru_candidates(2))
+    assert len(admitted) == 2
+    for node in admitted:
+        assert node.extra.get("egress_country") == "RU"
+        assert "rejected_reason" not in node.extra
+
+
+def test_probe_candidates_rejects_non_ru_egress(stub_xray, paths, monkeypatch) -> None:
+    """Phase 57-03: candidates whose egress is not RU must NOT be admitted,
+    even if they pass the VkusVill probe.
+
+    Regression guard for ``.planning/phases/56-vless-proxy-migration/
+    INSPECTION-2026-04-23.md`` section S5: v1.16 PR #7 dropped this check
+    and admitted FI/DE/NL/FR/PL exits labeled with 🇷🇺 emojis, breaking
+    plan decision D-05.
+    """
+    pm = _manager(paths)
+    monkeypatch.setattr(pm, "_probe_vkusvill", lambda **_kw: True)
+    FakeXrayProcess.verify_egress_result = (False, "DE")
+    admitted = pm._probe_candidates_in_parallel(_ru_candidates(3))
+    assert admitted == [], "DE-egress candidates must not be admitted"
+
+
+def test_probe_candidates_skips_egress_when_vkusvill_probe_fails(
+    stub_xray, paths, monkeypatch
+) -> None:
+    """If the cheap VkusVill probe rejects the candidate, the more expensive
+    egress probe must NOT run — saves ~1-2s per dead node during refresh."""
+    pm = _manager(paths)
+    monkeypatch.setattr(pm, "_probe_vkusvill", lambda **_kw: False)
+    admitted = pm._probe_candidates_in_parallel(_ru_candidates(2))
+    assert admitted == []
+    for inst in stub_xray.instances:
+        assert inst._verify_egress_calls == [], (
+            "verify_egress was called despite vkusvill probe failing — "
+            "phase 57-03 ordering is wrong"
+        )
+
+
+def test_probe_candidates_propagates_egress_error_message(
+    stub_xray, paths, monkeypatch
+) -> None:
+    """``XrayProcess.verify_egress`` returns ``(False, "<error>")`` on
+    network errors. The rejected_reason must capture the error so operators
+    can diagnose pool-shrink (rate-limited ipinfo.io vs. real non-RU exit)."""
+    pm = _manager(paths)
+    monkeypatch.setattr(pm, "_probe_vkusvill", lambda **_kw: True)
+    FakeXrayProcess.verify_egress_result = (False, "ConnectError: probe timed out")
+    admitted = pm._probe_candidates_in_parallel(_ru_candidates(1))
+    assert admitted == []
 
 
 def test_probe_vkusvill_builds_socks5h_proxy_url(stub_xray, paths, monkeypatch) -> None:
