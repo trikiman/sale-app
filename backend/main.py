@@ -731,7 +731,10 @@ async def proxy_image(url: str = ""):
         if is_cdn:
             # CDN images (cdn1-img.vkusvill.ru) — direct works, proxy gets 403
             try:
-                async with httpx.AsyncClient(timeout=6, follow_redirects=True) as client:
+                async with httpx.AsyncClient(
+                    timeout=httpx.Timeout(connect=5.0, read=8.0, write=3.0, pool=3.0),
+                    follow_redirects=True,
+                ) as client:
                     resp = await client.get(url, headers=_headers)
                     if resp.status_code == 200 and len(resp.content) > 100:
                         content = resp.content
@@ -745,7 +748,10 @@ async def proxy_image(url: str = ""):
             if proxy_addr:
                 proxy_url = f"socks5://{proxy_addr}"
                 try:
-                    async with httpx.AsyncClient(timeout=8, proxy=proxy_url, follow_redirects=True) as client:
+                    async with httpx.AsyncClient(
+                        timeout=httpx.Timeout(connect=5.0, read=10.0, write=3.0, pool=3.0),
+                        proxy=proxy_url, follow_redirects=True,
+                    ) as client:
                         resp = await client.get(url, headers=_headers)
                         if resp.status_code == 200 and len(resp.content) > 100:
                             content = resp.content
@@ -759,7 +765,10 @@ async def proxy_image(url: str = ""):
                     next_addr = _proxy_manager.get_working_proxy()
                     if next_addr:
                         try:
-                            async with httpx.AsyncClient(timeout=8, proxy=f"socks5://{next_addr}", follow_redirects=True) as client:
+                            async with httpx.AsyncClient(
+                                timeout=httpx.Timeout(connect=5.0, read=10.0, write=3.0, pool=3.0),
+                                proxy=f"socks5://{next_addr}", follow_redirects=True,
+                            ) as client:
                                 resp = await client.get(url, headers=_headers)
                                 if resp.status_code == 200 and len(resp.content) > 100:
                                     content = resp.content

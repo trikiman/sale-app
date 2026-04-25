@@ -255,10 +255,30 @@ def test_pool_count_and_healthy_reflect_node_count(stub_xray, paths) -> None:
     assert pm2.pool_healthy() is False
 
 
-def test_remove_proxy_with_local_endpoint_is_noop(stub_xray, paths) -> None:
+def test_remove_proxy_with_local_endpoint_rotates_via_mark_current_node_blocked(
+    stub_xray, paths, monkeypatch
+) -> None:
+    """Phase 57-02: ``remove_proxy('127.0.0.1:10808')`` is no longer a no-op.
+
+    The local xray bridge address is what every backend caller has access to
+    (they only see SOCKS5, not the upstream VLESS host). When the caller hits
+    a transient TLS error, ``remove_proxy(bridge)`` must now rotate by
+    putting the presumed-active head-of-list node into the VkusVill cooldown
+    via ``mark_current_node_blocked`` — otherwise the next request hits the
+    same stuck node and the ``leastPing`` balancer gets no signal.
+    """
     _make_pool(paths["pool"], n=3)
     pm = _manager(paths)
+    calls: list[str] = []
+    monkeypatch.setattr(
+        pm,
+        "mark_current_node_blocked",
+        lambda reason="timeout": calls.append(reason),
+    )
     pm.remove_proxy("127.0.0.1:10808")
+    assert calls == ["remove_proxy_local_addr"]
+    # Pool count is unchanged at the call boundary — cooldown is what gates
+    # the head-of-list out, not direct removal.
     assert pm.pool_count() == 3
 
 

@@ -136,3 +136,26 @@ def test_exception_returns_500_with_error_type(mock_cart_cls, mock_exists, mock_
     body = resp.json()
     assert body["success"] is False
     assert body["error_type"] == "unknown"
+
+
+def test_cart_request_timeout_allows_vless_handshake():
+    """CART_REQUEST_TIMEOUT must exceed VLESS handshake cost (3-5s observed).
+
+    Regression guard for .planning/phases/56-vless-proxy-migration/
+    INSPECTION-2026-04-23.md section S2 (cart non-hot-path timeouts too tight).
+
+    VLESS+Reality handshake is 3-5s per PR #10 commit message; raising
+    CART_REQUEST_TIMEOUT.read to 8s in 57-02 covers basket_recalc/
+    basket_clear/basket_update calls that aren't on the cart-add hot path.
+    Any future refactor that lowers this re-opens the mid-connection
+    timeout bug.
+    """
+    from cart.vkusvill_api import CART_REQUEST_TIMEOUT
+    assert CART_REQUEST_TIMEOUT.read >= 6.0, (
+        f"CART_REQUEST_TIMEOUT.read={CART_REQUEST_TIMEOUT.read}s is too "
+        f"tight for VLESS+Reality handshake (3-5s) + VkusVill response"
+    )
+    assert CART_REQUEST_TIMEOUT.connect >= 5.0, (
+        f"CART_REQUEST_TIMEOUT.connect={CART_REQUEST_TIMEOUT.connect}s is "
+        f"too tight for VLESS+Reality handshake"
+    )
