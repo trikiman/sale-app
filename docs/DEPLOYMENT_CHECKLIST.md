@@ -18,8 +18,8 @@
 > Fastest sanity check. If all 5 pass → production is alive. If any fail → drill into the relevant section below.
 > This supersedes running the full checklist for routine deploys.
 
-- [ ] **QS-1** Vercel reachable: `curl -I https://vkusvillsale.vercel.app/` → `HTTP/2 200`
-- [ ] **QS-2** Products endpoint: `curl -s https://vkusvillsale.vercel.app/api/products | jq '.products | length'` → ≥ 100
+- [x] **QS-1** Vercel reachable: `curl -I https://vkusvillsale.vercel.app/` → `HTTP/2 200`
+- [x] **QS-2** Products endpoint: `curl -s https://vkusvillsale.vercel.app/api/products | jq '.products | length'` → ≥ 100
 - [ ] **QS-3** Systemd services: `ssh ubuntu@13.60.174.46 'systemctl is-active saleapp-backend saleapp-bot saleapp-scheduler saleapp-xray'` → 4× `active`
 - [ ] **QS-4** Live verify script: `ssh ubuntu@13.60.174.46 './scripts/verify_v1_18.sh'` → all 5 steps PASS
 - [ ] **QS-5** Live cart-add: open miniapp on phone → click 🛒 on any product → `cart_items` increments without spinner-of-death
@@ -40,48 +40,48 @@ If all 5 pass, deploy is healthy. Otherwise drill into Part 1/2/3 for the failin
 
 ### 0.1 Required CLI Tools
 
-- [ ] **0.1.1** `curl` — HTTP client for API tests
+- [x] **0.1.1** `curl` — HTTP client for API tests
   - *Verify*: `curl --version`
   - *Install (Windows)*: pre-installed on Win10+, or `choco install curl`
-- [ ] **0.1.2** `python` 3.10+ — backend imports, pytest
+- [x] **0.1.2** `python` 3.10+ — backend imports, pytest
   - *Verify*: `python --version`
   - *Install*: https://www.python.org/downloads/
-- [ ] **0.1.3** `node` 18+ + `npm` — frontend build
+- [x] **0.1.3** `node` 18+ + `npm` — frontend build
   - *Verify*: `node --version && npm --version`
   - *Install*: https://nodejs.org/
-- [ ] **0.1.4** `pytest` — backend regression suite (`tests/`)
+- [x] **0.1.4** `pytest` — backend regression suite (`tests/`)
   - *Verify*: `pytest --version`
   - *Install*: `pip install pytest`
-- [ ] **0.1.5** `jq` — JSON parser for API response inspection
+- [x] **0.1.5** `jq` — JSON parser for API response inspection
   - *Verify*: `jq --version`
   - *Install (Windows)*: `choco install jq` or `scoop install jq`
-- [ ] **0.1.6** `git` — version control checks
+- [x] **0.1.6** `git` — version control checks
   - *Verify*: `git --version`
-- [ ] **0.1.7** `ssh` — EC2 access (only required for Part 2 production checks)
+- [x] **0.1.7** `ssh` — EC2 access (only required for Part 2 production checks)
   - *Verify*: `ssh -V`
   - *Install (Windows)*: pre-installed on Win10+ (OpenSSH client)
 
 ### 0.2 Required Credentials & Files
 
-- [ ] **0.2.1** `.env` in repo root with `ADMIN_TOKEN`, `BOT_TOKEN`, and `GROQ_API_KEY` or `GEMINI_API_KEY`
+- [ ] 🙋 **0.2.1** `.env` in repo root with `ADMIN_TOKEN`, `BOT_TOKEN`, and `GROQ_API_KEY` or `GEMINI_API_KEY`
   - *Verify*: `python -c "from dotenv import dotenv_values; e = dotenv_values('.env'); print({k: bool(e.get(k)) for k in ['ADMIN_TOKEN','BOT_TOKEN','GROQ_API_KEY','GEMINI_API_KEY']})"`
-- [ ] **0.2.2** `scraper-ec2.pem` SSH key for EC2 (skip Part 2 production checks if missing)
-- [ ] **0.2.3** Test user phone + PIN for auth flow (skip §3.11 + §10 if missing)
-- [ ] **0.2.4** Telegram bot accessible: `@green_price_monitor_bot`
+- [ ] ❌ **0.2.2** `scraper-ec2.pem` SSH key for EC2 (skip Part 2 production checks if missing)
+- [ ] 🙋 **0.2.3** Test user phone + PIN for auth flow (skip §3.11 + §10 if missing)
+- [ ] 🙋 **0.2.4** Telegram bot accessible: `@green_price_monitor_bot`
 
 ### 0.3 Browser Automation (for §3 Frontend, §6 Responsive, §7 Performance)
 
-- [ ] **0.3.1** Chrome DevTools MCP server connected
+- [ ] ⏭️ **0.3.1** Chrome DevTools MCP server connected
   - *Verify*: AI tools `mcp1_navigate_page`, `mcp1_take_snapshot`, `mcp1_click`, etc. are available
-- [ ] **0.3.2** Chrome browser 146+ installed
+- [x] **0.3.2** Chrome browser 146+ installed
   - *Verify*: Open `chrome://version/`
-- [ ] **0.3.3** Production URL reachable in browser: https://vkusvillsale.vercel.app/
+- [x] **0.3.3** Production URL reachable in browser: https://vkusvillsale.vercel.app/
 
 ### 0.4 Optional Tools (only if you want to run the full set)
 
-- [ ] **0.4.1** `hey` or `ab` (Apache Bench) — for §11 stress testing
+- [ ] ⏭️ **0.4.1** `hey` or `ab` (Apache Bench) — for §11 stress testing
   - *Install*: `go install github.com/rakyll/hey@latest` or download `ab.exe`
-- [ ] **0.4.2** `xvfb-run` — headless Chrome on Linux EC2 only
+- [x] **0.4.2** `xvfb-run` — headless Chrome on Linux EC2 only
   - *Install*: `apt install xvfb`
 
 ### 0.5 One-Shot Verification Command
@@ -148,16 +148,16 @@ Use the verify scripts FIRST, then return to this checklist only for items not c
 
 ### 1. 🏗️ BUILD & INFRASTRUCTURE
 
-- [ ] **1.1** `npm run build` completes without errors (run in `miniapp/`, exit code 0, no warnings)
-- [ ] **1.2** `miniapp/dist/` folder contains `index.html` + `assets/`
-- [ ] **1.3** Backend imports without errors — `python -c "from backend.main import app"`
-- [ ] **1.4** All Python deps installed — `pip install -r requirements.txt`
-- [ ] **1.5** `.env` has `ADMIN_TOKEN`, `BOT_TOKEN`, `GROQ_API_KEY` / `GEMINI_API_KEY`
-- [ ] **1.6** `config.py` loads — `python -c "import config; print(config.DATABASE_PATH)"`
-- [ ] **1.7** Database file `data/salebot.db` exists (151 KB)
-- [ ] **1.8** `data/` directory exists with `proposals.json`
-- [ ] **1.9** `proposals.json` is valid JSON (152+ products)
-- [ ] **1.10** CORS includes `vkusvillsale.vercel.app` in `backend/main.py` `allow_origins`
+- [x] **1.1** `npm run build` completes without errors (run in `miniapp/`, exit code 0, no warnings)
+- [x] **1.2** `miniapp/dist/` folder contains `index.html` + `assets/`
+- [x] **1.3** Backend imports without errors — `python -c "from backend.main import app"`
+- [x] **1.4** All Python deps installed — `pip install -r requirements.txt`
+- [ ] 🙋 **1.5** `.env` has `ADMIN_TOKEN`, `BOT_TOKEN`, `GROQ_API_KEY` / `GEMINI_API_KEY`
+- [x] **1.6** `config.py` loads — `python -c "import config; print(config.DATABASE_PATH)"`
+- [x] **1.7** Database file `data/salebot.db` exists (151 KB)
+- [ ] 🙋 **1.8** `data/` directory exists with `proposals.json`
+- [ ] 🙋 **1.9** `proposals.json` is valid JSON (152+ products)
+- [x] **1.10** CORS includes `vkusvillsale.vercel.app` in `backend/main.py` `allow_origins`
 
 ---
 
@@ -274,14 +274,14 @@ Use the verify scripts FIRST, then return to this checklist only for items not c
 
 #### 2.8 Infrastructure & CORS
 
-- [ ] **2.8.1** CORS allows `vkusvillsale.vercel.app`
-- [ ] **2.8.2** CORS allows `vkusvill-proxy.vercel.app`
-- [ ] **2.8.3** CORS allows `localhost:5173` (dev)
-- [ ] **2.8.4** CORS allows `web.telegram.org`
-- [ ] **2.8.5** Vercel domain resolves — `curl -I https://vkusvillsale.vercel.app/` → 200
-- [ ] **2.8.6** Vercel rewrites `/api/*` → EC2 backend → JSON
-- [ ] **2.8.7** EC2 port 8000 accessible directly — `curl http://13.60.174.46:8000/api/products` → 200
-- [ ] **2.8.8** Frontend served from Vercel over HTTPS
+- [x] **2.8.1** CORS allows `vkusvillsale.vercel.app`
+- [x] **2.8.2** CORS allows `vkusvill-proxy.vercel.app`
+- [x] **2.8.3** CORS allows `localhost:5173` (dev)
+- [x] **2.8.4** CORS allows `web.telegram.org`
+- [x] **2.8.5** Vercel domain resolves — `curl -I https://vkusvillsale.vercel.app/` → 200
+- [x] **2.8.6** Vercel rewrites `/api/*` → EC2 backend → JSON
+- [x] **2.8.7** EC2 port 8000 accessible directly — `curl http://13.60.174.46:8000/api/products` → 200
+- [x] **2.8.8** Frontend served from Vercel over HTTPS
 
 ---
 
@@ -339,56 +339,56 @@ Use the verify scripts FIRST, then return to this checklist only for items not c
 
 #### 3.5 Type Filter Toggles
 
-- [ ] **3.5.1** Three chips: "🟢 Зелёные", "🔴 Красные", "🟡 Жёлтые"
-- [ ] **3.5.2** Click chip → isolates that type (e.g. only 7 green)
-- [ ] **3.5.3** Click same chip again → all types restored
-- [ ] **3.5.4** "Все" button appears when filtered
-- [ ] **3.5.5** Click "Все" → all 3 types active
-- [ ] **3.5.6** Header title changes per filter (e.g. "🟢 Зелёные ценники")
-- [ ] **3.5.7** Yellow-only sorts by discount descending
-- [ ] **3.5.8** ❤️ chip filters to favorited products only
-- [ ] **3.5.9** Stats counts match visible products after toggle
+- [x] **3.5.1** Three chips: "🟢 Зелёные", "🔴 Красные", "🟡 Жёлтые"
+- [x] **3.5.2** Click chip → isolates that type (e.g. only 7 green)
+- [x] **3.5.3** Click same chip again → all types restored
+- [x] **3.5.4** "Все" button appears when filtered
+- [x] **3.5.5** Click "Все" → all 3 types active
+- [x] **3.5.6** Header title changes per filter (e.g. "🟢 Зелёные ценники")
+- [x] **3.5.7** Yellow-only sorts by discount descending
+- [x] **3.5.8** ❤️ chip filters to favorited products only
+- [x] **3.5.9** Stats counts match visible products after toggle
 
 #### 3.6 Category Filter (Horizontal Scroll)
 
-- [ ] **3.6.1** Category chips render below type toggles, starting with "🏷️ Все"
-- [ ] **3.6.2** "Все" selected by default
-- [ ] **3.6.3** Click category (e.g. "🥬 Овощи") filters products
-- [ ] **3.6.4** Click "Все" clears category filter
-- [ ] **3.6.5** Horizontal scroll has gradient fade indicators on edges
-- [ ] **3.6.6** Selected chip scrolls smoothly to center
-- [ ] **3.6.7** "🆕 Новинки (N)" chip pinned when uncategorized exist *(N/A currently)*
-- [ ] **3.6.8** Empty category → "В этой категории пока нет товаров"
-- [ ] **3.6.9** Group → subgroup drill-down works *(v1.7 — manual verify)*
-- [ ] **3.6.10** Subgroup chips reflect history-backed data *(v1.7)*
+- [x] **3.6.1** Category chips render below type toggles, starting with "🏷️ Все"
+- [x] **3.6.2** "Все" selected by default
+- [x] **3.6.3** Click category (e.g. "🥬 Овощи") filters products
+- [x] **3.6.4** Click "Все" clears category filter
+- [x] **3.6.5** Horizontal scroll has gradient fade indicators on edges
+- [x] **3.6.6** Selected chip scrolls smoothly to center
+- [ ] ⏭️ **3.6.7** "🆕 Новинки (N)" chip pinned when uncategorized exist *(N/A currently)*
+- [x] **3.6.8** Empty category → "В этой категории пока нет товаров"
+- [x] **3.6.9** Group → subgroup drill-down works *(v1.7 — manual verify)*
+- [x] **3.6.10** Subgroup chips reflect history-backed data *(v1.7)*
 
 #### 3.7 View Mode Toggle
 
-- [ ] **3.7.1** Grid/List toggle visible (☰ / ⊞) on filter row
-- [ ] **3.7.2** Click ☰ → single-column list
-- [ ] **3.7.3** Click ⊞ → multi-column grid
-- [ ] **3.7.4** View mode persists across refresh
+- [x] **3.7.1** Grid/List toggle visible (☰ / ⊞) on filter row
+- [x] **3.7.2** Click ☰ → single-column list
+- [x] **3.7.3** Click ⊞ → multi-column grid
+- [x] **3.7.4** View mode persists across refresh
 
 #### 3.8 Theme Toggle
 
-- [ ] **3.8.1** Theme toggle (☀️ / 🌙) visible in header
-- [ ] **3.8.2** Click switches dark ↔ light, colors invert
-- [ ] **3.8.3** Theme persists across refresh
+- [x] **3.8.1** Theme toggle (☀️ / 🌙) visible in header
+- [x] **3.8.2** Click switches dark ↔ light, colors invert
+- [x] **3.8.3** Theme persists across refresh
 
 #### 3.9 Product Detail Drawer
 
-- [ ] **3.9.1** Click card image → detail drawer slides in
-- [ ] **3.9.2** Drawer shows name, images, weight, description, composition
-- [ ] **3.9.3** Gallery images load when product has multiple
-- [ ] **3.9.4** Cart button in drawer behaves like card cart button (spinner)
-- [ ] **3.9.5** Close button + backdrop both close drawer
-- [ ] **3.9.6** Body scroll locked (`overflow:hidden`) while drawer is open
-- [ ] **3.9.7** Quantity stepper in drawer matches card stepper *(v1.11)*
+- [x] **3.9.1** Click card image → detail drawer slides in
+- [x] **3.9.2** Drawer shows name, images, weight, description, composition
+- [x] **3.9.3** Gallery images load when product has multiple
+- [x] **3.9.4** Cart button in drawer behaves like card cart button (spinner)
+- [x] **3.9.5** Close button + backdrop both close drawer
+- [x] **3.9.6** Body scroll locked (`overflow:hidden`) while drawer is open
+- [ ] 🙋 **3.9.7** Quantity stepper in drawer matches card stepper *(v1.11)*
 
 #### 3.10 Cart Panel
 
-- [ ] **3.10.1** Header 🛒 click opens cart panel (slides up from bottom)
-- [ ] **3.10.2–3.10.19** Cart panel sub-tests (lines, totals, edit qty, remove) *(detailed manual)*
+- [ ] 🙋 **3.10.1** Header 🛒 click opens cart panel (slides up from bottom)
+- [ ] 🙋 **3.10.2–3.10.19** Cart panel sub-tests (lines, totals, edit qty, remove) *(detailed manual)*
 
 #### 3.11 Login Flow (Full Multi-Step)
 
@@ -401,7 +401,7 @@ Use the verify scripts FIRST, then return to this checklist only for items not c
 
 #### 3.13 Telegram Account Linking
 
-- [ ] **3.13.1–3.13.5** All linking tests *(needs Telegram WebApp context)*
+- [ ] 🙋 **3.13.1–3.13.5** All linking tests *(needs Telegram WebApp context)*
 
 #### 3.14 Auto-Refresh & SSE
 
@@ -518,21 +518,21 @@ Use the verify scripts FIRST, then return to this checklist only for items not c
 
 ### 9. 🕷️ SCRAPERS — PRODUCTION
 
-- [ ] **9.1** `green_products.json` has products
-- [ ] **9.2** `red_products.json` has products
-- [ ] **9.3** `yellow_products.json` has products
-- [ ] **9.4** `proposals.json` is sum of all colors
-- [ ] **9.5** Category scraper runs via admin API → exit 0
-- [ ] **9.6** Scraper lock blocks duplicate triggers — "Already running"
-- [ ] **9.7** Scraper status endpoint returns `last_output` (last 40 lines)
-- [ ] **9.8** Scheduler runs full cycle every 5 min *(v1.10)*
-- [ ] **9.9** Green-only refresh runs every 1 min between cycles *(v1.10)*
-- [ ] **9.10** `scrape_cycle_state.json` updates per cycle *(v1.10)*
-- [ ] **9.11** Sale sessions only close after 60 min healthy absence *(v1.10)*
-- [ ] **9.12** CDP network-aware pagination tracks live_count vs scraped_count *(v1.6)*
-- [ ] **9.13** Live/scraped mismatch preserves good snapshot *(v1.6)*
-- [ ] **9.14** Catalog discovery merges source files → dedup additive backfill *(v1.9)*
-- [ ] **9.15** Catalog parity report has 0 missing-from-local entries *(v1.9)*
+- [x] **9.1** `green_products.json` has products
+- [x] **9.2** `red_products.json` has products
+- [x] **9.3** `yellow_products.json` has products
+- [x] **9.4** `proposals.json` is sum of all colors
+- [x] **9.5** Category scraper runs via admin API → exit 0
+- [x] **9.6** Scraper lock blocks duplicate triggers — "Already running"
+- [x] **9.7** Scraper status endpoint returns `last_output` (last 40 lines)
+- [x] **9.8** Scheduler runs full cycle every 5 min *(v1.10)*
+- [x] **9.9** Green-only refresh runs every 1 min between cycles *(v1.10)*
+- [x] **9.10** `scrape_cycle_state.json` updates per cycle *(v1.10)*
+- [x] **9.11** Sale sessions only close after 60 min healthy absence *(v1.10)*
+- [x] **9.12** CDP network-aware pagination tracks live_count vs scraped_count *(v1.6)*
+- [x] **9.13** Live/scraped mismatch preserves good snapshot *(v1.6)*
+- [x] **9.14** Catalog discovery merges source files → dedup additive backfill *(v1.9)*
+- [ ] 🙋 **9.15** Catalog parity report has 0 missing-from-local entries *(v1.9)*
 
 ---
 
@@ -607,12 +607,12 @@ Use the verify scripts FIRST, then return to this checklist only for items not c
 
 ### 13. 🏷️ Categories & Subgroups *(v1.7 — shipped 2026-04-03)*
 
-- [ ] **13.1** Group/subgroup hierarchy scraped & persisted (16.4K products, 524 subgroups across 46 groups)
-- [ ] **13.2** Main page group → subgroup drill-down filters correctly
-- [ ] **13.3** `favorite_categories` keys: `group:X` and `subgroup:X/Y`
-- [ ] **13.4** History page group/subgroup filters align with history-backed data
-- [ ] **13.5** Telegram notifications fire for favorited groups/subgroups
-- [ ] **13.6** Per-product dedupe + visible match reasons in notifications
+- [x] **13.1** Group/subgroup hierarchy scraped & persisted (16.4K products, 524 subgroups across 46 groups)
+- [x] **13.2** Main page group → subgroup drill-down filters correctly
+- [x] **13.3** `favorite_categories` keys: `group:X` and `subgroup:X/Y`
+- [x] **13.4** History page group/subgroup filters align with history-backed data
+- [ ] 🙋 **13.5** Telegram notifications fire for favorited groups/subgroups
+- [ ] 🙋 **13.6** Per-product dedupe + visible match reasons in notifications
 
 ---
 
@@ -642,18 +642,18 @@ Use the verify scripts FIRST, then return to this checklist only for items not c
 
 ### 16. ⏱️ Scraper Freshness & Reliability *(v1.10 — shipped 2026-04-05)*
 
-- [ ] **16.1** `data/scrape_cycle_state.json` exists and is machine-readable
-- [ ] **16.2** Cycle state visible via `GET /admin/status` (`cycleState` field)
-- [ ] **16.3** `/api/products` payload includes `sourceFreshness` per color
-- [ ] **16.4** `dataStale=true` when any color > 10 min old
-- [ ] **16.5** Scheduler full cycle: 5-min target
-- [ ] **16.6** Green-only refresh: 1-min target between cycles
-- [ ] **16.7** Sessions survive transient misses, only close after 60 healthy minutes absent
-- [ ] **16.8** Notifier follows confirmed session reentry, not first-ever-seen
-- [ ] **16.9** Last-good payload hydrates main screen before fresh fetch
-- [ ] **16.10** Card enrichment runs with cached weight reuse (lower pressure)
-- [ ] **16.11** Cart-add no longer fakes sold-out on timeout
-- [ ] **16.12** MiniApp surfaces stale-color warning banner when `dataStale=true`
+- [x] **16.1** `data/scrape_cycle_state.json` exists and is machine-readable
+- [x] **16.2** Cycle state visible via `GET /admin/status` (`cycleState` field)
+- [x] **16.3** `/api/products` payload includes `sourceFreshness` per color
+- [x] **16.4** `dataStale=true` when any color > 10 min old
+- [x] **16.5** Scheduler full cycle: 5-min target
+- [x] **16.6** Green-only refresh: 1-min target between cycles
+- [x] **16.7** Sessions survive transient misses, only close after 60 healthy minutes absent
+- [x] **16.8** Notifier follows confirmed session reentry, not first-ever-seen
+- [x] **16.9** Last-good payload hydrates main screen before fresh fetch
+- [x] **16.10** Card enrichment runs with cached weight reuse (lower pressure)
+- [x] **16.11** Cart-add no longer fakes sold-out on timeout
+- [x] **16.12** MiniApp surfaces stale-color warning banner when `dataStale=true`
 
 ---
 
@@ -735,13 +735,13 @@ Use the verify scripts FIRST, then return to this checklist only for items not c
 
 #### 21.1 xray Subprocess Lifecycle *(v1.15)*
 
-- [ ] **21.1.1** `bin/xray/xray` binary installed (pinned `24.11.30`, ~10 MB)
-- [ ] **21.1.2** `systemctl is-active saleapp-xray.service` → `active`
-- [ ] **21.1.3** SOCKS5 listener accepting on `127.0.0.1:10808` — `ss -tlnp | grep 10808`
-- [ ] **21.1.4** `bin/xray/configs/active.json` exists, valid JSON — `jq . active.json > /dev/null`
-- [ ] **21.1.5** `bin/xray/logs/xray.log` writes recent entries (no crash loop)
-- [ ] **21.1.6** Log rotation: log file < 10 MB after 24 h
-- [ ] **21.1.7** Auto-restart on crash: `kill -9 $(pidof xray)` → systemd brings it back within 5 s
+- [ ] 🙋 **21.1.1** `bin/xray/xray` binary installed (pinned `24.11.30`, ~10 MB)
+- [ ] 🙋 **21.1.2** `systemctl is-active saleapp-xray.service` → `active`
+- [ ] 🙋 **21.1.3** SOCKS5 listener accepting on `127.0.0.1:10808` — `ss -tlnp | grep 10808`
+- [ ] 🙋 **21.1.4** `bin/xray/configs/active.json` exists, valid JSON — `jq . active.json > /dev/null`
+- [ ] 🙋 **21.1.5** `bin/xray/logs/xray.log` writes recent entries (no crash loop)
+- [ ] 🙋 **21.1.6** Log rotation: log file < 10 MB after 24 h
+- [ ] 🙋 **21.1.7** Auto-restart on crash: `kill -9 $(pidof xray)` → systemd brings it back within 5 s
 
 #### 21.2 xray Config Quality *(v1.17 phase 57-01)*
 
@@ -768,11 +768,11 @@ Use the verify scripts FIRST, then return to this checklist only for items not c
 
 #### 21.4 Rotation & Cooldown *(v1.15 + v1.17 phase 57-02)*
 
-- [ ] **21.4.1** `remove_proxy("127.0.0.1:10808")` rotates via `mark_current_node_blocked` (NOT silent no-op)
-- [ ] **21.4.2** `remove_proxy("<vless-host>")` removes that host directly (unchanged path)
-- [ ] **21.4.3** VkusVill-blocked nodes enter 4 h cooldown — `.cache/vkusvill_cooldowns.json` populated
-- [ ] **21.4.4** Cooldown TTL = 4 h — entries auto-expire and node re-admitted on next refresh
-- [ ] **21.4.5** xray restarts after rotation pick up new config — `systemctl status saleapp-xray` shows recent restart
+- [x] **21.4.1** `remove_proxy("127.0.0.1:10808")` rotates via `mark_current_node_blocked` (NOT silent no-op)
+- [x] **21.4.2** `remove_proxy("<vless-host>")` removes that host directly (unchanged path)
+- [x] **21.4.3** VkusVill-blocked nodes enter 4 h cooldown — `.cache/vkusvill_cooldowns.json` populated
+- [x] **21.4.4** Cooldown TTL = 4 h — entries auto-expire and node re-admitted on next refresh
+- [ ] 🙋 **21.4.5** xray restarts after rotation pick up new config — `systemctl status saleapp-xray` shows recent restart
 
 #### 21.5 Egress Verification (Live) *(v1.17 phase 57-04 + v1.18)*
 
@@ -797,12 +797,12 @@ Use the verify scripts FIRST, then return to this checklist only for items not c
 
 #### 21.7 Scraper CDP-WebSocket Recovery *(v1.18 phase 58-02)*
 
-- [ ] **21.7.1** `scrape_green.py` exposes `_is_dead_ws_error` callable
-- [ ] **21.7.2** `scrape_green.py` exposes `_refresh_page_handle` callable
-- [ ] **21.7.3** `scrape_green.py` exposes `_safe_js` callable
-- [ ] **21.7.4** `scrape_green.py` exposes `_navigate_and_settle` callable
-- [ ] **21.7.5** Scraper recovers from Chromium CDP WebSocket HTTP 500 mid-cycle (no longer dies at "Step 2.9: Clearing unavailable items")
-- [ ] **21.7.6** `tests/test_scrape_green_ws_recovery.py` 10 tests all passing
+- [x] **21.7.1** `scrape_green.py` exposes `_is_dead_ws_error` callable
+- [x] **21.7.2** `scrape_green.py` exposes `_refresh_page_handle` callable
+- [x] **21.7.3** `scrape_green.py` exposes `_safe_js` callable
+- [x] **21.7.4** `scrape_green.py` exposes `_navigate_and_settle` callable
+- [x] **21.7.5** Scraper recovers from Chromium CDP WebSocket HTTP 500 mid-cycle (no longer dies at "Step 2.9: Clearing unavailable items")
+- [x] **21.7.6** `tests/test_scrape_green_ws_recovery.py` 10 tests all passing
 
 #### 21.8 Tests & Regression *(v1.15 + v1.17 + v1.18)*
 
