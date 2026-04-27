@@ -1,6 +1,6 @@
 # Deployment Checklist — Live Verification Results
 
-- **Run timestamp**: 2026-04-27 01:47 UTC
+- **Run timestamp**: 2026-04-27 02:40 UTC
 - **Source commit**: `b165b35` (initial run) + `62314a3` (merged to main) + 2026-04-27 rerun
 - **Environment**: production
   - Vercel: https://vkusvillsale.vercel.app/
@@ -13,15 +13,15 @@
 
 | Total | ✅ passed | ❌ failed | 🙋 needs-human | ⏭️ skipped |
 |-------|-----------|-----------|----------------|------------|
-| **441** | **374** (84.8%) | **4** | **57** | **6** |
+| **441** | **388** (88.0%) | **6** | **41** | **6** |
 
 ### Delta vs 2026-04-26 initial run
 
 | | Initial | Re-run | Δ |
 |-|---------|--------|---|
-| ✅ passed | 320 | 374 | **+54** |
-| ❌ failed | 11 | 4 | **-7** |
-| 🙋 needs-human | 105 | 57 | **-48** |
+| ✅ passed | 320 | 388 | **+68** |
+| ❌ failed | 11 | 6 | **-5** |
+| 🙋 needs-human | 105 | 41 | **-64** |
 | ⏭️ skipped | 5 | 6 | **+1** |
 
 ## Scope per child
@@ -46,13 +46,13 @@
 |-------|-------|----|----|-----|----|-------------|
 | C1 | 36 | 31 | 0 | 3 | 2 | 145 |
 | C2 | 46 | 43 | 0 | 3 | 0 | 548 |
-| C3 | 48 | 39 | 0 | 9 | 0 | 423 |
-| C4 | 50 | 47 | 0 | 3 | 0 | 617 |
-| C5 | 42 | 35 | 0 | 6 | 1 | 600 |
+| C3 | 48 | 41 | 0 | 7 | 0 | 423 |
+| C4 | 50 | 49 | 0 | 1 | 0 | 617 |
+| C5 | 42 | 36 | 1 | 4 | 1 | 600 |
 | C6 | 38 | 32 | 2 | 3 | 1 | 869 |
-| C7 | 42 | 17 | 0 | 23 | 2 | 450 |
-| C8 | 30 | 25 | 2 | 3 | 0 | 240 |
-| C9 | 45 | 43 | 0 | 2 | 0 | 420 |
+| C7 | 42 | 25 | 0 | 15 | 2 | 450 |
+| C8 | 30 | 26 | 2 | 2 | 0 | 240 |
+| C9 | 45 | 43 | 1 | 1 | 0 | 420 |
 | C10 | 30 | 29 | 0 | 1 | 0 | 210 |
 | C11 | 34 | 33 | 0 | 1 | 0 | 600 |
 
@@ -66,18 +66,18 @@
 
 | Section | Total | ✅ | ❌ | 🙋 | ⏭️ |
 |---------|-------|----|----|-----|----|
-| QS-* | 5 | 3 | 0 | 2 | 0 |
+| QS-* | 5 | 4 | 0 | 1 | 0 |
 | §0 | 16 | 12 | 0 | 2 | 2 |
 | §1 | 10 | 9 | 0 | 1 | 0 |
-| §2 | 94 | 82 | 0 | 12 | 0 |
-| §3 | 87 | 75 | 1 | 10 | 1 |
+| §2 | 94 | 84 | 0 | 10 | 0 |
+| §3 | 87 | 78 | 2 | 6 | 1 |
 | §4 | 12 | 0 | 0 | 12 | 0 |
 | §5 | 13 | 12 | 0 | 0 | 1 |
 | §6 | 8 | 7 | 0 | 0 | 1 |
 | §7 | 9 | 9 | 0 | 0 | 0 |
 | §8 | 14 | 14 | 0 | 0 | 0 |
-| §9 | 15 | 14 | 0 | 1 | 0 |
-| §10 | 5 | 0 | 0 | 5 | 0 |
+| §9 | 15 | 14 | 1 | 0 | 0 |
+| §10 | 5 | 4 | 0 | 1 | 0 |
 | §11 | 1 | 0 | 0 | 0 | 1 |
 | §13 | 6 | 4 | 0 | 2 | 0 |
 | §14 | 6 | 5 | 1 | 0 | 0 |
@@ -85,21 +85,23 @@
 | §16 | 12 | 12 | 0 | 0 | 0 |
 | §17 | 14 | 14 | 0 | 0 | 0 |
 | §18 | 10 | 10 | 0 | 0 | 0 |
-| §19 | 10 | 5 | 0 | 5 | 0 |
+| §19 | 10 | 9 | 0 | 1 | 0 |
 | §20 | 14 | 10 | 2 | 2 | 0 |
 | §21 | 55 | 53 | 0 | 2 | 0 |
 | §12 sign-off | 17 | 16 | 0 | 1 | 0 |
 
-## ❌ Failures (4)
+## ❌ Failures (6)
 
 | Child | Item | Evidence | Root cause hypothesis |
 |-------|------|----------|------------------------|
+| C5 | **3.9.1** | [RE-RUN 2026-04-27] /api/cart/items returns image:null for all 20 items. Backend reads wrong key: DETAIL_PICTURE_SRC instead of IMG. Confirmed raw VkusVill basket payload has IMG='https://img.vkusvill | — |
 | C6 | **3.14.1–3.14.4** | SSE EventSource readyState=0 (CONNECTING) after 6s via Vercel; never fires onopen. Vercel serverless may not support long-lived SSE. Backend code at main.py:922 is correct | — |
 | C6 | **14.5** | No test_history_search_contract in tests/. grep returned no matches. Only test_sale_history_repair.py exists | Pytest test_history_search_contract not present in `tests/` — either was never landed or moved/renamed |
 | C8 | **20.13** | [RE-RUN 2026-04-27] GET /api/health/scheduler → 404 {'detail':'Not Found'} on EC2 backend (openapi.json has no /api/health* routes). Nice-to-have per §12 footer — carry-over. | /api/health/scheduler endpoint not implemented (deferred per known carry-over list) |
 | C8 | **20.14** | [RE-RUN 2026-04-27] No cron for jpg cleanup — only /home/ubuntu/saleapp/scripts/xray_healthcheck.sh is scheduled. Stale *.jpg files from March still present in data/ (e.g. login_clean2_05ab0de1_captch | No jpg cleanup cron configured; stale *.jpg files from March remain in data/. Only cron is xray_healthcheck. Nice-to-have. |
+| C9 | **9.15** | [RE-RUN 2026-04-27] catalog_discovery_state.json updated 2026-04-26; 32 sources tracked; 16 total missing products across 4 sources: gotovaya-eda (4), ovoshchi-frukty-yagody-zelen (2), supermarket (9) | — |
 
-## 🙋 Manual followup required (57)
+## 🙋 Manual followup required (41)
 
 ### Telegram bot interaction (no MCP) (16 items)
 
@@ -120,23 +122,7 @@
 - C7 **4.12**
 - C11 **Telegram bot fully working**
 
-### Authenticated session required (13 items)
-
-- C1 **0.2.3**
-- C3 **2.4.1**
-- C3 **2.4.3**
-- C4 **3.4.5**
-- C4 **3.4.6**
-- C5 **3.9.7**
-- C5 **3.10.1**
-- C6 **3.12.1–3.12.4**
-- C7 **10.14**
-- C7 **10.15**
-- C7 **19.1**
-- C7 **19.2**
-- C7 **19.3**
-
-### Other (13 items)
+### Other (12 items)
 
 - C1 **1.9**
 - C3 **2.4.4**
@@ -149,7 +135,6 @@
 - C7 **4.11**
 - C7 **19.4**
 - C8 **20.12**
-- C9 **9.15**
 - C10 **21.5.5**
 
 ### Real SMS delivery required (7 items)
@@ -162,25 +147,23 @@
 - C6 **3.11.2–3.11.24**
 - C7 **10.1-10.13**
 
-### Database CLI not available on EC2 (3 items)
+### Authenticated session required (2 items)
 
-- C7 **10.16**
-- C7 **10.17**
-- C7 **19.9**
+- C1 **0.2.3**
+- C6 **3.12.1–3.12.4**
 
 ### Inventory state required (2 items)
 
 - C4 **3.4.7**
 - C6 **3.16.1–3.16.5**
 
-### Disruptive / operator-only checks (2 items)
-
-- C8 **QS-4**
-- C9 **21.1.7**
-
 ### Cross-platform (Windows) — can't verify from EC2 (1 items)
 
 - C8 **20.11**
+
+### Disruptive / operator-only checks (1 items)
+
+- C9 **21.1.7**
 
 ## ⏭️ Skipped (6)
 

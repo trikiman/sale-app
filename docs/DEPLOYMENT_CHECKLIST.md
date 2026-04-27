@@ -21,7 +21,7 @@
 - [x] **QS-1** Vercel reachable: `curl -I https://vkusvillsale.vercel.app/` → `HTTP/2 200`
 - [x] **QS-2** Products endpoint: `curl -s https://vkusvillsale.vercel.app/api/products | jq '.products | length'` → ≥ 100
 - [x] **QS-3** Systemd services: `ssh ubuntu@13.60.174.46 'systemctl is-active saleapp-backend saleapp-bot saleapp-scheduler saleapp-xray'` → 4× `active`
-- [ ] 🙋 **QS-4** Live verify script: `ssh ubuntu@13.60.174.46 './scripts/verify_v1_18.sh'` → all 5 steps PASS
+- [x] **QS-4** Live verify script: `ssh ubuntu@13.60.174.46 './scripts/verify_v1_18.sh'` → all 5 steps PASS
 - [ ] 🙋 **QS-5** Live cart-add: open miniapp on phone → click 🛒 on any product → `cart_items` increments without spinner-of-death
 
 If all 5 pass, deploy is healthy. Otherwise drill into Part 1/2/3 for the failing area, then come back here.
@@ -222,9 +222,9 @@ Use the verify scripts FIRST, then return to this checklist only for items not c
 
 #### 2.4 Cart Endpoints
 
-- [ ] 🙋 **2.4.1** `GET /api/cart/items/{user_id}` returns `items`, `total_price`, `items_count` (200 items, 39828₽ verified)
+- [x] **2.4.1** `GET /api/cart/items/{user_id}` returns `items`, `total_price`, `items_count` (200 items, 39828₽ verified)
 - [x] **2.4.2** Unauthenticated cart → 403 "Не авторизованы" (no fake `source_unavailable` *(v1.14)*)
-- [ ] 🙋 **2.4.3** `POST /api/cart/add` lands product in real basket *(v1.14 live verified product 33215)*
+- [x] **2.4.3** `POST /api/cart/add` lands product in real basket *(v1.14 live verified product 33215)*
 - [ ] 🙋 **2.4.4** `POST /api/cart/remove` returns success response
 - [ ] 🙋 **2.4.5** `POST /api/cart/clear` clears all items, count → 0
 - [x] **2.4.6** IDOR: mismatched `X-Telegram-User-Id` → 403
@@ -327,8 +327,8 @@ Use the verify scripts FIRST, then return to this checklist only for items not c
 - [x] **3.4.2** Unauthenticated click → "Нужна авторизация" overlay
 - [x] **3.4.3** Prompt "Войти" navigates to login form
 - [x] **3.4.4** Prompt "Не сейчас" dismisses overlay
-- [ ] 🙋 **3.4.5** Authenticated click → loading spinner
-- [ ] 🙋 **3.4.6** Success → ✓ checkmark for 2 seconds
+- [x] **3.4.5** Authenticated click → loading spinner
+- [x] **3.4.6** Success → ✓ checkmark for 2 seconds
 - [ ] 🙋 **3.4.7** Sold-out → ✗ + toast "Этот продукт уже раскупили" *(need sold-out item to test)*
 - [x] **3.4.8** Header 🛒 badge count increments after add
 - [x] **3.4.9** Quantity stepper appears immediately after success *(v1.13)*
@@ -377,17 +377,17 @@ Use the verify scripts FIRST, then return to this checklist only for items not c
 
 #### 3.9 Product Detail Drawer
 
-- [x] **3.9.1** Click card image → detail drawer slides in
+- [ ] ❌ **3.9.1** Click card image → detail drawer slides in
 - [x] **3.9.2** Drawer shows name, images, weight, description, composition
 - [x] **3.9.3** Gallery images load when product has multiple
 - [x] **3.9.4** Cart button in drawer behaves like card cart button (spinner)
 - [x] **3.9.5** Close button + backdrop both close drawer
 - [x] **3.9.6** Body scroll locked (`overflow:hidden`) while drawer is open
-- [ ] 🙋 **3.9.7** Quantity stepper in drawer matches card stepper *(v1.11)*
+- [x] **3.9.7** Quantity stepper in drawer matches card stepper *(v1.11)*
 
 #### 3.10 Cart Panel
 
-- [ ] 🙋 **3.10.1** Header 🛒 click opens cart panel (slides up from bottom)
+- [x] **3.10.1** Header 🛒 click opens cart panel (slides up from bottom)
 - [ ] 🙋 **3.10.2–3.10.19** Cart panel sub-tests (lines, totals, edit qty, remove) *(detailed manual)*
 
 #### 3.11 Login Flow (Full Multi-Step)
@@ -532,17 +532,17 @@ Use the verify scripts FIRST, then return to this checklist only for items not c
 - [x] **9.12** CDP network-aware pagination tracks live_count vs scraped_count *(v1.6)*
 - [x] **9.13** Live/scraped mismatch preserves good snapshot *(v1.6)*
 - [x] **9.14** Catalog discovery merges source files → dedup additive backfill *(v1.9)*
-- [ ] 🙋 **9.15** Catalog parity report has 0 missing-from-local entries *(v1.9)*
+- [ ] ❌ **9.15** Catalog parity report has 0 missing-from-local entries *(v1.9)*
 
 ---
 
 ### 10. 🔄 LIVE FLOWS (END-TO-END)
 
 - [ ] 🙋 **10.1–10.13** Full login → cart → favorites → bot e2e flows *(needs real user session)*
-- [ ] 🙋 **10.14** Live cart-add lands product in real basket *(v1.14)*
-- [ ] 🙋 **10.15** Stale-session cart add < 3s *(v1.13/v1.14)*
-- [ ] 🙋 **10.16** No fake session splits in `sale_sessions` *(v1.14)*
-- [ ] 🙋 **10.17** `short_gaps_remaining = 0` in production gap query *(v1.14)*
+- [x] **10.14** Live cart-add lands product in real basket *(v1.14)*
+- [x] **10.15** Stale-session cart add < 3s *(v1.13/v1.14)*
+- [x] **10.16** No fake session splits in `sale_sessions` *(v1.14)*
+- [x] **10.17** `short_gaps_remaining = 0` in production gap query *(v1.14)*
 
 ---
 
@@ -693,15 +693,15 @@ Use the verify scripts FIRST, then return to this checklist only for items not c
 
 ### 19. 🔑 Cart Truth & History Semantics *(v1.14 — shipped 2026-04-21)*
 
-- [ ] 🙋 **19.1** MiniApp add-to-cart lands real product in real VkusVill basket
-- [ ] 🙋 **19.2** `POST /api/cart/add` returns 200 for real product on real session
-- [ ] 🙋 **19.3** `/api/cart/items` returns real basket lines (no `source_unavailable` fallback)
+- [x] **19.1** MiniApp add-to-cart lands real product in real VkusVill basket
+- [x] **19.2** `POST /api/cart/add` returns 200 for real product on real session
+- [x] **19.3** `/api/cart/items` returns real basket lines (no `source_unavailable` fallback)
 - [ ] 🙋 **19.4** Stale-session cart add completes ~2.7s (no 10s refresh stall)
 - [x] **19.5** Sale history no longer invents fake restocks from stale scrape gaps
 - [x] **19.6** Sale history no longer invents fake reentries from merge artifacts
 - [x] **19.7** Sale history no longer applies sub-60-min gap continuity heuristic
 - [x] **19.8** Repaired session splits in production (e.g. yellow product 100069: 56 → 5 sessions)
-- [ ] 🙋 **19.9** Production gap query reports `short_gaps_remaining = 0`
+- [x] **19.9** Production gap query reports `short_gaps_remaining = 0`
 - [x] **19.10** Milestone closure gated on fresh live evidence (QA-05), not code review alone
 
 ---
