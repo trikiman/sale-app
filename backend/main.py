@@ -3558,7 +3558,7 @@ def cart_items_endpoint(user_id: str, request: Request):
                     "price": float(item.get("PRICE", 0)) if isinstance(item, dict) else 0,
                     "old_price": float(item.get("BASE_PRICE", 0)) if isinstance(item, dict) else 0,
                     "quantity": _coerce_cart_numeric(item.get("Q", 0)) if isinstance(item, dict) else 0,
-                    "image": item.get("DETAIL_PICTURE_SRC") if isinstance(item, dict) else "",
+                    "image": (item.get("IMG") or item.get("PICTURE") or item.get("PREVIEW_PICTURE") or "") if isinstance(item, dict) else "",
                     "can_buy": str(item.get("CAN_BUY", "")).upper() in ['Y', 'TRUE', '1'] if isinstance(item, dict) else False,
                     "max_q": _coerce_cart_numeric(item.get("MAX_Q", 0)) if isinstance(item, dict) and item.get("MAX_Q") else 0,
                     "unit": item.get("MEASURE_NAME") if isinstance(item, dict) and item.get("MEASURE_NAME") else (item.get("UNIT") if isinstance(item, dict) else "шт"),
