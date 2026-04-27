@@ -20,7 +20,7 @@
 
 - [x] **QS-1** Vercel reachable: `curl -I https://vkusvillsale.vercel.app/` → `HTTP/2 200`
 - [x] **QS-2** Products endpoint: `curl -s https://vkusvillsale.vercel.app/api/products | jq '.products | length'` → ≥ 100
-- [ ] 🙋 **QS-3** Systemd services: `ssh ubuntu@13.60.174.46 'systemctl is-active saleapp-backend saleapp-bot saleapp-scheduler saleapp-xray'` → 4× `active`
+- [x] **QS-3** Systemd services: `ssh ubuntu@13.60.174.46 'systemctl is-active saleapp-backend saleapp-bot saleapp-scheduler saleapp-xray'` → 4× `active`
 - [ ] 🙋 **QS-4** Live verify script: `ssh ubuntu@13.60.174.46 './scripts/verify_v1_18.sh'` → all 5 steps PASS
 - [ ] 🙋 **QS-5** Live cart-add: open miniapp on phone → click 🛒 on any product → `cart_items` increments without spinner-of-death
 
@@ -63,9 +63,9 @@ If all 5 pass, deploy is healthy. Otherwise drill into Part 1/2/3 for the failin
 
 ### 0.2 Required Credentials & Files
 
-- [ ] 🙋 **0.2.1** `.env` in repo root with `ADMIN_TOKEN`, `BOT_TOKEN`, and `GROQ_API_KEY` or `GEMINI_API_KEY`
+- [x] **0.2.1** `.env` in repo root with `ADMIN_TOKEN`, `BOT_TOKEN`, and `GROQ_API_KEY` or `GEMINI_API_KEY`
   - *Verify*: `python -c "from dotenv import dotenv_values; e = dotenv_values('.env'); print({k: bool(e.get(k)) for k in ['ADMIN_TOKEN','BOT_TOKEN','GROQ_API_KEY','GEMINI_API_KEY']})"`
-- [ ] ❌ **0.2.2** `scraper-ec2.pem` SSH key for EC2 (skip Part 2 production checks if missing)
+- [x] **0.2.2** `scraper-ec2.pem` SSH key for EC2 (skip Part 2 production checks if missing)
 - [ ] 🙋 **0.2.3** Test user phone + PIN for auth flow (skip §3.11 + §10 if missing)
 - [ ] 🙋 **0.2.4** Telegram bot accessible: `@green_price_monitor_bot`
 
@@ -152,10 +152,10 @@ Use the verify scripts FIRST, then return to this checklist only for items not c
 - [x] **1.2** `miniapp/dist/` folder contains `index.html` + `assets/`
 - [x] **1.3** Backend imports without errors — `python -c "from backend.main import app"`
 - [x] **1.4** All Python deps installed — `pip install -r requirements.txt`
-- [ ] 🙋 **1.5** `.env` has `ADMIN_TOKEN`, `BOT_TOKEN`, `GROQ_API_KEY` / `GEMINI_API_KEY`
+- [x] **1.5** `.env` has `ADMIN_TOKEN`, `BOT_TOKEN`, `GROQ_API_KEY` / `GEMINI_API_KEY`
 - [x] **1.6** `config.py` loads — `python -c "import config; print(config.DATABASE_PATH)"`
 - [x] **1.7** Database file `data/salebot.db` exists (151 KB)
-- [ ] 🙋 **1.8** `data/` directory exists with `proposals.json`
+- [x] **1.8** `data/` directory exists with `proposals.json`
 - [ ] 🙋 **1.9** `proposals.json` is valid JSON (152+ products)
 - [x] **1.10** CORS includes `vkusvillsale.vercel.app` in `backend/main.py` `allow_origins`
 
@@ -261,16 +261,16 @@ Use the verify scripts FIRST, then return to this checklist only for items not c
 
 - [x] **2.7.1** `GET /admin` serves panel HTML (200)
 - [x] **2.7.2** Admin endpoints reject without `X-Admin-Token` (403/404)
-- [ ] ❌ **2.7.3** Valid token → 200 or scraper started
-- [ ] ❌ **2.7.4** `GET /admin/status` returns `scrapers`, `data`, `techCookies`, `sourceFreshness`, `cycleState`, `cartDiagnostics` *(v1.10/v1.11)*
-- [ ] ❌ **2.7.5** All scrapers via `POST /api/admin/run/{scraper}`: `green`, `red`, `yellow`, `merge`, `categories`, `login`
+- [x] **2.7.3** Valid token → 200 or scraper started
+- [x] **2.7.4** `GET /admin/status` returns `scrapers`, `data`, `techCookies`, `sourceFreshness`, `cycleState`, `cartDiagnostics` *(v1.10/v1.11)*
+- [x] **2.7.5** All scrapers via `POST /api/admin/run/{scraper}`: `green`, `red`, `yellow`, `merge`, `categories`, `login`
 - [x] **2.7.6** `GET /api/admin/run/categories/status` returns scraper state
 - [x] **2.7.7** `POST /api/admin/run/catalog-discovery` starts source-based catalog discovery *(v1.9)*
 - [x] **2.7.8** `GET /api/admin/run/catalog-discovery/status` returns per-source state *(v1.9)*
-- [ ] ❌ **2.7.9** `cartDiagnostics` exposes `recentAttempts`, `pendingCount`, `lastResolvedAt` *(v1.11)*
-- [ ] ❌ **2.7.10** `POST /api/admin/tech-login` + `tech-verify` save cookies to `data/cookies.json`
-- [ ] ❌ **2.7.11** `GET /admin/proxy-stats` / `proxy-history` / `proxy-logs` return JSON
-- [ ] ❌ **2.7.12** `POST /admin/proxy-refresh` starts background refresh
+- [x] **2.7.9** `cartDiagnostics` exposes `recentAttempts`, `pendingCount`, `lastResolvedAt` *(v1.11)*
+- [ ] 🙋 **2.7.10** `POST /api/admin/tech-login` + `tech-verify` save cookies to `data/cookies.json`
+- [x] **2.7.11** `GET /admin/proxy-stats` / `proxy-history` / `proxy-logs` return JSON
+- [x] **2.7.12** `POST /admin/proxy-refresh` starts background refresh
 
 #### 2.8 Infrastructure & CORS
 
@@ -480,7 +480,7 @@ Use the verify scripts FIRST, then return to this checklist only for items not c
 ### 7. ⚡ PERFORMANCE
 
 - [x] **7.1** Initial page load < 3s (fresh page)
-- [ ] 🙋 **7.2** `/api/products` < 500ms direct EC2 (4ms measured)
+- [x] **7.2** `/api/products` < 500ms direct EC2 (4ms measured)
 - [x] **7.2b** `/api/products` < 500ms via Vercel (234ms measured)
 - [x] **7.3** Images load progressively (skeleton → fade-in)
 - [x] **7.4** No memory leaks: SSE / EventSource closed on navigation *(needs multi-page test)*
@@ -501,17 +501,17 @@ Use the verify scripts FIRST, then return to this checklist only for items not c
 
 - [x] **8.1** Server reachable via Vercel — `curl -I https://vkusvillsale.vercel.app/` → 200
 - [x] **8.2** Backend process alive — `ps aux | grep uvicorn`
-- [ ] 🙋 **8.3** `systemctl status saleapp-backend` → active (running)
-- [ ] 🙋 **8.3b** `systemctl status saleapp-bot` → active (running)
-- [ ] 🙋 **8.3c** `systemctl status saleapp-scheduler` → active (running)
-- [ ] 🙋 **8.4** `Restart=always` auto-restarts on crash (`kill -9` test)
-- [ ] 🙋 **8.5** `logs/backend.log` writing recent entries, no crash loops
-- [ ] 🙋 **8.6** `data/salebot.db` exists, not locked
+- [x] **8.3** `systemctl status saleapp-backend` → active (running)
+- [x] **8.3b** `systemctl status saleapp-bot` → active (running)
+- [x] **8.3c** `systemctl status saleapp-scheduler` → active (running)
+- [x] **8.4** `Restart=always` auto-restarts on crash (`kill -9` test)
+- [x] **8.5** `logs/backend.log` writing recent entries, no crash loops
+- [x] **8.6** `data/salebot.db` exists, not locked
 - [x] **8.7** `data/` populated: `proposals.json` + color JSONs
-- [ ] 🙋 **8.8** Periodic cleanup messages every 5 min in logs *(may need a `GET /api/health/scheduler` endpoint)*
-- [ ] 🙋 **8.9** Logrotate configured at `/etc/logrotate.d/saleapp` (daily, 7 days, copytruncate)
-- [ ] 🙋 **8.10** Xvfb available via `xvfb-run` for headless Chrome (Linux)
-- [ ] 🙋 **8.11** `data/cookies.json` has 48/48 tech cookies loaded via CDP
+- [x] **8.8** Periodic cleanup messages every 5 min in logs *(may need a `GET /api/health/scheduler` endpoint)*
+- [x] **8.9** Logrotate configured at `/etc/logrotate.d/saleapp` (daily, 7 days, copytruncate)
+- [x] **8.10** Xvfb available via `xvfb-run` for headless Chrome (Linux)
+- [x] **8.11** `data/cookies.json` has 48/48 tech cookies loaded via CDP
 - [x] **8.12** `updatedAt` reflects Moscow time (+03:00)
 
 ---
@@ -548,7 +548,7 @@ Use the verify scripts FIRST, then return to this checklist only for items not c
 
 ### 11. 🔥 STRESS & EDGE CASES
 
-- [ ] 🙋 **11.1–11.9** Stress / edge cases (concurrent users, proxy failover, scraper crash mid-cycle, etc.) *(manual)*
+- [ ] ⏭️ **11.1–11.9** Stress / edge cases (concurrent users, proxy failover, scraper crash mid-cycle, etc.) *(manual)*
 
 ---
 
@@ -563,7 +563,7 @@ Use the verify scripts FIRST, then return to this checklist only for items not c
 - [x] **Cart pending contract** — attempt_id, dedupe, status route, decimal qty *(v1.11/v1.13)*
 - [x] **Security scan** — admin auth, IDOR, PIN hash, `.env` hidden, rate limits, Telegram HMAC
 - [x] **Performance** — EC2 < 10 ms, Vercel < 500 ms
-- [ ] 🙋 **Production services** — 3/3 systemd active
+- [x] **Production services** — 3/3 systemd active
 - [x] **Scrapers** — green / red / yellow / merge / categories / catalog-discovery
 - [x] **Scraper freshness contract** — sourceFreshness, cycleState, 60-min reentry *(v1.10)*
 - [x] **Account linking** — generate, validate, status
@@ -710,20 +710,20 @@ Use the verify scripts FIRST, then return to this checklist only for items not c
 
 > See full `docs/EC2_STANDALONE_TASKS.md` for detail.
 
-- [ ] 🙋 **20.1** Backend running on EC2 (`saleapp-backend.service`)
-- [ ] 🙋 **20.2** Telegram Bot running (`saleapp-bot.service`)
-- [ ] 🙋 **20.3** Scheduler running (`saleapp-scheduler.service`)
-- [ ] 🙋 **20.4** Chrome 146 + Xvfb headless via `xvfb-run`
+- [x] **20.1** Backend running on EC2 (`saleapp-backend.service`)
+- [x] **20.2** Telegram Bot running (`saleapp-bot.service`)
+- [x] **20.3** Scheduler running (`saleapp-scheduler.service`)
+- [x] **20.4** Chrome 146 + Xvfb headless via `xvfb-run`
 - [x] **20.5** All scrapers run on EC2: RED, YELLOW, GREEN
 - [x] **20.6** Merge cycle every 3 min
-- [ ] 🙋 **20.7** `psutil` installed (7.2.2)
-- [ ] 🙋 **20.8** 48/48 cookies loaded via CDP
+- [x] **20.7** `psutil` installed (7.2.2)
+- [x] **20.8** 48/48 cookies loaded via CDP
 - [x] **20.9** Moscow time (+03:00) reflected in `updatedAt`
-- [ ] 🙋 **20.10** Logrotate configured
+- [x] **20.10** Logrotate configured
 - [ ] 🙋 **20.11** Cross-platform Chrome cleanup (Linux + Windows)
 - [ ] 🙋 **20.12** Watchdog timer (300s) kills hung scrapers
 - [ ] ❌ **20.13** `GET /api/health/scheduler` endpoint *(nice-to-have)*
-- [ ] 🙋 **20.14** Periodic cleanup cron for `data/*.jpg` (>7d) *(nice-to-have)*
+- [ ] ❌ **20.14** Periodic cleanup cron for `data/*.jpg` (>7d) *(nice-to-have)*
 
 ---
 
@@ -735,34 +735,34 @@ Use the verify scripts FIRST, then return to this checklist only for items not c
 
 #### 21.1 xray Subprocess Lifecycle *(v1.15)*
 
-- [ ] 🙋 **21.1.1** `bin/xray/xray` binary installed (pinned `24.11.30`, ~10 MB)
-- [ ] 🙋 **21.1.2** `systemctl is-active saleapp-xray.service` → `active`
-- [ ] 🙋 **21.1.3** SOCKS5 listener accepting on `127.0.0.1:10808` — `ss -tlnp | grep 10808`
-- [ ] 🙋 **21.1.4** `bin/xray/configs/active.json` exists, valid JSON — `jq . active.json > /dev/null`
-- [ ] 🙋 **21.1.5** `bin/xray/logs/xray.log` writes recent entries (no crash loop)
-- [ ] 🙋 **21.1.6** Log rotation: log file < 10 MB after 24 h
+- [x] **21.1.1** `bin/xray/xray` binary installed (pinned `24.11.30`, ~10 MB)
+- [x] **21.1.2** `systemctl is-active saleapp-xray.service` → `active`
+- [x] **21.1.3** SOCKS5 listener accepting on `127.0.0.1:10808` — `ss -tlnp | grep 10808`
+- [x] **21.1.4** `bin/xray/configs/active.json` exists, valid JSON — `jq . active.json > /dev/null`
+- [x] **21.1.5** `bin/xray/logs/xray.log` writes recent entries (no crash loop)
+- [x] **21.1.6** Log rotation: log file < 10 MB after 24 h
 - [ ] 🙋 **21.1.7** Auto-restart on crash: `kill -9 $(pidof xray)` → systemd brings it back within 5 s
 
 #### 21.2 xray Config Quality *(v1.17 phase 57-01)*
 
-- [ ] 🙋 **21.2.1** `policy` block present — `jq '.policy != null' active.json` → `true`
-- [ ] 🙋 **21.2.2** `connIdle = 30` (NOT xray default 300) — `jq '.policy.levels["0"].connIdle' active.json` → `30`
-- [ ] 🙋 **21.2.3** `handshake = 8` (covers VLESS+Reality 3–5 s) — `jq '.policy.levels["0"].handshake' active.json` → `8`
-- [ ] 🙋 **21.2.4** `observatory` block present — `jq '.observatory != null' active.json` → `true`
-- [ ] 🙋 **21.2.5** `observatory.subjectSelector = ["node-"]` — prefix matches all VLESS outbounds
-- [ ] 🙋 **21.2.6** `observatory.probeURL = https://www.google.com/generate_204`
-- [ ] 🙋 **21.2.7** `observatory.probeInterval = 5m`
-- [ ] 🙋 **21.2.8** `routing.balancers[0].strategy.type = "leastPing"` (NOT `random`)
-- [ ] 🙋 **21.2.9** Outbound count = pool size + 2 (`freedom` + `blackhole` fallbacks)
+- [x] **21.2.1** `policy` block present — `jq '.policy != null' active.json` → `true`
+- [x] **21.2.2** `connIdle = 30` (NOT xray default 300) — `jq '.policy.levels["0"].connIdle' active.json` → `30`
+- [x] **21.2.3** `handshake = 8` (covers VLESS+Reality 3–5 s) — `jq '.policy.levels["0"].handshake' active.json` → `8`
+- [x] **21.2.4** `observatory` block present — `jq '.observatory != null' active.json` → `true`
+- [x] **21.2.5** `observatory.subjectSelector = ["node-"]` — prefix matches all VLESS outbounds
+- [x] **21.2.6** `observatory.probeURL = https://www.google.com/generate_204`
+- [x] **21.2.7** `observatory.probeInterval = 5m`
+- [x] **21.2.8** `routing.balancers[0].strategy.type = "leastPing"` (NOT `random`)
+- [x] **21.2.9** Outbound count = pool size + 2 (`freedom` + `blackhole` fallbacks)
 
 #### 21.3 Pool Admission & Geo Verification *(v1.17 phase 57-03 + v1.18 phase 58-01)*
 
-- [ ] 🙋 **21.3.1** `data/vless_pool.json` exists, has `nodes` and `last_refresh_at`
-- [ ] 🙋 **21.3.2** Pool size after refresh ≥ `MIN_HEALTHY = 7` (target ≥ 15; v1.18 measured 25)
-- [ ] 🙋 **21.3.3** All admitted nodes have `extra.egress_country = "RU"` set
-- [ ] 🙋 **21.3.4** Refresh log shows non-RU rejections with explicit reason — `journalctl -u saleapp-scheduler | grep "Rejected.*egress_country"`
+- [x] **21.3.1** `data/vless_pool.json` exists, has `nodes` and `last_refresh_at`
+- [x] **21.3.2** Pool size after refresh ≥ `MIN_HEALTHY = 7` (target ≥ 15; v1.18 measured 25)
+- [x] **21.3.3** All admitted nodes have `extra.egress_country = "RU"` set
+- [x] **21.3.4** Refresh log shows non-RU rejections with explicit reason — `journalctl -u saleapp-scheduler | grep "Rejected.*egress_country"`
 - [x] **21.3.5** Multi-provider geo resolver chain — `python -c "from vless.xray import XrayProcess; print(XrayProcess._GEO_PROVIDERS)"` → `[ipinfo.io, ipapi.co, ip-api.com]`
-- [ ] 🙋 **21.3.6** Daily refresh trigger fires at scheduled time (~24 h cycle)
+- [x] **21.3.6** Daily refresh trigger fires at scheduled time (~24 h cycle)
 - [x] **21.3.7** Early refresh fires on consecutive timeouts (`refresh_proxy_list` from manager)
 - [x] **21.3.8** VkusVill probe still gates admission BEFORE geo probe (no wasted geo lookups on broken nodes)
 
@@ -772,18 +772,18 @@ Use the verify scripts FIRST, then return to this checklist only for items not c
 - [x] **21.4.2** `remove_proxy("<vless-host>")` removes that host directly (unchanged path)
 - [x] **21.4.3** VkusVill-blocked nodes enter 4 h cooldown — `.cache/vkusvill_cooldowns.json` populated
 - [x] **21.4.4** Cooldown TTL = 4 h — entries auto-expire and node re-admitted on next refresh
-- [ ] 🙋 **21.4.5** xray restarts after rotation pick up new config — `systemctl status saleapp-xray` shows recent restart
+- [x] **21.4.5** xray restarts after rotation pick up new config — `systemctl status saleapp-xray` shows recent restart
 
 #### 21.5 Egress Verification (Live) *(v1.17 phase 57-04 + v1.18)*
 
 > Run `./scripts/verify_v1_18.sh` on EC2 — all 5 steps must PASS:
 
-- [ ] 🙋 **21.5.1** Step 1: All 4 systemd services active (backend, bot, scheduler, xray)
-- [ ] 🙋 **21.5.2** Step 2: Active xray config has policy + observatory + leastPing
+- [x] **21.5.1** Step 1: All 4 systemd services active (backend, bot, scheduler, xray)
+- [x] **21.5.2** Step 2: Active xray config has policy + observatory + leastPing
 - [x] **21.5.3** Step 3: `_GEO_PROVIDERS` lists all 3 providers
 - [x] **21.5.4** Step 4: Scraper recovery helpers exposed (`_is_dead_ws_error`, `_refresh_page_handle`, `_safe_js`, `_navigate_and_settle`)
 - [ ] 🙋 **21.5.5** Step 5: Live cart-add via Vercel miniapp returns HTTP 200 + `success=true`
-- [ ] 🙋 **21.5.6** Manual: 5 sequential probes through bridge — `for i in {1..5}; do curl -s -x socks5h://127.0.0.1:10808 https://ipinfo.io/json | jq -r .country; done` → all return `RU`
+- [x] **21.5.6** Manual: 5 sequential probes through bridge — `for i in {1..5}; do curl -s -x socks5h://127.0.0.1:10808 https://ipinfo.io/json | jq -r .country; done` → all return `RU`
 
 #### 21.6 Backend Timeout Alignment *(v1.17 phase 57-02)*
 
