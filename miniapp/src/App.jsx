@@ -860,7 +860,23 @@ function App() {
 
         const lastError = String(data.last_error || '')
         const pollErrorType = data.error_type || ''
-        const soldOut = pollErrorType === 'product_gone' || lastError.toLowerCase().includes('popup_analogs') || lastError.toLowerCase().includes('распрод')
+        const lastErrorLower = lastError.toLowerCase()
+        const lookedSoldOut = pollErrorType === 'product_gone' || lastErrorLower.includes('popup_analogs') || lastErrorLower.includes('распрод')
+        // Same product_gone disambiguation as handleAddToCart: a poll that
+        // ends in product_gone may actually mean "already in cart". Refresh
+        // before declaring sold-out, and short-circuit to the stepper if
+        // the cart now lists this product.
+        if (lookedSoldOut && pollErrorType === 'product_gone') {
+          const refreshed = await refreshCartState(1, 0)
+          const cartItem = refreshed?.itemsById?.[pid]
+          if (cartItem && Number(cartItem.quantity || 0) > 0) {
+            setCartStates(s => ({ ...s, [pid]: null }))
+            setToastMessage({ text: 'Уже в корзине', type: 'info' })
+            window.setTimeout(() => setToastMessage(null), 2000)
+            return
+          }
+        }
+        const soldOut = lookedSoldOut
         const pollRetryable = ['transient', 'timeout'].includes(pollErrorType)
         if (soldOut) {
           setSoldOutIds(s => {
@@ -898,7 +914,7 @@ function App() {
       window.setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), 4000)
       window.setTimeout(() => setToastMessage(null), 4000)
     }
-  }, [userId])
+  }, [refreshCartState, userId])
 
   const handleAddToCart = useCallback(async (product) => {
     if (!isAuthenticated) {
@@ -994,6 +1010,27 @@ function App() {
         return
       }
 
+      // VkusVill returns 410 product_gone for two distinct cases:
+      //   (a) the SKU is genuinely sold out, and
+      //   (b) the product is already in the user's cart at this price_type
+      //       (common right after page load, before /api/cart/items has
+      //       returned — the catalog renders the + button as if the cart
+      //       were empty, the user clicks, VkusVill rejects).
+      // Refresh cart state from the server: if the product turns up with
+      // quantity > 0 we silently switch to the stepper instead of showing
+      // the red retry icon and persisting a 4h soldOut entry.
+      if (errorType === 'product_gone') {
+        const refreshed = await refreshCartState(1, 0)
+        const cartItem = refreshed?.itemsById?.[String(pid)]
+        if (cartItem && Number(cartItem.quantity || 0) > 0) {
+          pendingCartAttemptsRef.current.delete(String(pid))
+          setCartStates(s => ({ ...s, [pid]: null }))
+          setToastMessage({ text: 'Уже в корзине', type: 'info' })
+          setTimeout(() => setToastMessage(null), 2000)
+          return
+        }
+      }
+
       const isRetryable = ['transient', 'timeout'].includes(errorType)
       const soldOut = errorType === 'product_gone'
 
@@ -1038,7 +1075,7 @@ function App() {
       setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), 4000)
       setTimeout(() => setToastMessage(null), 4000)
     }
-  }, [cartCount, isAuthenticated, pollCartAttemptStatus, userId])
+  }, [cartCount, isAuthenticated, pollCartAttemptStatus, refreshCartState, userId])
 
   const handleSetCartQuantity = useCallback(async (product, requestedQuantity) => {
     if (!isAuthenticated) {
