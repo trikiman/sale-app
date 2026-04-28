@@ -26,7 +26,7 @@ try:
     _cdn.Cookie.from_json = _patched_cookie_from_json
 except Exception:
     pass  # nodriver not installed or different version
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Header, Query, Body, Request
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Header, Query, Body, Request, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse, Response, JSONResponse
@@ -40,6 +40,7 @@ from collections import deque
 from datetime import datetime
 import json
 import os
+import secrets
 import sys
 import uuid
 
@@ -4162,6 +4163,249 @@ def history_get_product_detail(product_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ─── Bug Reports (v1.16) ──────────────────────────────────────────────────────
+
+BUG_REPORTS_DIR = os.path.join(DATA_DIR, "bug_reports")
+BUG_REPORT_MAX_PHOTO_BYTES = 5 * 1024 * 1024  # 5 MB
+BUG_REPORT_TEXT_MIN = 10
+BUG_REPORT_TEXT_MAX = 2000
+BUG_REPORT_CATEGORIES = {"cart", "login", "scrape", "ui", "other"}
+BUG_REPORTS_LAST_READ_PATH = os.path.join(DATA_DIR, "bug_reports_last_read.json")
+
+
+def _ensure_bug_reports_dir():
+    os.makedirs(BUG_REPORTS_DIR, exist_ok=True)
+
+
+def _bug_report_filename(timestamp_iso: str) -> tuple[str, str]:
+    """Generate filename prefix `<safe-timestamp>_<random8>` and full report path."""
+    safe_ts = timestamp_iso.replace(":", "-").replace(".", "-")
+    suffix = secrets.token_hex(4)  # 8 hex chars
+    prefix = f"{safe_ts}_{suffix}"
+    return prefix, os.path.join(BUG_REPORTS_DIR, f"{prefix}.json")
+
+
+def _list_bug_reports() -> List[dict]:
+    """Return list of bug-report metadata (newest first), each with filename + summary fields."""
+    _ensure_bug_reports_dir()
+    entries = []
+    for fname in os.listdir(BUG_REPORTS_DIR):
+        if not fname.endswith(".json"):
+            continue
+        fpath = os.path.join(BUG_REPORTS_DIR, fname)
+        try:
+            with open(fpath, "r", encoding="utf-8") as f:
+                payload = json.load(f)
+            prefix = fname[:-5]  # strip .json
+            photo_path = os.path.join(BUG_REPORTS_DIR, f"{prefix}.jpg")
+            entries.append({
+                "filename": fname,
+                "timestamp": payload.get("timestamp", ""),
+                "telegram_id": payload.get("telegram_id", ""),
+                "category": payload.get("category", "other"),
+                "text_preview": (payload.get("text", "") or "")[:200],
+                "has_photo": os.path.exists(photo_path),
+                "mtime": os.path.getmtime(fpath),
+            })
+        except Exception as e:
+            logger.warning(f"Bug report {fname} unreadable: {e}")
+    entries.sort(key=lambda r: r["mtime"], reverse=True)
+    return entries
+
+
+def _bug_reports_unread_count() -> int:
+    """Count of bug reports newer than the admin's last-read timestamp."""
+    if not os.path.exists(BUG_REPORTS_LAST_READ_PATH):
+        return len([f for f in os.listdir(BUG_REPORTS_DIR) if f.endswith(".json")]) if os.path.isdir(BUG_REPORTS_DIR) else 0
+    try:
+        with open(BUG_REPORTS_LAST_READ_PATH, "r", encoding="utf-8") as f:
+            last_read_at = float(json.load(f).get("last_read_at", 0))
+    except Exception:
+        return 0
+    if not os.path.isdir(BUG_REPORTS_DIR):
+        return 0
+    return sum(
+        1
+        for fname in os.listdir(BUG_REPORTS_DIR)
+        if fname.endswith(".json")
+        and os.path.getmtime(os.path.join(BUG_REPORTS_DIR, fname)) > last_read_at
+    )
+
+
+@app.post("/api/bug-reports")
+async def submit_bug_report(
+    request: Request,
+    text: str = Form(...),
+    category: str = Form(...),
+    telegram_id: str = Form(...),
+    route: Optional[str] = Form(None),
+    viewport: Optional[str] = Form(None),
+    user_agent: Optional[str] = Form(None),
+    app_version: Optional[str] = Form(None),
+    console_logs: Optional[str] = Form(None),
+    photo: Optional[UploadFile] = File(None),
+):
+    """Accept a bug report from an authenticated MiniApp user.
+
+    Stores `<timestamp>_<id>.json` in data/bug_reports/. If a photo is attached,
+    it's saved alongside as `<same-prefix>.jpg`. Returns the report_id on success.
+    """
+    # Auth: must match the X-Telegram-User-Id header / initData (BUG-06)
+    _validate_user_header(request, str(telegram_id))
+
+    # Validate text length (BUG-02)
+    text = (text or "").strip()
+    if not (BUG_REPORT_TEXT_MIN <= len(text) <= BUG_REPORT_TEXT_MAX):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Text must be {BUG_REPORT_TEXT_MIN}-{BUG_REPORT_TEXT_MAX} chars",
+        )
+
+    # Validate category
+    if category not in BUG_REPORT_CATEGORIES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Category must be one of {sorted(BUG_REPORT_CATEGORIES)}",
+        )
+
+    # Parse console logs JSON if provided (BUG-04)
+    console_buffer: List[Any] = []
+    if console_logs:
+        try:
+            parsed = json.loads(console_logs)
+            if isinstance(parsed, list):
+                console_buffer = parsed[-100:]  # cap at 100 entries
+        except (json.JSONDecodeError, ValueError):
+            logger.warning(f"Bug report from {telegram_id}: console_logs not valid JSON, ignoring")
+
+    # Validate and read photo first (so we don't write a JSON for a corrupt photo) (BUG-07)
+    photo_bytes: Optional[bytes] = None
+    if photo is not None and photo.filename:
+        if not (photo.content_type or "").startswith("image/"):
+            raise HTTPException(status_code=400, detail="Photo must be an image/* mime type")
+        photo_bytes = await photo.read()
+        if len(photo_bytes) > BUG_REPORT_MAX_PHOTO_BYTES:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Photo exceeds {BUG_REPORT_MAX_PHOTO_BYTES // (1024 * 1024)}MB limit",
+            )
+        # Validate it's actually decodable as an image (corrupt-byte rejection)
+        try:
+            from PIL import Image
+            from io import BytesIO
+            img = Image.open(BytesIO(photo_bytes))
+            img.verify()  # raises on corrupt data
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Photo could not be decoded: {e}")
+
+    # All validation passed — write files
+    _ensure_bug_reports_dir()
+    from datetime import timezone as _tz
+    timestamp_iso = datetime.now(_tz.utc).strftime("%Y-%m-%dT%H:%M:%S.%f") + "Z"
+    prefix, report_path = _bug_report_filename(timestamp_iso)
+
+    payload = {
+        "report_id": prefix,
+        "telegram_id": str(telegram_id),
+        "timestamp": timestamp_iso,
+        "category": category,
+        "text": text,
+        "route": route or "",
+        "viewport": viewport or "",
+        "user_agent": user_agent or "",
+        "app_version": app_version or "",
+        "console_logs": console_buffer,
+        "has_photo": photo_bytes is not None,
+    }
+
+    try:
+        with open(report_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+        if photo_bytes is not None:
+            photo_path = os.path.join(BUG_REPORTS_DIR, f"{prefix}.jpg")
+            with open(photo_path, "wb") as f:
+                f.write(photo_bytes)
+    except Exception as e:
+        logger.error(f"Bug report write failed for {telegram_id}: {e}")
+        # Cleanup partial state
+        try:
+            os.remove(report_path)
+        except OSError:
+            pass
+        raise HTTPException(status_code=500, detail="Failed to save bug report")
+
+    logger.info(
+        f"Bug report saved: {prefix} | telegram_id={telegram_id} category={category} "
+        f"text_len={len(text)} photo={photo_bytes is not None} logs={len(console_buffer)}"
+    )
+    return {"success": True, "report_id": prefix}
+
+
+@app.get("/api/admin/bug-reports")
+def admin_list_bug_reports(
+    limit: int = Query(50, ge=1, le=500),
+    token: Optional[str] = Header(None, alias="X-Admin-Token"),
+):
+    """List recent bug reports for the admin (text preview only, no full payload)."""
+    _require_token(token)
+    reports = _list_bug_reports()[:limit]
+
+    # Mark as read for unread-count badge
+    try:
+        _ensure_bug_reports_dir()
+        with open(BUG_REPORTS_LAST_READ_PATH, "w", encoding="utf-8") as f:
+            json.dump({"last_read_at": _time.time()}, f)
+    except Exception as e:
+        logger.warning(f"Failed to update bug-reports last-read marker: {e}")
+
+    return {
+        "total": len(reports),
+        "reports": [
+            {k: v for k, v in r.items() if k != "mtime"}
+            for r in reports
+        ],
+    }
+
+
+@app.get("/api/admin/bug-reports/{report_id}")
+def admin_get_bug_report(
+    report_id: str,
+    token: Optional[str] = Header(None, alias="X-Admin-Token"),
+):
+    """Read a single bug-report's full payload (excluding the photo binary)."""
+    _require_token(token)
+    # Sanitize report_id to prevent path traversal
+    if "/" in report_id or "\\" in report_id or ".." in report_id:
+        raise HTTPException(status_code=400, detail="Invalid report_id")
+    report_path = os.path.join(BUG_REPORTS_DIR, f"{report_id}.json")
+    if not os.path.exists(report_path):
+        raise HTTPException(status_code=404, detail="Report not found")
+    try:
+        with open(report_path, "r", encoding="utf-8") as f:
+            payload = json.load(f)
+        photo_path = os.path.join(BUG_REPORTS_DIR, f"{report_id}.jpg")
+        payload["has_photo"] = os.path.exists(photo_path)
+        return payload
+    except Exception as e:
+        logger.error(f"Bug report {report_id} read failed: {e}")
+        raise HTTPException(status_code=500, detail="Could not read report")
+
+
+@app.get("/api/admin/bug-reports/{report_id}/photo")
+def admin_get_bug_report_photo(
+    report_id: str,
+    token: Optional[str] = Header(None, alias="X-Admin-Token"),
+):
+    """Serve the photo for a bug report, if any."""
+    _require_token(token)
+    if "/" in report_id or "\\" in report_id or ".." in report_id:
+        raise HTTPException(status_code=400, detail="Invalid report_id")
+    photo_path = os.path.join(BUG_REPORTS_DIR, f"{report_id}.jpg")
+    if not os.path.exists(photo_path):
+        raise HTTPException(status_code=404, detail="No photo for this report")
+    return FileResponse(photo_path, media_type="image/jpeg")
+
+
 # ─── Admin Endpoints ──────────────────────────────────────────────────────────
 
 @app.get("/admin/status")
@@ -4194,6 +4438,14 @@ def admin_get_status(token: Optional[str] = Header(None, alias="X-Admin-Token"))
         cookie_health["expired"] = age_days > 60
     cookie_health["green_missing"] = not os.path.exists(os.path.join(DATA_DIR, "green_products.json"))
 
+    # Bug reports counts (v1.16 BUG-09)
+    bug_reports_count = 0
+    if os.path.isdir(BUG_REPORTS_DIR):
+        bug_reports_count = sum(
+            1 for fname in os.listdir(BUG_REPORTS_DIR) if fname.endswith(".json")
+        )
+    bug_reports_unread = _bug_reports_unread_count()
+
     return {
         "scrapers": scraper_status,
         "data": counts,
@@ -4201,6 +4453,10 @@ def admin_get_status(token: Optional[str] = Header(None, alias="X-Admin-Token"))
         "sourceFreshness": source_freshness,
         "cycleState": cycle_state,
         "cartDiagnostics": _build_cart_diagnostics(),
+        "bugReports": {
+            "count": bug_reports_count,
+            "unread": bug_reports_unread,
+        },
     }
 
 

@@ -8,3 +8,5 @@ nodriver>=0.38
 python-dotenv>=1.0.0
 uvicorn>=0.27.0
 fastapi>=0.109.0
+python-multipart>=0.0.27
+Pillow>=10.0.0
