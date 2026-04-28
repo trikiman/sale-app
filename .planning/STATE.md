@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.16
 milestone_name: Bug Reports
 status: active
-last_updated: "2026-04-28T06:30:00+03:00"
-last_activity: 2026-04-28 -- v1.15 Proxy Migration retroactively closed; v1.16 Bug Reports milestone started
+last_updated: "2026-04-28T07:30:00+03:00"
+last_activity: 2026-04-28 -- v1.16 phases 59-61 implemented (backend storage + miniapp form + admin visibility)
 progress:
-  total_phases: 0
-  completed_phases: 0
+  total_phases: 3
+  completed_phases: 3
   total_plans: 0
   completed_plans: 0
-  percent: 0
+  percent: 100
 ---
 
 # Project State
@@ -24,11 +24,11 @@ See: .planning/PROJECT.md (updated 2026-04-22)
 
 ## Current Position
 
-Milestone: v1.16 — Bug Reports — ACTIVE (2026-04-28)
-Phase: Not started (defining requirements)
-Plan: —
-Status: Defining requirements
-Last activity: 2026-04-28 -- Milestone v1.16 started
+Milestone: v1.16 — Bug Reports — IMPLEMENTED (2026-04-28, awaiting live verification)
+Phase: 61 (Admin Visibility) — COMPLETE
+Plan: 0 of 0 (autonomous run, plan files skipped)
+Status: All 3 phases implemented and tested; ready for live verification + EC2 rollout
+Last activity: 2026-04-28 -- v1.16 phases 59-61 complete in autonomous run
 
 ## Milestone Goal
 
@@ -40,7 +40,8 @@ Last activity: 2026-04-28 -- Milestone v1.16 started
 
 ## Next Up
 
-- `/gsd-discuss-phase 59` or `/gsd-plan-phase 59` — gather context and plan first phase of v1.16 Bug Reports
+- Live verification: deploy to EC2 + smoke test bug-report submission from MiniApp
+- Optional follow-ups: BUG-10 Telegram notification on new report, BUG-11 mark-as-read workflow, BUG-12 auto-screenshot
 
 ## Completed Milestones
 
@@ -127,6 +128,9 @@ Last activity: 2026-04-28 -- Milestone v1.16 started
 | Scheduler SOCKS5 deadlock hotfix (commit 4c7f271) | 2026-04-22 |
 | v1.15 Proxy Migration retroactively closed | 2026-04-28 |
 | v1.16 Bug Reports milestone started | 2026-04-28 |
+| v1.16 phase 59 (Backend Storage & API) implemented + tested | 2026-04-28 |
+| v1.16 phase 60 (MiniApp Form & Console Buffer) implemented + tested | 2026-04-28 |
+| v1.16 phase 61 (Admin Visibility) implemented + tested | 2026-04-28 |
 
 ---
-*Last updated: 2026-04-28 — v1.15 Proxy Migration retroactively closed; v1.16 Bug Reports milestone kicked off*
+*Last updated: 2026-04-28 — v1.16 phases 59-61 implemented in autonomous run*

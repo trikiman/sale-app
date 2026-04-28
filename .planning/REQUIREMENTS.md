@@ -8,24 +8,24 @@ Authenticated MiniApp users can submit a bug report with free-form text, a categ
 
 ### Frontend (MiniApp Form)
 
-- [ ] **BUG-01**: Authenticated user can open a bug report form from the MiniApp (entry point: settings/menu icon)
-- [ ] **BUG-02**: User can enter free-form text (10-2000 chars), select category (`cart`, `login`, `scrape`, `ui`, `other`), and optionally attach one photo (≤5MB, image/* mime types only) before submitting
-- [ ] **BUG-03**: Form auto-attaches runtime metadata at submit time: current route/URL, viewport dimensions, user agent, app version (commit hash from build), telegram_id, ISO-8601 timestamp
+- [x] **BUG-01**: Authenticated user can open a bug report form from the MiniApp (header 🐞 button, only visible when authenticated)
+- [x] **BUG-02**: User can enter free-form text (10-2000 chars), select category (`cart`, `login`, `scrape`, `ui`, `other`), and optionally attach one photo (≤5MB, image/* mime types only) before submitting
+- [x] **BUG-03**: Form auto-attaches runtime metadata at submit time: current route/URL, viewport dimensions, user agent, app version (`VITE_APP_VERSION` env or 'dev'), telegram_id, ISO-8601 timestamp
 
 ### Console Log Buffer
 
-- [ ] **BUG-04**: Client buffers the last 30 seconds (capped at ~100 records) of `console.error`, `console.warn`, and uncaught errors via a wrapper installed at app startup; the buffer is attached to every bug report submission
+- [x] **BUG-04**: Client buffers the last 30 seconds (capped at 100 records) of `console.error`, `console.warn`, `window.error`, and `unhandledrejection` events via `consoleBuffer.js` installed at app startup in `main.jsx`; the buffer is attached to every bug report submission
 
 ### Backend (Storage)
 
-- [ ] **BUG-05**: `POST /api/bug-reports` accepts a multipart form (text + meta JSON + optional photo) and writes `data/bug_reports/<ISO-timestamp>_<random8>.json` containing report fields plus client meta and console buffer; if a photo is present it is written alongside as `<same-prefix>.jpg`
-- [ ] **BUG-06**: The endpoint requires an authenticated session (existing `X-Telegram-User-Id` header + cookies validation, same pattern as `/api/cart/items/{user_id}`); unauthenticated submissions return 401
-- [ ] **BUG-07**: Photo uploads enforce ≤5MB size, `image/*` mime type, and are re-encoded/compressed only if a single decode succeeds — corrupt or oversized files return 400 without writing partial state
+- [x] **BUG-05**: `POST /api/bug-reports` accepts a multipart form (text + meta JSON + optional photo) and writes `data/bug_reports/<ISO-timestamp>_<random8>.json` containing report fields plus client meta and console buffer; if a photo is present it is written alongside as `<same-prefix>.jpg`
+- [x] **BUG-06**: The endpoint requires an authenticated session via existing `_validate_user_header` (X-Telegram-User-Id + initData); unauthenticated submissions return 403
+- [x] **BUG-07**: Photo uploads enforce ≤5MB size, `image/*` mime type, and PIL `Image.verify()` decode validation — corrupt or oversized files return 400 with no partial state
 
 ### Admin Visibility
 
-- [ ] **BUG-08**: `GET /api/admin/bug-reports` (gated by `X-Admin-Token`) returns a JSON list of recent reports, each entry containing timestamp, telegram_id, category, text preview (first 200 chars), `has_photo`, and the filename so the operator can `cat` or `scp` the full payload
-- [ ] **BUG-09**: Admin status payload (existing `/admin/status`) exposes `bug_reports_count` (total files) and `bug_reports_unread_count` (since last admin check) so the existing admin dashboard can surface a badge without a new admin page
+- [x] **BUG-08**: `GET /api/admin/bug-reports` (gated by `X-Admin-Token`) returns a JSON list of recent reports with: timestamp, telegram_id, category, text preview (first 200 chars), `has_photo`, filename. Plus bonus endpoints: `GET /api/admin/bug-reports/{id}` for full payload + `GET /api/admin/bug-reports/{id}/photo` for the JPG
+- [x] **BUG-09**: Admin status payload (`/admin/status`) exposes `bugReports.{count, unread}` for dashboard badge; unread count drops to 0 after admin lists reports (last-read marker in `data/bug_reports_last_read.json`)
 
 ## v2 Requirements
 
@@ -51,20 +51,21 @@ Authenticated MiniApp users can submit a bug report with free-form text, a categ
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| BUG-01 | Phase 60 | Pending |
-| BUG-02 | Phase 60 | Pending |
-| BUG-03 | Phase 60 | Pending |
-| BUG-04 | Phase 60 | Pending |
-| BUG-05 | Phase 59 | Pending |
-| BUG-06 | Phase 59 | Pending |
-| BUG-07 | Phase 59 | Pending |
-| BUG-08 | Phase 61 | Pending |
-| BUG-09 | Phase 61 | Pending |
+| BUG-01 | Phase 60 | Complete |
+| BUG-02 | Phase 60 | Complete |
+| BUG-03 | Phase 60 | Complete |
+| BUG-04 | Phase 60 | Complete |
+| BUG-05 | Phase 59 | Complete |
+| BUG-06 | Phase 59 | Complete |
+| BUG-07 | Phase 59 | Complete |
+| BUG-08 | Phase 61 | Complete |
+| BUG-09 | Phase 61 | Complete |
 
 **Coverage:**
 - v1.16 requirements: 9 total
 - Mapped to phases: 9
 - Unmapped: 0 ✓
+- Implemented: 9/9 ✓ (28 unit tests pass: 21 backend + 7 frontend)
 
 ## Prior Milestone (v1.15) — Archived
 

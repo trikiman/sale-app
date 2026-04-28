@@ -20,7 +20,7 @@
 - ✅ **v1.15** Proxy Infrastructure Migration — Phase 56 (shipped and closed 2026-04-23 after EC2 rollout on `ubuntu@13.60.174.46`; systemd xray active, live cart-add of 76 items confirmed via scheduler)
 - ✅ **v1.17** VLESS Timeout Hardening — Phase 57 (shipped and closed 2026-04-25 after EC2 redeploy; `policy` + `observatory` + `leastPing` live in `bin/xray/configs/active.json`, 5/5 RU egress confirmed, Vercel miniapp `/api/cart/add` returns HTTP 200 with `success=true` ×2)
 - ✅ **v1.18** Geo Resolver & Scraper Recovery — Phase 58 (shipped and closed 2026-04-25; multi-provider geo resolver lifts pool 15 → 25 nodes, scraper survives Chromium CDP-WS HTTP 500 mid-cycle, miniapp cart-add still HTTP 200)
-- 🔄 **v1.16** Bug Reports — Phases 59-61 (active, started 2026-04-28; user-submitted bug reports with text/category/photo, console-log buffer, file-based storage, admin overview)
+- 🔄 **v1.16** Bug Reports — Phases 59-61 (implemented 2026-04-28 in autonomous run; awaiting live verification on EC2)
 
 ## v1.16 Bug Reports (ACTIVE — started 2026-04-28)
 
@@ -32,9 +32,9 @@
 
 ### Phases
 
-- [ ] **Phase 59: Backend Storage & API** — `POST /api/bug-reports` multipart endpoint, file-based storage in `data/bug_reports/`, auth via existing `X-Telegram-User-Id` pattern, photo validation (≤5MB, image/* mime)
-- [ ] **Phase 60: MiniApp Form & Console Buffer** — Bug report form component, category/text/photo inputs, runtime meta auto-collection, 30-second console-log buffer wrapper installed at app startup
-- [ ] **Phase 61: Admin Visibility** — `GET /api/admin/bug-reports` JSON list with previews, `bug_reports_count` + `bug_reports_unread_count` exposed on `/admin/status`, badge in existing admin dashboard
+- [x] **Phase 59: Backend Storage & API** — `POST /api/bug-reports` multipart endpoint, file-based storage in `data/bug_reports/`, auth via existing `X-Telegram-User-Id` pattern, photo validation (≤5MB, image/* mime) *(completed 2026-04-28: 21/21 pytest tests pass)*
+- [x] **Phase 60: MiniApp Form & Console Buffer** — Bug report form component, category/text/photo inputs, runtime meta auto-collection, 30-second console-log buffer wrapper installed at app startup *(completed 2026-04-28: 7/7 unit tests pass, vite build green)*
+- [x] **Phase 61: Admin Visibility** — `GET /api/admin/bug-reports` JSON list with previews, `bug_reports_count` + `bug_reports_unread_count` exposed on `/admin/status`, badge in existing admin dashboard *(completed 2026-04-28 alongside phase 59 backend work)*
 
 ### Phase Details
 
@@ -78,9 +78,9 @@
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 59. Backend Storage & API | 0/0 | Pending | — |
-| 60. MiniApp Form & Console Buffer | 0/0 | Pending | — |
-| 61. Admin Visibility | 0/0 | Pending | — |
+| 59. Backend Storage & API | 0/0 | Complete (autonomous) | 2026-04-28 |
+| 60. MiniApp Form & Console Buffer | 0/0 | Complete (autonomous) | 2026-04-28 |
+| 61. Admin Visibility | 0/0 | Complete (autonomous) | 2026-04-28 |
 
 ## v1.18 Geo Resolver & Scraper Recovery (SHIPPED 2026-04-25)
 
