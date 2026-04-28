@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.14
-milestone_name: Cart Truth & History Semantics
-status: archived
-last_updated: "2026-04-22T19:15:00+03:00"
-last_activity: 2026-04-22 -- v1.12/v1.13/v1.14 retroactively audited, archived, and closed; Apr 22 scheduler hotfix shipped in commit 4c7f271
+milestone: v1.16
+milestone_name: Bug Reports
+status: active
+last_updated: "2026-04-28T06:30:00+03:00"
+last_activity: 2026-04-28 -- v1.15 Proxy Migration retroactively closed; v1.16 Bug Reports milestone started
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 4
-  completed_plans: 4
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -20,27 +20,27 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-22)
 
 **Core value:** Family members see every VkusVill discount and can add to cart in one tap
-**Current focus:** no active milestone — awaiting next milestone kickoff
+**Current focus:** v1.16 Bug Reports — let users submit bug reports from MiniApp, store as files, surface counts in admin panel
 
 ## Current Position
 
-Milestone: v1.14 — Cart Truth & History Semantics — ARCHIVED (2026-04-22)
-Phase: 55 (Live Verification & Release Decision) — COMPLETE
-Plan: 1 of 1 — Complete
-Status: v1.14 audited (`passed`), archived to `.planning/milestones/v1.14-*.md`, `MILESTONES.md` updated
-Last activity: 2026-04-22 -- retroactive closure of v1.12, v1.13, v1.14 completed
+Milestone: v1.16 — Bug Reports — ACTIVE (2026-04-28)
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-04-28 -- Milestone v1.16 started
 
 ## Milestone Goal
 
-- Make MiniApp add-to-cart actually work for real users, not just in code-path theory
-- Remove fake restock/reentry semantics from sale history and related user-visible flows
-- Repair current persisted history data so already-recorded fake restocks/reentries disappear
-- Verify cart and history behavior against fresh production-like evidence before treating the work as done
+- Authenticated MiniApp users can submit bug reports with text + category + optional photo
+- Client buffers last 30 seconds of console logs and attaches them automatically
+- Backend stores reports as files in `data/bug_reports/<timestamp>_<id>.json` (+ optional `.jpg`)
+- Admin can see report count and preview list via existing admin endpoints
+- Photo upload is multipart, max 5MB, mime-validated
 
 ## Next Up
 
-- `$gsd-new-milestone` — define the next milestone; no active scope right now
-- Follow-ups tracked outside a formal milestone: 2026-04-22 scheduler SOCKS5 recv() deadlock hotfix (proxy_manager preflight + bounded as_completed + scheduler heartbeat watchdog) was shipped in commit `4c7f271` and is not represented in any v1.x milestone; consider folding into a future reliability milestone if similar issues recur
+- `/gsd-discuss-phase 59` or `/gsd-plan-phase 59` — gather context and plan first phase of v1.16 Bug Reports
 
 ## Completed Milestones
 
@@ -61,6 +61,9 @@ Last activity: 2026-04-22 -- retroactive closure of v1.12, v1.13, v1.14 complete
 | v1.12 Add-to-Cart 5s Hard Cap | 46 | 2026-04-08 |
 | v1.13 Instant Cart & Reliability | 47-51 | 2026-04-16 (closed 2026-04-22) |
 | v1.14 Cart Truth & History Semantics | 52-55 | 2026-04-21 (closed 2026-04-22) |
+| v1.15 Proxy Infrastructure Migration | 56 | 2026-04-23 (closed 2026-04-28) |
+| v1.17 VLESS Timeout Hardening | 57 | 2026-04-25 (closed 2026-04-28) |
+| v1.18 Geo Resolver & Scraper Recovery | 58 | 2026-04-25 (closed 2026-04-28) |
 
 ## Accumulated Context
 
@@ -122,6 +125,8 @@ Last activity: 2026-04-22 -- retroactive closure of v1.12, v1.13, v1.14 complete
 | v1.13 milestone closed (retroactive audit, supersedes gaps_found) | 2026-04-22 |
 | v1.14 milestone closed and archived | 2026-04-22 |
 | Scheduler SOCKS5 deadlock hotfix (commit 4c7f271) | 2026-04-22 |
+| v1.15 Proxy Migration retroactively closed | 2026-04-28 |
+| v1.16 Bug Reports milestone started | 2026-04-28 |
 
 ---
-*Last updated: 2026-04-22 after retroactive closure of v1.12, v1.13, v1.14 and scheduler hotfix*
+*Last updated: 2026-04-28 — v1.15 Proxy Migration retroactively closed; v1.16 Bug Reports milestone kicked off*

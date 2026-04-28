@@ -1,57 +1,77 @@
-# Requirements — v1.15 Proxy Infrastructure Migration
+# Requirements — v1.16 Bug Reports
 
 ## Milestone Goal
 
-Replace the dead free-SOCKS5 proxy pool (0% alive across 269 tested nodes as of 2026-04-22) with a VLESS+Reality proxy pool tunneled through a local `xray-core` SOCKS5 bridge, so scraper and cart-add traffic reliably exits from a Russian IP without depending on short-lived free SOCKS5 proxies. Archive the legacy SOCKS5 infrastructure (do not delete) so a rollback is a single git operation.
+Authenticated MiniApp users can submit a bug report with free-form text, a category, and an optional photo. The report is automatically enriched with the recent client console-log buffer plus runtime metadata (route, viewport, user agent, app version, telegram_id, timestamp). Reports are stored as files in `data/bug_reports/<timestamp>_<id>.json` (with optional `.jpg` photo alongside) so backups and inspection are simple `tar`/`grep`/`scp` operations. The admin can see report count and a preview list through admin-token-gated endpoints — no separate database migration, no new admin UI surface beyond what already exists.
 
 ## Requirements
 
-### Proxy Infrastructure
+### Frontend (MiniApp Form)
 
-- [x] **PROXY-06**: A curated pool of VLESS+Reality exit nodes, geo-verified to exit from Russian IP addresses, is fetched from public sources and stored locally with per-node metadata (host, port, uuid, reality params, last-seen timestamp)
-- [x] **PROXY-07**: A local `xray-core` process runs on both dev (Windows) and production (EC2 / systemd), exposing a SOCKS5 listener on `127.0.0.1:10808` that tunnels outbound traffic over the VLESS+Reality pool; the process is managed (start, health-check, graceful restart) by the application *(code + systemd units + deploy/verify scripts shipped; dev live-verified; EC2 rollout pending operator — see `phases/56-vless-proxy-migration/56-VERIFICATION.md`)*
-- [x] **PROXY-08**: The proxy pool refreshes once per day, and also early-refreshes when the current node fails with a timeout and no other healthy nodes are available
-- [x] **PROXY-09**: Proxy failures are classified by cause: VkusVill-specific blocks (timeout, HTTP 403/429/451, content mismatch) enter a 4-hour quarantine cooldown; node-level failures (TLS handshake fail, outbound unreachable, xray-reported error) cause immediate removal from the active pool
-- [x] **PROXY-10**: `from proxy_manager import ProxyManager` continues to work unchanged in all 7 production files and 3 test files via a compatibility shim; the legacy SOCKS5 implementation is archived under `legacy/proxy-socks5/` with a documented one-git-operation rollback procedure
+- [ ] **BUG-01**: Authenticated user can open a bug report form from the MiniApp (entry point: settings/menu icon)
+- [ ] **BUG-02**: User can enter free-form text (10-2000 chars), select category (`cart`, `login`, `scrape`, `ui`, `other`), and optionally attach one photo (≤5MB, image/* mime types only) before submitting
+- [ ] **BUG-03**: Form auto-attaches runtime metadata at submit time: current route/URL, viewport dimensions, user agent, app version (commit hash from build), telegram_id, ISO-8601 timestamp
+
+### Console Log Buffer
+
+- [ ] **BUG-04**: Client buffers the last 30 seconds (capped at ~100 records) of `console.error`, `console.warn`, and uncaught errors via a wrapper installed at app startup; the buffer is attached to every bug report submission
+
+### Backend (Storage)
+
+- [ ] **BUG-05**: `POST /api/bug-reports` accepts a multipart form (text + meta JSON + optional photo) and writes `data/bug_reports/<ISO-timestamp>_<random8>.json` containing report fields plus client meta and console buffer; if a photo is present it is written alongside as `<same-prefix>.jpg`
+- [ ] **BUG-06**: The endpoint requires an authenticated session (existing `X-Telegram-User-Id` header + cookies validation, same pattern as `/api/cart/items/{user_id}`); unauthenticated submissions return 401
+- [ ] **BUG-07**: Photo uploads enforce ≤5MB size, `image/*` mime type, and are re-encoded/compressed only if a single decode succeeds — corrupt or oversized files return 400 without writing partial state
+
+### Admin Visibility
+
+- [ ] **BUG-08**: `GET /api/admin/bug-reports` (gated by `X-Admin-Token`) returns a JSON list of recent reports, each entry containing timestamp, telegram_id, category, text preview (first 200 chars), `has_photo`, and the filename so the operator can `cat` or `scp` the full payload
+- [ ] **BUG-09**: Admin status payload (existing `/admin/status`) exposes `bug_reports_count` (total files) and `bug_reports_unread_count` (since last admin check) so the existing admin dashboard can surface a badge without a new admin page
 
 ## v2 Requirements
 
 ### Future Follow-Ups
 
-- **PROXY-11**: Support a paid/commercial RU proxy tier as an optional fallback when the free VLESS pool drops below a healthy threshold
-- **PROXY-12**: Expose proxy pool health (alive count, cooldown count, last-refresh-at, last-node-used) on `/admin/status` so the operator can diagnose pool exhaustion from the browser
-- **PROXY-13**: Auto-rotate between VLESS nodes inside xray on every outbound request (round-robin / least-recently-used) rather than sticky-per-process
+- **BUG-10**: Telegram bot notification to the operator (`OWNER_TELEGRAM_ID`) when a new report arrives, including category + text preview
+- **BUG-11**: Admin "mark as read / triaged / fixed" workflow with status persisted into the report file itself
+- **BUG-12**: Auto-screenshot via `html2canvas` or `Element.toDataURL` for non-CORS surfaces (deferred — heavy lib, CORS issues with VkusVill CDN images)
+- **BUG-13**: Repository link (e.g. GitHub issue auto-creation) from a triaged report
 
 ## Out of Scope
 
 | Feature | Reason |
 |---------|--------|
-| Paid RU proxy providers | v1 relies entirely on free public VLESS pool; paid fallback deferred to PROXY-11 |
-| New auth system or checkout changes | v1.15 is infrastructure-only; cart-truth / history semantics were handled in v1.13-v1.14 |
-| Replacing EC2 or Vercel deployment | The migration is at the network layer only — the application servers stay where they are |
-| Admin UI redesign | Proxy health surface (PROXY-12) is deferred — out of scope for v1.15 |
+| Auto screenshot of MiniApp on submit | `html2canvas` is ~50KB and breaks on cross-origin VkusVill product images; manual photo upload covers the same need |
+| Redux/state snapshot | The MiniApp uses local React state, not a centralized store — there is no single state tree to dump |
+| Telegram bot `/bug` command | v1.16 is MiniApp-only; bot entry deferred to BUG-10 |
+| Custom admin UI page | Existing admin panel + JSON endpoint is enough for a family-only app; new dedicated admin page deferred |
+| DB-backed report storage | File-based storage matches scale (≤5 users, low-volume reports), preserves atomic backup semantics, and avoids a SQLite migration |
+| Public/anonymous reports | Auth-gated only — prevents spam without rate-limit/captcha complexity |
 
 ## Traceability
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| PROXY-06 | Phase 56 | Complete |
-| PROXY-07 | Phase 56 | Complete (code + dev live-verify); EC2 rollout pending operator |
-| PROXY-08 | Phase 56 | Complete |
-| PROXY-09 | Phase 56 | Complete |
-| PROXY-10 | Phase 56 | Complete |
+| BUG-01 | Phase 60 | Pending |
+| BUG-02 | Phase 60 | Pending |
+| BUG-03 | Phase 60 | Pending |
+| BUG-04 | Phase 60 | Pending |
+| BUG-05 | Phase 59 | Pending |
+| BUG-06 | Phase 59 | Pending |
+| BUG-07 | Phase 59 | Pending |
+| BUG-08 | Phase 61 | Pending |
+| BUG-09 | Phase 61 | Pending |
 
 **Coverage:**
-- v1.15 requirements: 5 total
-- Mapped to phases: 5
+- v1.16 requirements: 9 total
+- Mapped to phases: 9
 - Unmapped: 0 ✓
 
-## Prior Milestone (v1.14) — Archived
+## Prior Milestone (v1.15) — Archived
 
-v1.14 Cart Truth & History Semantics shipped 2026-04-21 and was archived 2026-04-22. See `.planning/milestones/v1.14-REQUIREMENTS.md` for the archived requirements.
+v1.15 Proxy Infrastructure Migration shipped 2026-04-22 and was retroactively closed 2026-04-28. See `.planning/milestones/v1.15-REQUIREMENTS.md` for the archived requirements.
 
-The user-facing cart-add failure observed at the end of v1.14 was determined to be proxy-pool exhaustion (0% alive), not a cart-logic regression — which is the direct driver of this v1.15 milestone.
+The proxy migration is foundational for `POST /api/bug-reports` reliability — bug-report uploads with photo attachments need the same VLESS-routed proxy guarantees as cart-add already does.
 
 ---
-*Requirements defined: 2026-04-22*
-*Prior milestone v1.14 archived: 2026-04-22*
+*Requirements defined: 2026-04-28*
+*Prior milestone v1.15 archived: 2026-04-28*

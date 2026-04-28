@@ -20,6 +20,67 @@
 - ✅ **v1.15** Proxy Infrastructure Migration — Phase 56 (shipped and closed 2026-04-23 after EC2 rollout on `ubuntu@13.60.174.46`; systemd xray active, live cart-add of 76 items confirmed via scheduler)
 - ✅ **v1.17** VLESS Timeout Hardening — Phase 57 (shipped and closed 2026-04-25 after EC2 redeploy; `policy` + `observatory` + `leastPing` live in `bin/xray/configs/active.json`, 5/5 RU egress confirmed, Vercel miniapp `/api/cart/add` returns HTTP 200 with `success=true` ×2)
 - ✅ **v1.18** Geo Resolver & Scraper Recovery — Phase 58 (shipped and closed 2026-04-25; multi-provider geo resolver lifts pool 15 → 25 nodes, scraper survives Chromium CDP-WS HTTP 500 mid-cycle, miniapp cart-add still HTTP 200)
+- 🔄 **v1.16** Bug Reports — Phases 59-61 (active, started 2026-04-28; user-submitted bug reports with text/category/photo, console-log buffer, file-based storage, admin overview)
+
+## v1.16 Bug Reports (ACTIVE — started 2026-04-28)
+
+**Goal:** Authenticated MiniApp users can submit a bug report with free-form text, a category, and an optional photo. The form auto-attaches runtime metadata (route, viewport, user agent, app version, telegram_id, timestamp) plus a 30-second client console-log buffer. Reports are stored as files in `data/bug_reports/<ISO-timestamp>_<random8>.json` (with optional `<same-prefix>.jpg` photo). Admin sees count and previews via existing admin endpoints — no DB migration, no new admin UI page.
+
+**Granularity:** Fine (3 phases — backend storage, frontend form + buffer, admin visibility)
+**Phases:** 3 (59, 60, 61)
+**Requirements:** 9 (BUG-01 through BUG-09)
+
+### Phases
+
+- [ ] **Phase 59: Backend Storage & API** — `POST /api/bug-reports` multipart endpoint, file-based storage in `data/bug_reports/`, auth via existing `X-Telegram-User-Id` pattern, photo validation (≤5MB, image/* mime)
+- [ ] **Phase 60: MiniApp Form & Console Buffer** — Bug report form component, category/text/photo inputs, runtime meta auto-collection, 30-second console-log buffer wrapper installed at app startup
+- [ ] **Phase 61: Admin Visibility** — `GET /api/admin/bug-reports` JSON list with previews, `bug_reports_count` + `bug_reports_unread_count` exposed on `/admin/status`, badge in existing admin dashboard
+
+### Phase Details
+
+### Phase 59: Backend Storage & API
+**Goal**: Backend accepts multipart bug-report submissions from authenticated users and persists them as files in `data/bug_reports/`
+**Depends on**: Nothing (first phase, foundation for the rest)
+**Requirements**: BUG-05, BUG-06, BUG-07
+**Success Criteria** (what must be TRUE):
+  1. `POST /api/bug-reports` accepts multipart form (text + meta JSON + optional photo) and returns `{success: true, report_id: <id>}` for a valid submission from an authenticated user
+  2. Saved report file in `data/bug_reports/<ISO-timestamp>_<random8>.json` contains all expected fields (text, category, telegram_id, route, viewport, user_agent, app_version, timestamp, console_log_buffer); a `.jpg` is written alongside if a photo was attached
+  3. Unauthenticated submissions (missing or wrong `X-Telegram-User-Id` header) return 401 with no file written
+  4. Photos > 5MB or non-image mime types return 400 with no partial file state
+  5. Endpoint covered by pytest cases for: success path, missing auth, oversized photo, corrupt photo bytes, no photo at all
+**Plans**: TBD
+
+### Phase 60: MiniApp Form & Console Buffer
+**Goal**: Authenticated user can open a bug-report form from the MiniApp, fill text/category/photo, and the form auto-collects runtime metadata + a recent client console-log buffer at submit time
+**Depends on**: Phase 59
+**Requirements**: BUG-01, BUG-02, BUG-03, BUG-04
+**Success Criteria** (what must be TRUE):
+  1. From an authenticated MiniApp session there is a visible entry point (icon/menu) that opens a bug-report form
+  2. Form has: text area (10-2000 chars), category select (`cart`, `login`, `scrape`, `ui`, `other`), photo input (≤5MB, accept="image/*"), submit button; client validates before sending
+  3. On submit the form auto-attaches: current route/URL, viewport dimensions (innerWidth × innerHeight), navigator.userAgent, build commit hash, telegram_id, ISO-8601 timestamp
+  4. App startup installs a console-log buffer wrapper that captures `console.error`, `console.warn`, and `window.error` events into a ring buffer of last 30 seconds (cap ~100 records); the buffer is attached to every bug-report submission
+  5. Successful submission shows confirmation toast; failures show actionable error message and preserve form contents for retry
+**Plans**: TBD
+**UI hint**: yes
+
+### Phase 61: Admin Visibility
+**Goal**: Admin can see bug-report count and recent previews through the existing admin surface without a new admin UI page
+**Depends on**: Phases 59-60
+**Requirements**: BUG-08, BUG-09
+**Success Criteria** (what must be TRUE):
+  1. `GET /api/admin/bug-reports` (gated by `X-Admin-Token`) returns JSON list of recent reports with: timestamp, telegram_id, category, text preview (first 200 chars), `has_photo`, filename
+  2. `/admin/status` payload exposes `bug_reports_count` (total) and `bug_reports_unread_count` (since last admin check)
+  3. Existing admin dashboard surfaces a "Bug Reports (N)" badge driven by `bug_reports_unread_count`
+  4. Endpoint covered by pytest case for: empty state (0 reports), populated state (3+ reports), bad token returns 403
+**Plans**: TBD
+
+### Progress
+
+| Phase | Plans Complete | Status | Completed |
+|-------|----------------|--------|-----------|
+| 59. Backend Storage & API | 0/0 | Pending | — |
+| 60. MiniApp Form & Console Buffer | 0/0 | Pending | — |
+| 61. Admin Visibility | 0/0 | Pending | — |
 
 ## v1.18 Geo Resolver & Scraper Recovery (SHIPPED 2026-04-25)
 
