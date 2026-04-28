@@ -37,6 +37,7 @@ const CATEGORY_EMOJIS = {
 }
 
 import Login from './Login'
+import BugReportPanel from './BugReportPanel'
 
 // Normalize \xa0 (non-breaking space) to regular space in category strings
 function normalizeCategory(cat) {
@@ -356,6 +357,7 @@ function App() {
   })
   const [showLogin, setShowLogin] = useState(false)
   const [showLoginPrompt, setShowLoginPrompt] = useState(false)
+  const [showBugReport, setShowBugReport] = useState(false)
   const [error, setError] = useState(null)
   const [toastMessage, setToastMessage] = useState(null)
   const [updatedAt, setUpdatedAt] = useState(() => initialProductsCache?.updatedAt || null)
@@ -1704,6 +1706,16 @@ function App() {
             {theme === 'dark' ? '\u2600\ufe0f' : '\ud83c\udf19'}
           </button>
           {isAuthenticated && (
+            <button
+              onClick={() => setShowBugReport(true)}
+              className="header-pill header-pill-action"
+              title="Сообщить об ошибке"
+              aria-label="Сообщить об ошибке"
+            >
+              🐞
+            </button>
+          )}
+          {isAuthenticated && (
             <a
               href={`${window.location.origin}/admin`}
               target="_blank"
@@ -2085,6 +2097,13 @@ function App() {
 
       {/* Login prompt overlay */}
       {loginPromptOverlay}
+
+      {/* v1.16 Bug Report panel */}
+      <BugReportPanel
+        userId={userId}
+        isOpen={showBugReport}
+        onClose={() => setShowBugReport(false)}
+      />
 
       {/* Floating Toast Notification */}
       {toastMessage && (
