@@ -2283,8 +2283,10 @@ async def scrape_green_prices_async():
         print("  [GREEN] Reloading page...")
         reload_ok = False
         try:
-            page = await asyncio.wait_for(browser.get(GREEN_URL), timeout=30)
-            await asyncio.sleep(8)
+            page = await asyncio.wait_for(
+                _navigate_and_settle(browser, GREEN_URL, sleep_seconds=8),
+                timeout=30,
+            )
             await _step_screenshot(page, "after_reload")
             reload_ok = True
         except asyncio.TimeoutError:

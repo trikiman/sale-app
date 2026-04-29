@@ -631,7 +631,7 @@ def main():
                 proxy_state = run_full_cycle(proxy_state)
                 fails = proxy_state.get("consecutive_fails", 0)
                 if fails >= 3:
-                    wait_seconds = 600
+                    wait_seconds = 120
                     log(f"Circuit breaker: {fails} consecutive failures. Waiting {wait_seconds // 60} min before next full cycle.")
                     try:
                         from proxy_manager import ProxyManager
