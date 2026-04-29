@@ -424,7 +424,9 @@ def _ensure_healthy_proxy(pm, fallback_proxy_url: str | None) -> str | None:
 
     Returns a ``socks5://...`` URL that probed alive, or ``fallback_proxy_url``
     when probing is impossible (e.g. httpx missing). Returns None when the
-    pool is empty or no probe succeeded within ``PROXY_PROBE_MAX_ROTATIONS``.
+    pool is exhausted during rotation. Returns the last-tried candidate when
+    no probe succeeded within ``PROXY_PROBE_MAX_ROTATIONS`` (best-effort, so
+    the scraper still gets a chance to run rather than aborting the cycle).
     """
     if not fallback_proxy_url:
         return None
