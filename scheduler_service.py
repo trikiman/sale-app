@@ -383,12 +383,17 @@ PROXY_PROBE_UA = (
 
 
 def _probe_proxy_alive(proxy_url: str, timeout: float = PROXY_PROBE_TIMEOUT_SECONDS) -> bool:
-    """Quick HEAD probe through ``proxy_url`` to confirm it can reach VkusVill.
+    """Quick GET probe through ``proxy_url`` to confirm it can reach VkusVill.
 
     Returns True iff the proxy returns a 2xx/3xx for vkusvill.ru within
     ``timeout`` seconds AND the final URL is not the VPN-detected page.
     Used as a pre-flight check before launching the heavy Chrome flow so a
     silently-degraded VLESS exit doesn't waste a 45-300s scraper run.
+
+    GET (not HEAD) on purpose: VkusVill's WAF returns 405 for HEAD on the
+    homepage with stricter threat scores, which would false-negative every
+    healthy node. Body is discarded; ~380KB/probe is negligible vs the
+    300s of Chrome runtime we save by catching a bad node here.
     """
     try:
         import httpx
