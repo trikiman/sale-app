@@ -405,7 +405,7 @@ def _probe_proxy_alive(proxy_url: str, timeout: float = PROXY_PROBE_TIMEOUT_SECO
                 PROXY_PROBE_URL,
                 headers={"User-Agent": PROXY_PROBE_UA, "Accept": "text/html"},
             )
-        if resp.status_code >= 500:
+        if resp.status_code >= 400:
             return False
         if "/vpn-detected/" in str(resp.url):
             return False

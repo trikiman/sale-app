@@ -58,6 +58,16 @@ def test_probe_returns_false_on_500(reload_scheduler, monkeypatch):
     assert reload_scheduler._probe_proxy_alive("socks5://127.0.0.1:10808") is False
 
 
+def test_probe_returns_false_on_403(reload_scheduler, monkeypatch):
+    _stub_httpx(monkeypatch, status_code=403)
+    assert reload_scheduler._probe_proxy_alive("socks5://127.0.0.1:10808") is False
+
+
+def test_probe_returns_false_on_429(reload_scheduler, monkeypatch):
+    _stub_httpx(monkeypatch, status_code=429)
+    assert reload_scheduler._probe_proxy_alive("socks5://127.0.0.1:10808") is False
+
+
 def test_probe_returns_false_on_vpn_detected(reload_scheduler, monkeypatch):
     _stub_httpx(monkeypatch, status_code=200, final_url="https://vkusvill.ru/vpn-detected/")
     assert reload_scheduler._probe_proxy_alive("socks5://127.0.0.1:10808") is False
