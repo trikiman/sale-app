@@ -373,81 +373,6 @@ def choose_due_job(now_monotonic: float, next_all_due_at: float, next_green_due_
     return None
 
 
-PROXY_PROBE_TIMEOUT_SECONDS = 5.0
-PROXY_PROBE_MAX_ROTATIONS = 5
-PROXY_PROBE_URL = "https://vkusvill.ru/"
-PROXY_PROBE_UA = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-)
-
-
-def _probe_proxy_alive(proxy_url: str, timeout: float = PROXY_PROBE_TIMEOUT_SECONDS) -> bool:
-    """Quick GET probe through ``proxy_url`` to confirm it can reach VkusVill.
-
-    Returns True iff the proxy returns a 2xx/3xx for vkusvill.ru within
-    ``timeout`` seconds AND the final URL is not the VPN-detected page.
-    Used as a pre-flight check before launching the heavy Chrome flow so a
-    silently-degraded VLESS exit doesn't waste a 45-300s scraper run.
-
-    GET (not HEAD) on purpose: VkusVill's WAF returns 405 for HEAD on the
-    homepage with stricter threat scores, which would false-negative every
-    healthy node. Body is discarded; ~380KB/probe is negligible vs the
-    300s of Chrome runtime we save by catching a bad node here.
-    """
-    try:
-        import httpx
-    except ImportError:
-        return True
-    try:
-        with httpx.Client(
-            proxy=proxy_url,
-            timeout=timeout,
-            follow_redirects=True,
-            verify=False,
-        ) as client:
-            resp = client.get(
-                PROXY_PROBE_URL,
-                headers={"User-Agent": PROXY_PROBE_UA, "Accept": "text/html"},
-            )
-        if resp.status_code >= 400:
-            return False
-        if "/vpn-detected/" in str(resp.url):
-            return False
-        return True
-    except Exception:
-        return False
-
-
-def _ensure_healthy_proxy(pm, fallback_proxy_url: str | None) -> str | None:
-    """Pre-flight rotate the VLESS pool until the bridge can reach VkusVill.
-
-    Returns a ``socks5://...`` URL that probed alive, or ``fallback_proxy_url``
-    when probing is impossible (e.g. httpx missing). Returns None when the
-    pool is exhausted during rotation. Returns the last-tried candidate when
-    no probe succeeded within ``PROXY_PROBE_MAX_ROTATIONS`` (best-effort, so
-    the scraper still gets a chance to run rather than aborting the cycle).
-    """
-    if not fallback_proxy_url:
-        return None
-    if _probe_proxy_alive(fallback_proxy_url):
-        log(f"  Pre-flight: proxy probe OK ({fallback_proxy_url})")
-        return fallback_proxy_url
-    for attempt in range(1, PROXY_PROBE_MAX_ROTATIONS + 1):
-        log(f"  Pre-flight: proxy probe FAILED ({fallback_proxy_url}); rotating ({attempt}/{PROXY_PROBE_MAX_ROTATIONS})")
-        nxt = pm.next_proxy()
-        if not nxt:
-            log("  Pre-flight: pool exhausted during rotation")
-            return None
-        candidate = f"socks5://{nxt}"
-        if _probe_proxy_alive(candidate):
-            log(f"  Pre-flight: proxy probe OK after rotation ({candidate})")
-            return candidate
-        fallback_proxy_url = candidate
-    log("  Pre-flight: no healthy proxy after rotations — proceeding with last candidate")
-    return fallback_proxy_url
-
-
 def _prepare_proxy_connectivity(proxy_state):
     from proxy_manager import ProxyManager
 
@@ -466,8 +391,6 @@ def _prepare_proxy_connectivity(proxy_state):
         proxy = pm.get_working_proxy()
         if proxy:
             proxy_url = f"socks5://{proxy}"
-            healthy_url = _ensure_healthy_proxy(pm, proxy_url)
-            proxy_url = healthy_url or proxy_url
             if proxy_url != current_proxy:
                 log(f"Switching Chrome to proxy: {proxy_url}")
                 from chrome_stealth import restart_chrome_with_proxy
@@ -495,8 +418,6 @@ def _run_scraper_set(scrapers, proxy_state):
             proxy = pm.next_proxy()
             if proxy:
                 proxy_url = f"socks5://{proxy}"
-                healthy_url = _ensure_healthy_proxy(pm, proxy_url)
-                proxy_url = healthy_url or proxy_url
                 log(f"  Restarting Chrome with proxy: {proxy_url}")
                 from chrome_stealth import restart_chrome_with_proxy
                 restart_chrome_with_proxy(proxy=proxy_url, tag="PROXY")
