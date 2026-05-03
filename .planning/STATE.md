@@ -6,7 +6,7 @@ status: planning
 last_updated: "2026-05-03T18:28:03.477Z"
 last_activity: 2026-05-03
 progress:
-  total_phases: 0
+  total_phases: 3
   completed_phases: 0
   total_plans: 0
   completed_plans: 0
@@ -20,26 +20,35 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-22)
 
 **Core value:** Family members see every VkusVill discount and can add to cart in one tap
-**Current focus:** no active milestone — awaiting next milestone kickoff (latest shipped: v1.18 on 2026-04-25)
+**Current focus:** v1.19 Production Reliability & 24/7 Uptime — robust-over-fast hardening of the EC2 data pipeline (corrected pre-flight VLESS probe, observatory probeURL alignment, graduated circuit breaker, unauthed deep health endpoint, per-phase EC2 smoke verification gate). 3 phases (59-61), 18 requirements (12 REL, 3 OBS, 3 OPS).
 
 ## Current Position
 
-Phase: Not started (defining requirements)
+Phase: 59 Corrected Pre-flight VLESS Probe (not yet planned)
 Plan: —
-Status: Defining requirements
-Last activity: 2026-05-03 — Milestone v1.19 started
+Status: Milestone planning complete (research + requirements + roadmap drafted); ready for Phase 59 plan via `/gsd-discuss-phase 59` or `/gsd-plan-phase 59`
+Last activity: 2026-05-03 — v1.19 ROADMAP.md drafted (3 phases: 59, 60, 61)
 
-## Milestone Goal (v1.18 — last shipped)
+## Milestone Goal (v1.19 — active)
 
-- Lift the VLESS pool ceiling by removing the single-provider `ipinfo.io` rate-limit bottleneck during admission
-- Make `scrape_green.py` survive Chromium CDP-WebSocket HTTP 500 errors mid-cycle instead of crashing at "Step 2.9"
-- Preserve v1.17 cart-add reliability (Vercel miniapp `/api/cart/add` HTTP 200 still required)
-- No regression on existing scraper or VLESS bridge behavior
+- Detect a silently-degraded VLESS exit before launching Chrome (corrected pre-flight probe with 12 s timeout, capped rotations, balancer-preferred fallback) so 30-45 s wasted-Chrome cycles stop
+- Align xray observatory probeURL with the real traffic target (VkusVill, not Google) so the `leastPing` balancer ranks outbounds by real-target reachability
+- Replace the cycle-counter circuit breaker with a 3-state machine (closed → open → half_open) + exponential backoff capped at 30 min so 162 useless re-trips can't happen again
+- Expose stack health truthfully via unauth `GET /api/health/deep` returning 200/503 + `reasons[]` so external uptime pings catch "active but broken" states
+- Make per-phase EC2 smoke verification non-optional (`scripts/verify_v1.19.sh`, `VERIFICATION.md`, rehearsed rollback) so PR #25-style 8-minute-revert regressions cannot reach `main`
+- No regression on v1.18 (Vercel miniapp `/api/cart/add` HTTP 200 with `success=true` must still pass)
+
+## Previous Milestone Goal (v1.18 — last shipped 2026-04-25)
+
+- Lifted the VLESS pool ceiling by removing the single-provider `ipinfo.io` rate-limit bottleneck during admission (3-provider geo chain; pool 15 → 25 nodes, +67%)
+- Made `scrape_green.py` survive Chromium CDP-WebSocket HTTP 500 errors mid-cycle (4 new helpers; tests grew 96 → 111)
+- Preserved v1.17 cart-add reliability (Vercel miniapp `/api/cart/add` returned HTTP 200 with `success=true, cart_items=3, cart_total=971.6`)
 
 ## Next Up
 
-- `$gsd-new-milestone` — define the next milestone; no active scope right now
-- Note: the 2026-04-22 scheduler SOCKS5 recv() deadlock hotfix (commit `4c7f271`) was superseded by the v1.15 → v1.18 VLESS migration chain, which replaced SOCKS5 entirely with xray-core VLESS+Reality through a local SOCKS5 bridge
+- `/gsd-discuss-phase 59` (or `/gsd-plan-phase 59`) — begin Phase 59 (Corrected Pre-flight VLESS Probe). Phases run serially per the no-hotfix discipline; Phase 60 starts only after Phase 59's smoke test passes on EC2 + Vercel miniapp `/api/cart/add` regression check.
+- See `.planning/research/v1.19-SUMMARY.md` for the grounded findings (probe/target mismatch, both rotation paths restart xray, breaker has no half-open state) before planning Phase 59 details.
+- Note: the 2026-04-22 scheduler SOCKS5 recv() deadlock hotfix (commit `4c7f271`) was superseded by the v1.15 → v1.18 VLESS migration chain, which replaced SOCKS5 entirely with xray-core VLESS+Reality through a local SOCKS5 bridge.
 
 ## Completed Milestones
 
@@ -87,8 +96,8 @@ Last activity: 2026-05-03 — Milestone v1.19 started
 
 ### Pending Todos
 
-- Clarify stale banner freshness vs updated time — the stale warning is driven by per-color source age, while the header shows the latest merged payload time, so the UI currently looks contradictory even when backend freshness logic is correct.
-- Consider an observability milestone to add pool-size monitoring + alerting on top of the v1.18 multi-provider geo chain (15 → 25 nodes works, but no signal if it drops below MIN_HEALTHY=7 between refreshes).
+- Clarify stale banner freshness vs updated time — the stale warning is driven by per-color source age, while the header shows the latest merged payload time, so the UI currently looks contradictory even when backend freshness logic is correct. (Deferred to v1.20 — part of UI degraded mode UI-FUT-01.)
+- ~~Consider an observability milestone to add pool-size monitoring + alerting on top of the v1.18 multi-provider geo chain~~ — **resolved as v1.19 itself**: REL-11, REL-12, OBS-01, OBS-02, OBS-03 plus deferred follow-ups OBS-FUT-01/02/03 cover this concern.
 
 ## Known Bugs
 
@@ -131,6 +140,10 @@ Last activity: 2026-05-03 — Milestone v1.19 started
 | v1.17 phase 57 shipped (VLESS timeout hardening) | 2026-04-25 |
 | v1.18 phase 58 shipped (geo resolver + scraper recovery) | 2026-04-25 |
 | Planning state realigned for v1.15/v1.17/v1.18 | 2026-05-03 |
+| v1.19 milestone started (Production Reliability & 24/7 Uptime) | 2026-05-03 |
+| v1.19 research files written (STACK / FEATURES / ARCHITECTURE / PITFALLS / SUMMARY) | 2026-05-03 |
+| v1.19 REQUIREMENTS.md defined (18 items: 12 REL, 3 OBS, 3 OPS) | 2026-05-03 |
+| v1.19 ROADMAP.md drafted (3 phases: 59, 60, 61) | 2026-05-03 |
 
 ---
-*Last updated: 2026-05-03 after planning-state realignment for v1.15, v1.17, v1.18 (phases 56-58)*
+*Last updated: 2026-05-03 after v1.19 milestone kickoff (research, requirements, roadmap committed; phases 59-61 ready to plan)*

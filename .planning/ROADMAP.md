@@ -20,6 +20,67 @@
 - ✅ **v1.15** Proxy Infrastructure Migration — Phase 56 (shipped and closed 2026-04-23 after EC2 rollout on `ubuntu@13.60.174.46`; systemd xray active, live cart-add of 76 items confirmed via scheduler)
 - ✅ **v1.17** VLESS Timeout Hardening — Phase 57 (shipped and closed 2026-04-25 after EC2 redeploy; `policy` + `observatory` + `leastPing` live in `bin/xray/configs/active.json`, 5/5 RU egress confirmed, Vercel miniapp `/api/cart/add` returns HTTP 200 with `success=true` ×2)
 - ✅ **v1.18** Geo Resolver & Scraper Recovery — Phase 58 (shipped and closed 2026-04-25; multi-provider geo resolver lifts pool 15 → 25 nodes, scraper survives Chromium CDP-WS HTTP 500 mid-cycle, miniapp cart-add still HTTP 200)
+- ⏳ **v1.19** Production Reliability & 24/7 Uptime — Phases 59-61 (active, started 2026-05-03; corrected pre-flight VLESS probe + observatory probeURL alignment + graduated circuit breaker + unauthed deep health endpoint, all behind a per-phase EC2 smoke verification gate)
+
+## v1.19 Production Reliability & 24/7 Uptime (ACTIVE — started 2026-05-03)
+
+Close the production drift exposed after v1.18 shipped: 8 days of degraded behavior visible only in EC2 logs (pool 25 → 13, 162 consecutive scraper-cycle failures, 30/30 detail-proxy timeouts) while Vercel `/api/products` returned HTTP 200 with cached data. PR #25 (Devin, 2026-04-29) attempted a 5 s pre-flight probe hotfix, was reverted 8 minutes later by PR #26 because empirical healthy-node latency through the bridge is 7-9 s.
+
+The milestone is explicitly **robust-over-fast**: per user direction 2026-05-03, no fast hotfixes — every phase ships with a scripted EC2 smoke test (`scripts/verify_v1.19.sh`), a `VERIFICATION.md`, and a rehearsed rollback path. Backend reliability only; user-facing degraded mode (Category G) deferred to v1.20.
+
+Full grounded analysis: `.planning/research/v1.19-SUMMARY.md`. Requirements: `.planning/REQUIREMENTS.md` (18 items: 12 REL, 3 OBS, 3 OPS).
+
+**Goal:** Keep the VkusVill sale app continuously healthy from the user's perspective (Vercel frontend + Telegram MiniApp) 24/7 by hardening the EC2 data pipeline against post-v1.18 failure modes.
+**Granularity:** Medium
+**Phases:** 3 (59-61)
+**Requirements:** 18 (REL-01..12, OBS-01..03, OPS-06..08)
+
+### Phases
+
+- [ ] **Phase 59: Corrected Pre-flight VLESS Probe** — Redo PR #25 with the lessons from PR #26's revert: 12 s timeout (not 5 s), cap rotations at 2 (not 5), prefer `leastPing` balancer rotation over Python-side `next_proxy()` to minimize xray restarts. Ships `vless/preflight.py::probe_bridge_alive`, regression test that fails if probe timeout drops below empirical p95, EC2 smoke test, and `scripts/verify_v1.19.sh` skeleton.
+- [ ] **Phase 60: Observatory probeURL + Graduated Circuit Breaker** — Change xray `observatory.probeURL` from `google.com/generate_204` to a VkusVill endpoint so `leastPing` balancer reflects real-target reachability; replace the cycle-counter circuit breaker with a 3-state machine (closed → open → half_open) + exponential backoff capped at 30 min, persisted in `data/scheduler_state.json`. Adds breaker state transitions + probe URL regression test to `scripts/verify_v1.19.sh`.
+- [ ] **Phase 61: Deep Health Endpoint + Pool Snapshot** — Mount unauthed `GET /api/health/deep` returning 200/503 based on pool size, breaker phase, cycle freshness, xray process state, and merged-products mtime; add `VlessProxyManager.pool_snapshot()` accessor; extend `/admin/status` with the same `reliability` block. Adds external-curl-from-outside-EC2 to smoke script. Verifies pool drain trend visibility (REL-11/12).
+
+### Phase Details
+
+### Phase 59: Corrected Pre-flight VLESS Probe
+**Goal:** Detect a silently-degraded VLESS exit before the scheduler spends 30-45 s launching Chrome only to fail at page load — using the lessons from PR #25 → PR #26 revert (12 s timeout, cap 2 rotations, prefer balancer over Python-side removal).
+**Depends on:** Phase 58 (v1.18) shipped state — VLESS bridge is operational, just silently degrading; no breaking changes to the bridge itself in this phase.
+**Requirements:** REL-01, REL-02, REL-03, REL-04, REL-05 — plus the first concrete instances of OPS-06 (per-phase VERIFICATION.md), OPS-07 (smoke script foundation), OPS-08 (rollback rehearsal).
+**Success Criteria** (what must be TRUE):
+  1. [ ] `vless/preflight.py::probe_bridge_alive(timeout=12)` exists, returns a typed `ProbeResult`, and is called from `scheduler_service.py::_run_scraper_set` before each `scrape_*.py` launch.
+  2. [ ] Probe timeout = 12 s is guarded by a regression test (`tests/test_preflight_timeout_regression.py`) that fails if anyone lowers the constant below the measured EC2 healthy-node p95 + 30% margin.
+  3. [ ] Pre-flight rotation is capped at 2 attempts per scraper launch — verified by an integration test that simulates probe failure and asserts at most 2 `_remove_host_and_restart` calls per launch.
+  4. [ ] Live verification on EC2: a deliberately-bad single proxy in the pool causes one rotation + recovery within ≤ 30 s, instead of 5 cascading xray restarts (PR #25 failure mode).
+  5. [ ] `scripts/verify_v1.19.sh` exists and reports pass/fail for the 4 criteria above; run from local terminal via SSH; idempotent.
+  6. [ ] Vercel miniapp `/api/cart/add` returns HTTP 200 with `success=true` post-deploy (no regression on v1.18).
+**Plans:** TBD via `/gsd-plan-phase 59`
+
+### Phase 60: Observatory probeURL + Graduated Circuit Breaker
+**Goal:** Fix the silent killer (xray observatory probes Google but our traffic goes to VkusVill, so blocked-by-VkusVill nodes stay "fast" in `leastPing`) AND give the scheduler a real recovery path (3-state breaker + exponential backoff) instead of 162 useless re-trips.
+**Depends on:** Phase 59 (smoke script foundation needed for verification).
+**Requirements:** REL-06, REL-07, REL-08, REL-09, REL-10 — plus continued OPS-06/07/08.
+**Success Criteria:**
+  1. [ ] `vless/config_gen.py::build_xray_config` emits `observatory.probeURL = "https://vkusvill.ru/favicon.ico"` (or operator-confirmed VkusVill stable endpoint); regression test asserts the configured probeURL hostname matches `*.vkusvill.ru`.
+  2. [ ] `scheduler/breaker.py::CircuitBreaker` exists with phases {`closed`, `open`, `half_open`}; transitions: 3 consecutive failed cycles → open; cooldown elapsed → half_open; half-open probe succeeds → closed; half-open probe fails → open with `backoff_level += 1`.
+  3. [ ] Cooldown follows `min(120 * 2^level, 1800)` (cap 30 min); unit tests cover all level transitions.
+  4. [ ] Counter resets to 0 on **any** successful scraper run (current behavior only resets on fully-clean cycle); integration test simulates 2-of-3 failures for 5 cycles and asserts breaker does not trip while ≥1 scraper succeeds, AND asserts breaker tracks per-scraper failure separately for visibility.
+  5. [ ] `data/scheduler_state.json` persists breaker state across restart; corrupt-file fallback test passes.
+  6. [ ] Live verification on EC2: deliberately force all 3 scrapers to fail for 3 cycles, observe `closed → open → cooldown 120s → half_open → green-only probe → recovery`; total recovery time ≤ 5 min vs. current 5.4 h.
+**Plans:** TBD via `/gsd-plan-phase 60`
+
+### Phase 61: Deep Health Endpoint + Pool Snapshot
+**Goal:** Expose stack health truthfully via an unauth `/api/health/deep` endpoint suitable for external uptime ping services, with a `reasons[]` array for post-incident debugging; add pool-size trend logging so multi-day drift (pool 25 → 13) is visible without log scraping.
+**Depends on:** Phase 60 (breaker state file is part of the response).
+**Requirements:** REL-11, REL-12, OBS-01, OBS-02, OBS-03 — plus continued OPS-06/07/08.
+**Success Criteria:**
+  1. [ ] `GET /api/health/deep` (no auth) returns HTTP 200 + JSON when healthy and HTTP 503 + JSON when degraded/unhealthy; response shape matches schema in `.planning/research/v1.19-ARCHITECTURE.md` §4; rate-limited 1 req/s/IP.
+  2. [ ] Healthy criteria match REQUIREMENTS.md OBS-02 (all-of: pool_size ≥ MIN_HEALTHY, breaker ∈ {closed, half_open}, last successful cycle ≤ 15 min ago, xray running, products.json mtime ≤ 15 min); response always includes `status` and `reasons[]`.
+  3. [ ] No node IPs, no user identifiers, no cookie state in the unauth response (privacy review checked into the verify script).
+  4. [ ] `VlessProxyManager.pool_snapshot()` returns `{size, min_healthy, quarantined_count, active_outbounds, last_refresh_at}`; `/admin/status` exposes a `reliability` block with breaker + pool snapshot for the operator view.
+  5. [ ] `proxy_events.jsonl` gains `pool_size`, `quarantined_count`, `active_outbounds_count` on every refresh and quarantine event; verification queries the file and asserts trend visibility over a 24 h window.
+  6. [ ] External `curl https://vkusvillsale.vercel.app/api/health/deep` from a non-EC2 host returns 200 when stack is healthy and 503 when synthetically degraded (e.g. xray paused).
+**Plans:** TBD via `/gsd-plan-phase 61`
 
 ## v1.18 Geo Resolver & Scraper Recovery (SHIPPED 2026-04-25)
 
