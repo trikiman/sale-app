@@ -1,16 +1,16 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.18
-milestone_name: Geo Resolver & Scraper Recovery
-status: archived
-last_updated: "2026-05-03T18:43:00+03:00"
-last_activity: 2026-05-03 -- planning state realigned; v1.15/v1.17/v1.18 shipped after v1.14, phases 56/57/58 closed, RETROSPECTIVE.md moved to .planning/milestones/
+milestone: v1.19
+milestone_name: Production Reliability & 24/7 Uptime
+status: planning
+last_updated: "2026-05-03T18:28:03.477Z"
+last_activity: 2026-05-03
 progress:
-  total_phases: 1
-  completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
-  percent: 100
+  total_phases: 0
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
 ---
 
 # Project State
@@ -24,11 +24,10 @@ See: .planning/PROJECT.md (updated 2026-04-22)
 
 ## Current Position
 
-Milestone: v1.18 — Geo Resolver & Scraper Recovery — SHIPPED 2026-04-25
-Phase: 58 (Geo Resolver & Scraper Recovery) — COMPLETE
-Plan: 3 of 3 — Complete (58-01, 58-02, 58-03 all merged)
-Status: v1.18 closed end-to-end; both punted-from-v1.17 issues resolved (multi-provider geo resolver + Chromium CDP-WS recovery in scraper)
-Last activity: 2026-05-03 -- planning artifacts realigned; ROADMAP/STATE/MILESTONES now reflect v1.15/v1.17/v1.18 shipping reality
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-05-03 — Milestone v1.19 started
 
 ## Milestone Goal (v1.18 — last shipped)
 

@@ -105,9 +105,25 @@ Family members see every VkusVill discount (green/red/yellow) the moment it appe
 
 <!-- Current scope. Building toward these. -->
 
-- (none — v1.14 closed 2026-04-22. Next milestone TBD.)
+- v1.19 reliability requirements TBD by `/gsd-new-milestone` step 9. Scope: pre-flight VLESS probe done right (redo PR #25 with 12 s timeout + capped rotations), xray observatory probeURL aligned with VkusVill (not Google), graduated 3-state circuit breaker with exponential backoff, unauthed deep health endpoint, per-phase EC2 smoke verification.
 
-## Current Milestone: (none — awaiting next milestone kickoff)
+## Current Milestone: v1.19 Production Reliability & 24/7 Uptime
+
+**Goal:** Keep the VkusVill sale app continuously healthy from the user's perspective (Vercel frontend + Telegram MiniApp) 24/7 by hardening the EC2 data pipeline against the failure modes that regressed post-v1.18 — with regression tests and per-phase EC2 smoke verification that would have caught PR #25's revert in pre-merge.
+
+**Target features** (finalized via `.planning/research/v1.19-SUMMARY.md`):
+- Corrected pre-flight VLESS bridge probe (12 s timeout, cap 2 rotations, probe failures class-tested)
+- xray `observatory.probeURL` aligned with real traffic target (`vkusvill.ru/favicon.ico`, not `google.com/generate_204`) so `leastPing` balancer reflects reality
+- Graduated circuit breaker: `closed → open → half_open → closed` with exponential backoff capped at 30 min, persisted state in `data/scheduler_state.json`
+- Unauthenticated `/api/health/deep` endpoint returning 200/503 based on pool size, cycle freshness, circuit state, xray process state — no node IPs, safe for external uptime pings
+- Mandatory per-phase scripted EC2 smoke test (`scripts/verify_v1.19.sh`) as mergeable artifact; no "it worked in my terminal" verification accepted
+
+**Key context:**
+- No active milestone between 2026-04-25 and 2026-05-03; v1.18 shipped then production drifted
+- 2026-05-03 live state: pool 25 → 13, 162 consecutive scrape failures, 30/30 detail-proxy timeouts in last 10 min, but Vercel still returns HTTP 200 from cached `/api/products`
+- PR #25 (Devin, 2026-04-29) tried a pre-flight probe hotfix; reverted 8 min later by PR #26 because 5 s timeout was below empirical 7-9 s healthy-node latency
+- User preference (recorded in memory): no fast hotfixes, formal GSD workflow end-to-end, safe/robust over fast
+- Research not reused from prior milestones; v1.19 research files prefixed `v1.19-*` in `.planning/research/`
 
 ## Previous Shipped Milestone: v1.14 Cart Truth & History Semantics (2026-04-21, closed 2026-04-22)
 
