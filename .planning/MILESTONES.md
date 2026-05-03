@@ -1,5 +1,11 @@
 # Milestones
 
+## v1.3 Roadmap: VkusVill Sale Monitor (Backfilled: 2026-05-03)
+
+**Note:** Synthesized from archive snapshot by `/gsd-health --backfill`. Original completion date unknown.
+
+---
+
 ## v1.14 Cart Truth & History Semantics (Shipped: 2026-04-21, closed: 2026-04-22)
 
 **Phases completed:** 4 phases (52-55), 4 plans

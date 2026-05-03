@@ -1,15 +1,15 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.14
-milestone_name: Cart Truth & History Semantics
+milestone: v1.18
+milestone_name: Geo Resolver & Scraper Recovery
 status: archived
-last_updated: "2026-04-22T19:15:00+03:00"
-last_activity: 2026-04-22 -- v1.12/v1.13/v1.14 retroactively audited, archived, and closed; Apr 22 scheduler hotfix shipped in commit 4c7f271
+last_updated: "2026-05-03T18:43:00+03:00"
+last_activity: 2026-05-03 -- planning state realigned; v1.15/v1.17/v1.18 shipped after v1.14, phases 56/57/58 closed, RETROSPECTIVE.md moved to .planning/milestones/
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 4
-  completed_plans: 4
+  total_phases: 1
+  completed_phases: 1
+  total_plans: 3
+  completed_plans: 3
   percent: 100
 ---
 
@@ -20,27 +20,27 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-22)
 
 **Core value:** Family members see every VkusVill discount and can add to cart in one tap
-**Current focus:** no active milestone — awaiting next milestone kickoff
+**Current focus:** no active milestone — awaiting next milestone kickoff (latest shipped: v1.18 on 2026-04-25)
 
 ## Current Position
 
-Milestone: v1.14 — Cart Truth & History Semantics — ARCHIVED (2026-04-22)
-Phase: 55 (Live Verification & Release Decision) — COMPLETE
-Plan: 1 of 1 — Complete
-Status: v1.14 audited (`passed`), archived to `.planning/milestones/v1.14-*.md`, `MILESTONES.md` updated
-Last activity: 2026-04-22 -- retroactive closure of v1.12, v1.13, v1.14 completed
+Milestone: v1.18 — Geo Resolver & Scraper Recovery — SHIPPED 2026-04-25
+Phase: 58 (Geo Resolver & Scraper Recovery) — COMPLETE
+Plan: 3 of 3 — Complete (58-01, 58-02, 58-03 all merged)
+Status: v1.18 closed end-to-end; both punted-from-v1.17 issues resolved (multi-provider geo resolver + Chromium CDP-WS recovery in scraper)
+Last activity: 2026-05-03 -- planning artifacts realigned; ROADMAP/STATE/MILESTONES now reflect v1.15/v1.17/v1.18 shipping reality
 
-## Milestone Goal
+## Milestone Goal (v1.18 — last shipped)
 
-- Make MiniApp add-to-cart actually work for real users, not just in code-path theory
-- Remove fake restock/reentry semantics from sale history and related user-visible flows
-- Repair current persisted history data so already-recorded fake restocks/reentries disappear
-- Verify cart and history behavior against fresh production-like evidence before treating the work as done
+- Lift the VLESS pool ceiling by removing the single-provider `ipinfo.io` rate-limit bottleneck during admission
+- Make `scrape_green.py` survive Chromium CDP-WebSocket HTTP 500 errors mid-cycle instead of crashing at "Step 2.9"
+- Preserve v1.17 cart-add reliability (Vercel miniapp `/api/cart/add` HTTP 200 still required)
+- No regression on existing scraper or VLESS bridge behavior
 
 ## Next Up
 
 - `$gsd-new-milestone` — define the next milestone; no active scope right now
-- Follow-ups tracked outside a formal milestone: 2026-04-22 scheduler SOCKS5 recv() deadlock hotfix (proxy_manager preflight + bounded as_completed + scheduler heartbeat watchdog) was shipped in commit `4c7f271` and is not represented in any v1.x milestone; consider folding into a future reliability milestone if similar issues recur
+- Note: the 2026-04-22 scheduler SOCKS5 recv() deadlock hotfix (commit `4c7f271`) was superseded by the v1.15 → v1.18 VLESS migration chain, which replaced SOCKS5 entirely with xray-core VLESS+Reality through a local SOCKS5 bridge
 
 ## Completed Milestones
 
@@ -61,6 +61,9 @@ Last activity: 2026-04-22 -- retroactive closure of v1.12, v1.13, v1.14 complete
 | v1.12 Add-to-Cart 5s Hard Cap | 46 | 2026-04-08 |
 | v1.13 Instant Cart & Reliability | 47-51 | 2026-04-16 (closed 2026-04-22) |
 | v1.14 Cart Truth & History Semantics | 52-55 | 2026-04-21 (closed 2026-04-22) |
+| v1.15 Proxy Infrastructure Migration | 56 | 2026-04-23 |
+| v1.17 VLESS Timeout Hardening | 57 | 2026-04-25 |
+| v1.18 Geo Resolver & Scraper Recovery | 58 | 2026-04-25 |
 
 ## Accumulated Context
 
@@ -79,11 +82,14 @@ Last activity: 2026-04-22 -- retroactive closure of v1.12, v1.13, v1.14 complete
 - MiniApp now hydrates from the last good product payload and uses a lower-pressure enrichment queue for missing card metadata
 - The milestone verification set now includes continuity, scheduler freshness, notifier, admin-status, history-search, catalog-merge, and API coverage together
 - v1.10 archived to `.planning/milestones/` with roadmap, requirements, and audit snapshots
+- v1.15 shipped: SOCKS5 proxy pool replaced with xray-core VLESS+Reality bridge (`socks5://127.0.0.1:10808`); legacy code archived under `legacy/proxy-socks5/`; live cart-add of 76 items confirmed via scheduler on EC2
+- v1.17 shipped: xray `policy` (`connIdle=30s`, `handshake=8s`) + `observatory` + `leastPing` balancer; egress geo-verification restored; `remove_proxy` now rotates instead of no-op; Vercel miniapp `/api/cart/add` HTTP 200 ×2
+- v1.18 shipped: 3-provider geo resolver chain (ipinfo.io → ipapi.co → ip-api.com) lifts pool 15 → 25 nodes (+67%); `scrape_green.py` survives Chromium CDP-WebSocket HTTP 500 via 4 new helpers (`_is_dead_ws_error`, `_refresh_page_handle`, `_safe_js`, `_navigate_and_settle`); +15 new tests
 
 ### Pending Todos
 
 - Clarify stale banner freshness vs updated time — the stale warning is driven by per-color source age, while the header shows the latest merged payload time, so the UI currently looks contradictory even when backend freshness logic is correct.
-- Consider a small reliability milestone to formalize the Apr 22 scheduler SOCKS5 deadlock fix (commit `4c7f271`), extract learnings, and extend the proxy/preflight regression coverage so future hangs are caught sooner.
+- Consider an observability milestone to add pool-size monitoring + alerting on top of the v1.18 multi-provider geo chain (15 → 25 nodes works, but no signal if it drops below MIN_HEALTHY=7 between refreshes).
 
 ## Known Bugs
 
@@ -122,6 +128,10 @@ Last activity: 2026-04-22 -- retroactive closure of v1.12, v1.13, v1.14 complete
 | v1.13 milestone closed (retroactive audit, supersedes gaps_found) | 2026-04-22 |
 | v1.14 milestone closed and archived | 2026-04-22 |
 | Scheduler SOCKS5 deadlock hotfix (commit 4c7f271) | 2026-04-22 |
+| v1.15 phase 56 shipped (VLESS proxy migration) | 2026-04-23 |
+| v1.17 phase 57 shipped (VLESS timeout hardening) | 2026-04-25 |
+| v1.18 phase 58 shipped (geo resolver + scraper recovery) | 2026-04-25 |
+| Planning state realigned for v1.15/v1.17/v1.18 | 2026-05-03 |
 
 ---
-*Last updated: 2026-04-22 after retroactive closure of v1.12, v1.13, v1.14 and scheduler hotfix*
+*Last updated: 2026-05-03 after planning-state realignment for v1.15, v1.17, v1.18 (phases 56-58)*

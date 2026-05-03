@@ -43,6 +43,33 @@ Live evidence (2026-04-25, on `ubuntu@13.60.174.46`):
 
 PRs: #17 (58-01), #18 (58-02), #19 (58-03 deploy + verify + docs).
 
+**Goal:** Lift the v1.17 VLESS pool ceiling and harden the green scraper against Chromium CDP-WebSocket HTTP 500 mid-cycle.
+**Granularity:** Fine
+**Phases:** 1 (58)
+**Requirements:** n/a (operational hardening; tracked via phase 58 README success criteria)
+
+### Phases
+
+- [x] **Phase 58: Geo Resolver & Scraper Recovery** - Multi-provider geo resolver chain (ipinfo.io → ipapi.co → ip-api.com) lifts pool 15 → 25 nodes; `scrape_green.py` survives Chromium CDP-WebSocket HTTP 500 via 4 new helpers *(completed 2026-04-25: 58-01 PR #17 `acf8929`, 58-02 PR #18 `f616af9`, 58-03 PR #19; tests grew 96 → 111 in `tests/`, Vercel miniapp `/api/cart/add` returns HTTP 200)*
+
+### Phase Details
+
+### Phase 58: Geo Resolver & Scraper Recovery
+**Goal**: Close the two known issues punted from v1.17 — ipinfo.io single-provider rate-limiting capping pool admission, and Chromium CDP-WebSocket HTTP 500 crashing `scrape_green.py` mid-cycle
+**Depends on**: Phase 57 (v1.17)
+**Requirements**: n/a (operational hardening)
+**Success Criteria** (what must be TRUE):
+  1. [x] Pool size after refresh on EC2 ≥ 15 (v1.17 baseline) *(achieved: 25 nodes, +67%)*
+  2. [x] `XrayProcess._GEO_PROVIDERS` exposes all three providers; live `verify_egress` returns `RU` through the chain
+  3. [x] `scrape_green.py` exposes 4 recovery helpers (`_is_dead_ws_error`, `_refresh_page_handle`, `_safe_js`, `_navigate_and_settle`) as module-level callables
+  4. [x] Vercel miniapp `/api/cart/add` still returns HTTP 200 with `success=true` (no regression on v1.17 fix) *(achieved: `cart_items=3, cart_total=971.6`)*
+  5. [x] All existing tests still pass; new tests cover the helpers *(achieved: `tests/` 96 → 111, `backend/` 86/86, 2 skipped live-only unchanged)*
+**Plans:** 3 plans
+Plans:
+- [x] 58-01-PLAN.md — Multi-provider geo resolver in `vless/xray.py::verify_egress` + `vless/manager.py::_probe_one` call site (PR #17, `acf8929`)
+- [x] 58-02-PLAN.md — Scraper CDP-WS recovery helpers in `scrape_green.py` (PR #18, `f616af9`)
+- [x] 58-03-PLAN.md — Deploy + verify scripts + ROADMAP update + docs (PR #19)
+
 ## v1.17 VLESS Timeout Hardening (SHIPPED 2026-04-25)
 
 Follow-up to v1.15/v1.16. Fixed three root causes for the
@@ -66,6 +93,35 @@ observed) and restored egress geo-verification in admission probes
 Phase: `.planning/phases/57-vless-timeout-hardening/`
 Inspection: `.planning/phases/56-vless-proxy-migration/INSPECTION-2026-04-23.md`
 Verification: `.planning/phases/57-vless-timeout-hardening/57-VERIFICATION.md`
+
+**Goal:** Resolve the post-v1.15 "middle-of-cart-add timeout" bug by fixing 3 P0 root causes (xray policy, observatory + leastPing, `remove_proxy` no-op) and 5 symptom bugs (timeouts, geo verification regression).
+**Granularity:** Fine
+**Phases:** 1 (57)
+**Requirements:** n/a (hardening; preserves PROXY-06…PROXY-10 from v1.15)
+
+### Phases
+
+- [x] **Phase 57: VLESS Timeout Hardening** - xray `policy` (`connIdle=30s`, `handshake=8s`) + `observatory` + `leastPing`, Python timeout alignment, `remove_proxy` rotation, restored egress geo-verification *(completed 2026-04-25: 57-01 `d92ddca` PR #13, 57-02 `ef50253` PR #14, 57-03 `4e53817` PR #15, 57-04 deploy + live verify; egress 0/15 → 5/5 RU; Vercel miniapp `/api/cart/add` HTTP 200 ×2)*
+
+### Phase Details
+
+### Phase 57: VLESS Timeout Hardening
+**Goal**: Eliminate the mid-connection timeout failure mode by fixing the 3 P0 root causes (R1 missing xray policy, R2 missing observatory + random balancer, R3 `remove_proxy` no-op) plus 5 symptom bugs (timeout alignment, geo verification regression, retry loop)
+**Depends on**: Phase 56 (v1.15)
+**Requirements**: n/a (preserves PROXY-06…PROXY-10)
+**Success Criteria** (what must be TRUE):
+  1. [x] `bin/xray/configs/active.json` contains `policy` (`connIdle=30s`, `handshake=8s`), `observatory` (probe every 5 min via `generate_204`), and `routing.balancers[].strategy=leastPing`
+  2. [x] `curl -x socks5h://127.0.0.1:10808 https://ipinfo.io/json` through the bridge returns an RU country (egress geo-verification restored)
+  3. [x] Admitted pool size after refresh ≥ 7 RU-verified nodes (no longer mixed-egress)
+  4. [x] Vercel miniapp `/api/cart/add` returns HTTP 200 with `success=true` *(achieved: HTTP 200 ×2, was skipped in v1.15)*
+  5. [x] `pytest -v` passes on full suite (`tests/` 96 + `backend/` 86 + 2 skipped live-only)
+  6. [x] All 4 sub-plans land as atomic commits matching their PLAN-template subject lines
+**Plans:** 4 plans
+Plans:
+- [x] 57-01-PLAN.md — xray `policy` block + `observatory` + `leastPing` balancer (PR #13, `d92ddca`)
+- [x] 57-02-PLAN.md — Python timeout alignment + `remove_proxy` rotate (PR #14, `ef50253`)
+- [x] 57-03-PLAN.md — Restore egress geo-verification in admission probe (PR #15, `4e53817`)
+- [x] 57-04-PLAN.md — Deploy scripts + EC2 verification + docs (`57-VERIFICATION.md`)
 
 ## v1.15 Proxy Infrastructure Migration
 
