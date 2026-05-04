@@ -7,6 +7,8 @@ BUG FIXES Applied:
 - BUG-2: Detect scraper failures even when exit code is 0 (check file mtime)
 - BUG-4: All output goes to scheduler.log with [SCRAPER_NAME] prefixes
 """
+from __future__ import annotations
+
 import time
 import subprocess
 import sys
@@ -14,6 +16,8 @@ import os
 import json
 import threading
 from datetime import datetime
+
+from vless.preflight import probe_bridge_alive
 
 # Fix Windows console encoding for emoji in scraper output
 if sys.platform == 'win32':
@@ -405,6 +409,33 @@ def _prepare_proxy_connectivity(proxy_state):
 
 def _run_scraper_set(scrapers, proxy_state):
     pm, proxy_state = _prepare_proxy_connectivity(proxy_state)
+
+    # v1.19 REL-01..05: pre-flight VLESS bridge probe. Detect silent
+    # degradation before burning 30-45 s on Chrome startup. Max 2 rotations.
+    # Corrected successor to the reverted PR #25 (see .planning/phases/
+    # 59-corrected-preflight-vless-probe/59-CONTEXT.md for rationale).
+    probe = probe_bridge_alive(timeout=12.0)
+    rotations = 0
+    while not probe.ok and rotations < 2:
+        log(f"  Pre-flight probe failed: {probe.reason} "
+            f"(status={probe.status}, {probe.elapsed_s:.1f}s) — rotating")
+        if rotations == 0:
+            pm.mark_current_node_blocked("preflight_timeout")
+        else:
+            pm.next_proxy()
+        rotations += 1
+        probe = probe_bridge_alive(timeout=12.0)
+    if not probe.ok:
+        log(f"  Pre-flight probe still failing after {rotations} rotations "
+            f"({probe.reason}) — proceeding anyway, circuit breaker will catch.")
+    elif probe.cached:
+        log("  Pre-flight probe: ok (cached)")
+    elif rotations > 0:
+        log(f"  Pre-flight probe: ok after {rotations} rotation(s) "
+            f"(status={probe.status}, {probe.elapsed_s:.1f}s)")
+    else:
+        log(f"  Pre-flight probe: ok (status={probe.status}, {probe.elapsed_s:.1f}s)")
+
     scraper_results = {}
     for script, tag, data_file in scrapers:
         data_path = os.path.join(DATA_DIR, data_file)
