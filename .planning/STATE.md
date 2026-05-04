@@ -7,10 +7,10 @@ last_updated: "2026-05-03T18:28:03.477Z"
 last_activity: 2026-05-03
 progress:
   total_phases: 3
-  completed_phases: 0
+  completed_phases: 1
   total_plans: 3
-  completed_plans: 0
-  percent: 0
+  completed_plans: 3
+  percent: 33
 ---
 
 # Project State
@@ -24,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-04-22)
 
 ## Current Position
 
-Phase: 59 Corrected Pre-flight VLESS Probe (planned, ready to execute)
-Plan: 59-01-PLAN.md (vless/preflight.py + scheduler integration) -> 59-02-PLAN.md (tests) -> 59-03-PLAN.md (verify + deploy + rollback rehearsal)
-Status: Plans written (README + CONTEXT + 3 PLANs, 1473 lines total); ready for `/gsd-execute-phase 59` or manual execution one plan at a time.
-Last activity: 2026-05-03 — Phase 59 plans committed (3 atomic plans mapping to REL-01..05 + OPS-06/07/08)
+Phase: 59 Corrected Pre-flight VLESS Probe (✅ SHIPPED)
+Next phase: 60 Observatory probeURL alignment + Graduated Circuit Breaker (not yet planned)
+Status: Phase 59 deployed to EC2, smoke script all 9 checks pass, rollback rehearsed bidirectionally, no v1.18 regression. Pre-flight probe firing per cycle on live bridge with correct cap (2 rotations) + cooldown reason flow.
+Last activity: 2026-05-04 — Phase 59 verified live and committed (`f354b2d` test, `0a37811` feat). See `.planning/phases/59-corrected-preflight-vless-probe/59-VERIFICATION.md`.
 
 ## Milestone Goal (v1.19 — active)
 
@@ -145,6 +145,7 @@ Last activity: 2026-05-03 — Phase 59 plans committed (3 atomic plans mapping t
 | v1.19 REQUIREMENTS.md defined (18 items: 12 REL, 3 OBS, 3 OPS) | 2026-05-03 |
 | v1.19 ROADMAP.md drafted (3 phases: 59, 60, 61) | 2026-05-03 |
 | v1.19 Phase 59 plans written (README + CONTEXT + 59-01/02/03-PLAN) | 2026-05-03 |
+| v1.19 Phase 59 SHIPPED — vless/preflight.py + scheduler integration + 23 tests + smoke script + rehearsed rollback | 2026-05-04 |
 
 ---
-*Last updated: 2026-05-03 after Phase 59 planning completed (1473 lines across 5 files: README, 59-CONTEXT, 59-01-PLAN Impl, 59-02-PLAN Tests, 59-03-PLAN Verify+Deploy+Rollback)*
+*Last updated: 2026-05-04 after Phase 59 ship complete. Pre-flight probe firing live on EC2; rotation cap (2) and cooldown reason (`preflight_timeout`) verified through journal evidence. OPS-06/07/08 first-instance commitments delivered.*
