@@ -773,6 +773,10 @@ def main():
         f"Loaded breaker state: {breaker.state} "
         f"(cooldown_s={breaker.cooldown_s}, fails={breaker.fails})"
     )
+    # Phase 60 REL-10: persist immediately on startup so external monitors
+    # (verify_v1.19.sh 60-F, future /api/health/deep) can always read a
+    # current state even on a fresh boot before the first cycle completes.
+    _persist_breaker_state(breaker)
 
     proxy_state = {
         "active_proxy": None,
