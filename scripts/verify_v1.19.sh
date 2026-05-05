@@ -192,12 +192,124 @@ print(build_xray_config([n])[\"observatory\"][\"probeInterval\"])
 fi
 
 # ---------------------------------------------------------------------------
-# Future phase 61 appends its block here:
-#
-# if [[ "$PHASE" == "61" || "$PHASE" == "all" ]]; then
-#     _banner "Phase 61 — Deep Health Endpoint + Pool Snapshot"
-#     ...
-# fi
+# Phase 61: Deep Health Endpoint + Pool Snapshot
+# ---------------------------------------------------------------------------
+if [[ "$PHASE" == "61" || "$PHASE" == "all" ]]; then
+    _banner "Phase 61 — Deep Health Endpoint + Pool Snapshot"
+
+    # 61-A: VlessProxyManager.pool_snapshot() exposes the typed schema
+    SNAPSHOT_OK=$(ssh "$EC2_HOST" "cd /home/ubuntu/saleapp && python3 -c '
+from vless.manager import VlessProxyManager
+m = VlessProxyManager(register_atexit=False)
+s = m.pool_snapshot()
+required = {\"size\", \"min_healthy\", \"quarantined_count\", \"active_outbounds\", \"last_refresh_at\"}
+print(\"OK\" if required <= set(s.keys()) else \"MISSING:\" + str(required - set(s.keys())))
+'" 2>/dev/null)
+    if [[ "$SNAPSHOT_OK" == "OK" ]]; then
+        _pass "61-A: pool_snapshot() returns the documented schema"
+    else
+        _fail "61-A: pool_snapshot() schema check failed: $SNAPSHOT_OK"
+    fi
+
+    # 61-B: proxy_events.jsonl entries carry the new pool counters (OBS-02)
+    if ssh "$EC2_HOST" "test -f /home/ubuntu/saleapp/data/proxy_events.jsonl"; then
+        COUNTERS_OK=$(ssh "$EC2_HOST" "tail -n 50 /home/ubuntu/saleapp/data/proxy_events.jsonl 2>/dev/null | python3 -c '
+import sys, json
+hits = 0
+for line in sys.stdin:
+    line = line.strip()
+    if not line:
+        continue
+    try:
+        d = json.loads(line)
+    except Exception:
+        continue
+    if \"pool_size\" in d and \"quarantined_count\" in d and \"active_outbounds_count\" in d:
+        hits += 1
+print(hits)
+'" 2>/dev/null)
+        if [[ "${COUNTERS_OK:-0}" -gt 0 ]]; then
+            _pass "61-B: proxy_events.jsonl entries include pool counters ($COUNTERS_OK / last 50)"
+        else
+            _fail "61-B: proxy_events.jsonl has 0 enriched entries in the last 50 — OBS-02 not active"
+        fi
+    else
+        _fail "61-B: /home/ubuntu/saleapp/data/proxy_events.jsonl missing"
+    fi
+
+    # 61-C: GET /api/health/deep is reachable from EC2 localhost (no auth)
+    BACKEND_PORT="${BACKEND_PORT:-8000}"
+    LOCAL_CODE=$(ssh "$EC2_HOST" "curl -s -o /dev/null -w '%{http_code}' --max-time 5 http://127.0.0.1:$BACKEND_PORT/api/health/deep" 2>/dev/null || echo "000")
+    if [[ "$LOCAL_CODE" =~ ^(200|503)$ ]]; then
+        _pass "61-C: /api/health/deep reachable on EC2 localhost (HTTP $LOCAL_CODE; 200=healthy 503=degraded both valid)"
+    else
+        _fail "61-C: /api/health/deep returned HTTP $LOCAL_CODE on EC2 localhost (000 = backend down)"
+    fi
+
+    # 61-D: response carries the documented schema (status + reasons + pool + breaker + xray)
+    SCHEMA_OK=$(ssh "$EC2_HOST" "curl -s --max-time 5 http://127.0.0.1:$BACKEND_PORT/api/health/deep 2>/dev/null | python3 -c '
+import sys, json
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    print(\"BAD_JSON\"); sys.exit(0)
+required = {\"status\", \"reasons\", \"pool\", \"breaker\", \"xray\", \"last_cycle_age_s\", \"as_of\"}
+missing = required - set(d.keys())
+if missing:
+    print(\"MISSING:\" + \",\".join(sorted(missing)))
+elif d[\"status\"] not in (\"healthy\", \"degraded\", \"down\"):
+    print(\"BAD_STATUS:\" + str(d[\"status\"]))
+else:
+    print(\"OK:\" + d[\"status\"])
+'" 2>/dev/null)
+    if [[ "$SCHEMA_OK" == OK:* ]]; then
+        _pass "61-D: response schema valid (status=${SCHEMA_OK#OK:})"
+    else
+        _fail "61-D: response schema invalid: $SCHEMA_OK"
+    fi
+
+    # 61-E: Cache-Control: no-store header set
+    HDR=$(ssh "$EC2_HOST" "curl -sI --max-time 5 http://127.0.0.1:$BACKEND_PORT/api/health/deep 2>/dev/null | grep -i '^cache-control:'" 2>/dev/null)
+    if echo "$HDR" | grep -qi 'no-store'; then
+        _pass "61-E: Cache-Control: no-store present"
+    else
+        _fail "61-E: Cache-Control: no-store missing (got: '$HDR')"
+    fi
+
+    # 61-F: rate limit kicks in on rapid back-to-back hits (1 req/s/IP)
+    # Make sure the burst comes from a single IP (loopback). First call may
+    # return 429 if the bucket isn't empty yet — sleep first to drain.
+    RL_RESULT=$(ssh "$EC2_HOST" "sleep 1.2; \
+        c1=\$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1:$BACKEND_PORT/api/health/deep); \
+        c2=\$(curl -s -o /dev/null -w '%{http_code}' --max-time 3 http://127.0.0.1:$BACKEND_PORT/api/health/deep); \
+        echo \"\$c1,\$c2\"" 2>/dev/null)
+    if [[ "$RL_RESULT" == *",429" ]]; then
+        _pass "61-F: rate-limit returns 429 on back-to-back ($RL_RESULT)"
+    else
+        _fail "61-F: rate-limit not engaged ($RL_RESULT) — expected '*,429'"
+    fi
+
+    # 61-G: pool + health-deep pytests green on EC2 (FastAPI required)
+    if ssh "$EC2_HOST" "cd /home/ubuntu/saleapp && python3 -m pytest tests/test_pool_snapshot.py tests/test_health_deep_endpoint.py -q 2>&1 | tail -3 | grep -q passed"; then
+        _pass "61-G: pool_snapshot + health-deep pytests green on EC2"
+    else
+        _fail "61-G: pool_snapshot + health-deep pytests FAILED on EC2"
+    fi
+
+    # 61-H: cross-phase sanity — Phase 59 floor + Phase 60 probeURL still in place
+    FLOOR=$(ssh "$EC2_HOST" "cd /home/ubuntu/saleapp && python3 -c 'from vless import preflight; print(preflight._PROBE_TIMEOUT_S_FLOOR)'" 2>/dev/null)
+    PROBE=$(ssh "$EC2_HOST" "cd /home/ubuntu/saleapp && python3 -c '
+from vless.config_gen import build_xray_config
+from vless.parser import VlessNode
+n = VlessNode(uuid=\"00000000-0000-0000-0000-000000000000\", host=\"x\", port=443, name=\"x\", reality_pbk=\"a\", reality_sni=\"x\", reality_sid=\"00\", security=\"reality\")
+print(build_xray_config([n])[\"observatory\"][\"probeURL\"])
+'" 2>/dev/null)
+    if awk "BEGIN {exit !($FLOOR >= 12.0)}" 2>/dev/null && [[ "$PROBE" == *"vkusvill.ru"* ]]; then
+        _pass "61-H: cross-phase guards intact (floor=$FLOOR, probeURL=vkusvill.ru)"
+    else
+        _fail "61-H: cross-phase regression detected (floor=$FLOOR, probeURL='$PROBE')"
+    fi
+fi
 # ---------------------------------------------------------------------------
 
 _banner "Summary"
