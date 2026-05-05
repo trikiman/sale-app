@@ -118,12 +118,81 @@ if [[ "$PHASE" == "59" || "$PHASE" == "all" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Future phases 60, 61 append their blocks here:
-#
-# if [[ "$PHASE" == "60" || "$PHASE" == "all" ]]; then
-#     _banner "Phase 60 — Observatory probeURL + Graduated Circuit Breaker"
-#     ...
-# fi
+# Phase 60: Observatory probeURL + Graduated Circuit Breaker
+# ---------------------------------------------------------------------------
+if [[ "$PHASE" == "60" || "$PHASE" == "all" ]]; then
+    _banner "Phase 60 — Observatory probeURL + Circuit Breaker"
+
+    # 60-A: scheduler_state.json gitignored
+    if grep -q 'scheduler_state.json' .gitignore 2>/dev/null; then
+        _pass "60-A: data/scheduler_state.json is gitignored"
+    else
+        _fail "60-A: data/scheduler_state.json NOT in .gitignore"
+    fi
+
+    # 60-B: xray probeURL references vkusvill.ru on EC2 (built from real config_gen)
+    PROBE=$(ssh "$EC2_HOST" "cd /home/ubuntu/saleapp && python3 -c '
+from vless.config_gen import build_xray_config
+from vless.parser import VlessNode
+n = VlessNode(uuid=\"00000000-0000-0000-0000-000000000000\", host=\"x\", port=443, name=\"x\", reality_pbk=\"a\", reality_sni=\"x\", reality_sid=\"00\", security=\"reality\")
+print(build_xray_config([n])[\"observatory\"][\"probeURL\"])
+'" 2>/dev/null)
+    if [[ "$PROBE" == *"vkusvill.ru"* ]]; then
+        _pass "60-B: observatory.probeURL = '$PROBE'"
+    else
+        _fail "60-B: observatory.probeURL = '$PROBE' (expected vkusvill.ru)"
+    fi
+
+    # 60-C: probeInterval <= 60s
+    INTERVAL=$(ssh "$EC2_HOST" "cd /home/ubuntu/saleapp && python3 -c '
+from vless.config_gen import build_xray_config
+from vless.parser import VlessNode
+n = VlessNode(uuid=\"00000000-0000-0000-0000-000000000000\", host=\"x\", port=443, name=\"x\", reality_pbk=\"a\", reality_sni=\"x\", reality_sid=\"00\", security=\"reality\")
+print(build_xray_config([n])[\"observatory\"][\"probeInterval\"])
+'" 2>/dev/null)
+    if [[ "$INTERVAL" == *"s" && "${INTERVAL%s}" -le 60 ]]; then
+        _pass "60-C: observatory.probeInterval = $INTERVAL (<= 60s)"
+    else
+        _fail "60-C: observatory.probeInterval = $INTERVAL (expected <= 60s)"
+    fi
+
+    # 60-D: Phase 59 timeout floor regression guard (cross-phase sanity)
+    FLOOR=$(ssh "$EC2_HOST" "cd /home/ubuntu/saleapp && python3 -c 'from vless import preflight; print(preflight._PROBE_TIMEOUT_S_FLOOR)'" 2>/dev/null)
+    if awk "BEGIN {exit !($FLOOR >= 12.0)}" 2>/dev/null; then
+        _pass "60-D: Phase 59 preflight floor still $FLOOR (>= 12.0)"
+    else
+        _fail "60-D: Phase 59 preflight floor regressed to $FLOOR"
+    fi
+
+    # 60-E: breaker + probeURL pytests green on EC2
+    if ssh "$EC2_HOST" "cd /home/ubuntu/saleapp && python3 -m pytest tests/test_xray_probe_url_regression.py tests/test_circuit_breaker_state_machine.py -q 2>&1 | tail -3 | grep -q passed"; then
+        _pass "60-E: probeURL + breaker pytests green on EC2"
+    else
+        _fail "60-E: probeURL + breaker pytests FAILED on EC2"
+    fi
+
+    # 60-F: scheduler_state.json exists + valid JSON + state in {closed, open, half_open}
+    STATE=$(ssh "$EC2_HOST" "test -f /home/ubuntu/saleapp/data/scheduler_state.json && python3 -c 'import json; d=json.load(open(\"/home/ubuntu/saleapp/data/scheduler_state.json\")); print(d[\"state\"])' 2>/dev/null" 2>/dev/null)
+    case "$STATE" in
+        closed|open|half_open)
+            _pass "60-F: data/scheduler_state.json valid (state=$STATE)"
+            ;;
+        *)
+            _fail "60-F: data/scheduler_state.json invalid/missing (state='$STATE')"
+            ;;
+    esac
+
+    # 60-G: journal evidence of breaker-driven pacing in the last 10 min
+    COUNT=$(ssh "$EC2_HOST" "sudo journalctl -u saleapp-scheduler --since '10 minutes ago' --no-pager 2>/dev/null | grep -cE 'Circuit breaker|Loaded breaker state'" 2>/dev/null)
+    if [[ "${COUNT:-0}" -gt 0 ]]; then
+        _pass "60-G: scheduler emits breaker log lines ($COUNT in last 10 min)"
+    else
+        _fail "60-G: no breaker log lines in last 10 min — integration inactive"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# Future phase 61 appends its block here:
 #
 # if [[ "$PHASE" == "61" || "$PHASE" == "all" ]]; then
 #     _banner "Phase 61 — Deep Health Endpoint + Pool Snapshot"

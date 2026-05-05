@@ -7,10 +7,10 @@ last_updated: "2026-05-03T18:28:03.477Z"
 last_activity: 2026-05-03
 progress:
   total_phases: 3
-  completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
-  percent: 33
+  completed_phases: 2
+  total_plans: 6
+  completed_plans: 6
+  percent: 67
 ---
 
 # Project State
@@ -24,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-04-22)
 
 ## Current Position
 
-Phase: 59 Corrected Pre-flight VLESS Probe (✅ SHIPPED)
-Next phase: 60 Observatory probeURL alignment + Graduated Circuit Breaker (not yet planned)
-Status: Phase 59 deployed to EC2, smoke script all 9 checks pass, rollback rehearsed bidirectionally, no v1.18 regression. Pre-flight probe firing per cycle on live bridge with correct cap (2 rotations) + cooldown reason flow.
-Last activity: 2026-05-04 — Phase 59 verified live and committed (`f354b2d` test, `0a37811` feat). See `.planning/phases/59-corrected-preflight-vless-probe/59-VERIFICATION.md`.
+Phase: 60 Observatory probeURL + Graduated Circuit Breaker (✅ SHIPPED)
+Next phase: 61 Deep Health Endpoint + Pool Snapshot (not yet planned)
+Status: Phases 59 + 60 deployed to EC2. All 18 smoke checks pass (9 Phase 59 + 7 Phase 60). xray probeURL = vkusvill.ru/favicon.ico (REL-06); 3-state breaker with 120s→30min exponential backoff + atomic JSON persistence (REL-07..10). 44 unit tests passing on both 3.9 + 3.12.
+Last activity: 2026-05-05 — Phase 60 shipped (`b7df341` feat, `8077d74` test+refinement). See `.planning/phases/60-observatory-probe-and-circuit-breaker/60-VERIFICATION.md`.
 
 ## Milestone Goal (v1.19 — active)
 
@@ -146,6 +146,7 @@ Last activity: 2026-05-04 — Phase 59 verified live and committed (`f354b2d` te
 | v1.19 ROADMAP.md drafted (3 phases: 59, 60, 61) | 2026-05-03 |
 | v1.19 Phase 59 plans written (README + CONTEXT + 59-01/02/03-PLAN) | 2026-05-03 |
 | v1.19 Phase 59 SHIPPED — vless/preflight.py + scheduler integration + 23 tests + smoke script + rehearsed rollback | 2026-05-04 |
+| v1.19 Phase 60 SHIPPED — xray probeURL alignment + 3-state circuit breaker + 21 tests + smoke-script extension | 2026-05-05 |
 
 ---
-*Last updated: 2026-05-04 after Phase 59 ship complete. Pre-flight probe firing live on EC2; rotation cap (2) and cooldown reason (`preflight_timeout`) verified through journal evidence. OPS-06/07/08 first-instance commitments delivered.*
+*Last updated: 2026-05-05 after Phase 60 ship complete. leastPing balancer now ranks by VkusVill reachability (probeURL was google.com/generate_204, now vkusvill.ru/favicon.ico; probeInterval was 5m, now 60s). Circuit breaker is persistent, state-machine-driven, and resets on any scraper success. 2/3 v1.19 phases shipped; Phase 61 deep-health endpoint + pool snapshot remaining.*
