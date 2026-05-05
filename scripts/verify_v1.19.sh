@@ -246,18 +246,18 @@ print(\"OK\" if not missing else \"MISSING:\" + str(missing))
         _fail "61-C: /api/health/deep returned HTTP $LOCAL_CODE on EC2 localhost (000 = backend down)"
     fi
 
-    # 61-D: response carries the documented schema (status + reasons + pool + breaker + xray)
+    # 61-D: response carries the OBS-02 schema (8 keys + status enum)
     SCHEMA_OK=$(ssh "$EC2_HOST" "curl -s --max-time 5 http://127.0.0.1:$BACKEND_PORT/api/health/deep 2>/dev/null | python3 -c '
 import sys, json
 try:
     d = json.load(sys.stdin)
 except Exception:
     print(\"BAD_JSON\"); sys.exit(0)
-required = {\"status\", \"reasons\", \"pool\", \"breaker\", \"xray\", \"last_cycle_age_s\", \"as_of\"}
+required = {\"status\", \"reasons\", \"pool\", \"breaker\", \"xray\", \"last_cycle_age_s\", \"products_age_s\", \"as_of\"}
 missing = required - set(d.keys())
 if missing:
     print(\"MISSING:\" + \",\".join(sorted(missing)))
-elif d[\"status\"] not in (\"healthy\", \"degraded\", \"down\"):
+elif d[\"status\"] not in (\"healthy\", \"degraded\", \"unhealthy\"):
     print(\"BAD_STATUS:\" + str(d[\"status\"]))
 else:
     print(\"OK:\" + d[\"status\"])

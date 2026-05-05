@@ -44,7 +44,7 @@ def client():
 
 @pytest.fixture
 def healthy_world(monkeypatch, tmp_path):
-    """Patch all four signal collectors into a fully-healthy state."""
+    """Patch all five OBS-02 signal collectors into a fully-healthy state."""
     monkeypatch.setattr(
         backend_main, "_check_xray_listening",
         lambda: {"listening": True, "port": 10808},
@@ -68,6 +68,10 @@ def healthy_world(monkeypatch, tmp_path):
         backend_main, "_last_cycle_age_seconds",
         lambda: 60.0,
     )
+    monkeypatch.setattr(
+        backend_main, "_products_mtime_age_seconds",
+        lambda: 60.0,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -77,7 +81,7 @@ def healthy_world(monkeypatch, tmp_path):
 
 REQUIRED_TOP_KEYS = {
     "status", "reasons", "pool", "breaker", "xray",
-    "last_cycle_age_s", "as_of",
+    "last_cycle_age_s", "products_age_s", "as_of",
 }
 
 
@@ -123,17 +127,25 @@ def test_breaker_open_is_degraded_503(client, monkeypatch, healthy_world):
     assert "breaker_open" in body["reasons"]
 
 
-def test_breaker_half_open_is_degraded_503(client, monkeypatch, healthy_world):
+def test_breaker_half_open_is_healthy_200(client, monkeypatch, healthy_world):
+    """Per OBS-02 healthy criterion #2: breaker phase ∈ {closed, half_open}.
+
+    half_open means "recovery probe in progress" — the spec treats this
+    as healthy (alerts only re-fire if the probe fails and we go back to
+    open).
+    """
     monkeypatch.setattr(
         backend_main, "_load_breaker_snapshot",
         lambda: {"available": True, "state": "half_open", "cooldown_s": 60, "fails": 3},
     )
     r = client.get("/api/health/deep")
-    assert r.status_code == 503
-    assert "breaker_half_open" in r.json()["reasons"]
+    assert r.status_code == 200
+    assert r.json()["status"] == "healthy"
+    assert "breaker_half_open" not in r.json()["reasons"]
 
 
-def test_xray_not_listening_is_down_503(client, monkeypatch, healthy_world):
+def test_xray_not_listening_is_unhealthy_503(client, monkeypatch, healthy_world):
+    """OBS-02 critical override: xray dead always classifies as unhealthy."""
     monkeypatch.setattr(
         backend_main, "_check_xray_listening",
         lambda: {"listening": False, "port": 10808},
@@ -141,16 +153,17 @@ def test_xray_not_listening_is_down_503(client, monkeypatch, healthy_world):
     r = client.get("/api/health/deep")
     assert r.status_code == 503
     body = r.json()
-    assert body["status"] == "down"
+    assert body["status"] == "unhealthy"
     assert "xray_bridge_not_listening" in body["reasons"]
 
 
-def test_no_cycle_state_is_down_503(client, monkeypatch, healthy_world):
+def test_no_cycle_state_is_unhealthy_503(client, monkeypatch, healthy_world):
+    """OBS-02 critical override: no scheduler heartbeat is unhealthy."""
     monkeypatch.setattr(backend_main, "_last_cycle_age_seconds", lambda: None)
     r = client.get("/api/health/deep")
     assert r.status_code == 503
     body = r.json()
-    assert body["status"] == "down"
+    assert body["status"] == "unhealthy"
     assert "no_cycle_state" in body["reasons"]
     assert body["last_cycle_age_s"] is None
 
@@ -165,7 +178,8 @@ def test_stale_cycle_is_degraded_503(client, monkeypatch, healthy_world):
     assert any(reason.startswith("stale_cycle_") for reason in body["reasons"])
 
 
-def test_multiple_problems_aggregate_into_reasons(client, monkeypatch, healthy_world):
+def test_two_failed_criteria_is_degraded_503(client, monkeypatch, healthy_world):
+    """OBS-02 severity: 1-2 failed non-critical criteria => degraded."""
     monkeypatch.setattr(
         backend_main, "_pool_snapshot_for_health",
         lambda: {
@@ -181,8 +195,68 @@ def test_multiple_problems_aggregate_into_reasons(client, monkeypatch, healthy_w
     r = client.get("/api/health/deep")
     body = r.json()
     assert r.status_code == 503
-    assert len(body["reasons"]) >= 2  # both pool + breaker reasons
+    assert body["status"] == "degraded"  # 2 failed, no critical
+    assert len(body["reasons"]) == 2
     assert "breaker_open" in body["reasons"]
+
+
+def test_three_failed_criteria_is_unhealthy_503(client, monkeypatch, healthy_world):
+    """OBS-02 severity: 3+ failed criteria => unhealthy."""
+    monkeypatch.setattr(
+        backend_main, "_pool_snapshot_for_health",
+        lambda: {
+            "available": True, "size": 2, "min_healthy": 7,
+            "quarantined_count": 5, "active_outbounds": 2,
+            "last_refresh_at": "2026-05-05T15:00:00",
+        },
+    )
+    monkeypatch.setattr(
+        backend_main, "_load_breaker_snapshot",
+        lambda: {"available": True, "state": "open", "cooldown_s": 600, "fails": 3},
+    )
+    monkeypatch.setattr(backend_main, "_last_cycle_age_seconds", lambda: 30 * 60.0)
+    r = client.get("/api/health/deep")
+    body = r.json()
+    assert r.status_code == 503
+    assert body["status"] == "unhealthy"  # 3 failed (pool + breaker + cycle age)
+    assert len(body["reasons"]) == 3
+
+
+def test_stale_products_json_is_degraded_503(client, monkeypatch, healthy_world):
+    """OBS-02 healthy criterion #5: products.json mtime <= 15 min."""
+    monkeypatch.setattr(backend_main, "_products_mtime_age_seconds", lambda: 30 * 60.0)
+    r = client.get("/api/health/deep")
+    body = r.json()
+    assert r.status_code == 503
+    assert body["status"] == "degraded"
+    assert any(reason.startswith("stale_products_") for reason in body["reasons"])
+
+
+def test_no_products_file_is_degraded_503(client, monkeypatch, healthy_world):
+    """OBS-02: missing products.json is degraded (not critical — scheduler
+    may simply not have written one yet on a brand-new install)."""
+    monkeypatch.setattr(backend_main, "_products_mtime_age_seconds", lambda: None)
+    r = client.get("/api/health/deep")
+    body = r.json()
+    assert r.status_code == 503
+    assert body["status"] == "degraded"
+    assert "no_products_file" in body["reasons"]
+    assert body["products_age_s"] is None
+
+
+def test_products_mtime_helper_returns_none_when_file_missing(monkeypatch, tmp_path):
+    monkeypatch.setattr(backend_main, "_MERGED_PRODUCTS_PATH", str(tmp_path / "nope.json"))
+    assert backend_main._products_mtime_age_seconds() is None
+
+
+def test_products_mtime_helper_returns_age_in_seconds(monkeypatch, tmp_path):
+    p = tmp_path / "products.json"
+    p.write_text("{}")
+    monkeypatch.setattr(backend_main, "_MERGED_PRODUCTS_PATH", str(p))
+    age = backend_main._products_mtime_age_seconds()
+    assert age is not None
+    assert age >= 0
+    assert age < 5  # just-written file
 
 
 def test_pool_snapshot_unavailable_is_degraded(client, monkeypatch, healthy_world):
@@ -297,8 +371,9 @@ def test_build_reliability_snapshot_empty_reasons_means_healthy(monkeypatch, hea
     assert snap["reasons"] == []
 
 
-def test_build_reliability_snapshot_severity_ranking(monkeypatch):
-    """down (xray_off) should override degraded reasons in classification."""
+def test_build_reliability_snapshot_critical_override(monkeypatch):
+    """OBS-02: xray_dead is a critical override that classifies as unhealthy
+    even when only one criterion failed."""
     monkeypatch.setattr(
         backend_main, "_check_xray_listening",
         lambda: {"listening": False, "port": 10808},
@@ -311,11 +386,13 @@ def test_build_reliability_snapshot_severity_ranking(monkeypatch):
     )
     monkeypatch.setattr(
         backend_main, "_load_breaker_snapshot",
-        lambda: {"available": True, "state": "open", "cooldown_s": 60, "fails": 1},
+        lambda: {"available": True, "state": "closed", "cooldown_s": 60, "fails": 0},
     )
     monkeypatch.setattr(backend_main, "_last_cycle_age_seconds", lambda: 60.0)
+    monkeypatch.setattr(backend_main, "_products_mtime_age_seconds", lambda: 60.0)
     snap = backend_main._build_reliability_snapshot()
-    assert snap["status"] == "down"  # xray off wins over breaker open
+    assert snap["status"] == "unhealthy"  # 1 critical reason -> unhealthy
+    assert "xray_bridge_not_listening" in snap["reasons"]
 
 
 # ---------------------------------------------------------------------------

@@ -876,10 +876,12 @@ def _load_cycle_state() -> dict:
 
 _SCHEDULER_STATE_PATH = os.path.join(DATA_DIR, "scheduler_state.json")
 _PROXY_EVENTS_PATH = os.path.join(DATA_DIR, "proxy_events.jsonl")
+_MERGED_PRODUCTS_PATH = os.path.join(DATA_DIR, "products.json")
 _XRAY_SOCKS_PORT = 10808
 _HEALTH_DEEP_RATE_LIMIT_S = 1.0  # 1 req/s/IP
 _DEEP_LAST_HIT: dict[str, float] = {}  # ip -> last request monotonic
-_DEEP_MAX_CYCLE_AGE_S = 15 * 60  # > 15 min cycle age is degraded
+_DEEP_MAX_CYCLE_AGE_S = 15 * 60  # OBS-02: > 15 min cycle age is degraded
+_DEEP_MAX_PRODUCTS_AGE_S = 15 * 60  # OBS-02: > 15 min products.json mtime is degraded
 
 
 def _load_breaker_snapshot() -> dict:
@@ -954,22 +956,50 @@ def _last_cycle_age_seconds() -> Optional[float]:
     return max(0.0, (datetime.now() - dt).total_seconds())
 
 
+def _products_mtime_age_seconds() -> Optional[float]:
+    """Seconds since the merged ``products.json`` was last written.
+
+    OBS-02 healthy criterion: this should be ≤ 15 min in steady state,
+    since the scheduler's full cycle target is 5 min. ``None`` if the
+    file is missing.
+    """
+    if not os.path.exists(_MERGED_PRODUCTS_PATH):
+        return None
+    try:
+        return max(0.0, _time.time() - os.path.getmtime(_MERGED_PRODUCTS_PATH))
+    except OSError:
+        return None
+
+
 def _build_reliability_snapshot() -> dict:
     """Consolidated v1.19 reliability view used by /api/health/deep + /admin/status.
 
-    Deterministic; aggregates pool + breaker + xray + cycle-freshness into
-    a single dict with HTTP status + reasons[] for monitoring.
+    Strict OBS-02 compliance. Healthy criteria (all-of):
+      1. ``pool_size >= MIN_HEALTHY``
+      2. circuit breaker phase ∈ {``closed``, ``half_open``}
+      3. last full cycle ≤ 15 min ago
+      4. xray process running (TCP probe of 10808)
+      5. merged ``products.json`` mtime ≤ 15 min ago
+
+    Severity mapping (OBS-02):
+      * 0 failed     -> healthy (HTTP 200)
+      * 1-2 failed   -> degraded (HTTP 503)
+      * 3+ failed    -> unhealthy (HTTP 503)
+      * Critical override (xray dead OR no cycle state ever) -> unhealthy
     """
     pool = _pool_snapshot_for_health()
     breaker = _load_breaker_snapshot()
     xray = _check_xray_listening()
     cycle_age = _last_cycle_age_seconds()
+    products_age = _products_mtime_age_seconds()
 
     reasons: list[str] = []
 
+    # Criterion 4: xray running
     if not xray.get("listening"):
         reasons.append("xray_bridge_not_listening")
 
+    # Criterion 1: pool size
     if pool.get("available"):
         size = int(pool.get("size", 0))
         min_healthy = int(pool.get("min_healthy", 0))
@@ -978,29 +1008,38 @@ def _build_reliability_snapshot() -> dict:
     else:
         reasons.append("pool_snapshot_unavailable")
 
+    # Criterion 2: breaker phase ∈ {closed, half_open}
+    # Per OBS-02, half_open IS healthy (recovery probe in progress).
+    # Only open trips the alert.
     if breaker.get("available"):
-        if breaker.get("state") == "open":
+        state = breaker.get("state")
+        if state == "open":
             reasons.append("breaker_open")
-        elif breaker.get("state") == "half_open":
-            reasons.append("breaker_half_open")
+        # half_open is healthy per OBS-02 spec — no reason added
     else:
         reasons.append("breaker_state_unavailable")
 
+    # Criterion 3: last cycle freshness
     if cycle_age is None:
         reasons.append("no_cycle_state")
     elif cycle_age > _DEEP_MAX_CYCLE_AGE_S:
         reasons.append(f"stale_cycle_{int(cycle_age)}s")
 
-    # Reasons severity mapping:
-    # - "down": xray not listening or cycle never ran
-    # - "degraded": anything else that warrants an alert but the stack
-    #   is still producing data
-    # - "healthy": empty reasons[]
-    severe = {"xray_bridge_not_listening", "no_cycle_state"}
-    if not reasons:
+    # Criterion 5: products.json mtime
+    if products_age is None:
+        reasons.append("no_products_file")
+    elif products_age > _DEEP_MAX_PRODUCTS_AGE_S:
+        reasons.append(f"stale_products_{int(products_age)}s")
+
+    # Severity classification per OBS-02
+    critical = {"xray_bridge_not_listening", "no_cycle_state"}
+    has_critical = any(r in critical for r in reasons)
+    n_failed = len(reasons)
+
+    if n_failed == 0:
         status = "healthy"
-    elif any(r in severe or r.startswith("stale_cycle_") for r in reasons):
-        status = "down" if any(r in severe for r in reasons) else "degraded"
+    elif has_critical or n_failed >= 3:
+        status = "unhealthy"
     else:
         status = "degraded"
 
@@ -1011,6 +1050,7 @@ def _build_reliability_snapshot() -> dict:
         "breaker": breaker,
         "xray": xray,
         "last_cycle_age_s": int(cycle_age) if cycle_age is not None else None,
+        "products_age_s": int(products_age) if products_age is not None else None,
         "as_of": datetime.now().isoformat(timespec="seconds"),
     }
 
