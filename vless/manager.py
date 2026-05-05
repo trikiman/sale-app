@@ -424,6 +424,49 @@ class VlessProxyManager:
         nodes = self._pool.get("nodes", [])
         return dict(nodes[0]) if nodes else None
 
+    def pool_snapshot(self) -> dict:
+        """Typed snapshot of the VLESS pool for health + admin consumption.
+
+        v1.19 REL-12 + OBS-03. Thread-safe read under ``self._lock``; no
+        I/O, no network. Safe to call from the FastAPI event loop.
+
+        Fields:
+          - ``size``: total nodes currently in the pool (incl. any stale
+            entries not yet evicted)
+          - ``min_healthy``: the low-water mark constant (``MIN_HEALTHY``)
+            that triggers a refresh; exposed for observability so external
+            monitors know what "healthy" means without coupling to internals
+          - ``quarantined_count``: hosts in an active 4 h VkusVill cooldown
+            (expired cooldowns are NOT counted)
+          - ``active_outbounds``: count of nodes the xray balancer can
+            actually route through right now — pool size minus any node
+            whose host happens to also be in the cooldown set
+          - ``last_refresh_at``: ISO-8601 timestamp of the last pool
+            write, or ``None`` before the first refresh
+        """
+        with self._lock:
+            nodes = list(self._pool.get("nodes", []))
+            cooldowns = dict(self._cooldowns)
+            last_refresh_at = self._pool.get("updated_at")
+        now = time.time()
+        active_cooldown_hosts = {
+            host
+            for host, entry in cooldowns.items()
+            if (now - float(entry.get("blocked_at", 0.0))) < VKUSVILL_COOLDOWN_S
+        }
+        active_outbounds = sum(
+            1
+            for entry in nodes
+            if entry.get("host") not in active_cooldown_hosts
+        )
+        return {
+            "size": len(nodes),
+            "min_healthy": MIN_HEALTHY,
+            "quarantined_count": len(active_cooldown_hosts),
+            "active_outbounds": active_outbounds,
+            "last_refresh_at": last_refresh_at,
+        }
+
     def xray_status(self) -> dict:
         """Diagnostic snapshot of the xray subprocess."""
         proc = self._xray
@@ -531,6 +574,17 @@ class VlessProxyManager:
         entry = {"ts": datetime.now().isoformat(), "event": event_type}
         if data:
             entry.update(data)
+        # v1.19 OBS-02: auto-inject pool-state counters on every event so
+        # multi-day drift (e.g. v1.18 pool 25 -> 13) is visible from
+        # proxy_events.jsonl alone without cross-referencing state files.
+        # Snapshot is O(pool_size) in memory; acceptable on event write.
+        try:
+            snap = self.pool_snapshot()
+            entry.setdefault("pool_size", snap["size"])
+            entry.setdefault("quarantined_count", snap["quarantined_count"])
+            entry.setdefault("active_outbounds_count", snap["active_outbounds"])
+        except Exception:  # noqa: BLE001 - event logging must never crash callers
+            pass
         try:
             self._events_path.parent.mkdir(parents=True, exist_ok=True)
             with self._events_path.open("a", encoding="utf-8") as f:
