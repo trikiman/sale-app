@@ -101,29 +101,46 @@ Family members see every VkusVill discount (green/red/yellow) the moment it appe
 - ✓ **OPS-05**: Admin/status and logs now explain why a cart attempt or sale-session transition received its classification — v1.14
 - ✓ **QA-05**: Milestone verification includes live production cart-add proof and history-semantic checks — v1.14
 
+- ✓ **REL-01..12, OBS-01..03, OPS-06..08**: v1.19 Production Reliability & 24/7 Uptime — 18/18 requirements satisfied, 78 tests on EC2, 24/24 smoke green, external `/api/health/deep` live with 8-key OBS-02 schema — v1.19 (shipped 2026-05-05)
+
 ### Active
 
 <!-- Current scope. Building toward these. -->
 
-- v1.19 reliability requirements TBD by `/gsd-new-milestone` step 9. Scope: pre-flight VLESS probe done right (redo PR #25 with 12 s timeout + capped rotations), xray observatory probeURL aligned with VkusVill (not Google), graduated 3-state circuit breaker with exponential backoff, unauthed deep health endpoint, per-phase EC2 smoke verification.
+- v1.20 cart-add latency optimization & user-facing responsiveness. Scope: 20-min sessid keep-alive + on-app-open warmup eliminating cold-path penalty (~1.5 s); per-user mutex skipping basket_recalc during active add + scraper semaphore freeing the bridge during cart hot path (~5 s); VkusVill API surface spike for lighter endpoints + 16-field payload trim; frontend pending-polling on AbortError preventing the false-fail-then-double-add UX pattern observed 2026-05-05; cart-add observability (`p50/p95/p99` in `/api/health/deep` + per-attempt JSONL ledger).
 
-## Current Milestone: v1.19 Production Reliability & 24/7 Uptime
+## Current Milestone: v1.20 Cart-Add Latency & User-Facing Responsiveness
 
-**Goal:** Keep the VkusVill sale app continuously healthy from the user's perspective (Vercel frontend + Telegram MiniApp) 24/7 by hardening the EC2 data pipeline against the failure modes that regressed post-v1.18 — with regression tests and per-phase EC2 smoke verification that would have caught PR #25's revert in pre-merge.
+**Goal:** Cut end-to-end cart-add latency from the current 3-12 s envelope to a 2-4 s envelope, and eliminate the false-fail-then-double-add UX pattern that surfaces whenever VkusVill's server takes >8 s. Continues the v1.19 robust-over-fast cultural commitment: every phase ships with a scripted EC2 smoke test (`scripts/verify_v1.20.sh`), `VERIFICATION.md`, p50/p95/p99 latency regression check against an EC2-measured baseline, and rehearsed rollback path.
 
-**Target features** (finalized via `.planning/research/v1.19-SUMMARY.md`):
-- Corrected pre-flight VLESS bridge probe (12 s timeout, cap 2 rotations, probe failures class-tested)
-- xray `observatory.probeURL` aligned with real traffic target (`vkusvill.ru/favicon.ico`, not `google.com/generate_204`) so `leastPing` balancer reflects reality
-- Graduated circuit breaker: `closed → open → half_open → closed` with exponential backoff capped at 30 min, persisted state in `data/scheduler_state.json`
-- Unauthenticated `/api/health/deep` endpoint returning 200/503 based on pool size, cycle freshness, circuit state, xray process state — no node IPs, safe for external uptime pings
-- Mandatory per-phase scripted EC2 smoke test (`scripts/verify_v1.19.sh`) as mergeable artifact; no "it worked in my terminal" verification accepted
+**Target features** (finalized via `.planning/REQUIREMENTS.md` v1.20):
+- 20-min sessid keep-alive task in `scheduler_service.py` for users with recent activity, plus on-MiniApp-open opportunistic warmup (anti-spam: ≤ 1 per user per 15 min); eliminates the ~1.5 s cold-sessid revalidation tax (PERF-03/04/05)
+- Per-user mutex skipping `basket_recalc.php` while a `basket_add.php` is in flight (eliminates DB row-lock contention on VkusVill's side); global scraper semaphore pausing detail fetches during active cart-add (frees the VLESS tunnel) (PERF-06/07)
+- HAR-driven spike of VkusVill's API surface for lighter cart endpoints; 16-field payload ablation-trimmed to minimum (PERF-08/09)
+- Frontend `AbortController` 8 s → 5 s + on-AbortError pending-polling at `/api/cart/add-status/{attempt_id}` for up to 15 s; backend `client_request_id` idempotency preventing duplicate VkusVill POSTs (UX-01/02/03)
+- `/api/health/deep` `cart_add` block (`p50/p95/p99_ms`, `success_rate_1h/24h`, `double_add_rate_1h`); structured `data/cart_events.jsonl` with hashed user IDs (OBS-04/05)
+- Per-phase smoke gate `scripts/verify_v1.20.sh` carrying p95 baseline; rollback rehearsal mandatory (OPS-09/10/11)
 
 **Key context:**
-- No active milestone between 2026-04-25 and 2026-05-03; v1.18 shipped then production drifted
-- 2026-05-03 live state: pool 25 → 13, 162 consecutive scrape failures, 30/30 detail-proxy timeouts in last 10 min, but Vercel still returns HTTP 200 from cached `/api/products`
-- PR #25 (Devin, 2026-04-29) tried a pre-flight probe hotfix; reverted 8 min later by PR #26 because 5 s timeout was below empirical 7-9 s healthy-node latency
-- User preference (recorded in memory): no fast hotfixes, formal GSD workflow end-to-end, safe/robust over fast
-- Research not reused from prior milestones; v1.19 research files prefixed `v1.19-*` in `.planning/research/`
+- 2026-05-05 live UAT: user added onion via MiniApp — first attempt 10.8 s backend success but frontend 8 s abort showed "fail", user retried, second attempt 3.6 s succeeded, **net result: double-added product** (0.7 kg instead of 0.35 kg)
+- Bridge probe confirms healthy: anon HEAD `vkusvill.ru/` ~520 ms, auth HEAD/GET `/personal/` ~400-600 ms, ~330 ms total bridge overhead. The slow path is VkusVill's `basket_add.php` heavy-compute (auth + product + price + delivery + DB write), not our infrastructure.
+- ~5 s of the 10.8 s slow-path is self-inflicted: bridge multiplexing contention (~2.5 s), DB row-lock contention vs parallel `basket_recalc.php` (~2.5 s), stale-sessid revalidation (~1.5 s). All three are addressable on our side.
+- v1.19 reliability gains must not regress: pool drift visibility, breaker state, deep health endpoint, smoke gate `scripts/verify_v1.19.sh` retained as cross-version regression guard alongside `scripts/verify_v1.20.sh`.
+- User preference (recorded in memory, reaffirmed 2026-05-05): no fast hotfixes — formal GSD workflow end-to-end, safe/robust over fast.
+
+## Previous Shipped Milestone: v1.19 Production Reliability & 24/7 Uptime (2026-05-05)
+
+**Goal:** Keep the VkusVill sale app continuously healthy 24/7 by hardening the EC2 data pipeline against post-v1.18 failure modes (pool 25→13, 162 consecutive scraper failures, 30/30 detail-proxy timeouts).
+
+**Shipped features:**
+- Corrected pre-flight VLESS bridge probe (12 s timeout, cap 2 rotations, balancer-preferred fallback)
+- xray `observatory.probeURL` aligned with VkusVill (not Google) so `leastPing` ranks by real-target reachability
+- Graduated 3-state circuit breaker (closed/open/half_open) with exponential backoff capped at 30 min, persisted state
+- Unauthenticated `GET /api/health/deep` returning 200/503 + `reasons[]` for external uptime monitors, 8-key OBS-02 schema
+- Pool snapshot accessor + enriched `proxy_events.jsonl` (multi-day drift now visible in real time)
+- 78 tests on EC2, 24/24 smoke green, full per-phase rollback rehearsal
+
+_Archive: `.planning/milestones/v1.19-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md`._
 
 ## Previous Shipped Milestone: v1.14 Cart Truth & History Semantics (2026-04-21, closed 2026-04-22)
 
@@ -306,5 +323,5 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-04-22 after retroactive closure of v1.12, v1.13, and v1.14 milestones and documenting the Apr 22 scheduler SOCKS5 deadlock hotfix (commit `4c7f271`).*
+*Last updated: 2026-05-05 after v1.19 milestone shipped (Production Reliability & 24/7 Uptime, phases 59-61, 18/18 requirements, 24/24 smoke green) and v1.20 (Cart-Add Latency & UX Responsiveness, phases 62-66) initiated based on 2026-05-05 live UAT evidence of cart-add double-add caused by frontend (8 s) / backend (10 s) / VkusVill (10.8 s) timeout mismatch.*
 

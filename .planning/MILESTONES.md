@@ -1,5 +1,22 @@
 # Milestones
 
+## v1.19 Production Reliability & 24/7 Uptime (Shipped: 2026-05-05)
+
+**Phases completed:** 3 phases (59-61), 8 plans
+
+**Audit status:** passed (18/18 requirements satisfied, 0 critical gaps — see `.planning/milestones/v1.19-MILESTONE-AUDIT.md`)
+
+**Key accomplishments:**
+
+- The scheduler now refuses to launch Chrome if the VLESS bridge can't reach VkusVill — a corrected pre-flight probe with 12 s timeout, capped 2 rotations, and `leastPing` balancer fallback eliminates the 30-45 s wasted-Chrome-startup pattern that caused PR #25's 8-minute revert
+- The xray observatory now probes `vkusvill.ru/favicon.ico` instead of `google.com/generate_204`, so the `leastPing` balancer ranks outbounds by real-target reachability — silently-blocked-by-VkusVill nodes can no longer rank as "fast"
+- The cycle-counter circuit breaker that re-tripped 162 useless times in 5.4 hours has been replaced with a 3-state machine (`closed → open → half_open → closed`) with exponential backoff capped at 30 min, persisted in `data/scheduler_state.json` across restarts
+- Stack health is now exposed truthfully via unauthenticated `GET /api/health/deep` returning 200/503 + 8-key OBS-02 schema with `reasons[]` array — suitable for external uptime monitors (UptimeRobot, BetterStack, Datadog) and the live endpoint at `https://vkusvillsale.vercel.app/api/health/deep` returns `healthy` in ~370 ms
+- Pool drift like the post-v1.18 silent 25→13 over 8 days is now visible in real time — every refresh and quarantine event in `proxy_events.jsonl` carries `pool_size`, `quarantined_count`, and `active_outbounds_count`
+- Verification rigor was non-optional: every phase shipped with a `VERIFICATION.md`, the `scripts/verify_v1.19.sh` smoke script grew phase-by-phase to 24/24 green checks, and rollback was dry-run rehearsed pre-merge for each phase — closing the gap that let PR #25 land
+
+---
+
 ## v1.3 Roadmap: VkusVill Sale Monitor (Backfilled: 2026-05-03)
 
 **Note:** Synthesized from archive snapshot by `/gsd-health --backfill`. Original completion date unknown.

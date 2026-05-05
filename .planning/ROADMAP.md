@@ -20,67 +20,117 @@
 - ✅ **v1.15** Proxy Infrastructure Migration — Phase 56 (shipped and closed 2026-04-23 after EC2 rollout on `ubuntu@13.60.174.46`; systemd xray active, live cart-add of 76 items confirmed via scheduler)
 - ✅ **v1.17** VLESS Timeout Hardening — Phase 57 (shipped and closed 2026-04-25 after EC2 redeploy; `policy` + `observatory` + `leastPing` live in `bin/xray/configs/active.json`, 5/5 RU egress confirmed, Vercel miniapp `/api/cart/add` returns HTTP 200 with `success=true` ×2)
 - ✅ **v1.18** Geo Resolver & Scraper Recovery — Phase 58 (shipped and closed 2026-04-25; multi-provider geo resolver lifts pool 15 → 25 nodes, scraper survives Chromium CDP-WS HTTP 500 mid-cycle, miniapp cart-add still HTTP 200)
-- ⏳ **v1.19** Production Reliability & 24/7 Uptime — Phases 59-61 (active, started 2026-05-03; corrected pre-flight VLESS probe + observatory probeURL alignment + graduated circuit breaker + unauthed deep health endpoint, all behind a per-phase EC2 smoke verification gate)
+- ✅ **v1.19** Production Reliability & 24/7 Uptime — Phases 59-61 (shipped 2026-05-05; 18/18 requirements satisfied, 78 tests on EC2, 24/24 smoke checks green, external `/api/health/deep` live with 8-key OBS-02 schema — archive: `milestones/v1.19-ROADMAP.md`)
+- ⏳ **v1.20** Cart-Add Latency & User-Facing Responsiveness — Phases 62-66 (active, started 2026-05-05; cut cart-add p95 from 10.8 s → ≤ 4 s via session warm-keeping + bridge contention removal + VkusVill API surface spike + frontend pending-polling that eliminates the false-fail-then-double-add pattern)
 
-## v1.19 Production Reliability & 24/7 Uptime (ACTIVE — started 2026-05-03)
+## v1.20 Cart-Add Latency & User-Facing Responsiveness (ACTIVE — started 2026-05-05)
 
-Close the production drift exposed after v1.18 shipped: 8 days of degraded behavior visible only in EC2 logs (pool 25 → 13, 162 consecutive scraper-cycle failures, 30/30 detail-proxy timeouts) while Vercel `/api/products` returned HTTP 200 with cached data. PR #25 (Devin, 2026-04-29) attempted a 5 s pre-flight probe hotfix, was reverted 8 minutes later by PR #26 because empirical healthy-node latency through the bridge is 7-9 s.
+Cut end-to-end cart-add latency from the current 3-12 s envelope to a **2-4 s envelope**, and eliminate the false-fail-then-double-add UX pattern that surfaces whenever VkusVill's server takes >8 s. Continues the v1.19 robust-over-fast cultural commitment: every phase ships with a scripted EC2 smoke test (`scripts/verify_v1.20.sh`), a `VERIFICATION.md`, p50/p95/p99 latency regression check against an EC2-measured baseline, and a rehearsed rollback path.
 
-The milestone is explicitly **robust-over-fast**: per user direction 2026-05-03, no fast hotfixes — every phase ships with a scripted EC2 smoke test (`scripts/verify_v1.19.sh`), a `VERIFICATION.md`, and a rehearsed rollback path. Backend reliability only; user-facing degraded mode (Category G) deferred to v1.20.
+Driving evidence (2026-05-05 live UAT — single user attempt, log forensics):
 
-Full grounded analysis: `.planning/research/v1.19-SUMMARY.md`. Requirements: `.planning/REQUIREMENTS.md` (18 items: 12 REL, 3 OBS, 3 OPS).
+| Layer | Time | Who controls it |
+|---|---|---|
+| Bridge + TLS + network round-trip | ~330 ms | us — already optimal ✓ |
+| **xray bridge multiplexing contention** (6+ concurrent detail-scrapes + HEAD + recalc) | **~2.5 s** | **us — fixable** |
+| **VkusVill stale-sessid revalidation** (14-day-old sessid) | **~1.5 s** | **us — fixable** (keep-alive) |
+| VkusVill cold-cart compute (product + price + delivery) | ~3.5 s | them — partially mitigable by keeping cart warm |
+| **DB row-lock contention vs parallel `basket_recalc.php`** | **~2.5 s** | **us — fixable** (skip-recalc-during-add) |
+| Slack / scheduling jitter | ~0.5 s | mixed |
+| **Total observed** | **~10.8 s** | |
+| Target after this milestone | **≤ 4 s p95** | |
 
-**Goal:** Keep the VkusVill sale app continuously healthy from the user's perspective (Vercel frontend + Telegram MiniApp) 24/7 by hardening the EC2 data pipeline against post-v1.18 failure modes.
+User outcome of the regression: tap "add onion" → 8 s frontend abort → "fail" toast → user retries → second attempt 3.6 s succeeds → **double-added product** (0.7 kg instead of 0.35 kg). The frontend's `AbortController` (8 s) was tighter than the backend `CART_ADD_HOT_PATH_DEADLINE_SECONDS` (10 s) than the observed slow-path response (10.8 s), and the frontend dropped the pending `attempt_id` instead of polling for its eventual resolution.
+
+Empirical bridge measurements (2026-05-05):
+- Anonymous `HEAD vkusvill.ru/` through bridge: **~520 ms** TTFB
+- Authenticated `HEAD /` (with stored cookies): **~600 ms** TTFB
+- Authenticated `GET /personal/`: **~400 ms** TTFB ← cheapest warmup endpoint
+- Authenticated `POST basket_add.php` warm-path: ~3.6 s
+- Authenticated `POST basket_add.php` cold-path: ~10.8 s
+
+Conclusion: **the bridge is healthy** (~330 ms overhead). The 5-second TTFB on `basket_add.php` is specific to that endpoint's heavy work (auth + product + price + delivery + DB write). A warmup ping pays the session-validation cost (~1-2 s on cold sessid) but skips the heavy compute, so a background keep-alive eliminates the cold-sessid penalty without ever touching the user-visible hot path.
+
+Requirements: `.planning/REQUIREMENTS.md` (15 items: 7 PERF, 3 UX, 2 OBS, 3 OPS).
+
+**Goal:** Reduce cart-add p95 from 10.8 s → ≤ 4 s and eliminate user-visible false-fails / double-adds, without regressing v1.19 reliability gains.
 **Granularity:** Medium
-**Phases:** 3 (59-61)
-**Requirements:** 18 (REL-01..12, OBS-01..03, OPS-06..08)
+**Phases:** 5 (62-66)
+**Requirements:** 15 (PERF-03..09, UX-01..03, OBS-04..05, OPS-09..11)
 
 ### Phases
 
-- [ ] **Phase 59: Corrected Pre-flight VLESS Probe** — Redo PR #25 with the lessons from PR #26's revert: 12 s timeout (not 5 s), cap rotations at 2 (not 5), prefer `leastPing` balancer rotation over Python-side `next_proxy()` to minimize xray restarts. Ships `vless/preflight.py::probe_bridge_alive`, regression test that fails if probe timeout drops below empirical p95, EC2 smoke test, and `scripts/verify_v1.19.sh` skeleton.
-- [ ] **Phase 60: Observatory probeURL + Graduated Circuit Breaker** — Change xray `observatory.probeURL` from `google.com/generate_204` to a VkusVill endpoint so `leastPing` balancer reflects real-target reachability; replace the cycle-counter circuit breaker with a 3-state machine (closed → open → half_open) + exponential backoff capped at 30 min, persisted in `data/scheduler_state.json`. Adds breaker state transitions + probe URL regression test to `scripts/verify_v1.19.sh`.
-- [ ] **Phase 61: Deep Health Endpoint + Pool Snapshot** — Mount unauthed `GET /api/health/deep` returning 200/503 based on pool size, breaker phase, cycle freshness, xray process state, and merged-products mtime; add `VlessProxyManager.pool_snapshot()` accessor; extend `/admin/status` with the same `reliability` block. Adds external-curl-from-outside-EC2 to smoke script. Verifies pool drain trend visibility (REL-11/12).
+- [ ] **Phase 62: Sessid Keep-Alive + On-App-Open Warmup** — `scheduler_service.py` gains a 20-min keep-alive task that fires authenticated `GET /personal/` for each linked Telegram user with recent activity (last 24 h); `backend/main.py` opportunistically fires a warmup within 500 ms of the first `/api/link/status` call when last keep-alive > 15 min. Anti-spam floor: ≤ 1 warmup per user per 15 min. Eliminates the ~1.5 s cold-sessid revalidation tax. Smoke gate: warmup p95 through bridge ≤ 3 s; cart-add p95 with keep-alive active ≤ 6 s (down from 10.8 s).
+- [ ] **Phase 63: Bridge Contention Elimination** — Per-user mutex: `/api/cart/items` skips its VkusVill round-trip and returns the cached pending-attempt cart state when a `/api/cart/add` for the same user is in flight (eliminates the parallel `basket_recalc.php` that fights the cart-row DB lock). Global semaphore: detail scrapers (`scrape_green/red/yellow`) pause for up to 10 s when any cart-add is in flight, freeing the VLESS tunnel for the hot path. Smoke gate: cart-add p95 with both fixes active ≤ 4.5 s.
+- [ ] **Phase 64: VkusVill API Surface Spike** — Capture an authenticated browser HAR of add-to-cart on `vkusvill.ru` directly; document any lighter endpoints (`/ajax/quick_add`, `basket_add_short`, GraphQL, Telegram-integration variants); if a faster endpoint exists, spike-test it through the bridge and measure p50/p95/p99 vs current `basket_add.php`. Trim the 16-field payload to the minimum server-accepted set (regression test pins the final field list). Spike output documents go/no-go decision; if go, this phase ships the swap.
+- [ ] **Phase 65: Frontend Pending-Polling + Idempotency** — On frontend `AbortController` timeout, poll `/api/cart/add-status/{attempt_id}` (already exists in backend) using the `client_request_id` already sent with the original POST, for up to 15 s total before showing "fail" toast. Reduce frontend timeout 8 s → 5 s (tighter; PERF-03/04/06/07 brings p95 < 4 s). Backend idempotency: same `client_request_id` returns the same `attempt_id` (no duplicate VkusVill POST). Eliminates the false-fail-then-double-add pattern. Smoke gate: synthetic 12 s slow-add returns success in UI without double-add.
+- [ ] **Phase 66: Cart Hot-Path Observability** — `/api/health/deep` gains an optional `cart_add` block (`p50_ms`, `p95_ms`, `p99_ms`, `success_rate_1h/24h`, `double_add_rate_1h`). Every `/api/cart/add` writes one structured JSONL line to `data/cart_events.jsonl` with `user_id` (hashed), `attempt_id`, `product_id`, `duration_ms`, `success`, `error_type`, `client_request_id`, `sessid_age_s`, `warmup_hit`, `concurrent_recalc`. Enables offline post-mortem of every anomaly. Smoke gate: external curl of `/api/health/deep` returns 200 with `cart_add.p95_ms` populated.
 
 ### Phase Details
 
-### Phase 59: Corrected Pre-flight VLESS Probe
-**Goal:** Detect a silently-degraded VLESS exit before the scheduler spends 30-45 s launching Chrome only to fail at page load — using the lessons from PR #25 → PR #26 revert (12 s timeout, cap 2 rotations, prefer balancer over Python-side removal).
-**Depends on:** Phase 58 (v1.18) shipped state — VLESS bridge is operational, just silently degrading; no breaking changes to the bridge itself in this phase.
-**Requirements:** REL-01, REL-02, REL-03, REL-04, REL-05 — plus the first concrete instances of OPS-06 (per-phase VERIFICATION.md), OPS-07 (smoke script foundation), OPS-08 (rollback rehearsal).
+### Phase 62: Sessid Keep-Alive + On-App-Open Warmup
+**Goal:** Eliminate the ~1.5 s cold-sessid revalidation cost from the cart-add hot path by ensuring VkusVill always sees the user's session as warm — both via 20-min background keep-alive and via on-MiniApp-open opportunistic warmup.
+**Depends on:** v1.19 closed (uses `pool_snapshot()` from Phase 61 to skip warmup when stack is degraded).
+**Requirements:** PERF-03, PERF-04, PERF-05 — plus continued OPS-09 / OPS-10 / OPS-11.
 **Success Criteria** (what must be TRUE):
-  1. [ ] `vless/preflight.py::probe_bridge_alive(timeout=12)` exists, returns a typed `ProbeResult`, and is called from `scheduler_service.py::_run_scraper_set` before each `scrape_*.py` launch.
-  2. [ ] Probe timeout = 12 s is guarded by a regression test (`tests/test_preflight_timeout_regression.py`) that fails if anyone lowers the constant below the measured EC2 healthy-node p95 + 30% margin.
-  3. [ ] Pre-flight rotation is capped at 2 attempts per scraper launch — verified by an integration test that simulates probe failure and asserts at most 2 `_remove_host_and_restart` calls per launch.
-  4. [ ] Live verification on EC2: a deliberately-bad single proxy in the pool causes one rotation + recovery within ≤ 30 s, instead of 5 cascading xray restarts (PR #25 failure mode).
-  5. [ ] `scripts/verify_v1.19.sh` exists and reports pass/fail for the 4 criteria above; run from local terminal via SSH; idempotent.
-  6. [ ] Vercel miniapp `/api/cart/add` returns HTTP 200 with `success=true` post-deploy (no regression on v1.18).
-**Plans:** TBD via `/gsd-plan-phase 59`
+  1. [ ] `scheduler_service.py` keep-alive task: every 20 min iterates `data/auth/{telegram_user_id}/cookies.json` for users with activity in last 24 h, fires authenticated `GET /personal/` through the bridge with anti-spam floor (≤ 1 per user per 15 min) and 5 s timeout.
+  2. [ ] `/api/link/status` and `/api/cart/items` handlers in `backend/main.py` opportunistically fire a warmup within 500 ms of the request when last keep-alive for that user > 15 min ago; non-blocking (does not delay the API response).
+  3. [ ] Warmup metrics tracked: `data/warmup_events.jsonl` records `user_id` (hashed), `endpoint`, `duration_ms`, `success`, `triggered_by` (`scheduler` / `on_open`).
+  4. [ ] EC2 measurement: warmup p95 through bridge ≤ 3 s; cart-add p95 with keep-alive active ≤ 6 s (vs 10.8 s baseline) over 50 synthetic adds.
+  5. [ ] `scripts/verify_v1.20.sh` skeleton exists with 5 Phase-62 smoke checks; idempotent; runs over SSH.
+  6. [ ] Vercel miniapp `/api/cart/add` still returns HTTP 200 with `success=true` (no regression on v1.19).
+**Plans:** TBD via `/gsd-plan-phase 62`
 
-### Phase 60: Observatory probeURL + Graduated Circuit Breaker
-**Goal:** Fix the silent killer (xray observatory probes Google but our traffic goes to VkusVill, so blocked-by-VkusVill nodes stay "fast" in `leastPing`) AND give the scheduler a real recovery path (3-state breaker + exponential backoff) instead of 162 useless re-trips.
-**Depends on:** Phase 59 (smoke script foundation needed for verification).
-**Requirements:** REL-06, REL-07, REL-08, REL-09, REL-10 — plus continued OPS-06/07/08.
+### Phase 63: Bridge Contention Elimination
+**Goal:** Stop fighting ourselves on the bridge. When a cart-add is in flight, skip the parallel `basket_recalc.php` and pause detail scrapers — together drops ~5 s off the slow-path.
+**Depends on:** Phase 62 (smoke script extends; warmup must be functional so we can measure the marginal benefit cleanly).
+**Requirements:** PERF-06, PERF-07 — plus continued OPS-09 / OPS-10 / OPS-11.
 **Success Criteria:**
-  1. [ ] `vless/config_gen.py::build_xray_config` emits `observatory.probeURL = "https://vkusvill.ru/favicon.ico"` (or operator-confirmed VkusVill stable endpoint); regression test asserts the configured probeURL hostname matches `*.vkusvill.ru`.
-  2. [ ] `scheduler/breaker.py::CircuitBreaker` exists with phases {`closed`, `open`, `half_open`}; transitions: 3 consecutive failed cycles → open; cooldown elapsed → half_open; half-open probe succeeds → closed; half-open probe fails → open with `backoff_level += 1`.
-  3. [ ] Cooldown follows `min(120 * 2^level, 1800)` (cap 30 min); unit tests cover all level transitions.
-  4. [ ] Counter resets to 0 on **any** successful scraper run (current behavior only resets on fully-clean cycle); integration test simulates 2-of-3 failures for 5 cycles and asserts breaker does not trip while ≥1 scraper succeeds, AND asserts breaker tracks per-scraper failure separately for visibility.
-  5. [ ] `data/scheduler_state.json` persists breaker state across restart; corrupt-file fallback test passes.
-  6. [ ] Live verification on EC2: deliberately force all 3 scrapers to fail for 3 cycles, observe `closed → open → cooldown 120s → half_open → green-only probe → recovery`; total recovery time ≤ 5 min vs. current 5.4 h.
-**Plans:** TBD via `/gsd-plan-phase 60`
+  1. [ ] `backend/main.py::cart_items_endpoint` checks `_cart_pending_attempts[user_id]` for any `status="pending"` entry; if present and < 12 s old, returns the last-known `cart_items` / `cart_total` from that record without firing `basket_recalc.php`. Tests cover both cache-hit and cache-stale paths.
+  2. [ ] Global `_CART_ADD_IN_FLIGHT_LOCK` semaphore (asyncio): scrapers `scrape_green` / `scrape_red` / `scrape_yellow` acquire-with-timeout(10 s) before each detail-page fetch; if a cart-add is in flight, they wait. Adds metric to `proxy_events.jsonl`: `scraper_paused_for_cart_add_count`.
+  3. [ ] Integration test: simulate 1 cart-add at T=0 + 5 cart-items polls at T=1..5 s; assert only the cart-add fires `basket_*` calls to VkusVill (the polls return cached state).
+  4. [ ] EC2 measurement: cart-add p95 with both Phase 62 + Phase 63 active ≤ 4.5 s over 50 synthetic adds during active scraper window.
+  5. [ ] Vercel miniapp regression: `/api/cart/add` HTTP 200, no stale cart-items beyond 12 s.
+  6. [ ] `scripts/verify_v1.20.sh` extended with 4 Phase-63 smoke checks.
+**Plans:** TBD via `/gsd-plan-phase 63`
 
-### Phase 61: Deep Health Endpoint + Pool Snapshot
-**Goal:** Expose stack health truthfully via an unauth `/api/health/deep` endpoint suitable for external uptime ping services, with a `reasons[]` array for post-incident debugging; add pool-size trend logging so multi-day drift (pool 25 → 13) is visible without log scraping.
-**Depends on:** Phase 60 (breaker state file is part of the response).
-**Requirements:** REL-11, REL-12, OBS-01, OBS-02, OBS-03 — plus continued OPS-06/07/08.
+### Phase 64: VkusVill API Surface Spike
+**Goal:** Discover whether VkusVill exposes a faster cart-add endpoint than the 16-field `basket_add.php` (e.g. quick-add variants, GraphQL, Telegram-integration); if so, swap to it; either way, trim the legacy payload to minimum.
+**Depends on:** Nothing in this milestone (research-first phase).
+**Requirements:** PERF-08, PERF-09 — plus continued OPS-09 / OPS-10 / OPS-11.
 **Success Criteria:**
-  1. [ ] `GET /api/health/deep` (no auth) returns HTTP 200 + JSON when healthy and HTTP 503 + JSON when degraded/unhealthy; response shape matches schema in `.planning/research/v1.19-ARCHITECTURE.md` §4; rate-limited 1 req/s/IP.
-  2. [ ] Healthy criteria match REQUIREMENTS.md OBS-02 (all-of: pool_size ≥ MIN_HEALTHY, breaker ∈ {closed, half_open}, last successful cycle ≤ 15 min ago, xray running, products.json mtime ≤ 15 min); response always includes `status` and `reasons[]`.
-  3. [ ] No node IPs, no user identifiers, no cookie state in the unauth response (privacy review checked into the verify script).
-  4. [ ] `VlessProxyManager.pool_snapshot()` returns `{size, min_healthy, quarantined_count, active_outbounds, last_refresh_at}`; `/admin/status` exposes a `reliability` block with breaker + pool snapshot for the operator view.
-  5. [ ] `proxy_events.jsonl` gains `pool_size`, `quarantined_count`, `active_outbounds_count` on every refresh and quarantine event; verification queries the file and asserts trend visibility over a 24 h window.
-  6. [ ] External `curl https://vkusvillsale.vercel.app/api/health/deep` from a non-EC2 host returns 200 when stack is healthy and 503 when synthetically degraded (e.g. xray paused).
-**Plans:** TBD via `/gsd-plan-phase 61`
+  1. [ ] `.planning/research/v1.20-API-SPIKE.md` documents: (a) full HAR of authenticated browser add-to-cart on `vkusvill.ru` direct, (b) every endpoint touched during the flow, (c) measured p50/p95/p99 for each candidate endpoint through our bridge with valid cookies, (d) go/no-go recommendation.
+  2. [ ] `cart/vkusvill_api.py::add` payload trimmed: each field's necessity established by ablation testing (drop one, measure success rate over 20 calls); regression test pins the final field list.
+  3. [ ] If a faster endpoint is identified and reachable through the bridge with our auth surface: this phase ships the swap with feature flag (`USE_FAST_CART_ADD_ENDPOINT` env var, default off until smoke gate passes).
+  4. [ ] EC2 measurement: cart-add p95 with all of 62 + 63 + (optional 64-swap) active ≤ 4.0 s; if no faster endpoint exists, ≤ 4.5 s baseline from Phase 63 holds.
+  5. [ ] `scripts/verify_v1.20.sh` extended with payload-minimum regression check.
+**Plans:** TBD via `/gsd-plan-phase 64`
+
+### Phase 65: Frontend Pending-Polling + Idempotency
+**Goal:** Eliminate the false-fail UX. When VkusVill is slow, the user must never see "fail" if the backend eventually succeeded — and never get a double-add from retrying.
+**Depends on:** Phase 62/63/64 (so the underlying p95 has dropped enough that the pending-polling path is rare, not common).
+**Requirements:** UX-01, UX-02, UX-03 — plus continued OPS-09 / OPS-10 / OPS-11.
+**Success Criteria:**
+  1. [ ] `miniapp/src/App.jsx::handleAddToCart`: on `AbortError` from the 5 s `AbortController`, **does not** clear pending state or show fail toast; instead enters a polling loop that hits `/api/cart/add-status/{attempt_id}` every 1 s for up to 10 additional seconds (15 s total budget from original tap), surfacing success when the attempt resolves.
+  2. [ ] Frontend `AbortController` cutoff reduced 8 s → 5 s; the polling fallback (UX-01) is the safety net, not the timeout itself.
+  3. [ ] `backend/main.py::cart_add_endpoint` idempotency: when called with a `client_request_id` already present in `_cart_pending_attempts`, returns the existing `attempt_id` without firing a second `basket_add.php`. Test simulates double-tap within 100 ms and asserts only one VkusVill call.
+  4. [ ] Playwright test (`miniapp/tests/test_cart_slow_path.py`): mock backend to delay `/api/cart/add` 12 s, assert UI shows success (not fail) via the polling channel; assert no double-add (cart count = 1, not 2).
+  5. [ ] EC2 + Vercel deploy: end-to-end synthetic 12 s slow-add via test fixture returns success in UI; double-add rate over 100 synthetic slow paths = 0.
+  6. [ ] `scripts/verify_v1.20.sh` extended with frontend polling check.
+**Plans:** TBD via `/gsd-plan-phase 65`
+
+### Phase 66: Cart Hot-Path Observability
+**Goal:** Make cart-add latency regressions visible to the same uptime monitor that already watches v1.19's pool + breaker. Make every cart-add anomaly post-mortem-able.
+**Depends on:** Phase 62/63/64/65 (the metrics are most useful when the optimization phases are in steady state).
+**Requirements:** OBS-04, OBS-05 — plus continued OPS-09 / OPS-10 / OPS-11.
+**Success Criteria:**
+  1. [ ] `GET /api/health/deep` gains optional `cart_add` block computed from rolling-window aggregates over `_cart_pending_attempts` ledger: `p50_ms`, `p95_ms`, `p99_ms` over last 1 h; `success_rate_1h`, `success_rate_24h`; `double_add_rate_1h` (heuristic: same product, same user, < 30 s apart, both succeeded). Block omitted only if zero attempts in the last hour (not a 503 condition).
+  2. [ ] `data/cart_events.jsonl` written by `cart_add_endpoint` after every attempt resolution: 10-key schema (`user_id_hash`, `attempt_id`, `product_id`, `duration_ms`, `success`, `error_type`, `client_request_id`, `sessid_age_s`, `warmup_hit`, `concurrent_recalc_at_start`). Privacy: `user_id_hash = sha256(telegram_user_id)[:16]`.
+  3. [ ] OBS-02 unhealthy criterion extended: if `cart_add.p95_ms > 6000` for last 1 h, deep health flips to `degraded`; if `> 12000`, flips to `unhealthy`.
+  4. [ ] External curl of `/api/health/deep` returns 200 with `cart_add.p95_ms` populated when traffic exists.
+  5. [ ] `scripts/verify_v1.20.sh` extended with cart-add-observability checks; total v1.20 smoke checks ≥ 20 green.
+  6. [ ] Phase 66 also closes v1.20: per-phase latency baselines from 62/63/64/65 retained as regression gates in `scripts/verify_v1.20.sh`.
+**Plans:** TBD via `/gsd-plan-phase 66`
 
 ## v1.18 Geo Resolver & Scraper Recovery (SHIPPED 2026-04-25)
 
