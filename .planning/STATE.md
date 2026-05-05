@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.19
 milestone_name: Production Reliability & 24/7 Uptime
-status: planning
-last_updated: "2026-05-03T18:28:03.477Z"
-last_activity: 2026-05-03
+status: ready_for_audit
+last_updated: "2026-05-05T17:35:00.000Z"
+last_activity: 2026-05-05
 progress:
   total_phases: 3
-  completed_phases: 2
-  total_plans: 6
-  completed_plans: 6
-  percent: 67
+  completed_phases: 3
+  total_plans: 7
+  completed_plans: 7
+  percent: 100
 ---
 
 # Project State
@@ -24,10 +24,10 @@ See: .planning/PROJECT.md (updated 2026-04-22)
 
 ## Current Position
 
-Phase: 60 Observatory probeURL + Graduated Circuit Breaker (✅ SHIPPED)
-Next phase: 61 Deep Health Endpoint + Pool Snapshot (not yet planned)
-Status: Phases 59 + 60 deployed to EC2. All 18 smoke checks pass (9 Phase 59 + 7 Phase 60). xray probeURL = vkusvill.ru/favicon.ico (REL-06); 3-state breaker with 120s→30min exponential backoff + atomic JSON persistence (REL-07..10). 44 unit tests passing on both 3.9 + 3.12.
-Last activity: 2026-05-05 — Phase 60 shipped (`b7df341` feat, `8077d74` test+refinement). See `.planning/phases/60-observatory-probe-and-circuit-breaker/60-VERIFICATION.md`.
+Phase: 61 Deep Health Endpoint + Pool Snapshot (✅ SHIPPED)
+Next phase: none — milestone ready for `gsd-audit-milestone v1.19`.
+Status: All 3 phases (59, 60, 61) deployed to EC2. Full smoke green: 24/24 across the milestone (9 Phase 59 + 7 Phase 60 + 8 Phase 61). 73 unit tests passing on Python 3.12 EC2 (44 from Phases 59+60, 29 from Phase 61). External GET https://vkusvillsale.vercel.app/api/health/deep returns 200 healthy with truthful pool snapshot (size=15, quarantined=7, active_outbounds=15). All 18 v1.19 requirements satisfied (12 REL, 3 OBS, 3 OPS).
+Last activity: 2026-05-05 — Phase 61 shipped (`54f963f` feat, `dc17421` test, `8316113` smoke, `9830dee` verification). See `.planning/phases/61-deep-health-endpoint-pool-snapshot/61-VERIFICATION.md`.
 
 ## Milestone Goal (v1.19 — active)
 
@@ -46,8 +46,8 @@ Last activity: 2026-05-05 — Phase 60 shipped (`b7df341` feat, `8077d74` test+r
 
 ## Next Up
 
-- `/gsd-discuss-phase 59` (or `/gsd-plan-phase 59`) — begin Phase 59 (Corrected Pre-flight VLESS Probe). Phases run serially per the no-hotfix discipline; Phase 60 starts only after Phase 59's smoke test passes on EC2 + Vercel miniapp `/api/cart/add` regression check.
-- See `.planning/research/v1.19-SUMMARY.md` for the grounded findings (probe/target mismatch, both rotation paths restart xray, breaker has no half-open state) before planning Phase 59 details.
+- `/gsd-audit-milestone v1.19` — verify all 18 requirements demonstrably satisfied across the 3 shipped phases before archiving. Audit input: `.planning/REQUIREMENTS.md`, `.planning/ROADMAP.md`, three `*-VERIFICATION.md` files, `scripts/verify_v1.19.sh all` smoke output (24/24 green).
+- After audit passes: `/gsd-complete-milestone` to archive `.planning/milestones/v1.19-phases/` and bump active milestone.
 - Note: the 2026-04-22 scheduler SOCKS5 recv() deadlock hotfix (commit `4c7f271`) was superseded by the v1.15 → v1.18 VLESS migration chain, which replaced SOCKS5 entirely with xray-core VLESS+Reality through a local SOCKS5 bridge.
 
 ## Completed Milestones
@@ -147,6 +147,8 @@ Last activity: 2026-05-05 — Phase 60 shipped (`b7df341` feat, `8077d74` test+r
 | v1.19 Phase 59 plans written (README + CONTEXT + 59-01/02/03-PLAN) | 2026-05-03 |
 | v1.19 Phase 59 SHIPPED — vless/preflight.py + scheduler integration + 23 tests + smoke script + rehearsed rollback | 2026-05-04 |
 | v1.19 Phase 60 SHIPPED — xray probeURL alignment + 3-state circuit breaker + 21 tests + smoke-script extension | 2026-05-05 |
+| v1.19 Phase 61 SHIPPED — pool_snapshot() + /api/health/deep + /admin/status reliability block + 29 tests + smoke 8/8 + rollback rehearsed | 2026-05-05 |
+| v1.19 milestone READY FOR AUDIT — all 18 requirements satisfied, 24/24 smoke green | 2026-05-05 |
 
 ---
-*Last updated: 2026-05-05 after Phase 60 ship complete. leastPing balancer now ranks by VkusVill reachability (probeURL was google.com/generate_204, now vkusvill.ru/favicon.ico; probeInterval was 5m, now 60s). Circuit breaker is persistent, state-machine-driven, and resets on any scraper success. 2/3 v1.19 phases shipped; Phase 61 deep-health endpoint + pool snapshot remaining.*
+*Last updated: 2026-05-05 after Phase 61 ship complete. All 3 phases deployed to EC2; v1.19 ready for milestone audit. New `/api/health/deep` unauth endpoint returns truthful 200/503 with `reasons[]` for external uptime monitors; pool drift now visible (quarantined_count=7 of size=15 in live snapshot — exactly the visibility v1.18 lacked). proxy_events.jsonl entries auto-enriched with pool_size/quarantined_count/active_outbounds_count. /admin/status carries the same `reliability` block. Rollback path rehearsed (5-commit revert leaves byte-identical Phase 60 tree, 44 prior tests still green). 73 unit tests passing across the milestone.*
