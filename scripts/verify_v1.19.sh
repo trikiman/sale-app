@@ -211,30 +211,30 @@ print(\"OK\" if required <= set(s.keys()) else \"MISSING:\" + str(required - set
         _fail "61-A: pool_snapshot() schema check failed: $SNAPSHOT_OK"
     fi
 
-    # 61-B: proxy_events.jsonl entries carry the new pool counters (OBS-02)
-    if ssh "$EC2_HOST" "test -f /home/ubuntu/saleapp/data/proxy_events.jsonl"; then
-        COUNTERS_OK=$(ssh "$EC2_HOST" "tail -n 50 /home/ubuntu/saleapp/data/proxy_events.jsonl 2>/dev/null | python3 -c '
-import sys, json
-hits = 0
-for line in sys.stdin:
-    line = line.strip()
-    if not line:
-        continue
-    try:
-        d = json.loads(line)
-    except Exception:
-        continue
-    if \"pool_size\" in d and \"quarantined_count\" in d and \"active_outbounds_count\" in d:
-        hits += 1
-print(hits)
+    # 61-B: deployed _track_event emits pool counters (OBS-02)
+    # We don't sample prod events because steady-state pools rarely rotate;
+    # instead we run a one-shot in an isolated tmpdir to verify the code
+    # path that's actually loaded on EC2 enriches output. No prod pollution.
+    ENRICH_OK=$(ssh "$EC2_HOST" "cd /home/ubuntu/saleapp && python3 -c '
+import json, tempfile, pathlib
+from vless.manager import VlessProxyManager
+tmp = pathlib.Path(tempfile.mkdtemp())
+m = VlessProxyManager(
+    pool_path=tmp/\"pool.json\", cooldowns_path=tmp/\"cd.json\",
+    events_path=tmp/\"ev.jsonl\", xray_config_path=tmp/\"x.json\",
+    xray_log_path=tmp/\"xl.log\", register_atexit=False,
+)
+m._pool = {\"updated_at\": \"x\", \"nodes\": [{\"host\": \"1.1.1.1\", \"port\": 443}]}
+m._track_event(\"smoke_oneshot\", {\"addr\": \"1.1.1.1\"})
+d = json.loads((tmp/\"ev.jsonl\").read_text().strip().splitlines()[-1])
+required = {\"pool_size\", \"quarantined_count\", \"active_outbounds_count\"}
+missing = required - set(d.keys())
+print(\"OK\" if not missing else \"MISSING:\" + str(missing))
 '" 2>/dev/null)
-        if [[ "${COUNTERS_OK:-0}" -gt 0 ]]; then
-            _pass "61-B: proxy_events.jsonl entries include pool counters ($COUNTERS_OK / last 50)"
-        else
-            _fail "61-B: proxy_events.jsonl has 0 enriched entries in the last 50 — OBS-02 not active"
-        fi
+    if [[ "$ENRICH_OK" == "OK" ]]; then
+        _pass "61-B: deployed _track_event emits pool counters (one-shot OBS-02 verification)"
     else
-        _fail "61-B: /home/ubuntu/saleapp/data/proxy_events.jsonl missing"
+        _fail "61-B: _track_event enrichment broken: $ENRICH_OK"
     fi
 
     # 61-C: GET /api/health/deep is reachable from EC2 localhost (no auth)
@@ -269,7 +269,9 @@ else:
     fi
 
     # 61-E: Cache-Control: no-store header set
-    HDR=$(ssh "$EC2_HOST" "curl -sI --max-time 5 http://127.0.0.1:$BACKEND_PORT/api/health/deep 2>/dev/null | grep -i '^cache-control:'" 2>/dev/null)
+    # NOTE: FastAPI GET routes don't auto-route HEAD; use -D - to capture
+    # response headers from a real GET (body discarded to /dev/null).
+    HDR=$(ssh "$EC2_HOST" "curl -s -o /dev/null -D - --max-time 5 http://127.0.0.1:$BACKEND_PORT/api/health/deep 2>/dev/null | grep -i '^cache-control:'" 2>/dev/null)
     if echo "$HDR" | grep -qi 'no-store'; then
         _pass "61-E: Cache-Control: no-store present"
     else
