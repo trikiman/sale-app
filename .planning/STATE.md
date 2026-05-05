@@ -1,16 +1,19 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.19
-milestone_name: Production Reliability & 24/7 Uptime
-status: ready_for_audit
-last_updated: "2026-05-05T17:35:00.000Z"
+milestone: v1.20
+milestone_name: Cart-Add Latency & User-Facing Responsiveness
+status: planning
+last_updated: "2026-05-05T19:13:00.000Z"
 last_activity: 2026-05-05
 progress:
-  total_phases: 3
-  completed_phases: 3
-  total_plans: 7
-  completed_plans: 7
-  percent: 100
+  total_phases: 5
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
+current_phase: 62
+current_phase_status: context_gathered
+current_phase_resume_file: .planning/phases/62-sessid-keepalive-warmup/62-CONTEXT.md
 ---
 
 # Project State
@@ -20,35 +23,40 @@ progress:
 See: .planning/PROJECT.md (updated 2026-04-22)
 
 **Core value:** Family members see every VkusVill discount and can add to cart in one tap
-**Current focus:** v1.19 Production Reliability & 24/7 Uptime — robust-over-fast hardening of the EC2 data pipeline (corrected pre-flight VLESS probe, observatory probeURL alignment, graduated circuit breaker, unauthed deep health endpoint, per-phase EC2 smoke verification gate). 3 phases (59-61), 18 requirements (12 REL, 3 OBS, 3 OPS).
+**Current focus:** v1.20 Cart-Add Latency & User-Facing Responsiveness — cut p95 from 10.8 s → ≤ 4 s and eliminate the false-fail-then-double-add UX pattern observed in 2026-05-05 live UAT. 5 phases (62-66), 15 requirements (7 PERF, 3 UX, 2 OBS, 3 OPS). Carries the v1.19 robust-over-fast cultural commitment: per-phase smoke + VERIFICATION.md + rollback rehearsal mandatory.
 
 ## Current Position
 
-Phase: 61 Deep Health Endpoint + Pool Snapshot (✅ SHIPPED)
-Next phase: none — milestone ready for `gsd-audit-milestone v1.19`.
-Status: All 3 phases (59, 60, 61) deployed to EC2. Full smoke green: 24/24 across the milestone (9 Phase 59 + 7 Phase 60 + 8 Phase 61). 73 unit tests passing on Python 3.12 EC2 (44 from Phases 59+60, 29 from Phase 61). External GET https://vkusvillsale.vercel.app/api/health/deep returns 200 healthy with truthful pool snapshot (size=15, quarantined=7, active_outbounds=15). All 18 v1.19 requirements satisfied (12 REL, 3 OBS, 3 OPS).
-Last activity: 2026-05-05 — Phase 61 shipped (`54f963f` feat, `dc17421` test, `8316113` smoke, `9830dee` verification). See `.planning/phases/61-deep-health-endpoint-pool-snapshot/61-VERIFICATION.md`.
+Phase: 62 Sessid Keep-Alive + On-App-Open Warmup (🔵 CONTEXT GATHERED — ready for plan-phase).
+Next step: `/gsd-plan-phase 62` to produce per-deliverable PLAN.md files (estimated 4-5 plans: warmup module, scheduler thread spawn, backend nudge wiring, race-cancellation flag, smoke script skeleton).
+Status: 62-CONTEXT.md captured (201 lines) with 4 implementation decisions locked: warm-all linked users (D1), silent-log + JSONL retry on failure (D2), daemon thread in scheduler_service.py (D3), cart-add cancels in-flight warmup (D4). User direction: "fastest way and on the same side robust but robust in prioritize if it didn't cost too much delays" — interpreted as ship simplest, escalate robustness only when free. v1.19 archived (18/18 requirements, 24/24 smoke green). v1.20 ROADMAP.md and REQUIREMENTS.md drafted with 5 phases / 15 requirements.
+Last activity: 2026-05-05 — Phase 62 context discussion complete.
 
-## Milestone Goal (v1.19 — active)
+## Milestone Goal (v1.20 — active)
 
-- Detect a silently-degraded VLESS exit before launching Chrome (corrected pre-flight probe with 12 s timeout, capped rotations, balancer-preferred fallback) so 30-45 s wasted-Chrome cycles stop
-- Align xray observatory probeURL with the real traffic target (VkusVill, not Google) so the `leastPing` balancer ranks outbounds by real-target reachability
-- Replace the cycle-counter circuit breaker with a 3-state machine (closed → open → half_open) + exponential backoff capped at 30 min so 162 useless re-trips can't happen again
-- Expose stack health truthfully via unauth `GET /api/health/deep` returning 200/503 + `reasons[]` so external uptime pings catch "active but broken" states
-- Make per-phase EC2 smoke verification non-optional (`scripts/verify_v1.19.sh`, `VERIFICATION.md`, rehearsed rollback) so PR #25-style 8-minute-revert regressions cannot reach `main`
-- No regression on v1.18 (Vercel miniapp `/api/cart/add` HTTP 200 with `success=true` must still pass)
+- Eliminate the ~1.5 s cold-sessid revalidation cost via 20-min background keep-alive + on-MiniApp-open opportunistic warmup (PERF-03/04/05)
+- Stop fighting ourselves on the bridge — skip parallel `basket_recalc.php` while a `basket_add.php` is in flight (per-user mutex), pause detail scrapers during active cart-add (global semaphore) (PERF-06/07)
+- HAR-driven spike of VkusVill's cart-add API surface for lighter endpoints; ablation-trim the 16-field `basket_add.php` payload to minimum (PERF-08/09)
+- Fix the false-fail UX: frontend `AbortController` 8 s → 5 s + on-AbortError pending-polling at `/api/cart/add-status/{attempt_id}` for up to 15 s; backend `client_request_id` idempotency (UX-01/02/03)
+- `/api/health/deep` `cart_add` block (`p50/p95/p99_ms`, `success_rate`, `double_add_rate`); structured `data/cart_events.jsonl` ledger (OBS-04/05)
+- Per-phase smoke gate `scripts/verify_v1.20.sh` carrying p95 baseline; rollback rehearsal mandatory (OPS-09/10/11)
+- No regression on v1.19 reliability gains (pool drift visibility, breaker, deep health endpoint must still pass)
 
-## Previous Milestone Goal (v1.18 — last shipped 2026-04-25)
+## Previous Milestone Goal (v1.19 — last shipped 2026-05-05)
 
-- Lifted the VLESS pool ceiling by removing the single-provider `ipinfo.io` rate-limit bottleneck during admission (3-provider geo chain; pool 15 → 25 nodes, +67%)
-- Made `scrape_green.py` survive Chromium CDP-WebSocket HTTP 500 errors mid-cycle (4 new helpers; tests grew 96 → 111)
-- Preserved v1.17 cart-add reliability (Vercel miniapp `/api/cart/add` returned HTTP 200 with `success=true, cart_items=3, cart_total=971.6`)
+- Detected silently-degraded VLESS exits before Chrome launch (corrected pre-flight probe, 12 s timeout, capped rotations, balancer-preferred fallback) — 30-45 s wasted-Chrome cycles stopped
+- Aligned xray observatory probeURL with VkusVill (not Google) so `leastPing` ranks by real-target reachability
+- Replaced the cycle-counter circuit breaker with a 3-state machine + exponential backoff capped at 30 min, persisted in `data/scheduler_state.json`
+- Exposed stack health truthfully via unauth `GET /api/health/deep` returning 200/503 + 8-key OBS-02 schema with `reasons[]`
+- Pool drift like the silent 25 → 13 over 8 days is now visible in real time via enriched `proxy_events.jsonl`
+- Per-phase EC2 smoke verification non-optional (24/24 green via `scripts/verify_v1.19.sh`, retained as cross-version regression guard alongside v1.20's smoke script)
 
 ## Next Up
 
-- `/gsd-audit-milestone v1.19` — verify all 18 requirements demonstrably satisfied across the 3 shipped phases before archiving. Audit input: `.planning/REQUIREMENTS.md`, `.planning/ROADMAP.md`, three `*-VERIFICATION.md` files, `scripts/verify_v1.19.sh all` smoke output (24/24 green).
-- After audit passes: `/gsd-complete-milestone` to archive `.planning/milestones/v1.19-phases/` and bump active milestone.
-- Note: the 2026-04-22 scheduler SOCKS5 recv() deadlock hotfix (commit `4c7f271`) was superseded by the v1.15 → v1.18 VLESS migration chain, which replaced SOCKS5 entirely with xray-core VLESS+Reality through a local SOCKS5 bridge.
+- `/gsd-plan-phase 62` — produce per-deliverable PLAN.md files for Phase 62 grounded in `62-CONTEXT.md`. Expected plans: 62-01 keepalive/warmup.py module, 62-02 scheduler thread spawn + backend nudge wiring, 62-03 race-cancellation flag in cart hot path, 62-04 tests + smoke script skeleton, 62-05 EC2 deploy + p95 baseline measurement.
+- After plans drafted: `/gsd-execute-phase 62` to build, then `/gsd-verify-work 62` for smoke + p95 baseline + rollback rehearsal.
+- After Phase 62 ships: `/gsd-discuss-phase 63` for Bridge Contention Elimination (PERF-06/07).
+- v1.19 commit `9ccd72b` is the audit-pass mark. v1.19 archive remains read-only at `.planning/milestones/v1.19-*` and `.planning/milestones/v1.19-phases/`.
 
 ## Completed Milestones
 
@@ -72,6 +80,7 @@ Last activity: 2026-05-05 — Phase 61 shipped (`54f963f` feat, `dc17421` test, 
 | v1.15 Proxy Infrastructure Migration | 56 | 2026-04-23 |
 | v1.17 VLESS Timeout Hardening | 57 | 2026-04-25 |
 | v1.18 Geo Resolver & Scraper Recovery | 58 | 2026-04-25 |
+| v1.19 Production Reliability & 24/7 Uptime | 59-61 | 2026-05-05 |
 
 ## Accumulated Context
 
@@ -149,6 +158,10 @@ Last activity: 2026-05-05 — Phase 61 shipped (`54f963f` feat, `dc17421` test, 
 | v1.19 Phase 60 SHIPPED — xray probeURL alignment + 3-state circuit breaker + 21 tests + smoke-script extension | 2026-05-05 |
 | v1.19 Phase 61 SHIPPED — pool_snapshot() + /api/health/deep + /admin/status reliability block + 29 tests + smoke 8/8 + rollback rehearsed | 2026-05-05 |
 | v1.19 milestone READY FOR AUDIT — all 18 requirements satisfied, 24/24 smoke green | 2026-05-05 |
+| v1.19 milestone AUDIT PASSED — 18/18 requirements, 0 gaps, commit `9ccd72b` | 2026-05-05 |
+| v1.19 milestone ARCHIVED to `.planning/milestones/v1.19-*` (ROADMAP, REQUIREMENTS, AUDIT, phases) | 2026-05-05 |
+| v1.20 milestone STARTED — Cart-Add Latency & User-Facing Responsiveness, 5 phases (62-66), 15 requirements | 2026-05-05 |
+| v1.20 Phase 62 context gathered — 4 implementation decisions locked (warm-all, silent-retry, daemon thread, cart-add-cancels-warmup) | 2026-05-05 |
 
 ---
-*Last updated: 2026-05-05 after Phase 61 ship complete. All 3 phases deployed to EC2; v1.19 ready for milestone audit. New `/api/health/deep` unauth endpoint returns truthful 200/503 with `reasons[]` for external uptime monitors; pool drift now visible (quarantined_count=7 of size=15 in live snapshot — exactly the visibility v1.18 lacked). proxy_events.jsonl entries auto-enriched with pool_size/quarantined_count/active_outbounds_count. /admin/status carries the same `reliability` block. Rollback path rehearsed (5-commit revert leaves byte-identical Phase 60 tree, 44 prior tests still green). 73 unit tests passing across the milestone.*
+*Last updated: 2026-05-05 after Phase 62 context discussion. 62-CONTEXT.md captures 4 implementation decisions plus locked defaults from REQUIREMENTS.md / ROADMAP.md. User explicitly delegated decision-making with the rule "fastest way + robust if it doesn't cost delays" — applied to choose warm-all-users (D1), silent-retry (D2), in-process daemon thread (D3), and cart-add-cancels-warmup (D4). Run `/gsd-plan-phase 62` next to produce per-deliverable PLAN.md files.*
