@@ -45,6 +45,13 @@ os.makedirs(os.path.join(LOG_DIR, "backend"), exist_ok=True)  # BUG-3: notifier 
 LOG_FILE = os.path.join(LOG_DIR, "scheduler.log")
 CYCLE_STATE_PATH = os.path.join(DATA_DIR, "scrape_cycle_state.json")
 
+# Graduated circuit breaker (Phase 60 REL-07..10). States: closed / open /
+# half_open. See .planning/phases/60-observatory-probe-and-circuit-breaker.
+BREAKER_BASE_COOLDOWN_S = 120
+BREAKER_MAX_COOLDOWN_S = 30 * 60
+BREAKER_TRIP_THRESHOLD = 3
+BREAKER_STATE_FILE = os.path.join(DATA_DIR, "scheduler_state.json")
+
 
 def log(message):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -52,6 +59,140 @@ def log(message):
     print(line, flush=True)
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(line + "\n")
+
+
+class BreakerState:
+    """Graduated 3-state circuit breaker for the scheduler.
+
+    States:
+      - ``"closed"``: normal operation; run scrapers on schedule.
+      - ``"open"``: tripped; wait until ``cooldown_until_ts`` then go to
+        ``"half_open"``.
+      - ``"half_open"``: probe via GREEN-only; success -> ``"closed"``,
+        failure -> ``"open"`` with cooldown doubled.
+
+    Cooldown doubles on every re-trip starting at ``BREAKER_BASE_COOLDOWN_S``,
+    capped at ``BREAKER_MAX_COOLDOWN_S``. Resets to base on any successful
+    scraper run (REL-09 - not just all-clean cycles).
+
+    Persisted to ``DATA_DIR/scheduler_state.json`` across restart (REL-10);
+    corrupt-file fallback creates a fresh closed breaker so the scheduler
+    never crashes on a bad state file.
+    """
+
+    def __init__(
+        self,
+        state: str = "closed",
+        cooldown_s: int = BREAKER_BASE_COOLDOWN_S,
+        cooldown_until_ts: float = 0.0,
+        fails: int = 0,
+        last_transition_ts: float = 0.0,
+    ):
+        self.state = state
+        self.cooldown_s = int(cooldown_s)
+        self.cooldown_until_ts = float(cooldown_until_ts)
+        self.fails = int(fails)
+        self.last_transition_ts = float(last_transition_ts)
+
+    def to_dict(self) -> dict:
+        return {
+            "state": self.state,
+            "cooldown_s": self.cooldown_s,
+            "cooldown_until_ts": self.cooldown_until_ts,
+            "fails": self.fails,
+            "last_transition_ts": self.last_transition_ts,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "BreakerState":
+        state = d.get("state", "closed")
+        if state not in ("closed", "open", "half_open"):
+            raise ValueError(f"invalid breaker state: {state!r}")
+        return cls(
+            state=state,
+            cooldown_s=int(d.get("cooldown_s", BREAKER_BASE_COOLDOWN_S)),
+            cooldown_until_ts=float(d.get("cooldown_until_ts", 0.0)),
+            fails=int(d.get("fails", 0)),
+            last_transition_ts=float(d.get("last_transition_ts", 0.0)),
+        )
+
+    def record_all_failed(self) -> None:
+        """All scrapers failed this cycle. Advance breaker state."""
+        self.fails += 1
+        now = time.time()
+        if self.state == "closed" and self.fails >= BREAKER_TRIP_THRESHOLD:
+            self._trip(now, double=False)
+        elif self.state == "half_open":
+            self._trip(now, double=True)
+        # state "open" during record_all_failed is impossible (we'd be in
+        # cooldown and not running scrapers); safety no-op if it happens.
+
+    def record_any_success(self) -> None:
+        """Any scraper succeeded this cycle. Reset breaker to closed (REL-09)."""
+        if (
+            self.state != "closed"
+            or self.fails > 0
+            or self.cooldown_s != BREAKER_BASE_COOLDOWN_S
+        ):
+            self.state = "closed"
+            self.fails = 0
+            self.cooldown_s = BREAKER_BASE_COOLDOWN_S
+            self.cooldown_until_ts = 0.0
+            self.last_transition_ts = time.time()
+
+    def _trip(self, now: float, *, double: bool) -> None:
+        if double:
+            self.cooldown_s = min(self.cooldown_s * 2, BREAKER_MAX_COOLDOWN_S)
+        else:
+            self.cooldown_s = BREAKER_BASE_COOLDOWN_S
+        self.state = "open"
+        self.cooldown_until_ts = now + self.cooldown_s
+        self.last_transition_ts = now
+
+    def tick(self) -> None:
+        """Advance state based on wall-clock. Call each scheduler iteration."""
+        if self.state == "open" and time.time() >= self.cooldown_until_ts:
+            self.state = "half_open"
+            self.last_transition_ts = time.time()
+
+    def seconds_until_cooldown_expires(self) -> float:
+        return max(0.0, self.cooldown_until_ts - time.time())
+
+
+def _load_breaker_state() -> BreakerState:
+    """Load breaker from disk; fall back to fresh closed breaker on any error."""
+    try:
+        with open(BREAKER_STATE_FILE, "r", encoding="utf-8") as fh:
+            return BreakerState.from_dict(json.load(fh))
+    except (
+        FileNotFoundError,
+        json.JSONDecodeError,
+        ValueError,
+        OSError,
+        TypeError,
+        KeyError,
+    ) as exc:
+        log(f"Breaker state load: {type(exc).__name__} - starting fresh (closed)")
+        return BreakerState()
+
+
+def _persist_breaker_state(breaker: BreakerState) -> None:
+    """Atomically persist breaker to disk. Non-fatal on failure."""
+    tmp_path = BREAKER_STATE_FILE + ".tmp"
+    try:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        with open(tmp_path, "w", encoding="utf-8") as fh:
+            json.dump(breaker.to_dict(), fh, indent=2)
+        os.replace(tmp_path, BREAKER_STATE_FILE)
+    except OSError as exc:
+        log(f"Breaker state persist failed: {exc} (continuing in-memory)")
+        # Leave the tmp file; a subsequent successful write will os.replace
+        # over it. Attempt best-effort cleanup here but do not raise.
+        try:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+        except OSError:
+            pass
 
 
 def _log_script_output(script_name, output_text, tag=None):
@@ -534,6 +675,9 @@ def run_full_cycle(proxy_state):
         proxy_state["consecutive_fails"] = proxy_state.get("consecutive_fails", 0) + 1
     else:
         proxy_state["consecutive_fails"] = 0
+    # Phase 60 REL-09: expose per-scraper codes so main() breaker can decide
+    # on any-success reset rather than just all-clean.
+    proxy_state["last_scraper_codes"] = {tag: r["code"] for tag, r in scraper_results.items()}
     return proxy_state
 
 def run_green_only_cycle(proxy_state):
@@ -573,6 +717,8 @@ def run_green_only_cycle(proxy_state):
     log(f"  MERGE: {merge_status}")
     log(f"  NOTIF: {notifier_status}")
     log("-" * 60)
+    # Phase 60 REL-09: expose GREEN code for breaker half_open probe decision.
+    proxy_state["last_scraper_codes"] = {tag: r["code"] for tag, r in scraper_results.items()}
     return proxy_state
 
 
@@ -622,9 +768,16 @@ def main():
     watchdog_thread = threading.Thread(target=_watchdog_loop, name="scheduler-watchdog", daemon=True)
     watchdog_thread.start()
 
+    breaker = _load_breaker_state()
+    log(
+        f"Loaded breaker state: {breaker.state} "
+        f"(cooldown_s={breaker.cooldown_s}, fails={breaker.fails})"
+    )
+
     proxy_state = {
         "active_proxy": None,
         "consecutive_fails": 0,
+        "last_scraper_codes": {},
     }
     next_all_due_at = time.monotonic()
     next_green_due_at = next_all_due_at + GREEN_TARGET_INTERVAL_SECONDS
@@ -658,19 +811,69 @@ def main():
                 continue
 
             if job == "all":
+                # Phase 60 REL-07: graduated circuit breaker drives cycle pacing.
+                breaker.tick()
+
+                if breaker.state == "open":
+                    remaining = int(breaker.seconds_until_cooldown_expires())
+                    if remaining % 30 == 0 or remaining < 5:
+                        log(
+                            f"Circuit breaker OPEN: {remaining}s until half_open "
+                            f"(cooldown_s={breaker.cooldown_s})"
+                        )
+                    next_all_due_at = time.monotonic() + min(float(remaining), 30.0)
+                    time.sleep(min(float(remaining), 5.0))
+                    continue
+
+                if breaker.state == "half_open":
+                    log("Circuit breaker HALF_OPEN: running GREEN-only probe")
+                    green_started = time.monotonic()
+                    proxy_state = run_green_only_cycle(proxy_state)
+                    green_code = proxy_state.get("last_scraper_codes", {}).get("GREEN", -1)
+                    if green_code == 0:
+                        breaker.record_any_success()
+                        log("Circuit breaker HALF_OPEN -> CLOSED (green probe succeeded)")
+                    else:
+                        breaker.record_all_failed()
+                        log(
+                            f"Circuit breaker HALF_OPEN -> OPEN "
+                            f"(cooldown_s={breaker.cooldown_s})"
+                        )
+                    _persist_breaker_state(breaker)
+                    estimated_green_runtime = max(1.0, time.monotonic() - green_started)
+                    next_green_due_at = green_started + GREEN_TARGET_INTERVAL_SECONDS
+                    next_all_due_at = green_started + FULL_CYCLE_INTERVAL_SECONDS
+                    continue
+
+                # breaker.state == "closed" -> normal operation
                 cycle_started = time.monotonic()
                 proxy_state = run_full_cycle(proxy_state)
-                fails = proxy_state.get("consecutive_fails", 0)
-                if fails >= 3:
-                    wait_seconds = 120
-                    log(f"Circuit breaker: {fails} consecutive failures. Waiting {wait_seconds // 60} min before next full cycle.")
+                last_codes = proxy_state.get("last_scraper_codes", {})
+                any_success = any(code == 0 for code in last_codes.values())
+                all_failed = bool(last_codes) and not any_success
+
+                if any_success:
+                    prior_state = breaker.state
+                    breaker.record_any_success()
+                    if prior_state != "closed" or breaker.fails > 0:
+                        log("Circuit breaker reset (at least one scraper succeeded this cycle)")
+                if all_failed:
+                    breaker.record_all_failed()
+
+                _persist_breaker_state(breaker)
+
+                if breaker.state == "open":
+                    log(
+                        f"Circuit breaker CLOSED -> OPEN "
+                        f"({breaker.fails} all-fail cycles; cooldown_s={breaker.cooldown_s})"
+                    )
                     try:
                         from proxy_manager import ProxyManager
                         pm = ProxyManager(log_func=log)
                         pm.refresh_proxy_list()
                     except Exception:
                         pass
-                    next_all_due_at = time.monotonic() + wait_seconds
+                    next_all_due_at = time.monotonic() + breaker.cooldown_s
                     next_green_due_at = next_all_due_at + GREEN_TARGET_INTERVAL_SECONDS
                 else:
                     next_all_due_at = cycle_started + FULL_CYCLE_INTERVAL_SECONDS

@@ -91,3 +91,7 @@ backend/parse_lens.py
 
 # xray-core binary (per-machine, downloaded by vless/installer.py)
 bin/
+
+# Phase 60 REL-10: persistent circuit breaker state (runtime-only)
+data/scheduler_state.json
+data/scheduler_state.json.tmp
