@@ -182,12 +182,15 @@ print(build_xray_config([n])[\"observatory\"][\"probeInterval\"])
             ;;
     esac
 
-    # 60-G: journal evidence of breaker-driven pacing in the last 10 min
-    COUNT=$(ssh "$EC2_HOST" "sudo journalctl -u saleapp-scheduler --since '10 minutes ago' --no-pager 2>/dev/null | grep -cE 'Circuit breaker|Loaded breaker state'" 2>/dev/null)
+    # 60-G: journal evidence of breaker integration. The breaker is silent
+    # in steady-state (only logs on boot and transitions); widen window to
+    # 60 min so a recent service restart counts as proof the integration
+    # is live without forcing a false negative on healthy nodes.
+    COUNT=$(ssh "$EC2_HOST" "sudo journalctl -u saleapp-scheduler --since '60 minutes ago' --no-pager 2>/dev/null | grep -cE 'Circuit breaker|Loaded breaker state'" 2>/dev/null)
     if [[ "${COUNT:-0}" -gt 0 ]]; then
-        _pass "60-G: scheduler emits breaker log lines ($COUNT in last 10 min)"
+        _pass "60-G: scheduler emits breaker log lines ($COUNT in last 60 min)"
     else
-        _fail "60-G: no breaker log lines in last 10 min — integration inactive"
+        _fail "60-G: no breaker log lines in last 60 min — integration inactive (try restarting scheduler)"
     fi
 fi
 
