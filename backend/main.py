@@ -876,7 +876,10 @@ def _load_cycle_state() -> dict:
 
 _SCHEDULER_STATE_PATH = os.path.join(DATA_DIR, "scheduler_state.json")
 _PROXY_EVENTS_PATH = os.path.join(DATA_DIR, "proxy_events.jsonl")
-_MERGED_PRODUCTS_PATH = os.path.join(DATA_DIR, "products.json")
+# OBS-02 talks about "merged products.json" but the file actually served
+# by /api/products and maintained by the scheduler's merge step is
+# `proposals.json` (see PROPOSALS_PATH above). Tracking that one here.
+_MERGED_PRODUCTS_PATH = PROPOSALS_PATH
 _XRAY_SOCKS_PORT = 10808
 _HEALTH_DEEP_RATE_LIMIT_S = 1.0  # 1 req/s/IP
 _DEEP_LAST_HIT: dict[str, float] = {}  # ip -> last request monotonic
