@@ -436,6 +436,21 @@ class VkusVillCart:
             _keepalive_hash = None
             _CART_ADD_ACTIVE_REG = None
 
+        # v1.20 PERF-07: acquire the shared-bridge semaphore for the lifetime
+        # of this cart-add call so scrapers doing detail-fetches yield to us
+        # (with a 10 s timeout). Lazy import so cart.vkusvill_api has no
+        # circular-import risk. Release happens in the existing finally block
+        # below; any exception between acquire and finally still releases.
+        _bridge_sem = None
+        _bridge_acquired = False
+        try:
+            from cart.bridge_semaphore import CART_ADD_IN_FLIGHT as _bridge_sem
+            _bridge_sem.acquire(blocking=True)
+            _bridge_acquired = True
+        except Exception:
+            _bridge_sem = None
+            _bridge_acquired = False
+
         try:
             t_start = time.monotonic()
             self._ensure_session()
@@ -555,6 +570,14 @@ class VkusVillCart:
 
             return result
         finally:
+            # v1.20 PERF-07: release the shared-bridge semaphore. Always runs,
+            # even on return/exception from any inner branch above.
+            if _bridge_acquired and _bridge_sem is not None:
+                try:
+                    _bridge_sem.release()
+                except ValueError:
+                    # Defensive: bounded semaphore guards against double release.
+                    pass
             # v1.20 D4: always clear the flag so a leaked cart-add can't
             # permanently block warmup for this user.
             if _keepalive_hash is not None and _CART_ADD_ACTIVE_REG is not None:
