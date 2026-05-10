@@ -88,6 +88,14 @@ Last activity: 2026-04-28 -- v1.16 phases 59-61 complete in autonomous run
 
 - Clarify stale banner freshness vs updated time — the stale warning is driven by per-color source age, while the header shows the latest merged payload time, so the UI currently looks contradictory even when backend freshness logic is correct.
 - Consider a small reliability milestone to formalize the Apr 22 scheduler SOCKS5 deadlock fix (commit `4c7f271`), extract learnings, and extend the proxy/preflight regression coverage so future hangs are caught sooner.
+- **xray bridge not reloaded after pool admission** (caused the 4.3-day May 6 → May 10 scraper outage; pool refresh rewrote config but systemd xray never reloaded; manual `systemctl restart saleapp-xray` fixed it; needs auto-restart on admission set change).
+- **observatory probeURL only marks nodes dead, never alive** (no "alive" events in 4 days of logs; leastPing balancer has no signal to rotate away from a stuck dead node).
+- **scheduler circuit breaker traps recoverable green failures** (171 fails accumulated during outage; no force-close endpoint; state persists across scheduler restart so breaker stays tripped even after bridge heals).
+- **VLESS admitted nodes go stale without dynamic rehealth** (admission probe passes once, VkusVill profiles the IP minutes later, no re-probe until cache TTL; pool looks healthy but live reachability is 0%).
+- **v1.16 admin.html missing Bug Reports (N) badge** (Phase 61 SC#3 backend exposes `bugReports.unread`, UI never reads it; about 20 lines needed in admin.html).
+- **v1.16 backend endpoints not deployed to EC2** (POST /api/bug-reports returns 404 in prod; EC2 is actually on v1.20 branch that never merged the v1.16 commits).
+- **v1.16 MiniApp bug-report UI not deployed to Vercel** (deployed bundle has no BugReportPanel, consoleBuffer, or the bug emoji; local builds fine, never shipped).
+- **local repo diverged from EC2 and Vercel production branches** (local=v1.16, EC2=v1.20, Vercel=pre-v1.16; commits written directly on EC2 never pushed back to origin — needs inventory + merge decision).
 
 ## Known Bugs
 
