@@ -32,6 +32,28 @@ CART_ADD_REQUEST_TIMEOUT = httpx.Timeout(CART_ADD_HOT_PATH_DEADLINE_SECONDS)
 SESSID_STALE_SECONDS = 1800  # 30 minutes — refresh sessid if older than this
 SESSID_REFRESH_TIMEOUT = httpx.Timeout(connect=10.0, read=10.0, write=3.0, pool=3.0)
 
+# ---------------------------------------------------------------------------
+# v1.20 Phase 64 — VkusVill API Surface Spike (scaffolding only).
+#
+# `USE_FAST_CART_ADD_ENDPOINT` is an OFF-by-default feature flag that will
+# gate a swap from the 16-field `basket_add.php` to a lighter endpoint once
+# the HAR-capture + ablation spike (64-03, operator-run) discovers one.
+# Until that URL is known the flag stays False and `FAST_CART_ADD_URL`
+# stays None — the `add()` hot path is byte-identical to the pre-Phase-64
+# behavior in that (default) configuration.
+#
+# Operator flow when the spike lands:
+#   1. HAR-capture an authenticated add-to-cart on vkusvill.ru
+#   2. Run `scripts/ablate_basket_add_payload.py` against candidate endpoints
+#   3. Fill `.planning/research/v1.20-API-SPIKE.md` Sections B/C/D/E
+#   4. If go-decision: populate `FAST_CART_ADD_URL` + implement the fast
+#      path inside `add()`, then flip `USE_FAST_CART_ADD_ENDPOINT=1` only
+#      after the 64-smoke check passes on EC2.
+# Until then the flag raising NotImplementedError when forced on is the
+# intentional guard against shipping an unfinished swap.
+USE_FAST_CART_ADD_ENDPOINT = os.environ.get("USE_FAST_CART_ADD_ENDPOINT", "0") == "1"
+FAST_CART_ADD_URL = None  # populated in Phase 64 if spike identifies a faster endpoint
+
 # xray balances each NEW SOCKS5 connection across its VLESS outbounds, so
 # a fresh httpx.Client after a TLS handshake timeout usually lands on a
 # different (healthy) backend. Retrying through the bridge 3x is cheap and
@@ -461,6 +483,22 @@ class VkusVillCart:
                 return {'success': False, 'error': 'No sessid available after session init', 'error_type': 'auth_expired'}
             if not self.user_id:
                 return {'success': False, 'error': 'No user_id available after session init', 'error_type': 'auth_expired'}
+
+            # v1.20 Phase 64: optional fast-path gate. OFF by default. Only
+            # trips when BOTH the env flag is "1" AND a FAST_CART_ADD_URL
+            # has been discovered by the HAR-capture + ablation spike. As
+            # of Phase 64-01 the URL is unknown so this raises — guarding
+            # against an operator flipping the flag before the endpoint
+            # swap lands. When USE_FAST_CART_ADD_ENDPOINT=0 (default) this
+            # branch is a no-op and the legacy path below runs byte-for-
+            # byte as it did pre-Phase-64.
+            if USE_FAST_CART_ADD_ENDPOINT and FAST_CART_ADD_URL:
+                raise NotImplementedError(
+                    "Phase 64 fast cart-add path is not yet implemented. "
+                    "Spike (64-03) must populate FAST_CART_ADD_URL and wire "
+                    "the fast path before USE_FAST_CART_ADD_ENDPOINT=1 is "
+                    "safe to flip. See .planning/research/v1.20-API-SPIKE.md."
+                )
 
             deadline = time.monotonic() + CART_ADD_HOT_PATH_DEADLINE_SECONDS
 
