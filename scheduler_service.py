@@ -18,6 +18,7 @@ import threading
 from datetime import datetime
 
 from vless.preflight import probe_bridge_alive
+from keepalive.warmup import start_warmup_loop
 
 # Fix Windows console encoding for emoji in scraper output
 if sys.platform == 'win32':
@@ -767,6 +768,19 @@ def main():
     _heartbeat()
     watchdog_thread = threading.Thread(target=_watchdog_loop, name="scheduler-watchdog", daemon=True)
     watchdog_thread.start()
+
+    # v1.20 PERF-03/04/05: sessid keep-alive + on-app-open warmup daemon.
+    # See .planning/phases/62-sessid-keepalive-warmup/62-CONTEXT.md for
+    # decisions D1-D4. Thread respects stop_event; scheduler watchdog covers
+    # process-level death. Module handles its own retries inside the loop.
+    _keepalive_stop_event = threading.Event()
+    keepalive_thread = threading.Thread(
+        target=start_warmup_loop,
+        args=(_keepalive_stop_event,),
+        name="scheduler-keepalive",
+        daemon=True,
+    )
+    keepalive_thread.start()
 
     breaker = _load_breaker_state()
     log(
