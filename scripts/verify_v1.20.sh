@@ -243,6 +243,92 @@ if [[ "$PHASE" == "65" || "$PHASE" == "all" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
+# Phase 66: Cart Hot-Path Observability (OBS-04, OBS-05)
+# ---------------------------------------------------------------------------
+if [[ "$PHASE" == "66" || "$PHASE" == "all" ]]; then
+    _banner "Phase 66 — Cart Hot-Path Observability"
+
+    # 66-A: helpers importable + locked constants
+    if ssh "$EC2_HOST" "cd /home/ubuntu/saleapp && python3 -c '
+from backend.main import (
+    _compute_cart_add_block, _emit_cart_event, _read_sessid_age_seconds,
+    _warmup_hit_for_user, _has_concurrent_recalc,
+    _CART_EVENTS_PATH, _HEALTH_CART_ADD_DEGRADED_P95_MS, _HEALTH_CART_ADD_UNHEALTHY_P95_MS,
+    _CART_EVENT_WARMUP_FRESHNESS_S, _CART_EVENT_CONCURRENT_RECALC_WINDOW_S,
+)
+assert _HEALTH_CART_ADD_DEGRADED_P95_MS == 6000
+assert _HEALTH_CART_ADD_UNHEALTHY_P95_MS == 12000
+assert _CART_EVENT_WARMUP_FRESHNESS_S == 300.0
+assert _CART_EVENT_CONCURRENT_RECALC_WINDOW_S == 12.0
+assert _CART_EVENTS_PATH.endswith(\"data/cart_events.jsonl\")
+'"; then
+        _pass "66-A: Phase 66 helpers and constants importable on EC2"
+    else
+        _fail "66-A: import or constant check FAILED on EC2 — deploy incomplete"
+    fi
+
+    # 66-B: /api/health/deep responds with structured body; cart_add block shape valid when present
+    BACKEND_PORT="${BACKEND_PORT:-8000}"
+    HEALTH_OK=$(ssh "$EC2_HOST" "curl -s --max-time 8 http://127.0.0.1:$BACKEND_PORT/api/health/deep | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception as e:
+    print(f\"BAD_JSON:{e}\"); sys.exit(0)
+if \"status\" not in d or \"reasons\" not in d:
+    print(\"MISSING_BASE_KEYS\"); sys.exit(0)
+if \"cart_add\" in d:
+    required = {\"p50_ms\",\"p95_ms\",\"p99_ms\",\"success_rate_1h\",\"success_rate_24h\",\"double_add_rate_1h\",\"window_sample_1h\",\"window_sample_24h\"}
+    missing = required - set(d[\"cart_add\"].keys())
+    if missing:
+        print(\"CART_ADD_MISSING_KEYS:\" + \",\".join(sorted(missing))); sys.exit(0)
+    print(\"OK_WITH_BLOCK\")
+else:
+    print(\"OK_NO_BLOCK\")
+' 2>/dev/null")
+    if [[ "$HEALTH_OK" == "OK_WITH_BLOCK" || "$HEALTH_OK" == "OK_NO_BLOCK" ]]; then
+        _pass "66-B: /api/health/deep returns valid body (cart_add: $HEALTH_OK)"
+    else
+        _fail "66-B: /api/health/deep shape check: $HEALTH_OK"
+    fi
+
+    # 66-C: data/cart_events.jsonl schema valid on most recent line if file exists
+    JSONL_OK=$(ssh "$EC2_HOST" "python3 - <<'PY'
+import json, os
+p = '/home/ubuntu/saleapp/data/cart_events.jsonl'
+if not os.path.exists(p):
+    print('NO_FILE'); raise SystemExit(0)
+last = None
+with open(p) as f:
+    for ln in f:
+        ln = ln.strip()
+        if ln:
+            last = ln
+if not last:
+    print('EMPTY'); raise SystemExit(0)
+try:
+    d = json.loads(last)
+except Exception:
+    print('BAD_JSON'); raise SystemExit(0)
+required = {'timestamp_iso','user_id_hash','attempt_id','product_id','duration_ms','success','error_type','client_request_id','sessid_age_s','warmup_hit','concurrent_recalc'}
+missing = required - set(d.keys())
+extra = set(d.keys()) - required
+if missing:
+    print('MISSING_KEYS:' + ','.join(sorted(missing))); raise SystemExit(0)
+if extra:
+    print('EXTRA_KEYS:' + ','.join(sorted(extra))); raise SystemExit(0)
+print('OK')
+PY" 2>/dev/null)
+    if [[ "$JSONL_OK" == "OK" ]]; then
+        _pass "66-C: data/cart_events.jsonl schema valid (11 keys, last line)"
+    elif [[ "$JSONL_OK" == "NO_FILE" || "$JSONL_OK" == "EMPTY" ]]; then
+        _pass "66-C: data/cart_events.jsonl absent or empty (no cart-add traffic yet — acceptable)"
+    else
+        _fail "66-C: data/cart_events.jsonl schema: $JSONL_OK"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
 # Cross-phase: v1.19 regression (OPS-11 carryover)
 # ---------------------------------------------------------------------------
 if [[ "$PHASE" == "all" ]]; then
