@@ -207,6 +207,42 @@ if [[ "$PHASE" == "64" || "$PHASE" == "all" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
+# Phase 65: Frontend Pending-Polling + Idempotency (UX-01, UX-02, UX-03)
+# ---------------------------------------------------------------------------
+if [[ "$PHASE" == "65" || "$PHASE" == "all" ]]; then
+    _banner "Phase 65 — Frontend Pending-Polling + Idempotency"
+
+    # 65-A: backend exports _cart_add_attempt_by_client_id dict
+    if ssh "$EC2_HOST" "cd /home/ubuntu/saleapp && python3 -c 'from backend.main import _cart_add_attempt_by_client_id; assert type(_cart_add_attempt_by_client_id).__name__ == \"dict\"; print(\"dict\")'" 2>/dev/null | grep -q '^dict$'; then
+        _pass "65-A: backend exports _cart_add_attempt_by_client_id as dict"
+    else
+        _fail "65-A: _cart_add_attempt_by_client_id missing or wrong type"
+    fi
+
+    # 65-B: /api/cart/add-status-by-client-id/nonexistent-id returns 404
+    BACKEND_PORT="${BACKEND_PORT:-8000}"
+    STATUS_CODE=$(ssh "$EC2_HOST" "curl -s -o /dev/null -w '%{http_code}' --max-time 5 'http://127.0.0.1:$BACKEND_PORT/api/cart/add-status-by-client-id/nonexistent-id-smoke-65b' -H 'X-Telegram-User-Id: 0'" 2>/dev/null || echo '000')
+    if [[ "$STATUS_CODE" == "404" ]]; then
+        _pass "65-B: /api/cart/add-status-by-client-id/unknown returns 404"
+    else
+        _fail "65-B: expected 404, got HTTP $STATUS_CODE"
+    fi
+
+    # 65-C: frontend AbortController is 5000ms (local repo check — not EC2;
+    # the miniapp is built from this same tree and deployed to Vercel).
+    REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+    if grep -q "controller.abort(), 5000" "$REPO_ROOT/miniapp/src/App.jsx"; then
+        if ! grep -q "controller.abort(), 8000" "$REPO_ROOT/miniapp/src/App.jsx"; then
+            _pass "65-C: miniapp/src/App.jsx AbortController is 5000ms (8000ms removed)"
+        else
+            _fail "65-C: App.jsx still contains controller.abort(), 8000 — revert incomplete"
+        fi
+    else
+        _fail "65-C: App.jsx missing controller.abort(), 5000 — Phase 65 frontend change not applied"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
 # Cross-phase: v1.19 regression (OPS-11 carryover)
 # ---------------------------------------------------------------------------
 if [[ "$PHASE" == "all" ]]; then
