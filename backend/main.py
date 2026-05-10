@@ -3264,6 +3264,12 @@ _CART_PENDING_DEDUPE_WINDOW_SECONDS = 5.0
 _CART_PENDING_ATTEMPT_TTL_SECONDS = 30.0
 _cart_add_attempts: dict[str, dict] = {}
 _cart_add_attempt_index: dict[tuple[str, int], str] = {}
+# v1.20 Phase 65 UX-03: client_request_id -> attempt_id secondary index.
+# Same client_request_id always routes to the same attempt (prevents a
+# retry from firing a second basket_add.php when the first one is still
+# in flight). Pruned in _prune_cart_add_attempts alongside the primary
+# (user_id, product_id) index. Guarded by _cart_add_attempts_lock.
+_cart_add_attempt_by_client_id: dict[str, str] = {}
 _cart_add_attempts_lock = threading.Lock()
 
 
@@ -3288,6 +3294,12 @@ def _prune_cart_add_attempts(now: float | None = None):
         key = (str(attempt.get("user_id")), int(attempt.get("product_id", 0)))
         if _cart_add_attempt_index.get(key) == attempt_id:
             _cart_add_attempt_index.pop(key, None)
+        # v1.20 Phase 65 UX-03: drop client_request_id index when the
+        # underlying attempt expires so a later retry with the same
+        # client_request_id does not latch onto a stale attempt_id.
+        cri = attempt.get("client_request_id")
+        if cri and _cart_add_attempt_by_client_id.get(cri) == attempt_id:
+            _cart_add_attempt_by_client_id.pop(cri, None)
 
 
 def _log_cart_attempt_event(event: str, attempt: dict):
@@ -3349,6 +3361,21 @@ def _get_or_create_pending_cart_attempt(user_id: str, product_id: int, client_re
     now = _time.time()
     with _cart_add_attempts_lock:
         _prune_cart_add_attempts(now)
+        # v1.20 Phase 65 UX-03: client_request_id wins over the
+        # (user_id, product_id) dedupe. Same client_request_id must route
+        # to the same attempt even across retries, different products, or
+        # products that missed the 5 s pair dedupe window. Gate runs FIRST
+        # so the pair-based dedupe never clobbers an idempotent retry.
+        if client_request_id:
+            existing_by_cri = _cart_add_attempt_by_client_id.get(client_request_id)
+            if existing_by_cri:
+                existing = _cart_add_attempts.get(existing_by_cri)
+                if existing:
+                    existing["source"] = "client_request_id_dedupe"
+                    return existing.copy(), False
+                # Stale pointer — drop and fall through to the next gate.
+                _cart_add_attempt_by_client_id.pop(client_request_id, None)
+
         key = (str(user_id), int(product_id))
         existing_id = _cart_add_attempt_index.get(key)
         if existing_id:
@@ -3356,6 +3383,11 @@ def _get_or_create_pending_cart_attempt(user_id: str, product_id: int, client_re
             if existing and existing.get("status") == "pending" and now - existing.get("created_at", now) <= _CART_PENDING_DEDUPE_WINDOW_SECONDS:
                 existing["source"] = "dedupe_reuse"
                 existing["client_request_id"] = client_request_id or existing.get("client_request_id")
+                # Register the client_request_id -> attempt_id mapping so
+                # a subsequent retry with this same client_request_id hits
+                # the new gate above instead of falling through again.
+                if client_request_id:
+                    _cart_add_attempt_by_client_id[client_request_id] = existing_id
                 return existing.copy(), False
 
         attempt_id = uuid.uuid4().hex
@@ -3378,6 +3410,8 @@ def _get_or_create_pending_cart_attempt(user_id: str, product_id: int, client_re
         }
         _cart_add_attempts[attempt_id] = attempt
         _cart_add_attempt_index[key] = attempt_id
+        if client_request_id:
+            _cart_add_attempt_by_client_id[client_request_id] = attempt_id
         _log_cart_attempt_event("created", attempt)
         return attempt.copy(), True
 
@@ -3743,6 +3777,42 @@ def cart_add_status_endpoint(attempt_id: str, request: Request):
     )
     logger.info(f"[CART-STATUS] STILL PENDING | attempt={attempt_id} error={cart_state.get('error')} | {(_t.monotonic()-t0)*1000:.0f}ms")
     return _serialize_cart_add_attempt(pending_attempt or attempt_snapshot)
+
+
+@app.get("/api/cart/add-status-by-client-id/{client_request_id}")
+def cart_add_status_by_client_id_endpoint(client_request_id: str, request: Request):
+    """v1.20 Phase 65 UX-01/UX-03: look up a cart-add attempt by the
+    `client_request_id` the miniapp minted when it POSTed `/api/cart/add`.
+
+    When the frontend's 5 s `AbortController` fires before the backend has
+    returned the `attempt_id`, the client still has its own
+    `client_request_id` and polls THIS endpoint until the attempt resolves.
+    Returns the same `_serialize_cart_add_attempt` payload as
+    `/api/cart/add-status/{attempt_id}`. 404 when the client_request_id is
+    unknown (e.g. attempt not yet created server-side — client retries).
+    """
+    import time as _t
+    t0 = _t.monotonic()
+    with _cart_add_attempts_lock:
+        _prune_cart_add_attempts()
+        attempt_id = _cart_add_attempt_by_client_id.get(client_request_id)
+        attempt = _cart_add_attempts.get(attempt_id) if attempt_id else None
+        if not attempt:
+            logger.warning(f"[CART-STATUS-CRI] NOT FOUND | cri={client_request_id} | {(_t.monotonic()-t0)*1000:.0f}ms")
+            raise HTTPException(status_code=404, detail="Cart add attempt not found")
+        attempt_snapshot = attempt.copy()
+
+    user_id = str(attempt_snapshot["user_id"])
+    product_id = attempt_snapshot["product_id"]
+    logger.info(f"[CART-STATUS-CRI] POLL | cri={client_request_id} attempt={attempt_snapshot['attempt_id']} user={user_id} product={product_id} current_status={attempt_snapshot['status']}")
+    _validate_user_header(request, user_id)
+
+    # Delegate to the existing status endpoint implementation so polling by
+    # client_request_id is functionally equivalent to polling by attempt_id
+    # (same expiry handling, same pending->success/failed transitions, same
+    # serialization). Keeps /api/cart/add-status/{attempt_id} as the single
+    # source of truth for status semantics.
+    return cart_add_status_endpoint(attempt_snapshot["attempt_id"], request)
 
 
 @app.get("/api/cart/items/{user_id}")
