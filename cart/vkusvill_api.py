@@ -411,123 +411,157 @@ class VkusVillCart:
         Returns:
             dict with keys: success (bool), product_name, cart_total, error
         """
-        t_start = time.monotonic()
-        self._ensure_session()
-        t_session = time.monotonic()
-        logger.info(f"🛒 [CART-ADD] product={product_id} | _ensure_session took {(t_session - t_start)*1000:.0f}ms")
+        # v1.20 D4: flag cart-add as active so the keepalive daemon can
+        # cancel any in-flight warmup for this user. Cleared in the
+        # finally below. Best-effort; lazy import avoids a circular with
+        # keepalive.warmup.
+        _keepalive_hash: "str | None" = None
+        _CART_ADD_ACTIVE_REG = None
+        try:
+            from keepalive.warmup import (
+                CART_ADD_ACTIVE as _CART_ADD_ACTIVE_REG,
+                hash_user_id as _kp_hash,
+            )
+            ident = str(self.user_id) if self.user_id else ""
+            if not ident:
+                # user_id may not be loaded yet (filled during _ensure_session).
+                # Fall back to cookies file basename (stable per user) so the
+                # hash matches what keepalive.warmup._collect_linked_users
+                # produces for this session.
+                ident = os.path.basename(self.cookies_path or "")
+            if ident:
+                _keepalive_hash = _kp_hash(ident)
+                _CART_ADD_ACTIVE_REG[_keepalive_hash] = time.monotonic()
+        except Exception:
+            _keepalive_hash = None
+            _CART_ADD_ACTIVE_REG = None
 
-        if not self.sessid:
-            return {'success': False, 'error': 'No sessid available after session init', 'error_type': 'auth_expired'}
-        if not self.user_id:
-            return {'success': False, 'error': 'No user_id available after session init', 'error_type': 'auth_expired'}
+        try:
+            t_start = time.monotonic()
+            self._ensure_session()
+            t_session = time.monotonic()
+            logger.info(f"🛒 [CART-ADD] product={product_id} | _ensure_session took {(t_session - t_start)*1000:.0f}ms")
 
-        deadline = time.monotonic() + CART_ADD_HOT_PATH_DEADLINE_SECONDS
+            if not self.sessid:
+                return {'success': False, 'error': 'No sessid available after session init', 'error_type': 'auth_expired'}
+            if not self.user_id:
+                return {'success': False, 'error': 'No user_id available after session init', 'error_type': 'auth_expired'}
 
-        last_result = None
-        for _ in range(quantity):
-            is_green_val = 1 if is_green else 0
+            deadline = time.monotonic() + CART_ADD_HOT_PATH_DEADLINE_SECONDS
 
-            # Full 16-field payload (see docs/memory/KNOWLEDGE_BASE.md)
-            data = {
-                'id': product_id,
-                'xmlid': product_id,
-                'max': 1,
-                'delivery_no_set': 'N',
-                'koef': 1,
-                'step': 1,
-                'coupon': '',
-                'isExperiment': 'N',
-                'isOnlyOnline': '',
-                'isGreen': is_green_val,
-                'user_id': self.user_id,
-                'skip_analogs': '',
-                'is_app': '',
-                'is_default_button': 'Y',
-                'cssInited': 'N',
-                'price_type': price_type,
-            }
-            if self.sessid:
-                data['sessid'] = self.sessid
-            
-            try:
-                request_timeout_seconds = max(0.1, deadline - time.monotonic())
-                logger.info(f"🛒 [CART-ADD] product={product_id} | sending request, timeout={request_timeout_seconds:.2f}s, elapsed={(time.monotonic() - t_start)*1000:.0f}ms")
-                t_req = time.monotonic()
-                last_result = self._request(
-                    BASKET_ADD_URL,
-                    data,
-                    timeout=httpx.Timeout(request_timeout_seconds),
-                )
-                logger.info(f"🛒 [CART-ADD] product={product_id} | VkusVill responded in {(time.monotonic() - t_req)*1000:.0f}ms, total={(time.monotonic() - t_start)*1000:.0f}ms")
-            except httpx.TimeoutException as e:
-                logger.error(f"🛒 [CART-ADD] product={product_id} | TIMEOUT after {(time.monotonic() - t_start)*1000:.0f}ms: {e}")
-                return {
-                    'success': False,
-                    'pending': True,
-                    'error': 'pending_timeout',
-                    'error_type': 'pending_timeout',
-                    'raw': {'deadline_seconds': CART_ADD_HOT_PATH_DEADLINE_SECONDS},
+            last_result = None
+            for _ in range(quantity):
+                is_green_val = 1 if is_green else 0
+
+                # Full 16-field payload (see docs/memory/KNOWLEDGE_BASE.md)
+                data = {
+                    'id': product_id,
+                    'xmlid': product_id,
+                    'max': 1,
+                    'delivery_no_set': 'N',
+                    'koef': 1,
+                    'step': 1,
+                    'coupon': '',
+                    'isExperiment': 'N',
+                    'isOnlyOnline': '',
+                    'isGreen': is_green_val,
+                    'user_id': self.user_id,
+                    'skip_analogs': '',
+                    'is_app': '',
+                    'is_default_button': 'Y',
+                    'cssInited': 'N',
+                    'price_type': price_type,
                 }
-            except httpx.ConnectError as e:
-                logger.error(f"🛒 [CART-ADD] product={product_id} | ConnectError after {(time.monotonic() - t_start)*1000:.0f}ms: {e}")
-                return {'success': False, 'error': str(e), 'error_type': 'transient'}
-            except httpx.HTTPError as e:
-                logger.error(f"🛒 [CART-ADD] product={product_id} | HTTP error after {(time.monotonic() - t_start)*1000:.0f}ms: {e}")
-                return {'success': False, 'error': str(e), 'error_type': 'http'}
-            except json.JSONDecodeError:
-                logger.error(f"🛒 [CART-ADD] product={product_id} | non-JSON after {(time.monotonic() - t_start)*1000:.0f}ms")
-                return {'success': False, 'error': 'Invalid response from VkusVill', 'error_type': 'invalid_response'}
-        
-        if not last_result:
-            return {'success': False, 'error': 'No response'}
-        
-        # Parse response
-        success_val = last_result.get('success')
-        success = str(success_val).upper() in ['Y', 'TRUE', '1']
-        error = last_result.get('error', '')
-        
-        # Classify error_type based on response content
-        error_type = None
-        if not success:
-            popup_analogs = last_result.get('POPUP_ANALOGS')
-            basket_added = last_result.get('basketAdded')
-            if popup_analogs and popup_analogs != 'N':
-                error = "Товар распродан или недоступен для заказа"
-                error_type = 'product_gone'
-                logger.warning(f"Failed to add {product_id}: {error}")
-            elif not basket_added and success_val and str(success_val).upper() == 'N':
-                error_type = 'auth_expired'
-            else:
-                error_type = last_result.get('error_type', 'api')
-            # Log raw response for debugging (truncated to 500 chars, never sent to frontend)
-            logger.warning(f"VkusVill raw response for product={product_id}: {json.dumps(last_result, ensure_ascii=False, default=str)[:500]}")
+                if self.sessid:
+                    data['sessid'] = self.sessid
 
-        result = {
-            'success': success,
-            'error': error,
-            'error_type': error_type,
-            'raw': last_result,
-        }
-        
-        if success:
-            ba = last_result.get('basketAdded', {})
-            totals = last_result.get('totals', {})
-            result.update({
-                'product_name': ba.get('NAME', ''),
-                'product_id': ba.get('PRODUCT_ID'),
-                'quantity': ba.get('Q', 0),
-                'price': ba.get('PRICE', 0),
-                'cart_items': totals.get('Q_ITEMS', 0),
-                'cart_total': totals.get('PRICE_FINAL', 0),
-                'can_buy': ba.get('CAN_BUY') == 'Y' or ba.get('CAN_BUY') is True,
-                'max_q': ba.get('MAX_Q', 0),
-            })
-            logger.info(f"✅ Added {ba.get('NAME', product_id)} to cart "
-                        f"(Q={ba.get('Q')}, Cart: {totals.get('Q_ITEMS')} items)")
-        else:
-            logger.warning(f"❌ Failed to add {product_id}: {error} (type={type(success_val)}, val={success_val})")
-        
-        return result
+                try:
+                    request_timeout_seconds = max(0.1, deadline - time.monotonic())
+                    logger.info(f"🛒 [CART-ADD] product={product_id} | sending request, timeout={request_timeout_seconds:.2f}s, elapsed={(time.monotonic() - t_start)*1000:.0f}ms")
+                    t_req = time.monotonic()
+                    last_result = self._request(
+                        BASKET_ADD_URL,
+                        data,
+                        timeout=httpx.Timeout(request_timeout_seconds),
+                    )
+                    logger.info(f"🛒 [CART-ADD] product={product_id} | VkusVill responded in {(time.monotonic() - t_req)*1000:.0f}ms, total={(time.monotonic() - t_start)*1000:.0f}ms")
+                except httpx.TimeoutException as e:
+                    logger.error(f"🛒 [CART-ADD] product={product_id} | TIMEOUT after {(time.monotonic() - t_start)*1000:.0f}ms: {e}")
+                    return {
+                        'success': False,
+                        'pending': True,
+                        'error': 'pending_timeout',
+                        'error_type': 'pending_timeout',
+                        'raw': {'deadline_seconds': CART_ADD_HOT_PATH_DEADLINE_SECONDS},
+                    }
+                except httpx.ConnectError as e:
+                    logger.error(f"🛒 [CART-ADD] product={product_id} | ConnectError after {(time.monotonic() - t_start)*1000:.0f}ms: {e}")
+                    return {'success': False, 'error': str(e), 'error_type': 'transient'}
+                except httpx.HTTPError as e:
+                    logger.error(f"🛒 [CART-ADD] product={product_id} | HTTP error after {(time.monotonic() - t_start)*1000:.0f}ms: {e}")
+                    return {'success': False, 'error': str(e), 'error_type': 'http'}
+                except json.JSONDecodeError:
+                    logger.error(f"🛒 [CART-ADD] product={product_id} | non-JSON after {(time.monotonic() - t_start)*1000:.0f}ms")
+                    return {'success': False, 'error': 'Invalid response from VkusVill', 'error_type': 'invalid_response'}
+
+            if not last_result:
+                return {'success': False, 'error': 'No response'}
+
+            # Parse response
+            success_val = last_result.get('success')
+            success = str(success_val).upper() in ['Y', 'TRUE', '1']
+            error = last_result.get('error', '')
+
+            # Classify error_type based on response content
+            error_type = None
+            if not success:
+                popup_analogs = last_result.get('POPUP_ANALOGS')
+                basket_added = last_result.get('basketAdded')
+                if popup_analogs and popup_analogs != 'N':
+                    error = "Товар распродан или недоступен для заказа"
+                    error_type = 'product_gone'
+                    logger.warning(f"Failed to add {product_id}: {error}")
+                elif not basket_added and success_val and str(success_val).upper() == 'N':
+                    error_type = 'auth_expired'
+                else:
+                    error_type = last_result.get('error_type', 'api')
+                # Log raw response for debugging (truncated to 500 chars, never sent to frontend)
+                logger.warning(f"VkusVill raw response for product={product_id}: {json.dumps(last_result, ensure_ascii=False, default=str)[:500]}")
+
+            result = {
+                'success': success,
+                'error': error,
+                'error_type': error_type,
+                'raw': last_result,
+            }
+
+            if success:
+                ba = last_result.get('basketAdded', {})
+                totals = last_result.get('totals', {})
+                result.update({
+                    'product_name': ba.get('NAME', ''),
+                    'product_id': ba.get('PRODUCT_ID'),
+                    'quantity': ba.get('Q', 0),
+                    'price': ba.get('PRICE', 0),
+                    'cart_items': totals.get('Q_ITEMS', 0),
+                    'cart_total': totals.get('PRICE_FINAL', 0),
+                    'can_buy': ba.get('CAN_BUY') == 'Y' or ba.get('CAN_BUY') is True,
+                    'max_q': ba.get('MAX_Q', 0),
+                })
+                logger.info(f"✅ Added {ba.get('NAME', product_id)} to cart "
+                            f"(Q={ba.get('Q')}, Cart: {totals.get('Q_ITEMS')} items)")
+            else:
+                logger.warning(f"❌ Failed to add {product_id}: {error} (type={type(success_val)}, val={success_val})")
+
+            return result
+        finally:
+            # v1.20 D4: always clear the flag so a leaked cart-add can't
+            # permanently block warmup for this user.
+            if _keepalive_hash is not None and _CART_ADD_ACTIVE_REG is not None:
+                try:
+                    _CART_ADD_ACTIVE_REG.pop(_keepalive_hash, None)
+                except Exception:
+                    pass
     
     def get_cart(self) -> dict:
         """

@@ -67,6 +67,7 @@ from database.db import Database
 # PlaywrightScraper removed — migrated to nodriver
 from cart.vkusvill_api import VkusVillCart
 from bot.auth import get_user_cookies_path
+from keepalive.warmup import NUDGE_QUEUE, hash_user_id
 
 logging.basicConfig(
     level=logging.INFO,
@@ -1263,6 +1264,13 @@ def generate_link(req: LinkRequest):
 def link_status(guest_id: str):
     """Check if a guest account has been linked to Telegram."""
     telegram_id = db.get_linked_telegram_id(guest_id)
+    # v1.20 PERF-04: on-app-open warmup nudge for linked users only.
+    # Non-blocking; anti-spam + race-cancel handled inside the daemon.
+    if telegram_id is not None:
+        try:
+            NUDGE_QUEUE.put_nowait(hash_user_id(str(telegram_id)))
+        except Exception:
+            logger.debug("keepalive nudge (link_status) dropped", exc_info=False)
     return {"linked": telegram_id is not None, "telegram_id": telegram_id}
 
 
@@ -3737,6 +3745,12 @@ def cart_add_status_endpoint(attempt_id: str, request: Request):
 def cart_items_endpoint(user_id: str, request: Request):
     """Get current VkusVill cart items for a user."""
     _validate_user_header(request, user_id)
+    # v1.20 PERF-04: on-app-open warmup nudge. Non-blocking; the daemon
+    # checks anti-spam (<=1/user/15 min) + CART_ADD_ACTIVE flag.
+    try:
+        NUDGE_QUEUE.put_nowait(hash_user_id(str(user_id)))
+    except Exception:
+        logger.debug("keepalive nudge (cart_items) dropped", exc_info=False)
     cookies_path = _resolve_cart_cookies_path(user_id)
     if not os.path.exists(cookies_path):
         raise HTTPException(status_code=401, detail="Не авторизованы")
