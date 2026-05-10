@@ -872,6 +872,227 @@ def _load_cycle_state() -> dict:
         return {"available": False, "error": str(exc)}
     return {"available": False}
 
+
+# ─── v1.19 Reliability (Phase 61 REL-11, REL-12, OBS-01, OBS-02, OBS-03) ─────
+
+_SCHEDULER_STATE_PATH = os.path.join(DATA_DIR, "scheduler_state.json")
+_PROXY_EVENTS_PATH = os.path.join(DATA_DIR, "proxy_events.jsonl")
+# OBS-02 talks about "merged products.json" but the file actually served
+# by /api/products and maintained by the scheduler's merge step is
+# `proposals.json` (see PROPOSALS_PATH above). Tracking that one here.
+_MERGED_PRODUCTS_PATH = PROPOSALS_PATH
+_XRAY_SOCKS_PORT = 10808
+_HEALTH_DEEP_RATE_LIMIT_S = 1.0  # 1 req/s/IP
+_DEEP_LAST_HIT: dict[str, float] = {}  # ip -> last request monotonic
+_DEEP_MAX_CYCLE_AGE_S = 15 * 60  # OBS-02: > 15 min cycle age is degraded
+_DEEP_MAX_PRODUCTS_AGE_S = 15 * 60  # OBS-02: > 15 min products.json mtime is degraded
+
+
+def _load_breaker_snapshot() -> dict:
+    """Read the scheduler's persisted breaker state. Non-blocking; best-effort.
+
+    Returns a dict with ``state``, ``cooldown_s``, ``fails``, ``available``.
+    ``available=False`` when the file is missing or malformed (scheduler
+    hasn't booted yet, or the file is corrupt — Phase 60's load-time
+    fallback will recreate it on next restart).
+    """
+    if not os.path.exists(_SCHEDULER_STATE_PATH):
+        return {"available": False, "state": "unknown"}
+    try:
+        with open(_SCHEDULER_STATE_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        state = data.get("state", "unknown")
+        return {
+            "available": True,
+            "state": state if state in ("closed", "open", "half_open") else "unknown",
+            "cooldown_s": int(data.get("cooldown_s", 0)),
+            "fails": int(data.get("fails", 0)),
+        }
+    except (OSError, json.JSONDecodeError, ValueError, TypeError):
+        return {"available": False, "state": "unknown"}
+
+
+def _check_xray_listening() -> dict:
+    """TCP-probe 127.0.0.1:10808 to confirm the xray SOCKS5 bridge is up."""
+    import socket as _socket
+    try:
+        with _socket.create_connection(("127.0.0.1", _XRAY_SOCKS_PORT), timeout=1.0):
+            return {"listening": True, "port": _XRAY_SOCKS_PORT}
+    except OSError:
+        return {"listening": False, "port": _XRAY_SOCKS_PORT}
+
+
+def _pool_snapshot_for_health() -> dict:
+    """Best-effort pool snapshot via VlessProxyManager.pool_snapshot().
+
+    We lazy-import and instantiate to avoid coupling the HTTP module to
+    xray startup on app boot. Returns ``{"available": False}`` if the
+    VLESS stack isn't ready (e.g. first request before any pool refresh).
+    """
+    try:
+        from proxy_manager import ProxyManager  # shim -> VlessProxyManager
+        pm = ProxyManager(log_func=lambda msg: None)
+        snap = pm.pool_snapshot()
+        snap["available"] = True
+        return snap
+    except Exception as exc:  # noqa: BLE001 — health endpoint must never raise
+        return {"available": False, "error": type(exc).__name__}
+
+
+def _last_cycle_age_seconds() -> Optional[float]:
+    """Seconds since the last completed cycle was written.
+
+    Reads ``cycle_started_at`` from scrape_cycle_state.json because
+    ``cycle_finished_at`` is only populated after merge + notifier; the
+    "age" we care about is "how long since scraping worked." ``None`` if
+    the state file is missing or unparseable.
+    """
+    cycle = _load_cycle_state()
+    if not cycle.get("available"):
+        return None
+    ts = cycle.get("cycle_finished_at") or cycle.get("cycle_started_at")
+    if not ts:
+        return None
+    try:
+        dt = datetime.fromisoformat(ts)
+    except (TypeError, ValueError):
+        return None
+    return max(0.0, (datetime.now() - dt).total_seconds())
+
+
+def _products_mtime_age_seconds() -> Optional[float]:
+    """Seconds since the merged ``products.json`` was last written.
+
+    OBS-02 healthy criterion: this should be ≤ 15 min in steady state,
+    since the scheduler's full cycle target is 5 min. ``None`` if the
+    file is missing.
+    """
+    if not os.path.exists(_MERGED_PRODUCTS_PATH):
+        return None
+    try:
+        return max(0.0, _time.time() - os.path.getmtime(_MERGED_PRODUCTS_PATH))
+    except OSError:
+        return None
+
+
+def _build_reliability_snapshot() -> dict:
+    """Consolidated v1.19 reliability view used by /api/health/deep + /admin/status.
+
+    Strict OBS-02 compliance. Healthy criteria (all-of):
+      1. ``pool_size >= MIN_HEALTHY``
+      2. circuit breaker phase ∈ {``closed``, ``half_open``}
+      3. last full cycle ≤ 15 min ago
+      4. xray process running (TCP probe of 10808)
+      5. merged ``products.json`` mtime ≤ 15 min ago
+
+    Severity mapping (OBS-02):
+      * 0 failed     -> healthy (HTTP 200)
+      * 1-2 failed   -> degraded (HTTP 503)
+      * 3+ failed    -> unhealthy (HTTP 503)
+      * Critical override (xray dead OR no cycle state ever) -> unhealthy
+    """
+    pool = _pool_snapshot_for_health()
+    breaker = _load_breaker_snapshot()
+    xray = _check_xray_listening()
+    cycle_age = _last_cycle_age_seconds()
+    products_age = _products_mtime_age_seconds()
+
+    reasons: list[str] = []
+
+    # Criterion 4: xray running
+    if not xray.get("listening"):
+        reasons.append("xray_bridge_not_listening")
+
+    # Criterion 1: pool size
+    if pool.get("available"):
+        size = int(pool.get("size", 0))
+        min_healthy = int(pool.get("min_healthy", 0))
+        if size < min_healthy:
+            reasons.append(f"pool_below_min_healthy:{size}_lt_{min_healthy}")
+    else:
+        reasons.append("pool_snapshot_unavailable")
+
+    # Criterion 2: breaker phase ∈ {closed, half_open}
+    # Per OBS-02, half_open IS healthy (recovery probe in progress).
+    # Only open trips the alert.
+    if breaker.get("available"):
+        state = breaker.get("state")
+        if state == "open":
+            reasons.append("breaker_open")
+        # half_open is healthy per OBS-02 spec — no reason added
+    else:
+        reasons.append("breaker_state_unavailable")
+
+    # Criterion 3: last cycle freshness
+    if cycle_age is None:
+        reasons.append("no_cycle_state")
+    elif cycle_age > _DEEP_MAX_CYCLE_AGE_S:
+        reasons.append(f"stale_cycle_{int(cycle_age)}s")
+
+    # Criterion 5: products.json mtime
+    if products_age is None:
+        reasons.append("no_products_file")
+    elif products_age > _DEEP_MAX_PRODUCTS_AGE_S:
+        reasons.append(f"stale_products_{int(products_age)}s")
+
+    # Severity classification per OBS-02
+    critical = {"xray_bridge_not_listening", "no_cycle_state"}
+    has_critical = any(r in critical for r in reasons)
+    n_failed = len(reasons)
+
+    if n_failed == 0:
+        status = "healthy"
+    elif has_critical or n_failed >= 3:
+        status = "unhealthy"
+    else:
+        status = "degraded"
+
+    return {
+        "status": status,
+        "reasons": reasons,
+        "pool": pool,
+        "breaker": breaker,
+        "xray": xray,
+        "last_cycle_age_s": int(cycle_age) if cycle_age is not None else None,
+        "products_age_s": int(products_age) if products_age is not None else None,
+        "as_of": datetime.now().isoformat(timespec="seconds"),
+    }
+
+
+@app.get("/api/health/deep", include_in_schema=True)
+def health_deep(request: Request):
+    """Unauthenticated deep-health endpoint for external uptime monitors.
+
+    v1.19 REL-11 + OBS-01. Returns HTTP 200 when the stack is producing
+    fresh data; HTTP 503 with ``reasons[]`` when degraded or down. Body
+    shape is stable across statuses so monitors can parse the JSON
+    uniformly.
+
+    Rate limit: 1 req/s/IP (in-memory, per-process). Exceeds -> HTTP 429.
+    """
+    client_ip = request.client.host if request.client else "unknown"
+    now = _time.monotonic()
+    last_hit = _DEEP_LAST_HIT.get(client_ip, 0.0)
+    if now - last_hit < _HEALTH_DEEP_RATE_LIMIT_S:
+        # 429 with minimal body; don't leak rate-limit state
+        raise HTTPException(status_code=429, detail="rate_limited")
+    _DEEP_LAST_HIT[client_ip] = now
+    # Best-effort cleanup of old entries so the dict doesn't grow unbounded
+    if len(_DEEP_LAST_HIT) > 10_000:
+        cutoff = now - 60.0
+        for k in list(_DEEP_LAST_HIT):
+            if _DEEP_LAST_HIT[k] < cutoff:
+                _DEEP_LAST_HIT.pop(k, None)
+
+    snapshot = _build_reliability_snapshot()
+    status_code = 200 if snapshot["status"] == "healthy" else 503
+    return JSONResponse(
+        snapshot,
+        status_code=status_code,
+        headers={"Cache-Control": "no-store, no-cache, must-revalidate"},
+    )
+
+
 @app.get("/api/products", response_model=ProductsResponse)
 def get_products():
     """Get all products from proposals.json, with live staleness check."""
@@ -4457,6 +4678,10 @@ def admin_get_status(token: Optional[str] = Header(None, alias="X-Admin-Token"))
             "count": bug_reports_count,
             "unread": bug_reports_unread,
         },
+        # v1.19 Phase 61 OBS-03: unified reliability view for the admin
+        # dashboard. Same shape as /api/health/deep but without rate limiting
+        # since this route is already authenticated.
+        "reliability": _build_reliability_snapshot(),
     }
 
 

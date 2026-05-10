@@ -2283,12 +2283,14 @@ async def scrape_green_prices_async():
         print("  [GREEN] Reloading page...")
         reload_ok = False
         try:
-            page = await asyncio.wait_for(browser.get(GREEN_URL), timeout=30)
-            await asyncio.sleep(8)
+            page = await asyncio.wait_for(
+                _navigate_and_settle(browser, GREEN_URL, sleep_seconds=8),
+                timeout=45,
+            )
             await _step_screenshot(page, "after_reload")
             reload_ok = True
         except asyncio.TimeoutError:
-            print("  [GREEN] ⚠️ Page reload timed out after 30s — skipping basket_recalc (using modal data + data-max)")
+            print("  [GREEN] ⚠️ Page reload timed out after 45s — skipping basket_recalc (using modal data + data-max)")
         except Exception as e:
             print(f"  [GREEN] ⚠️ Page reload failed: {e} — skipping basket_recalc")
 

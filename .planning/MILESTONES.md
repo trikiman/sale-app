@@ -1,58 +1,25 @@
 # Milestones
 
-## v1.18 Geo Resolver & Scraper Recovery (Shipped: 2026-04-25, closed: 2026-04-28)
+## v1.19 Production Reliability & 24/7 Uptime (Shipped: 2026-05-05)
 
-**Phases completed:** 1 phase (58)
+**Phases completed:** 3 phases (59-61), 8 plans
 
-**Audit status:** retroactive closure 2026-04-28 — proxy + scraper hardened, miniapp cart-add HTTP 200 on production
+**Audit status:** passed (18/18 requirements satisfied, 0 critical gaps — see `.planning/milestones/v1.19-MILESTONE-AUDIT.md`)
 
 **Key accomplishments:**
 
-- Multi-provider geo resolver (`vless/xray.py`) iterates 3-provider chain (ipinfo.io → ipapi.co → ip-api.com) instead of single-provider; refresh probes drop explicit `url=` kwarg in `_probe_one`
-- Pool size after refresh lifted from 15 → **25 nodes** (+67%); active outbounds in `active.json` from 16 → 27
-- Scraper recovery from Chromium CDP WebSocket HTTP 500 mid-cycle: new `_is_dead_ws_error`, `_refresh_page_handle`, `_safe_js`, `_navigate_and_settle` helpers detect dead WS and re-acquire fresh tab handle
-- `verify_egress(country='RU')` confirmed via both multi-provider and single-provider paths
-- PRs: #17 (58-01), #18 (58-02), #19 (58-03 deploy + verify + docs)
+- The scheduler now refuses to launch Chrome if the VLESS bridge can't reach VkusVill — a corrected pre-flight probe with 12 s timeout, capped 2 rotations, and `leastPing` balancer fallback eliminates the 30-45 s wasted-Chrome-startup pattern that caused PR #25's 8-minute revert
+- The xray observatory now probes `vkusvill.ru/favicon.ico` instead of `google.com/generate_204`, so the `leastPing` balancer ranks outbounds by real-target reachability — silently-blocked-by-VkusVill nodes can no longer rank as "fast"
+- The cycle-counter circuit breaker that re-tripped 162 useless times in 5.4 hours has been replaced with a 3-state machine (`closed → open → half_open → closed`) with exponential backoff capped at 30 min, persisted in `data/scheduler_state.json` across restarts
+- Stack health is now exposed truthfully via unauthenticated `GET /api/health/deep` returning 200/503 + 8-key OBS-02 schema with `reasons[]` array — suitable for external uptime monitors (UptimeRobot, BetterStack, Datadog) and the live endpoint at `https://vkusvillsale.vercel.app/api/health/deep` returns `healthy` in ~370 ms
+- Pool drift like the post-v1.18 silent 25→13 over 8 days is now visible in real time — every refresh and quarantine event in `proxy_events.jsonl` carries `pool_size`, `quarantined_count`, and `active_outbounds_count`
+- Verification rigor was non-optional: every phase shipped with a `VERIFICATION.md`, the `scripts/verify_v1.19.sh` smoke script grew phase-by-phase to 24/24 green checks, and rollback was dry-run rehearsed pre-merge for each phase — closing the gap that let PR #25 land
 
 ---
 
-## v1.17 VLESS Timeout Hardening (Shipped: 2026-04-25, closed: 2026-04-28)
+## v1.3 Roadmap: VkusVill Sale Monitor (Backfilled: 2026-05-03)
 
-**Phases completed:** 1 phase (57)
-
-**Audit status:** retroactive closure 2026-04-28 — `policy` + `observatory` + `leastPing` live in `bin/xray/configs/active.json`, 5/5 RU egress confirmed
-
-**Key accomplishments:**
-
-- Three root causes of "middle-of-cart-add timeout" fixed:
-  1. xray config now has `policy` block (`connIdle=30s`, `handshake=8s`); previously default `connIdle=300s` kept dead connections alive 5 min
-  2. xray now has `observatory` probing every 5 minutes via `probeURL`, balancer strategy `leastPing` instead of random
-  3. `remove_proxy("127.0.0.1:10808")` now rotates via `mark_current_node_blocked` instead of being a silent no-op
-- Timeout alignment in cart + backend for VLESS handshake cost (3-5s observed)
-- Restored egress geo-verification in admission probes (v1.16 PR #7 had removed it, violating phase 56 plan D-05); phase 56's earlier 0/15 RU-egress caveat now 5/5 RU
-
----
-
-## v1.15 Proxy Infrastructure Migration (Shipped: 2026-04-23, closed: 2026-04-28)
-
-**Phases completed:** 1 phase (56)
-
-**Audit status:** retroactive closure 2026-04-28 — EC2 rollout on `ubuntu@13.60.174.46`; systemd xray active since 2026-04-23, live cart-add of 76 items confirmed via scheduler
-
-**Key accomplishments:**
-
-- Replaced the dead free-SOCKS5 proxy pool (0% alive across 269 tested nodes) with a curated VLESS+Reality pool fetched from public sources, geo-verified to exit from Russian IP addresses, with per-node metadata (host, port, uuid, reality params, last-seen)
-- Local `xray-core` process managed on dev (Windows) and production (EC2 / systemd) exposing SOCKS5 listener on `127.0.0.1:10808` for outbound VkusVill traffic
-- Daily proxy pool refresh + early-refresh on timeout-with-no-healthy-fallback
-- Failure classification: VkusVill blocks (timeout, 403/429/451, content mismatch) → 4-hour quarantine; node-level failures (TLS handshake, outbound unreachable, xray error) → immediate removal
-- `from proxy_manager import ProxyManager` API preserved unchanged in 7 production files + 3 test files; legacy SOCKS5 stack archived under `legacy/proxy-socks5/` with documented one-git-operation rollback (rehearsed: `git revert cc70185` leaves pytest green at 167/2)
-- Live evidence: EC2 scheduler `scrape_green.py` on 2026-04-23 added 76/76 live items to VkusVill cart through xray bridge, reconciled via `basket_recalc` API
-
-**Out of scope (deferred to follow-ups):**
-
-- PROXY-11: Paid/commercial RU proxy tier as optional fallback
-- PROXY-12: Pool health surface (alive count, cooldown count, last-refresh-at) on `/admin/status`
-- PROXY-13: Per-request VLESS node rotation inside xray (round-robin / LRU vs sticky-per-process)
+**Note:** Synthesized from archive snapshot by `/gsd-health --backfill`. Original completion date unknown.
 
 ---
 

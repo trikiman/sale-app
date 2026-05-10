@@ -94,3 +94,7 @@ bin/
 
 # Kiro IDE workspace
 .kiro/
+
+# Phase 60 REL-10: persistent circuit breaker state (runtime-only)
+data/scheduler_state.json
+data/scheduler_state.json.tmp

@@ -151,8 +151,12 @@ def build_xray_config(
         "outbounds": outbounds,
         "observatory": {
             "subjectSelector": ["node-"],
-            "probeURL": "https://www.google.com/generate_204",
-            "probeInterval": "5m",
+            # v1.19 REL-06: probe VkusVill (real traffic target) instead of
+            # google.com so leastPing ranks outbounds by end-to-end
+            # reachability. Matches vless/preflight.py target. 60s interval
+            # detects a degraded node within one minute instead of five.
+            "probeURL": "https://vkusvill.ru/favicon.ico",
+            "probeInterval": "60s",
         },
         "routing": {
             "domainStrategy": "AsIs",
