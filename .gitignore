@@ -91,3 +91,6 @@ backend/parse_lens.py
 
 # xray-core binary (per-machine, downloaded by vless/installer.py)
 bin/
+
+# Kiro IDE workspace
+.kiro/
