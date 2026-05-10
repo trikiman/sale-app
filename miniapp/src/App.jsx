@@ -928,13 +928,20 @@ function App() {
     setCartStates(s => ({ ...s, [pid]: 'loading' }))
     const t0 = performance.now()
     const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), 8000)
-    console.log(`[CART-ADD] START | product=${pid} name=${product.name?.substring(0, 30)}`)
+    // v1.20 Phase 65 UX-01: 8s -> 5s. The safety net for slow-path is the
+    // polling loop in the AbortError catch below (NOT the timeout itself).
+    const timer = setTimeout(() => controller.abort(), 5000)
+    // v1.20 Phase 65 UX-03: client_request_id is minted BEFORE the fetch
+    // so the catch block can use it to poll
+    // /api/cart/add-status-by-client-id/{cri} even if the POST never
+    // returned an attempt_id. Same value is sent in the request body so
+    // the backend's idempotency index wires up on the first call.
+    const clientRequestId = window.crypto?.randomUUID?.() || `cart-${Date.now()}-${pid}`
+    console.log(`[CART-ADD] START | product=${pid} name=${product.name?.substring(0, 30)} cri=${clientRequestId}`)
 
     try {
       const isGreen = product.type === 'green' ? 1 : 0
       const priceType = product.type === 'green' ? 222 : 1
-      const clientRequestId = window.crypto?.randomUUID?.() || `cart-${Date.now()}-${pid}`
       const res = await fetch('/api/cart/add', {
         method: 'POST',
         signal: controller.signal,
@@ -1062,12 +1069,145 @@ function App() {
     } catch (err) {
       clearTimeout(timer)
       if (err.name === 'AbortError') {
-        console.error(`[CART-ADD] TIMEOUT 8s | product=${pid} | ${(performance.now()-t0).toFixed(0)}ms`)
+        // v1.20 Phase 65 UX-01 + UX-02: 5s AbortController fired before
+        // the backend returned a full response. Do NOT show retry toast
+        // immediately — the backend's pending-attempt ledger tracks the
+        // call, indexed by the client_request_id we already sent.
+        // Poll /api/cart/add-status-by-client-id/{cri} every ~1s up to
+        // an additional 10s (15s total budget from t0). If the attempt
+        // resolves as success, apply the SAME state updates the fast
+        // path would have. If it resolves as failed/expired, surface the
+        // matching error toast. If the whole budget drains, fall through
+        // to the existing D3 "Добавляем в фоне" info toast (no error).
+        console.log(`[CART-ADD] TIMEOUT 5s — entering polling fallback | product=${pid} cri=${clientRequestId} | ${(performance.now()-t0).toFixed(0)}ms`)
+        setCartStates(s => ({ ...s, [pid]: 'pending' }))
+        // Keep the optimistic "checking" toast visible during the poll
+        // so the user does not see a "failed" flash.
+        setToastMessage({ text: 'Проверяем корзину…', type: 'info' })
+
+        const sleep = (ms) => new Promise(r => window.setTimeout(r, ms))
+        const POLL_TOTAL_BUDGET_MS = 15000
+        const POLL_INTERVAL_MS = 1000
+        // Preserve pendingCartAttemptsRef tracking so UI state stays
+        // consistent with the legacy fast-path flow. We use the
+        // client_request_id as the pending marker until the backend
+        // hands us a real attempt_id.
+        pendingCartAttemptsRef.current.set(String(pid), clientRequestId)
+
+        let pollIteration = 0
+        while ((performance.now() - t0) < POLL_TOTAL_BUDGET_MS) {
+          await sleep(POLL_INTERVAL_MS)
+          pollIteration++
+
+          if (pendingCartAttemptsRef.current.get(String(pid)) !== clientRequestId) {
+            console.log(`[CART-ADD-POLL] CANCELLED (superseded) | product=${pid} poll#=${pollIteration} | ${(performance.now()-t0).toFixed(0)}ms`)
+            return
+          }
+
+          let pollRes
+          try {
+            pollRes = await fetch(`/api/cart/add-status-by-client-id/${encodeURIComponent(clientRequestId)}`, {
+              headers: getAuthHeaders(userId),
+            })
+          } catch (pollErr) {
+            console.warn(`[CART-ADD-POLL] NETWORK ERROR | product=${pid} poll#=${pollIteration} error=${pollErr.message}`)
+            continue
+          }
+
+          if (pollRes.status === 404) {
+            // Attempt not yet created server-side — backend is still
+            // chewing on the original POST. Keep waiting.
+            console.log(`[CART-ADD-POLL] 404 wait | product=${pid} poll#=${pollIteration} | ${(performance.now()-t0).toFixed(0)}ms`)
+            continue
+          }
+
+          if (pollRes.status === 401) {
+            pendingCartAttemptsRef.current.delete(String(pid))
+            setIsAuthenticated(false)
+            setShowLogin(true)
+            setCartStates(s => ({ ...s, [pid]: null }))
+            return
+          }
+
+          if (!pollRes.ok) {
+            console.warn(`[CART-ADD-POLL] HTTP ${pollRes.status} | product=${pid} poll#=${pollIteration}`)
+            continue
+          }
+
+          let pollData
+          try {
+            pollData = await pollRes.json()
+          } catch {
+            continue
+          }
+
+          console.log(`[CART-ADD-POLL] RESPONSE | product=${pid} poll#=${pollIteration} status=${pollData.status} | ${(performance.now()-t0).toFixed(0)}ms`)
+
+          if (pollData.status === 'pending') {
+            continue
+          }
+
+          if (pollData.status === 'success') {
+            // SAME success handling as the fast path (line ~958 above).
+            pendingCartAttemptsRef.current.delete(String(pid))
+            setCartItemIds(prev => {
+              const next = new Set(prev)
+              next.add(String(pid))
+              return next
+            })
+            setCartItemsById(prev => ({
+              ...prev,
+              [String(pid)]: prev[String(pid)] || {
+                id: product.id,
+                quantity: 1,
+                unit: product.unit || 'шт',
+                step: getCartStep(product.unit, null),
+                koef: getCartStep(product.unit, null),
+                max_q: 0,
+              },
+            }))
+            setCartStates(s => ({ ...s, [pid]: 'success' }))
+            setCartCount(typeof pollData.cart_items === 'number' ? pollData.cart_items : cartCount + 1)
+            void refreshCartState(1, 0)
+            setToastMessage({ text: 'Товар добавлен в корзину', type: 'success' })
+            setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), 2000)
+            setTimeout(() => setToastMessage(null), 3000)
+            return
+          }
+
+          if (pollData.status === 'failed' || pollData.status === 'expired') {
+            pendingCartAttemptsRef.current.delete(String(pid))
+            const pollErrorType = pollData.error_type || ''
+            const pollLastError = String(pollData.last_error || '').toLowerCase()
+            const pollSoldOut = pollErrorType === 'product_gone' || pollLastError.includes('popup_analogs') || pollLastError.includes('распрод')
+            if (pollSoldOut) {
+              setSoldOutIds(s => {
+                const next = new Set([...s, pid])
+                try {
+                  localStorage.setItem('soldOutIds', JSON.stringify([...next]))
+                  localStorage.setItem('soldOutIds_expiry', String(Date.now() + 4 * 60 * 60 * 1000))
+                } catch { }
+                return next
+              })
+            }
+            const text = pollSoldOut ? 'Этот продукт уже раскупили' : 'Не удалось добавить товар'
+            setCartStates(s => ({ ...s, [pid]: pollSoldOut ? 'error' : 'retry' }))
+            setToastMessage({ text, type: 'error' })
+            setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), pollSoldOut ? 2000 : 4000)
+            setTimeout(() => setToastMessage(null), pollSoldOut ? 3000 : 4000)
+            return
+          }
+        }
+
+        // 15s budget drained with no resolution — matches the existing
+        // D3 "too slow to poll" path from the fast branch above. Do NOT
+        // show an error toast; the add may still succeed in the background
+        // and /api/cart/items will reflect it on the next refresh.
+        console.log(`[CART-ADD-POLL] BUDGET EXHAUSTED (15s) | product=${pid} | ${(performance.now()-t0).toFixed(0)}ms`)
         pendingCartAttemptsRef.current.delete(String(pid))
-        setCartStates(s => ({ ...s, [pid]: 'retry' }))
-        setToastMessage({ text: 'Корзина не ответила вовремя', type: 'error' })
-        setTimeout(() => setCartStates(s => ({ ...s, [pid]: null })), 4000)
-        setTimeout(() => setToastMessage(null), 4000)
+        setCartStates(s => ({ ...s, [pid]: null }))
+        setToastMessage({ text: 'Добавляем в фоне', type: 'info' })
+        setTimeout(() => setToastMessage(null), 3000)
         return
       }
       console.error(`[CART-ADD] NETWORK ERROR | product=${pid} error=${err.message} | ${(performance.now()-t0).toFixed(0)}ms`)
