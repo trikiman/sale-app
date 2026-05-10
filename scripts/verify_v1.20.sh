@@ -179,6 +179,34 @@ if [[ "$PHASE" == "63" || "$PHASE" == "all" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
+# Phase 64: VkusVill API Surface Spike — local scaffolding checks
+# ---------------------------------------------------------------------------
+if [[ "$PHASE" == "64" || "$PHASE" == "all" ]]; then
+    _banner "Phase 64 — VkusVill API Surface Spike (scaffolding)"
+
+    # 64-A: USE_FAST_CART_ADD_ENDPOINT env var exists in module + defaults False
+    if ssh "$EC2_HOST" "cd /home/ubuntu/saleapp && python3 -c 'import os; os.environ.pop(\"USE_FAST_CART_ADD_ENDPOINT\", None); import importlib, cart.vkusvill_api as vv; importlib.reload(vv); assert vv.USE_FAST_CART_ADD_ENDPOINT is False, f\"flag is {vv.USE_FAST_CART_ADD_ENDPOINT!r}, want False\"'"; then
+        _pass "64-A: USE_FAST_CART_ADD_ENDPOINT exists in module, defaults to False"
+    else
+        _fail "64-A: USE_FAST_CART_ADD_ENDPOINT missing or non-False default on EC2"
+    fi
+
+    # 64-B: FAST_CART_ADD_URL is None (spike hasn't discovered it yet)
+    if ssh "$EC2_HOST" "cd /home/ubuntu/saleapp && python3 -c 'from cart.vkusvill_api import FAST_CART_ADD_URL; assert FAST_CART_ADD_URL is None, f\"FAST_CART_ADD_URL = {FAST_CART_ADD_URL!r}, want None\"'"; then
+        _pass "64-B: FAST_CART_ADD_URL is None (pre-spike state — correct for Phase 64 scaffolding)"
+    else
+        _fail "64-B: FAST_CART_ADD_URL is not None — spike completed without updating smoke gate?"
+    fi
+
+    # 64-C: ablation harness runs --dry-run without error
+    if ssh "$EC2_HOST" "cd /home/ubuntu/saleapp && python3 scripts/ablate_basket_add_payload.py --dry-run --user-id 12345 --product-id 731 --n-per-field 2 >/dev/null"; then
+        _pass "64-C: scripts/ablate_basket_add_payload.py --dry-run exits 0 (no network)"
+    else
+        _fail "64-C: ablation harness --dry-run FAILED on EC2"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
 # Cross-phase: v1.19 regression (OPS-11 carryover)
 # ---------------------------------------------------------------------------
 if [[ "$PHASE" == "all" ]]; then
