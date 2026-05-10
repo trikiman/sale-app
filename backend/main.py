@@ -887,6 +887,12 @@ _HEALTH_DEEP_RATE_LIMIT_S = 1.0  # 1 req/s/IP
 _DEEP_LAST_HIT: dict[str, float] = {}  # ip -> last request monotonic
 _DEEP_MAX_CYCLE_AGE_S = 15 * 60  # OBS-02: > 15 min cycle age is degraded
 _DEEP_MAX_PRODUCTS_AGE_S = 15 * 60  # OBS-02: > 15 min products.json mtime is degraded
+# v1.20 Phase 66 OBS-04: cart-add latency visibility thresholds/windows
+_HEALTH_CART_ADD_DEGRADED_P95_MS = 6000
+_HEALTH_CART_ADD_UNHEALTHY_P95_MS = 12000
+_HEALTH_CART_ADD_WINDOW_1H_S = 3600.0
+_HEALTH_CART_ADD_WINDOW_24H_S = 86400.0
+_HEALTH_CART_ADD_DOUBLE_ADD_WINDOW_S = 30.0
 
 
 def _load_breaker_snapshot() -> dict:
@@ -976,6 +982,80 @@ def _products_mtime_age_seconds() -> Optional[float]:
         return None
 
 
+def _compute_cart_add_block() -> tuple[dict | None, str | None]:
+    """Compute the /api/health/deep cart_add block from _cart_add_attempts.
+
+    v1.20 Phase 66 OBS-04. Returns (block, p95_reason). ``block`` is None
+    when no attempts resolved in the last hour (zero-traffic is healthy,
+    not an outage). ``p95_reason`` is None when p95 is within the healthy
+    budget (see 66-CONTEXT.md D7 — only ONE reason is emitted at a time).
+    """
+    import statistics
+    now = _time.time()
+    with _cart_add_attempts_lock:
+        attempts = list(_cart_add_attempts.values())
+
+    cutoff_1h = now - _HEALTH_CART_ADD_WINDOW_1H_S
+    cutoff_24h = now - _HEALTH_CART_ADD_WINDOW_24H_S
+
+    attempts_1h = [a for a in attempts if (a.get("resolved_at") or 0) >= cutoff_1h]
+    attempts_24h = [a for a in attempts if (a.get("resolved_at") or 0) >= cutoff_24h]
+
+    if not attempts_1h:
+        return None, None
+
+    durations = sorted(a["duration_ms"] for a in attempts_1h if a.get("duration_ms") is not None)
+    if durations:
+        if len(durations) == 1:
+            p50 = p95 = p99 = durations[0]
+        elif len(durations) == 2:
+            p50 = durations[0]
+            p95 = p99 = durations[-1]
+        else:
+            qs = statistics.quantiles(durations, n=100)
+            p50 = int(qs[49])
+            p95 = int(qs[94])
+            p99 = int(qs[98])
+    else:
+        p50 = p95 = p99 = 0
+
+    ok_1h = sum(1 for a in attempts_1h if a.get("status") == "success")
+    ok_24h = sum(1 for a in attempts_24h if a.get("status") == "success")
+    success_rate_1h = round(ok_1h / len(attempts_1h), 4) if attempts_1h else 0.0
+    success_rate_24h = round(ok_24h / len(attempts_24h), 4) if attempts_24h else 0.0
+
+    success_1h = [a for a in attempts_1h if a.get("status") == "success"]
+    double_add = 0
+    for i, a in enumerate(success_1h):
+        for b in success_1h[i + 1:]:
+            if (
+                str(a.get("user_id")) == str(b.get("user_id"))
+                and int(a.get("product_id", -1)) == int(b.get("product_id", -2))
+                and abs((a.get("resolved_at") or 0) - (b.get("resolved_at") or 0)) <= _HEALTH_CART_ADD_DOUBLE_ADD_WINDOW_S
+            ):
+                double_add += 1
+    double_add_rate_1h = round(double_add / len(success_1h), 4) if success_1h else 0.0
+
+    block = {
+        "p50_ms": int(p50),
+        "p95_ms": int(p95),
+        "p99_ms": int(p99),
+        "success_rate_1h": success_rate_1h,
+        "success_rate_24h": success_rate_24h,
+        "double_add_rate_1h": double_add_rate_1h,
+        "window_sample_1h": len(attempts_1h),
+        "window_sample_24h": len(attempts_24h),
+    }
+
+    reason = None
+    if p95 > _HEALTH_CART_ADD_UNHEALTHY_P95_MS:
+        reason = f"cart_add_p95_critical:{int(p95)}ms"
+    elif p95 > _HEALTH_CART_ADD_DEGRADED_P95_MS:
+        reason = f"cart_add_p95_high:{int(p95)}ms"
+
+    return block, reason
+
+
 def _build_reliability_snapshot() -> dict:
     """Consolidated v1.19 reliability view used by /api/health/deep + /admin/status.
 
@@ -1036,6 +1116,11 @@ def _build_reliability_snapshot() -> dict:
     elif products_age > _DEEP_MAX_PRODUCTS_AGE_S:
         reasons.append(f"stale_products_{int(products_age)}s")
 
+    # v1.20 OBS-04: cart-add latency and double-add visibility
+    cart_add_block, cart_add_reason = _compute_cart_add_block()
+    if cart_add_reason:
+        reasons.append(cart_add_reason)
+
     # Severity classification per OBS-02
     critical = {"xray_bridge_not_listening", "no_cycle_state"}
     has_critical = any(r in critical for r in reasons)
@@ -1048,7 +1133,7 @@ def _build_reliability_snapshot() -> dict:
     else:
         status = "degraded"
 
-    return {
+    snapshot = {
         "status": status,
         "reasons": reasons,
         "pool": pool,
@@ -1058,6 +1143,9 @@ def _build_reliability_snapshot() -> dict:
         "products_age_s": int(products_age) if products_age is not None else None,
         "as_of": datetime.now().isoformat(timespec="seconds"),
     }
+    if cart_add_block is not None:
+        snapshot["cart_add"] = cart_add_block
+    return snapshot
 
 
 @app.get("/api/health/deep", include_in_schema=True)
