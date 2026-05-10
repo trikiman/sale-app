@@ -206,3 +206,142 @@ def test_cart_add_block_p95_critical(healthy_snapshot_deps):
     assert "cart_add_p95_critical:13000ms" in snap["reasons"]
     # Only one reason, not in critical set -> degraded per OBS-02 severity.
     assert snap["status"] == "degraded"
+
+
+# ─── OBS-05 tests (2) ────────────────────────────────────────────────────────
+
+class _StubCartSuccess:
+    """Fake VkusVillCart that returns a successful cart_add."""
+
+    def __init__(self, cookies_path, proxy_manager=None):
+        self.cookies_path = cookies_path
+
+    def add(self, product_id, price_type=1, is_green=0):
+        return {"success": True, "cart_items": 3, "cart_total": 100.0}
+
+    def close(self):
+        return None
+
+
+class _StubCartTransient:
+    """Fake VkusVillCart that returns a transient failure (502 branch)."""
+
+    def __init__(self, cookies_path, proxy_manager=None):
+        self.cookies_path = cookies_path
+
+    def add(self, product_id, price_type=1, is_green=0):
+        return {"success": False, "error_type": "transient", "error": "nope"}
+
+    def close(self):
+        return None
+
+
+def _write_cookies_json(path, sessid_ts_offset_s=120.0):
+    """Write a cookies.json with sessid_ts set to now - offset seconds so
+    _read_sessid_age_seconds returns a small int. Phase 66 cookies.json is
+    a dict with a 'sessid_ts' key per cart.vkusvill_api._persist_session_metadata."""
+    data = {
+        "cookies": [],
+        "sessid": "abc123",
+        "user_id": "777",
+        "sessid_ts": _time.time() - sessid_ts_offset_s,
+    }
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+
+
+def test_cart_events_jsonl_schema_success(monkeypatch, tmp_path):
+    """Happy-path cart-add -> one JSONL line with exactly 11 keys,
+    success=True, error_type=None, user_id_hash matches hash_user_id(user_id)."""
+    events_path = tmp_path / "cart_events.jsonl"
+    cookies_path = tmp_path / "cookies.json"
+    _write_cookies_json(str(cookies_path), sessid_ts_offset_s=120.0)
+
+    monkeypatch.setattr(main, "_CART_EVENTS_PATH", str(events_path))
+    monkeypatch.setattr(main, "_get_phone_for_user", lambda user_id: None)
+    monkeypatch.setattr(main, "get_user_cookies_path", lambda user_id: str(cookies_path))
+    monkeypatch.setattr(main, "VkusVillCart", _StubCartSuccess)
+
+    client = TestClient(main.app)
+    resp = client.post(
+        "/api/cart/add",
+        headers={"X-Telegram-User-Id": "777"},
+        json={
+            "user_id": "777",
+            "product_id": 1234,
+            "price_type": 1,
+            "is_green": 0,
+            "allow_pending": False,
+            "client_request_id": "cri-success-test",
+        },
+    )
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["success"] is True
+
+    # Verify exactly one JSONL line with the 11-key schema.
+    with open(events_path, "r", encoding="utf-8") as f:
+        lines = [ln for ln in f.read().splitlines() if ln.strip()]
+    assert len(lines) == 1, f"expected 1 line, got {len(lines)}"
+    entry = json.loads(lines[0])
+    required = {
+        "timestamp_iso", "user_id_hash", "attempt_id", "product_id",
+        "duration_ms", "success", "error_type", "client_request_id",
+        "sessid_age_s", "warmup_hit", "concurrent_recalc",
+    }
+    assert set(entry.keys()) == required, (
+        f"key mismatch: missing={required - set(entry.keys())} "
+        f"extra={set(entry.keys()) - required}"
+    )
+    assert entry["success"] is True
+    assert entry["error_type"] is None
+    assert entry["user_id_hash"] == hash_user_id("777")
+    assert entry["product_id"] == 1234
+    assert entry["client_request_id"] == "cri-success-test"
+    assert isinstance(entry["sessid_age_s"], int) and entry["sessid_age_s"] >= 100
+    assert entry["warmup_hit"] is False  # no warmup seeded for this user
+    assert entry["concurrent_recalc"] is False
+
+
+def test_cart_events_jsonl_schema_failed(monkeypatch, tmp_path):
+    """Transient failure -> one JSONL line, success=False, error_type='transient'."""
+    events_path = tmp_path / "cart_events.jsonl"
+    cookies_path = tmp_path / "cookies.json"
+    _write_cookies_json(str(cookies_path), sessid_ts_offset_s=60.0)
+
+    monkeypatch.setattr(main, "_CART_EVENTS_PATH", str(events_path))
+    monkeypatch.setattr(main, "_get_phone_for_user", lambda user_id: None)
+    monkeypatch.setattr(main, "get_user_cookies_path", lambda user_id: str(cookies_path))
+    monkeypatch.setattr(main, "VkusVillCart", _StubCartTransient)
+
+    client = TestClient(main.app)
+    resp = client.post(
+        "/api/cart/add",
+        headers={"X-Telegram-User-Id": "888"},
+        json={
+            "user_id": "888",
+            "product_id": 5678,
+            "price_type": 1,
+            "is_green": 0,
+            "allow_pending": False,
+            "client_request_id": "cri-failed-test",
+        },
+    )
+    assert resp.status_code == 502, resp.text
+    body = resp.json()
+    assert body["success"] is False
+    assert body["error_type"] == "transient"
+
+    with open(events_path, "r", encoding="utf-8") as f:
+        lines = [ln for ln in f.read().splitlines() if ln.strip()]
+    assert len(lines) == 1, f"expected 1 line, got {len(lines)}"
+    entry = json.loads(lines[0])
+    required = {
+        "timestamp_iso", "user_id_hash", "attempt_id", "product_id",
+        "duration_ms", "success", "error_type", "client_request_id",
+        "sessid_age_s", "warmup_hit", "concurrent_recalc",
+    }
+    assert set(entry.keys()) == required
+    assert entry["success"] is False
+    assert entry["error_type"] == "transient"
+    assert entry["user_id_hash"] == hash_user_id("888")
+    assert entry["product_id"] == 5678

@@ -126,6 +126,10 @@ DATA_DIR = os.path.join(BASE_PROJECT_DIR, "data")
 PROPOSALS_PATH = os.path.join(DATA_DIR, "proposals.json")
 MINIAPP_DIST = os.path.join(BASE_PROJECT_DIR, "miniapp", "dist")
 TECH_PROFILE_DIR = os.path.join(DATA_DIR, "tech_profile")
+# v1.20 Phase 66 OBS-05: cart-add event ledger
+_CART_EVENTS_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "cart_events.jsonl")
+_CART_EVENT_WARMUP_FRESHNESS_S = 300.0
+_CART_EVENT_CONCURRENT_RECALC_WINDOW_S = 12.0
 VKUSVILL_BACKOFF_SECONDS = 60
 _vkusvill_backoff_until = 0.0
 
@@ -3677,6 +3681,105 @@ def auth_logout(req: AuthLogoutRequest):
 
 # ─── Cart Endpoints ───────────────────────────────────────────────────────────
 
+# v1.20 Phase 66 OBS-05: hot-path observability helpers
+def _read_sessid_age_seconds(user_id: str) -> int | None:
+    """Peek sessid_ts from cookies.json without touching VkusVillCart.
+
+    Returns int seconds (>= 0) since the sessid was last extracted, or None
+    when the cookies file is missing / malformed / has no sessid_ts field.
+    Non-blocking + swallows exceptions per 66-CONTEXT.md D3.
+    """
+    try:
+        cookies_path = _resolve_cart_cookies_path(user_id)
+        with open(cookies_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if isinstance(data, dict):
+            ts = data.get("sessid_ts")
+            if ts:
+                return max(0, int(_time.time() - float(ts)))
+    except Exception:
+        pass
+    return None
+
+
+def _warmup_hit_for_user(user_id: str) -> bool:
+    """True if this user's last warmup (success or failure) was within
+    _CART_EVENT_WARMUP_FRESHNESS_S (300 s) per 66-CONTEXT.md D1."""
+    try:
+        from keepalive import warmup as _kw
+        uid_hash = _kw.hash_user_id(str(user_id))
+        with _kw._STATE_LOCK:
+            last = _kw._LAST_WARMUP_AT.get(uid_hash)
+        if last is None:
+            return False
+        return (_time.monotonic() - last) <= _CART_EVENT_WARMUP_FRESHNESS_S
+    except Exception:
+        return False
+
+
+def _has_concurrent_recalc(user_id: str) -> bool:
+    """True if another pending cart-add attempt exists for this user with
+    started_at within _CART_EVENT_CONCURRENT_RECALC_WINDOW_S (12 s) —
+    matches PERF-06 cache TTL per 66-CONTEXT.md D2."""
+    try:
+        now = _time.time()
+        cutoff = now - _CART_EVENT_CONCURRENT_RECALC_WINDOW_S
+        with _cart_add_attempts_lock:
+            for att in _cart_add_attempts.values():
+                if (
+                    str(att.get("user_id")) == str(user_id)
+                    and att.get("status") == "pending"
+                    and att.get("started_at", 0) >= cutoff
+                ):
+                    return True
+    except Exception:
+        pass
+    return False
+
+
+def _emit_cart_event(
+    user_id: str,
+    attempt_id: str | None,
+    product_id: int,
+    duration_ms: int,
+    success: bool,
+    error_type: str | None,
+    client_request_id: str | None,
+    sessid_age_s: int | None,
+    warmup_hit: bool,
+    concurrent_recalc: bool,
+) -> None:
+    """Append one JSONL line (11 keys) to data/cart_events.jsonl.
+
+    Best-effort — disk errors are swallowed so the cart-add HTTP response
+    is never blocked by observability write failures.
+    """
+    try:
+        from datetime import datetime, timezone
+        from keepalive.warmup import hash_user_id
+        line = json.dumps(
+            {
+                "timestamp_iso": datetime.now(timezone.utc).isoformat(),
+                "user_id_hash": hash_user_id(str(user_id)),
+                "attempt_id": attempt_id,
+                "product_id": int(product_id),
+                "duration_ms": int(duration_ms),
+                "success": bool(success),
+                "error_type": error_type,
+                "client_request_id": client_request_id,
+                "sessid_age_s": sessid_age_s,
+                "warmup_hit": bool(warmup_hit),
+                "concurrent_recalc": bool(concurrent_recalc),
+            },
+            ensure_ascii=False,
+        )
+        os.makedirs(os.path.dirname(_CART_EVENTS_PATH), exist_ok=True)
+        with open(_CART_EVENTS_PATH, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except Exception:
+        logger.debug("cart_events emit failed", exc_info=False)
+
+
 @app.post("/api/cart/add")
 def cart_add_endpoint(req: CartAddRequest, request: Request):
     """Add a product to the user's VkusVill cart."""
@@ -3684,6 +3787,11 @@ def cart_add_endpoint(req: CartAddRequest, request: Request):
     t0 = _time.monotonic()
     logger.info(f"[CART-ADD] START | user={req.user_id} product={req.product_id} price_type={req.price_type} is_green={req.is_green} allow_pending={req.allow_pending} client_req={req.client_request_id}")
     _validate_user_header(request, str(req.user_id))
+    # v1.20 OBS-05: snapshot hot-path state ONCE per request so every
+    # terminal branch emits the same observed context.
+    _obs_sessid_age_s = _read_sessid_age_seconds(req.user_id)
+    _obs_warmup_hit = _warmup_hit_for_user(req.user_id)
+    _obs_concurrent_recalc = _has_concurrent_recalc(req.user_id)
     if req.allow_pending:
         pending_attempt, should_call_upstream = _get_or_create_pending_cart_attempt(
             req.user_id,
@@ -3692,6 +3800,18 @@ def cart_add_endpoint(req: CartAddRequest, request: Request):
         )
         if not should_call_upstream:
             logger.info(f"[CART-ADD] DEDUPE HIT | user={req.user_id} product={req.product_id} attempt={pending_attempt.get('attempt_id')} | {(_time.monotonic()-t0)*1000:.0f}ms")
+            _emit_cart_event(
+                user_id=req.user_id,
+                attempt_id=pending_attempt.get("attempt_id"),
+                product_id=req.product_id,
+                duration_ms=int((_time.monotonic() - t0) * 1000),
+                success=False,
+                error_type="dedupe_reuse",
+                client_request_id=req.client_request_id,
+                sessid_age_s=_obs_sessid_age_s,
+                warmup_hit=_obs_warmup_hit,
+                concurrent_recalc=_obs_concurrent_recalc,
+            )
             return Response(
                 content=json.dumps(_serialize_cart_add_attempt(pending_attempt), ensure_ascii=False),
                 status_code=202,
@@ -3701,6 +3821,18 @@ def cart_add_endpoint(req: CartAddRequest, request: Request):
     cookies_path = _resolve_cart_cookies_path(req.user_id)
     if not os.path.exists(cookies_path):
         logger.warning(f"[CART-ADD] NO COOKIES | user={req.user_id} | {(_time.monotonic()-t0)*1000:.0f}ms")
+        _emit_cart_event(
+            user_id=req.user_id,
+            attempt_id=locals().get("pending_attempt", {}).get("attempt_id"),
+            product_id=req.product_id,
+            duration_ms=int((_time.monotonic() - t0) * 1000),
+            success=False,
+            error_type="no_cookies",
+            client_request_id=req.client_request_id,
+            sessid_age_s=_obs_sessid_age_s,
+            warmup_hit=_obs_warmup_hit,
+            concurrent_recalc=_obs_concurrent_recalc,
+        )
         raise HTTPException(status_code=401, detail="Вы не авторизованы. Войдите в аккаунт.")
 
     try:
@@ -3727,6 +3859,18 @@ def cart_add_endpoint(req: CartAddRequest, request: Request):
                     last_known_cart_at_monotonic=_monotime_success_fast.monotonic(),
                 )
             logger.info(f"[CART-ADD] SUCCESS | user={req.user_id} product={req.product_id} cart_items={result.get('cart_items')} | {(_time.monotonic()-t0)*1000:.0f}ms")
+            _emit_cart_event(
+                user_id=req.user_id,
+                attempt_id=pending_attempt.get("attempt_id") if (req.allow_pending and "pending_attempt" in locals()) else None,
+                product_id=req.product_id,
+                duration_ms=int((_time.monotonic() - t0) * 1000),
+                success=True,
+                error_type=None,
+                client_request_id=req.client_request_id,
+                sessid_age_s=_obs_sessid_age_s,
+                warmup_hit=_obs_warmup_hit,
+                concurrent_recalc=_obs_concurrent_recalc,
+            )
             return {
                 "success": True,
                 "cart_items": result.get("cart_items"),
@@ -3744,6 +3888,18 @@ def cart_add_endpoint(req: CartAddRequest, request: Request):
                     last_error=error_type or "pending_timeout",
                 )
                 logger.info(f"[CART-ADD] PENDING (timeout) | user={req.user_id} product={req.product_id} attempt={pending_attempt.get('attempt_id')} | {(_time.monotonic()-t0)*1000:.0f}ms")
+                _emit_cart_event(
+                    user_id=req.user_id,
+                    attempt_id=pending_attempt["attempt_id"],
+                    product_id=req.product_id,
+                    duration_ms=int((_time.monotonic() - t0) * 1000),
+                    success=False,
+                    error_type="pending_timeout",
+                    client_request_id=req.client_request_id,
+                    sessid_age_s=_obs_sessid_age_s,
+                    warmup_hit=_obs_warmup_hit,
+                    concurrent_recalc=_obs_concurrent_recalc,
+                )
                 return Response(
                     content=json.dumps(_serialize_cart_add_attempt(pending_attempt), ensure_ascii=False),
                     status_code=202,
@@ -3751,15 +3907,63 @@ def cart_add_endpoint(req: CartAddRequest, request: Request):
                 )
             if error_type == "auth_expired":
                 logger.warning(f"[CART-ADD] AUTH_EXPIRED 401 | user={req.user_id} product={req.product_id} | {(_time.monotonic()-t0)*1000:.0f}ms")
+                _emit_cart_event(
+                    user_id=req.user_id,
+                    attempt_id=locals().get("pending_attempt", {}).get("attempt_id"),
+                    product_id=req.product_id,
+                    duration_ms=int((_time.monotonic() - t0) * 1000),
+                    success=False,
+                    error_type="auth_expired",
+                    client_request_id=req.client_request_id,
+                    sessid_age_s=_obs_sessid_age_s,
+                    warmup_hit=_obs_warmup_hit,
+                    concurrent_recalc=_obs_concurrent_recalc,
+                )
                 return JSONResponse(status_code=401, content={"success": False, "error": error, "error_type": "auth_expired"})
             if error_type == "product_gone":
                 logger.warning(f"[CART-ADD] PRODUCT_GONE 410 | user={req.user_id} product={req.product_id} | {(_time.monotonic()-t0)*1000:.0f}ms")
+                _emit_cart_event(
+                    user_id=req.user_id,
+                    attempt_id=locals().get("pending_attempt", {}).get("attempt_id"),
+                    product_id=req.product_id,
+                    duration_ms=int((_time.monotonic() - t0) * 1000),
+                    success=False,
+                    error_type="product_gone",
+                    client_request_id=req.client_request_id,
+                    sessid_age_s=_obs_sessid_age_s,
+                    warmup_hit=_obs_warmup_hit,
+                    concurrent_recalc=_obs_concurrent_recalc,
+                )
                 return JSONResponse(status_code=410, content={"success": False, "error": error, "error_type": "product_gone"})
             if error_type == "timeout" or "timed out" in lowered or "timeout" in lowered:
                 logger.warning(f"[CART-ADD] TIMEOUT 504 | user={req.user_id} product={req.product_id} | {(_time.monotonic()-t0)*1000:.0f}ms")
+                _emit_cart_event(
+                    user_id=req.user_id,
+                    attempt_id=locals().get("pending_attempt", {}).get("attempt_id"),
+                    product_id=req.product_id,
+                    duration_ms=int((_time.monotonic() - t0) * 1000),
+                    success=False,
+                    error_type=error_type or "timeout",
+                    client_request_id=req.client_request_id,
+                    sessid_age_s=_obs_sessid_age_s,
+                    warmup_hit=_obs_warmup_hit,
+                    concurrent_recalc=_obs_concurrent_recalc,
+                )
                 return JSONResponse(status_code=504, content={"success": False, "error": "Cart API timeout", "error_type": error_type or "timeout"})
             if error_type == "transient" or "temporarily unreachable" in lowered or "failed to communicate" in lowered:
                 logger.warning(f"[CART-ADD] UNAVAILABLE 502 | user={req.user_id} product={req.product_id} | {(_time.monotonic()-t0)*1000:.0f}ms")
+                _emit_cart_event(
+                    user_id=req.user_id,
+                    attempt_id=locals().get("pending_attempt", {}).get("attempt_id"),
+                    product_id=req.product_id,
+                    duration_ms=int((_time.monotonic() - t0) * 1000),
+                    success=False,
+                    error_type="transient",
+                    client_request_id=req.client_request_id,
+                    sessid_age_s=_obs_sessid_age_s,
+                    warmup_hit=_obs_warmup_hit,
+                    concurrent_recalc=_obs_concurrent_recalc,
+                )
                 return JSONResponse(status_code=502, content={"success": False, "error": error, "error_type": "transient"})
             if req.allow_pending and 'pending_attempt' in locals():
                 _update_cart_add_attempt(
@@ -3769,9 +3973,33 @@ def cart_add_endpoint(req: CartAddRequest, request: Request):
                     last_error=error,
                 )
             logger.warning(f"[CART-ADD] FAILED 400 | user={req.user_id} product={req.product_id} error={error} error_type={error_type} | {(_time.monotonic()-t0)*1000:.0f}ms")
+            _emit_cart_event(
+                user_id=req.user_id,
+                attempt_id=locals().get("pending_attempt", {}).get("attempt_id"),
+                product_id=req.product_id,
+                duration_ms=int((_time.monotonic() - t0) * 1000),
+                success=False,
+                error_type=error_type or "api",
+                client_request_id=req.client_request_id,
+                sessid_age_s=_obs_sessid_age_s,
+                warmup_hit=_obs_warmup_hit,
+                concurrent_recalc=_obs_concurrent_recalc,
+            )
             return JSONResponse(status_code=400, content={"success": False, "error": error, "error_type": error_type or "api"})
     except Exception as e:
         logger.error(f"[CART-ADD] EXCEPTION 500 | user={req.user_id} product={req.product_id} error={e} | {(_time.monotonic()-t0)*1000:.0f}ms")
+        _emit_cart_event(
+            user_id=req.user_id,
+            attempt_id=None,
+            product_id=req.product_id,
+            duration_ms=int((_time.monotonic() - t0) * 1000),
+            success=False,
+            error_type="unknown",
+            client_request_id=req.client_request_id,
+            sessid_age_s=_obs_sessid_age_s,
+            warmup_hit=_obs_warmup_hit,
+            concurrent_recalc=_obs_concurrent_recalc,
+        )
         return JSONResponse(status_code=500, content={"success": False, "error": "Failed to communicate with Cart API", "error_type": "unknown"})
 
 
