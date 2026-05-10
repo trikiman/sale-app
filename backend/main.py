@@ -3594,6 +3594,7 @@ def cart_add_endpoint(req: CartAddRequest, request: Request):
 
         if result.get("success"):
             if req.allow_pending and 'pending_attempt' in locals():
+                import time as _monotime_success_fast
                 _update_cart_add_attempt(
                     pending_attempt["attempt_id"],
                     status="success",
@@ -3601,6 +3602,7 @@ def cart_add_endpoint(req: CartAddRequest, request: Request):
                     last_error=None,
                     cart_items=result.get("cart_items"),
                     cart_total=result.get("cart_total"),
+                    last_known_cart_at_monotonic=_monotime_success_fast.monotonic(),
                 )
             logger.info(f"[CART-ADD] SUCCESS | user={req.user_id} product={req.product_id} cart_items={result.get('cart_items')} | {(_time.monotonic()-t0)*1000:.0f}ms")
             return {
@@ -3703,6 +3705,7 @@ def cart_add_status_endpoint(attempt_id: str, request: Request):
         cart_item = None
 
     if cart_state.get("success") and cart_item:
+        import time as _monotime_success_status
         success_attempt = _update_cart_add_attempt(
             attempt_id,
             status="success",
@@ -3710,6 +3713,7 @@ def cart_add_status_endpoint(attempt_id: str, request: Request):
             last_error=None,
             cart_items=cart_state.get("items_count"),
             cart_total=cart_state.get("total_price"),
+            last_known_cart_at_monotonic=_monotime_success_status.monotonic(),
         )
         logger.info(f"[CART-STATUS] CONFIRMED IN CART | attempt={attempt_id} product={product_id} | {(_t.monotonic()-t0)*1000:.0f}ms")
         return _serialize_cart_add_attempt(success_attempt or attempt_snapshot)
@@ -3751,6 +3755,75 @@ def cart_items_endpoint(user_id: str, request: Request):
         NUDGE_QUEUE.put_nowait(hash_user_id(str(user_id)))
     except Exception:
         logger.debug("keepalive nudge (cart_items) dropped", exc_info=False)
+
+    # v1.20 PERF-06: if a cart-add for this user is in-flight or recently
+    # succeeded (<12 s), return the cached snapshot instead of firing
+    # basket_recalc.php which would fight the same VkusVill row lock on the
+    # shared bridge. Falls through to the normal path on miss.
+    try:
+        from cart.bridge_semaphore import (
+            is_pending_cache_fresh as _bridge_is_fresh,
+            _emit_event as _bridge_emit,
+            _hash_user_id as _bridge_hash,
+        )
+        import time as _monotime_cache
+        with _cart_add_attempts_lock:
+            _prune_cart_add_attempts()
+            _user_attempts = [
+                a for a in _cart_add_attempts.values()
+                if str(a.get("user_id")) == str(user_id)
+            ]
+            _latest = max(
+                _user_attempts,
+                key=lambda a: a.get("last_known_cart_at_monotonic") or a.get("created_at", 0),
+            ) if _user_attempts else None
+            _now_mono = _monotime_cache.monotonic()
+            _fresh = _bridge_is_fresh(_latest, _now_mono)
+        if _fresh and _latest:
+            _bridge_emit(
+                "cart_items_cache_hit",
+                {
+                    "user_id_hash": _bridge_hash(user_id),
+                    "age_ms": int(
+                        (_now_mono - float(_latest["last_known_cart_at_monotonic"])) * 1000
+                    ),
+                },
+            )
+            # cart_items in the attempt record is an integer count (from
+            # VkusVill totals.Q_ITEMS), not a list. We therefore cannot
+            # reconstruct the full items list from the cache — return an
+            # empty items list + the count. This is a deliberate tradeoff:
+            # during the 12 s window right after a cart-add, the frontend
+            # already has the authoritative count/total from the cart-add
+            # response, and we avoid re-fetching basket_recalc.php on the
+            # contended bridge.
+            _cart_items_val = _latest.get("cart_items")
+            if isinstance(_cart_items_val, list):
+                _items_out = _cart_items_val
+                _items_count_out = len(_cart_items_val)
+            else:
+                _items_out = []
+                _items_count_out = _cart_items_val or 0
+            return {
+                "items_count": _items_count_out,
+                "total_price": _latest.get("cart_total") or 0,
+                "items": _items_out,
+                "from_cache": True,
+            }
+        else:
+            if not _latest:
+                _reason = "no_record"
+            elif _latest.get("last_known_cart_at_monotonic") is None:
+                _reason = "no_snapshot"
+            else:
+                _reason = "stale"
+            _bridge_emit(
+                "cart_items_cache_miss",
+                {"user_id_hash": _bridge_hash(user_id), "reason": _reason},
+            )
+    except Exception:
+        logger.debug("cart_items cache-check failed; falling through", exc_info=False)
+
     cookies_path = _resolve_cart_cookies_path(user_id)
     if not os.path.exists(cookies_path):
         raise HTTPException(status_code=401, detail="Не авторизованы")

@@ -100,6 +100,10 @@ async def scrape_yellow_prices_async():
     products = []
     scrape_success = False
 
+    # v1.20 PERF-07: scrapers share the VLESS bridge with cart-add; lazy
+    # import so module is importable even when bridge_semaphore isn't.
+    from cart.bridge_semaphore import scraper_slot
+
     try:
         browser, proc, tmp_profile = await _launch_browser()
 
@@ -124,11 +128,14 @@ async def scrape_yellow_prices_async():
         """)
         print(f"  [YELLOW] Products visible: {is_active}")
 
-        # Smart pagination: scroll + click "Показать ещё" until no new in-stock products
-        prev_in_stock = 0
-        no_increase_count = 0
+        # v1.20 PERF-07: wrap the pagination detail-fetch batch — each
+        # "Показать ещё" click triggers a backend fetch over the shared bridge.
+        async with scraper_slot("scrape_yellow"):
+         # Smart pagination: scroll + click "Показать ещё" until no new in-stock products
+         prev_in_stock = 0
+         no_increase_count = 0
 
-        for batch in range(20):
+         for batch in range(20):
             await _js(page, """
                 (() => {
                     const btn = Array.from(document.querySelectorAll('button, a')).find(

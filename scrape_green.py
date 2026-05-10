@@ -1144,6 +1144,7 @@ async def _fetch_stock_per_product(page, products: list) -> int:
     """Navigate to each product page and read stock from rendered DOM.
     Returns count of products enriched."""
     import nodriver
+    from cart.bridge_semaphore import scraper_slot  # v1.20 PERF-07
     enriched = 0
     original_url = None
     try:
@@ -1151,51 +1152,55 @@ async def _fetch_stock_per_product(page, products: list) -> int:
     except Exception:
         pass
 
-    for p in products:
-        url = p.get('url', '')
-        if not url:
-            continue
-        try:
-            await page.get(url)
-            await asyncio.sleep(3)  # Wait for JS rendering
-            stock_text = await _js(page, r"""
-                (() => {
-                    // Priority 1: data-quantity attribute (most reliable on VkusVill)
-                    const qEl = document.querySelector('[data-quantity]');
-                    if (qEl) {
-                        const v = qEl.getAttribute('data-quantity');
-                        const elText = (qEl.innerText || '').trim();
-                        if (v && parseFloat(v) > 0) return elText || ('\u0412 \u043d\u0430\u043b\u0438\u0447\u0438\u0438 ' + v + ' \u0448\u0442');
-                    }
-                    // Priority 2: text search
-                    const text = document.body.innerText || '';
-                    const patterns = [
-                        /(?:\u0412 \u043d\u0430\u043b\u0438\u0447\u0438\u0438|\u0432 \u043d\u0430\u043b\u0438\u0447\u0438\u0438)[\s:]*([\d.,]+)\s*(\u0448\u0442|\u043a\u0433)/i,
-                        /(?:\u0417\u0430\u0432\u0442\u0440\u0430 \u0431\u0443\u0434\u0435\u0442|\u0437\u0430\u0432\u0442\u0440\u0430 \u0431\u0443\u0434\u0435\u0442)[\s:]*([\d.,]+)\s*(\u0448\u0442|\u043a\u0433)/i,
-                        /(?:\u041e\u0441\u0442\u0430\u043b\u043e\u0441\u044c|\u043e\u0441\u0442\u0430\u043b\u043e\u0441\u044c)[\s:]*([\d.,]+)\s*(\u0448\u0442|\u043a\u0433)/i
-                    ];
-                    for (const pat of patterns) {
-                        const m = text.match(pat);
-                        if (m) return m[0];
-                    }
-                    if (/\u041c\u0430\u043b\u043e|\u043c\u0430\u043b\u043e/.test(text)) return '\u041c\u0430\u043b\u043e';
-                    if (/\u0412 \u043d\u0430\u043b\u0438\u0447\u0438\u0438/i.test(text)) return '\u0412 \u043d\u0430\u043b\u0438\u0447\u0438\u0438';
-                    return null;
-                })()
-            """)
-            if stock_text:
-                parsed = parse_stock(str(stock_text))
-                if parsed and parsed not in (99,):
-                    p['stock'] = parsed
-                    enriched += 1
-                    print(f"    Page stock for {p.get('name','')[:30]}: {parsed} ('{stock_text[:40]}')")
-                elif not p.get('stock'):
-                    p['stock'] = 1
-                    print(f"    Page '{stock_text}' for {p.get('name','')[:30]} -> 1")
-            else:
-                print(f"    Page: no stock data for {p.get('name','')[:30]}")
-        except Exception as e:
-            print(f"    Page fetch failed for {p.get('name','')[:30]}: {e}")
+    # v1.20 PERF-07: acquire the shared-bridge slot ONCE around the whole
+    # detail-fetch batch so cart-add serializes vs. this loop on the shared
+    # VLESS bridge. Up to 10 s wait, then graceful degradation.
+    async with scraper_slot("scrape_green"):
+        for p in products:
+            url = p.get('url', '')
+            if not url:
+                continue
+            try:
+                await page.get(url)
+                await asyncio.sleep(3)  # Wait for JS rendering
+                stock_text = await _js(page, r"""
+                    (() => {
+                        // Priority 1: data-quantity attribute (most reliable on VkusVill)
+                        const qEl = document.querySelector('[data-quantity]');
+                        if (qEl) {
+                            const v = qEl.getAttribute('data-quantity');
+                            const elText = (qEl.innerText || '').trim();
+                            if (v && parseFloat(v) > 0) return elText || ('\u0412 \u043d\u0430\u043b\u0438\u0447\u0438\u0438 ' + v + ' \u0448\u0442');
+                        }
+                        // Priority 2: text search
+                        const text = document.body.innerText || '';
+                        const patterns = [
+                            /(?:\u0412 \u043d\u0430\u043b\u0438\u0447\u0438\u0438|\u0432 \u043d\u0430\u043b\u0438\u0447\u0438\u0438)[\s:]*([\d.,]+)\s*(\u0448\u0442|\u043a\u0433)/i,
+                            /(?:\u0417\u0430\u0432\u0442\u0440\u0430 \u0431\u0443\u0434\u0435\u0442|\u0437\u0430\u0432\u0442\u0440\u0430 \u0431\u0443\u0434\u0435\u0442)[\s:]*([\d.,]+)\s*(\u0448\u0442|\u043a\u0433)/i,
+                            /(?:\u041e\u0441\u0442\u0430\u043b\u043e\u0441\u044c|\u043e\u0441\u0442\u0430\u043b\u043e\u0441\u044c)[\s:]*([\d.,]+)\s*(\u0448\u0442|\u043a\u0433)/i
+                        ];
+                        for (const pat of patterns) {
+                            const m = text.match(pat);
+                            if (m) return m[0];
+                        }
+                        if (/\u041c\u0430\u043b\u043e|\u043c\u0430\u043b\u043e/.test(text)) return '\u041c\u0430\u043b\u043e';
+                        if (/\u0412 \u043d\u0430\u043b\u0438\u0447\u0438\u0438/i.test(text)) return '\u0412 \u043d\u0430\u043b\u0438\u0447\u0438\u0438';
+                        return null;
+                    })()
+                """)
+                if stock_text:
+                    parsed = parse_stock(str(stock_text))
+                    if parsed and parsed not in (99,):
+                        p['stock'] = parsed
+                        enriched += 1
+                        print(f"    Page stock for {p.get('name','')[:30]}: {parsed} ('{stock_text[:40]}')")
+                    elif not p.get('stock'):
+                        p['stock'] = 1
+                        print(f"    Page '{stock_text}' for {p.get('name','')[:30]} -> 1")
+                else:
+                    print(f"    Page: no stock data for {p.get('name','')[:30]}")
+            except Exception as e:
+                print(f"    Page fetch failed for {p.get('name','')[:30]}: {e}")
 
     # Navigate back to cart page
     if original_url:

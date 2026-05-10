@@ -142,6 +142,43 @@ PY" 2>/dev/null)
 fi
 
 # ---------------------------------------------------------------------------
+# Phase 63: Bridge Contention Elimination (PERF-06 + PERF-07)
+# ---------------------------------------------------------------------------
+if [[ "$PHASE" == "63" || "$PHASE" == "all" ]]; then
+    _banner "Phase 63 — Bridge Contention Elimination"
+
+    # 63-A: cart.bridge_semaphore importable on EC2 + expected exports present
+    if ssh "$EC2_HOST" "cd /home/ubuntu/saleapp && python3 -c 'from cart.bridge_semaphore import CART_ADD_IN_FLIGHT, cart_add_slot, scraper_slot, is_pending_cache_fresh, CART_ITEMS_CACHE_TTL_S, SCRAPER_BRIDGE_TIMEOUT_S; assert CART_ITEMS_CACHE_TTL_S == 12.0; assert SCRAPER_BRIDGE_TIMEOUT_S == 10.0'"; then
+        _pass "63-A: cart.bridge_semaphore imports cleanly on EC2 with locked constants"
+    else
+        _fail "63-A: cart.bridge_semaphore import or constant check FAILED on EC2"
+    fi
+
+    # 63-B: cart-items cache-hit logic — covered by unit test
+    # (Full on-wire smoke would need a live pending attempt; the unit test
+    # asserts the decision logic exactly, which is what this smoke gates.)
+    if ssh "$EC2_HOST" "cd /home/ubuntu/saleapp && python3 -m pytest tests/test_bridge_semaphore.py::test_is_pending_cache_fresh_within_12s -q 2>&1 | tail -3 | grep -q passed"; then
+        _pass "63-B: cache-hit logic (test_is_pending_cache_fresh_within_12s) green on EC2"
+    else
+        _fail "63-B: cache-hit unit test FAILED on EC2"
+    fi
+
+    # 63-C: cart-items cache-stale logic — covered by unit test
+    if ssh "$EC2_HOST" "cd /home/ubuntu/saleapp && python3 -m pytest tests/test_bridge_semaphore.py::test_is_pending_cache_fresh_stale_at_12_1s -q 2>&1 | tail -3 | grep -q passed"; then
+        _pass "63-C: cache-stale logic (test_is_pending_cache_fresh_stale_at_12_1s) green on EC2"
+    else
+        _fail "63-C: cache-stale unit test FAILED on EC2"
+    fi
+
+    # 63-D: full 7-test bridge_semaphore suite green on EC2
+    if ssh "$EC2_HOST" "cd /home/ubuntu/saleapp && python3 -m pytest tests/test_bridge_semaphore.py -q 2>&1 | tail -3 | grep -Eq '7 passed'"; then
+        _pass "63-D: tests/test_bridge_semaphore.py — 7/7 tests green on EC2"
+    else
+        _fail "63-D: tests/test_bridge_semaphore.py FAILED on EC2 (expect 7 passed)"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
 # Cross-phase: v1.19 regression (OPS-11 carryover)
 # ---------------------------------------------------------------------------
 if [[ "$PHASE" == "all" ]]; then
