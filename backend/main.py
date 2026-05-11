@@ -133,6 +133,16 @@ _CART_EVENT_CONCURRENT_RECALC_WINDOW_S = 12.0
 VKUSVILL_BACKOFF_SECONDS = 60
 _vkusvill_backoff_until = 0.0
 
+# Phase 74 (v1.23 PERF-10): product_details cold-path fetch through the xray
+# bridge. The pre-v1.15 two-phase probe (HEAD at 4s × N proxies, then fetch)
+# is dead weight now — xray `observatory`+`leastPing` picks the fastest live
+# outbound per connection, v1.19 pre-flight probe catches broken bridges, and
+# v1.21 reprobe daemon keeps the admitted pool alive. Healthy bridge latency
+# is 30-40ms loopback; 1s connect leaves 25-33x margin, 3s read leaves
+# 2.5-10x margin on the VkusVill TTFB.
+_DETAIL_BRIDGE_PROXY = "socks5://127.0.0.1:10808"
+_DETAIL_MAX_RETRIES = 3
+
 # Singleton ProxyManager for all VkusVill connections (v1.4 PROXY-01)
 import sys as _sys
 if BASE_PROJECT_DIR not in _sys.path:
@@ -539,89 +549,67 @@ async def product_details(product_id: str):
     if cached:
         return cached
 
-    # Fetch HTML via ProxyManager rotation (always proxy — D-01)
+    # Fetch HTML via xray bridge — no per-proxy HEAD probe needed.
+    # v1.23 PERF-10: the pre-v1.15 two-phase loop was a SOCKS5-era artifact;
+    # post-v1.15 the whole pool is collapsed behind a single xray inbound at
+    # 127.0.0.1:10808 with `observatory`+`leastPing` picking the fastest
+    # live outbound per connection (v1.17). v1.19 pre-flight probe + v1.21
+    # reprobe daemon already guard the bridge — a 4s HEAD probe before every
+    # cache-miss was 4-12s of dead weight in front of a 1-3s fetch.
     html = None
     ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36"
 
     import httpx
-    pm = _proxy_manager
 
-    # Get all proxies in pool
-    pool = pm._cache.get("proxies", [])
-    if not pool:
-        pm.ensure_pool()
-        pool = pm._cache.get("proxies", [])
-
-    dead_proxies = []
-    working_proxy = None
-
-    # Phase 1: HEAD check to find a live proxy. TLS handshake through the
-    # VLESS bridge routinely takes 3-5s, so 4s is the floor; anything less
-    # drops healthy backends on a slow balancer pick.
-    for entry in pool:
-        addr = entry["addr"]
-        proxy_url = f"socks5://{addr}"
+    retry_count = 0
+    last_error: Optional[str] = None
+    for attempt in range(_DETAIL_MAX_RETRIES):
+        retry_count = attempt + 1
         try:
+            # Timeouts tuned to a healthy VLESS bridge profile:
+            # connect 1s (loopback + xray dial), read 3s (VkusVill TTFB
+            # healthy is 0.3-1.2s so 2.5-10x margin), write/pool 1s.
             async with httpx.AsyncClient(
-                timeout=httpx.Timeout(connect=4.0, read=4.0, write=2.0, pool=2.0),
-                proxy=proxy_url
-            ) as client:
-                await client.head("https://vkusvill.ru/", headers={"User-Agent": ua})
-            # HEAD succeeded — this proxy is alive
-            working_proxy = addr
-            logger.info(f"[DETAIL-PROXY] Product {product_id}: proxy {addr} passed health check")
-            break
-        except httpx.ConnectError:
-            logger.info(f"[DETAIL-PROXY] Product {product_id}: proxy {addr} dead (ConnectError)")
-            dead_proxies.append(addr)
-        except httpx.TimeoutException:
-            logger.info(f"[DETAIL-PROXY] Product {product_id}: proxy {addr} timeout, trying next")
-        except Exception:
-            logger.info(f"[DETAIL-PROXY] Product {product_id}: proxy {addr} check failed, trying next")
-
-    # Remove confirmed dead proxies (remove_proxy guards against the bridge
-    # endpoint 127.0.0.1:10808 internally, so no-op there).
-    for addr in dead_proxies:
-        pm.remove_proxy(addr)
-
-    # Phase 2: Full page fetch with retries. xray round-robins per fresh
-    # connection, so retrying a failed fetch usually lands on a healthy node.
-    fetch_attempts = 3 if working_proxy else 0
-    for attempt in range(fetch_attempts):
-        proxy_url = f"socks5://{working_proxy}"
-        try:
-            async with httpx.AsyncClient(
-                timeout=httpx.Timeout(connect=4.0, read=6.0, write=3.0, pool=3.0),
-                follow_redirects=True, proxy=proxy_url
+                timeout=httpx.Timeout(connect=1.0, read=3.0, write=1.0, pool=1.0),
+                follow_redirects=True,
+                proxy=_DETAIL_BRIDGE_PROXY,
             ) as client:
                 resp = await client.get(url, headers={
                     "User-Agent": ua,
                     "Accept": "text/html,application/xhtml+xml",
                 })
-                if resp.status_code == 200 and len(resp.text) > 500:
-                    html = resp.text
-                    logger.info(f"[DETAIL-PROXY] Product {product_id}: fetched {len(html)} bytes via proxy {working_proxy} on attempt {attempt + 1} in {resp.elapsed.total_seconds():.1f}s")
-                    break
-                logger.warning(f"[DETAIL-PROXY] Product {product_id}: proxy {working_proxy} returned status {resp.status_code} on attempt {attempt + 1}")
-        except httpx.ConnectError:
-            pm.remove_proxy(working_proxy)
-            logger.warning(f"[DETAIL-PROXY] Product {product_id}: proxy {working_proxy} died during fetch (attempt {attempt + 1})")
-            break
-        except Exception as e:
-            logger.warning(f"[DETAIL-PROXY] Product {product_id}: fetch via {working_proxy} attempt {attempt + 1}/{fetch_attempts} failed ({e})")
-            continue
-
-    if not working_proxy:
-        if dead_proxies:
-            logger.info(f"[DETAIL-PROXY] Product {product_id}: removed {len(dead_proxies)} dead proxies, none working")
-        else:
-            logger.info(f"[DETAIL-PROXY] Product {product_id}: all proxies timed out — VkusVill may be down")
+            if resp.status_code == 200 and len(resp.text) > 500:
+                html = resp.text
+                logger.info(
+                    f"[DETAIL-FETCH] Product {product_id}: {len(html)}b via bridge "
+                    f"on attempt {retry_count} in {resp.elapsed.total_seconds():.2f}s"
+                )
+                break
+            last_error = f"status_{resp.status_code}"
+            logger.warning(
+                f"[DETAIL-FETCH] Product {product_id}: bridge returned status "
+                f"{resp.status_code} on attempt {retry_count}"
+            )
+        except (httpx.ConnectError, httpx.TimeoutException) as e:
+            last_error = type(e).__name__
+            logger.warning(
+                f"[DETAIL-FETCH] Product {product_id}: bridge {type(e).__name__} "
+                f"on attempt {retry_count}"
+            )
+        except Exception as e:  # noqa: BLE001 - retry all transient fetch errors
+            last_error = type(e).__name__
+            logger.warning(
+                f"[DETAIL-FETCH] Product {product_id}: bridge error "
+                f"on attempt {retry_count}: {e}"
+            )
 
     if not html:
-        logger.info(f"[DETAIL-PROXY] Product {product_id}: all attempts failed, returning fallback")
-        return _fallback_product_details(product_id, product, "Proxy fetch failed")
+        logger.info(
+            f"[DETAIL-FETCH] Product {product_id}: all {retry_count} attempts failed ({last_error})"
+        )
+        return _fallback_product_details(product_id, product, last_error or "Bridge fetch failed")
 
-    if not html or len(html) < 500:
+    if len(html) < 500:
         return _fallback_product_details(product_id, product, "Empty HTML response")
 
     def strip_tags(s):
