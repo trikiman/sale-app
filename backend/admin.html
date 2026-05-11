@@ -202,6 +202,17 @@
       border: 1px solid #334155;
     }
 
+    /* v1.22 UX-BADGE-01: attention-colored badge for bug reports + xray drift. */
+    .badge-warn {
+      background: #78350f;
+      color: #fbbf24;
+      border: 1px solid #92400e;
+      cursor: pointer;
+    }
+    .badge-warn:hover {
+      background: #92400e;
+    }
+
     /* Log */
     #log {
       font-family: monospace;
@@ -326,6 +337,14 @@
       <div class="row" style="justify-content:space-between; margin-bottom:12px">
         <h2>🛠️ VkusVill Admin</h2>
         <div class="row">
+          <!-- v1.22 UX-BADGE-01: bug reports attention badge, hidden when unread=0 -->
+          <span id="bug-reports-badge" class="badge badge-warn" hidden
+                title="Откройте /admin/bug-reports чтобы посмотреть"
+                onclick="window.location.href='/admin/bug-reports'">Bug Reports (0)</span>
+          <!-- v1.22 UX-BADGE-02: xray drift attention badge, hidden when drift_count=0 -->
+          <span id="xray-drift-badge" class="badge badge-warn" hidden
+                title="Pool admitted hosts ≠ running xray outbounds. Откройте /api/health/deep"
+                onclick="window.location.href='/api/health/deep'">Drift (0)</span>
           <span id="last-refresh" class="text-muted"></span>
           <button class="btn btn-gray btn-sm" onclick="logout()">Выйти</button>
         </div>
@@ -567,6 +586,37 @@
         ? 'Последнее обновление: ' + d.updatedAt
         : 'Данных нет';
       document.getElementById('last-refresh').textContent = 'Обновлено: ' + new Date().toLocaleTimeString('ru-RU');
+
+      // v1.22 UX-BADGE-01: bug reports badge. Prefer unread count; fall back
+      // to total count. Hidden when 0. Backend exposes these via
+      // /admin/status.bugReports (shipped in v1.16).
+      var br = data.bugReports || {};
+      var brUnread = (br.unread !== undefined) ? br.unread : (br.count || 0);
+      var brBadge = document.getElementById('bug-reports-badge');
+      if (brBadge) {
+        if (brUnread > 0) {
+          brBadge.textContent = 'Bug Reports (' + brUnread + ')';
+          brBadge.hidden = false;
+        } else {
+          brBadge.hidden = true;
+        }
+      }
+
+      // v1.22 UX-BADGE-02: xray drift badge (v1.21 tech debt closed here).
+      // data.reliability.xray_drift is present when pool + running xray config
+      // are both readable. drift_count > 0 indicates admission set differs
+      // from running outbounds. Clicking navigates to /api/health/deep.
+      var drift = ((data.reliability || {}).xray_drift) || {};
+      var driftCount = drift.drift_count || 0;
+      var driftBadge = document.getElementById('xray-drift-badge');
+      if (driftBadge) {
+        if (driftCount > 0) {
+          driftBadge.textContent = 'Drift (' + driftCount + ')';
+          driftBadge.hidden = false;
+        } else {
+          driftBadge.hidden = true;
+        }
+      }
 
       updateCookieWarning(data);
       updateCartDiagnostics(data);
