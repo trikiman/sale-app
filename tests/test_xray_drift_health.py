@@ -156,3 +156,95 @@ def test_xray_drift_thresholds_locked():
     """SPEC Lock: OBS-06 thresholds must match 69-CONTEXT.md (EC2 smoke 69-A)."""
     assert bm._DEEP_DRIFT_DEGRADED_S == 300
     assert bm._DEEP_DRIFT_UNHEALTHY_CYCLE_AGE_S == 600
+
+
+# ── _build_reliability_snapshot wiring (69-02) ────────────────────────────
+
+
+def test_reliability_snapshot_attaches_drift_block_when_present(monkeypatch):
+    """/api/health/deep body gains xray_drift key when pool + config available."""
+    monkeypatch.setattr(
+        bm,
+        "_pool_snapshot_for_health",
+        lambda: {"available": True, "size": 3, "min_healthy": 3},
+    )
+    monkeypatch.setattr(
+        bm, "_load_breaker_snapshot", lambda: {"available": True, "state": "closed"}
+    )
+    monkeypatch.setattr(
+        bm, "_check_xray_listening", lambda: {"listening": True, "port": 10808}
+    )
+    monkeypatch.setattr(bm, "_last_cycle_age_seconds", lambda: 60.0)
+    monkeypatch.setattr(bm, "_products_mtime_age_seconds", lambda: 60.0)
+    monkeypatch.setattr(bm, "_compute_cart_add_block", lambda: (None, None))
+    monkeypatch.setattr(
+        bm, "_extract_running_xray_hosts_for_health", lambda: {"a", "b", "c"}
+    )
+    monkeypatch.setattr(bm, "_load_admitted_host_set", lambda: {"a", "b", "c"})
+
+    snap = bm._build_reliability_snapshot()
+    assert "xray_drift" in snap
+    assert snap["xray_drift"]["drift_count"] == 0
+    assert snap["xray_drift"]["drifted_hosts"] == []
+    assert snap["status"] == "healthy"
+    assert "xray_stale_config" not in " ".join(snap["reasons"])
+
+
+def test_reliability_snapshot_degraded_when_drift_persisted(monkeypatch):
+    """When drift has persisted > 5 min, reasons gets xray_stale_config; status=degraded."""
+    monkeypatch.setattr(
+        bm,
+        "_pool_snapshot_for_health",
+        lambda: {"available": True, "size": 1, "min_healthy": 1},
+    )
+    monkeypatch.setattr(
+        bm, "_load_breaker_snapshot", lambda: {"available": True, "state": "closed"}
+    )
+    monkeypatch.setattr(
+        bm, "_check_xray_listening", lambda: {"listening": True, "port": 10808}
+    )
+    monkeypatch.setattr(bm, "_last_cycle_age_seconds", lambda: 60.0)
+    monkeypatch.setattr(bm, "_products_mtime_age_seconds", lambda: 60.0)
+    monkeypatch.setattr(bm, "_compute_cart_add_block", lambda: (None, None))
+    monkeypatch.setattr(
+        bm, "_extract_running_xray_hosts_for_health", lambda: {"a"}
+    )
+    monkeypatch.setattr(bm, "_load_admitted_host_set", lambda: {"b"})
+    # Seed drift persistence > 5 min without sleeping.
+    now = _time.monotonic()
+    bm._DRIFT_FIRST_SEEN[frozenset({"a", "b"})] = (now - 320, "2026-05-12T19:00:00")
+
+    snap = bm._build_reliability_snapshot()
+    assert "xray_stale_config:2_nodes_drifted" in snap["reasons"]
+    assert snap["status"] == "degraded"
+    assert snap["xray_drift"]["drift_count"] == 2
+
+
+def test_reliability_snapshot_unhealthy_when_drift_plus_stale_cycle(monkeypatch):
+    """drift > 5 min AND cycle_age > 10 min → status=unhealthy."""
+    monkeypatch.setattr(
+        bm,
+        "_pool_snapshot_for_health",
+        lambda: {"available": True, "size": 1, "min_healthy": 1},
+    )
+    monkeypatch.setattr(
+        bm, "_load_breaker_snapshot", lambda: {"available": True, "state": "closed"}
+    )
+    monkeypatch.setattr(
+        bm, "_check_xray_listening", lambda: {"listening": True, "port": 10808}
+    )
+    # cycle_age also triggers existing stale_cycle reason — the 3-reason
+    # path to unhealthy. Additionally drift_is_critical sets has_critical.
+    monkeypatch.setattr(bm, "_last_cycle_age_seconds", lambda: 700.0)
+    monkeypatch.setattr(bm, "_products_mtime_age_seconds", lambda: 60.0)
+    monkeypatch.setattr(bm, "_compute_cart_add_block", lambda: (None, None))
+    monkeypatch.setattr(
+        bm, "_extract_running_xray_hosts_for_health", lambda: {"a"}
+    )
+    monkeypatch.setattr(bm, "_load_admitted_host_set", lambda: {"b"})
+    now = _time.monotonic()
+    bm._DRIFT_FIRST_SEEN[frozenset({"a", "b"})] = (now - 320, "2026-05-12T19:00:00")
+
+    snap = bm._build_reliability_snapshot()
+    assert snap["status"] == "unhealthy"
+    assert "xray_stale_config:2_nodes_drifted" in snap["reasons"]

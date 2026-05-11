@@ -339,3 +339,67 @@ def test_refresh_emits_xray_restart_failed_event_on_systemctl_failure(pm, monkey
     assert len(completes) == 1
     assert completes[0]["restart_outcome"] == "failed"
     assert completes[0]["xray_restart_triggered"] is False
+
+
+# ── pool_refresh_complete.success_rate_drops (69-02, OBS-07 completion) ───
+
+
+def test_pool_refresh_complete_includes_success_rate_drops(pm, monkeypatch):
+    """pool_refresh_complete carries hosts newly demoted to dead this cycle."""
+    from vless.parser import VlessNode
+
+    # Pre-seed the existing pool with one already-dead node and one
+    # that will go dead during this refresh cycle.
+    pm._pool["nodes"] = [
+        {"host": "already-dead", "port": 443},
+    ]
+    # Record 20 failures for already-dead so it's graded dead NOW.
+    for _ in range(20):
+        pm.record_outcome("already-dead", success=False)
+    # Record 20 failures for fresh-dead BEFORE refresh so it's graded
+    # dead in the NEW pool as soon as admission lands it there.
+    for _ in range(20):
+        pm.record_outcome("fresh-dead", success=False)
+
+    new_alive = VlessNode(uuid="u1", host="fresh-alive", port=443, name="alive")
+    new_dead = VlessNode(uuid="u2", host="fresh-dead", port=443, name="dead")
+    still_dead = VlessNode(
+        uuid="u3", host="already-dead", port=443, name="stays-dead"
+    )
+
+    monkeypatch.setattr(pm, "_reload_xray_systemd", lambda: ("ok", 1, None))
+    monkeypatch.setattr(
+        "vless.manager.sources.fetch_igareck_list", lambda: "x"
+    )
+    monkeypatch.setattr(
+        "vless.manager.sources.parse_vless_list",
+        lambda t: ([new_alive, new_dead, still_dead], []),
+    )
+    monkeypatch.setattr(
+        "vless.manager.sources.filter_ru_nodes",
+        lambda ns: ([new_alive, new_dead, still_dead], []),
+    )
+    monkeypatch.setattr(
+        pm, "_probe_candidates_in_parallel",
+        lambda c: [new_alive, new_dead, still_dead],
+    )
+    monkeypatch.setattr(pm, "_rebuild_and_restart_xray", lambda: None)
+
+    pm.refresh_proxy_list()
+
+    lines = [
+        json.loads(line)
+        for line in pm._events_path.read_text().splitlines()
+        if line.strip()
+    ]
+    completes = [e for e in lines if e.get("event") == "pool_refresh_complete"]
+    assert len(completes) == 1
+    evt = completes[0]
+    assert "success_rate_drops" in evt
+    # fresh-dead is newly dead in the new pool (20 failures recorded,
+    # then admission places it in the pool — alive→dead in this cycle)
+    assert "fresh-dead" in evt["success_rate_drops"]
+    # already-dead was dead before AND after — not a drop
+    assert "already-dead" not in evt["success_rate_drops"]
+    # fresh-alive has no failure samples — not dead, not a drop
+    assert "fresh-alive" not in evt["success_rate_drops"]

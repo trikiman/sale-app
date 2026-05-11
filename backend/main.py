@@ -1260,9 +1260,16 @@ def _build_reliability_snapshot() -> dict:
     if cart_add_reason:
         reasons.append(cart_add_reason)
 
+    # v1.21 OBS-06: xray config drift visibility
+    drift_block, drift_reason, drift_is_critical = _compute_xray_drift_block(
+        pool, cycle_age
+    )
+    if drift_reason:
+        reasons.append(drift_reason)
+
     # Severity classification per OBS-02
     critical = {"xray_bridge_not_listening", "no_cycle_state"}
-    has_critical = any(r in critical for r in reasons)
+    has_critical = any(r in critical for r in reasons) or drift_is_critical
     n_failed = len(reasons)
 
     if n_failed == 0:
@@ -1284,6 +1291,8 @@ def _build_reliability_snapshot() -> dict:
     }
     if cart_add_block is not None:
         snapshot["cart_add"] = cart_add_block
+    if drift_block is not None:
+        snapshot["xray_drift"] = drift_block
     return snapshot
 
 

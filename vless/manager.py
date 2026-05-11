@@ -427,6 +427,15 @@ class VlessProxyManager:
 
         admitted = self._apply_subnet_diversity(admitted)
 
+        # v1.21 OBS-07: snapshot dead hosts BEFORE pool rewrite so we can
+        # emit the per-refresh delta (hosts that went alive→dead in this
+        # cycle) in pool_refresh_complete.success_rate_drops.
+        old_dead_hosts = {
+            n["host"]
+            for n in (self._pool.get("nodes") or [])
+            if n.get("host") and self._is_node_dead(n)
+        }
+
         # v1.21 REL-14: capture running xray host set BEFORE pool write so
         # the admission diff is accurate. On first deploy / missing config,
         # running_before is empty and every admitted host counts as added.
@@ -455,9 +464,18 @@ class VlessProxyManager:
                 self._reload_xray_systemd()
             )
 
+        # OBS-07: compute hosts newly demoted to dead by REL-15 in this
+        # refresh cycle (alive→dead transitions only, not already-dead).
+        new_dead_hosts = {
+            n["host"]
+            for n in (new_pool.get("nodes") or [])
+            if n.get("host") and self._is_node_dead(n)
+        }
+        success_rate_drops = sorted(new_dead_hosts - old_dead_hosts)
+
         # OBS-07: one pool_refresh_complete per refresh with full admission
-        # diff + restart outcome. Per-node vless_node_admitted events below
-        # stay for back-compat with admin tooling that reads them.
+        # diff + restart outcome + REL-15 drops. Per-node vless_node_admitted
+        # events below stay for back-compat with admin tooling that reads them.
         self._track_event(
             "pool_refresh_complete",
             {
@@ -470,6 +488,7 @@ class VlessProxyManager:
                 "restart_duration_ms": restart_duration_ms,
                 "restart_outcome": restart_outcome,
                 "restart_stderr_tail": restart_stderr_tail,
+                "success_rate_drops": success_rate_drops,
             },
         )
         if restart_outcome == "failed":
