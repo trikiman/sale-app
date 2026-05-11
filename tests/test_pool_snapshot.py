@@ -79,12 +79,13 @@ def test_pool_snapshot_shape_on_empty_pool(pm):
     snap = pm.pool_snapshot()
     assert set(snap.keys()) == {
         "size", "min_healthy", "quarantined_count",
-        "active_outbounds", "last_refresh_at",
+        "active_outbounds", "dead_by_success_rate_count", "last_refresh_at",
     }
     assert snap["size"] == 0
     assert snap["min_healthy"] == MIN_HEALTHY
     assert snap["quarantined_count"] == 0
     assert snap["active_outbounds"] == 0
+    assert snap["dead_by_success_rate_count"] == 0
     assert snap["last_refresh_at"] is None
 
 

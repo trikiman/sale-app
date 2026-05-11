@@ -62,6 +62,16 @@ _NODE_TEST_CONCURRENCY = 8
 _NODE_TEST_TIMEOUT_S = 12.0
 _MAX_PER_SUBNET = 3
 
+# v1.21 REL-15: per-host production success_rate tracking. Nodes whose
+# observed success rate drops below SUCCESS_RATE_DEAD_THRESHOLD (with
+# at least SUCCESS_RATE_MIN_SAMPLES samples on record) are treated as
+# "dead" and excluded from active outbounds, even if admission-time
+# probes and the observatory still consider them alive. In-memory only;
+# see .planning/phases/67-admitted-node-self-healing-loop/67-CONTEXT.md.
+SUCCESS_RATE_WINDOW = 100
+SUCCESS_RATE_MIN_SAMPLES = 20
+SUCCESS_RATE_DEAD_THRESHOLD = 0.1
+
 
 class VlessProxyManager:
     """Drop-in replacement for :class:`proxy_manager.ProxyManager`.
@@ -104,6 +114,15 @@ class VlessProxyManager:
         self._xray: XrayProcess | None = None
         self._last_config_reload: str | None = None
         self._last_crash_at: str | None = None
+
+        # v1.21 REL-15: per-host production outcome tracking (in-memory
+        # only; resets on process restart, re-populated by the re-probe
+        # loop + real cart/scrape traffic within ~10 min). Independent
+        # lock so recording an outcome during a cart-add never contends
+        # with pool refresh or xray restart under ``self._lock``.
+        self._outcomes: dict[str, list[bool]] = {}
+        self._last_success_at: dict[str, float] = {}
+        self._outcomes_lock = threading.Lock()
 
         self._prune_expired_cooldowns()
 
@@ -336,10 +355,19 @@ class VlessProxyManager:
         # Drop cooldown / excluded hosts before probing.
         self._prune_expired_cooldowns()
         cooling = self.cooldown_addrs()
+        # v1.21 REL-15: also skip hosts known-dead by production success_rate
+        # (only meaningful for refresh-in-place — fresh candidates from
+        # upstream won't have samples, but if the upstream list happens to
+        # re-announce a host we already graded dead, stay consistent).
+        dead_hosts = {
+            n["host"]
+            for n in self._pool.get("nodes", [])
+            if n.get("host") and self._is_node_dead(n)
+        }
         exclude = exclude or set()
         candidates: list[VlessNode] = []
         for node in ru_nodes:
-            if node.host in cooling:
+            if node.host in cooling or node.host in dead_hosts:
                 continue
             if node.host in exclude and any(
                 entry.get("host") == node.host for entry in self._pool.get("nodes", [])
@@ -424,6 +452,92 @@ class VlessProxyManager:
         nodes = self._pool.get("nodes", [])
         return dict(nodes[0]) if nodes else None
 
+    # ── v1.21 REL-13/15: admitted-node self-healing surface ────
+
+    def iter_admitted_hosts(self) -> list[str]:
+        """Return the list of admitted VLESS host strings (not cooldown'd).
+
+        Used by :mod:`keepalive.reprobe` to iterate what is currently in the
+        pool without re-doing cooldown filtering in the caller. Hosts in an
+        active 4h VkusVill cooldown are dropped — those are already out of
+        the xray outbound set, so probing them would only waste a bridge slot.
+        """
+        now = time.time()
+        with self._lock:
+            nodes = list(self._pool.get("nodes", []))
+            cooldowns = dict(self._cooldowns)
+        active_cooldown = {
+            host
+            for host, entry in cooldowns.items()
+            if (now - float(entry.get("blocked_at", 0.0))) < VKUSVILL_COOLDOWN_S
+        }
+        return [
+            n["host"]
+            for n in nodes
+            if n.get("host") and n["host"] not in active_cooldown
+        ]
+
+    def record_outcome(self, host: str | None, success: bool) -> None:
+        """Record one production-traffic outcome against a host.
+
+        ``host=None`` routes against the pool's current head-of-list — matches
+        the heuristic used by :meth:`mark_current_node_blocked`, since xray's
+        ``leastPing`` balancer typically picks the head of the outbound list.
+        Bounded to :data:`SUCCESS_RATE_WINDOW` samples per host (FIFO). No-op
+        when the pool is empty and ``host`` is ``None``.
+
+        Used from three production sites (see 67-CONTEXT.md §D4):
+
+          * ``cart/vkusvill_api.py::add`` — success/fail per cart-add
+          * ``scrape_{green,red,yellow}.py`` — success/fail per detail-fetch batch
+          * ``keepalive.reprobe._run_cycle`` — direct probe truth
+        """
+        if host is None:
+            with self._lock:
+                nodes = list(self._pool.get("nodes", []))
+            if not nodes:
+                return
+            host = nodes[0].get("host")
+            if not host:
+                return
+
+        now = time.time()
+        with self._outcomes_lock:
+            samples = self._outcomes.setdefault(host, [])
+            samples.append(bool(success))
+            if len(samples) > SUCCESS_RATE_WINDOW:
+                del samples[: len(samples) - SUCCESS_RATE_WINDOW]
+            if success:
+                self._last_success_at[host] = now
+
+    def success_rate(self, host: str) -> float | None:
+        """Return success rate over the window, or None if < 20 samples.
+
+        Below :data:`SUCCESS_RATE_MIN_SAMPLES` observations the value is
+        returned as ``None`` ("unknown") rather than a low-sample estimate —
+        otherwise every freshly-admitted node would look dead after its
+        first handful of probes.
+        """
+        with self._outcomes_lock:
+            samples = self._outcomes.get(host)
+            if samples is None or len(samples) < SUCCESS_RATE_MIN_SAMPLES:
+                return None
+            return sum(samples) / len(samples)
+
+    def _is_node_dead(self, entry: dict) -> bool:
+        """REL-15: exclude hosts whose success_rate is known-bad.
+
+        Conservative: ``True`` only when we have at least
+        :data:`SUCCESS_RATE_MIN_SAMPLES` observations AND the observed rate
+        is below :data:`SUCCESS_RATE_DEAD_THRESHOLD`. "Unknown" hosts are
+        treated as alive.
+        """
+        host = entry.get("host")
+        if not host:
+            return False
+        rate = self.success_rate(host)
+        return rate is not None and rate < SUCCESS_RATE_DEAD_THRESHOLD
+
     def pool_snapshot(self) -> dict:
         """Typed snapshot of the VLESS pool for health + admin consumption.
 
@@ -440,7 +554,13 @@ class VlessProxyManager:
             (expired cooldowns are NOT counted)
           - ``active_outbounds``: count of nodes the xray balancer can
             actually route through right now — pool size minus any node
-            whose host happens to also be in the cooldown set
+            whose host happens to also be in the cooldown set, minus any
+            node whose production ``success_rate`` has dropped below the
+            v1.21 REL-15 dead-node threshold
+          - ``dead_by_success_rate_count``: v1.21 REL-15 — count of
+            admitted nodes whose ``success_rate`` is known-bad (below
+            ``SUCCESS_RATE_DEAD_THRESHOLD`` with at least
+            ``SUCCESS_RATE_MIN_SAMPLES`` observations)
           - ``last_refresh_at``: ISO-8601 timestamp of the last pool
             write, or ``None`` before the first refresh
         """
@@ -454,16 +574,23 @@ class VlessProxyManager:
             for host, entry in cooldowns.items()
             if (now - float(entry.get("blocked_at", 0.0))) < VKUSVILL_COOLDOWN_S
         }
+        dead_hosts = {
+            n["host"]
+            for n in nodes
+            if n.get("host") and self._is_node_dead(n)
+        }
         active_outbounds = sum(
             1
             for entry in nodes
             if entry.get("host") not in active_cooldown_hosts
+            and entry.get("host") not in dead_hosts
         )
         return {
             "size": len(nodes),
             "min_healthy": MIN_HEALTHY,
             "quarantined_count": len(active_cooldown_hosts),
             "active_outbounds": active_outbounds,
+            "dead_by_success_rate_count": len(dead_hosts),
             "last_refresh_at": last_refresh_at,
         }
 
@@ -973,4 +1100,11 @@ _ = socket
 _ = os
 
 
-__all__ = ["VlessProxyManager", "MIN_HEALTHY", "VKUSVILL_COOLDOWN_S"]
+__all__ = [
+    "VlessProxyManager",
+    "MIN_HEALTHY",
+    "VKUSVILL_COOLDOWN_S",
+    "SUCCESS_RATE_WINDOW",
+    "SUCCESS_RATE_MIN_SAMPLES",
+    "SUCCESS_RATE_DEAD_THRESHOLD",
+]
