@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 milestone: v1.21
 milestone_name: VLESS Pool Self-Healing & Reload Pipeline
-status: in_progress
-last_updated: "2026-05-12T20:00:00.000Z"
+status: awaiting_audit
+last_updated: "2026-05-12T22:00:00.000Z"
 last_activity: 2026-05-12
 progress:
   total_phases: 3
-  completed_phases: 2
-  total_plans: 6
-  completed_plans: 6
-  percent: 66
+  completed_phases: 3
+  total_plans: 9
+  completed_plans: 9
+  percent: 100
 current_phase: 69
-current_phase_status: not_started
+current_phase_status: code_shipped
 current_phase_resume_file: null
 ---
 
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-05-12)
 
 ## Current Position
 
-Phase: Phase 69 ready to start. Phases 67 + 68 code-complete locally and pushed to origin.
-Next step: write `.planning/phases/69-drift-visibility/69-CONTEXT.md` + 69-01/02/03 plans, implement, run full suite, commit, push.
-Status: v1.21 two of three phases shipped + pushed. Phase 67 Admitted-Node Self-Healing Loop + Phase 68 xray Auto-Reload — 18 tests total, 342 passed + 3 baseline unchanged. Phase 67 also live-verified on EC2 post-hotfix (10/10 reprobes pass, pool healthy). Phase 68 awaiting operator sudoers deploy + live restart-triggered proof per `68-VERIFICATION.md`.
-Last activity: 2026-05-12 — Phase 68 three atomic commits (`139b55e`, `4091782`, `45e026b`) pushed to origin/main.
+Phase: All 3 v1.21 phases code-complete and committed. Awaiting milestone audit + operator live verification.
+Next step: `/gsd-audit-milestone` to produce `.planning/v1.21-MILESTONE-AUDIT.md`. STOP before `/gsd-complete-milestone` per user's standing instruction.
+Status: Phase 67 shipped + live-verified on EC2 post-hotfix (4 commits). Phase 68 code shipped, awaiting operator sudoers deploy + restart-triggered proof (3 commits). Phase 69 code shipped, awaiting deploy + drift-injection proof (3 commits). Total 10 commits this milestone (67 × 4 + 68 × 3 + 69 × 3). Full test suite 355 passed + 3 baseline Windows-only failures unchanged.
+Last activity: 2026-05-12 — Phase 69 three atomic commits (`0888b58`, `0a544a3`, `e3a02cd`); all v1.21 code shipped.
 
 ## Milestone Goal (v1.21 — active)
 
@@ -52,9 +52,9 @@ Last activity: 2026-05-12 — Phase 68 three atomic commits (`139b55e`, `4091782
 
 ## Next Up
 
-- `/gsd-plan-phase 69` — produce per-deliverable PLAN.md files for Phase 69 (Drift Visibility — `/api/health/deep` + `/admin/status` + proxy_events)
-- After Phase 69 ships: invoke `/gsd-audit-milestone` skill to produce `.planning/v1.21-MILESTONE-AUDIT.md`
+- `/gsd-audit-milestone` to produce `.planning/v1.21-MILESTONE-AUDIT.md` — check all 8 requirements satisfied in code, map requirements → phase deliverables → live-verification status
 - **STOP before `/gsd-complete-milestone`** per user's standing instruction — await manual review before archiving
+- Operator: deploy sudoers file per `.planning/phases/68-xray-auto-reload-on-admission-change/68-VERIFICATION.md` NEEDS_OPERATOR-1 then run full `bash scripts/verify_v1.21.sh all` on EC2
 - v1.22 candidate milestone: UX debt cleanup (admin Bug Reports badge, stale-banner copy, history search unrestricted mode) — 3 pending todos in `.planning/todos/pending/`
 
 ## Completed Milestones
@@ -120,6 +120,8 @@ Last activity: 2026-05-12 — Phase 68 three atomic commits (`139b55e`, `4091782
 | v1.21 REQUIREMENTS.md + ROADMAP.md drafted | 2026-05-12 |
 | v1.21 Phase 67 (Admitted-Node Self-Healing Loop) shipped + live-verified on EC2 post-hotfix | 2026-05-12 |
 | v1.21 Phase 68 (xray Auto-Reload on Admission Change) code-complete + pushed (awaiting sudoers deploy) | 2026-05-12 |
+| v1.21 Phase 69 (Drift Visibility — /api/health/deep + pool_refresh_complete) code-complete | 2026-05-12 |
+| v1.21 all 3 phases + 9 plans shipped locally; awaiting milestone audit + operator live verification | 2026-05-12 |
 
 ---
 *Last updated: 2026-05-12 after v1.21 milestone started. REQUIREMENTS.md has 8 requirements (3 REL, 2 OBS, 3 OPS) across 3 phases (67-69). ROADMAP.md has all phase details with driving evidence from 2026-05-10 outage. Two P1 todos consumed into v1.21 scope and moved to .planning/todos/completed/. Next: `/gsd-plan-phase 67` to produce per-deliverable PLAN.md files.*
