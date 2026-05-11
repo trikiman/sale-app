@@ -2,6 +2,7 @@
 created: 2026-04-02T03:24:41.693Z
 title: History search shows all matching products from catalog
 area: api
+priority: P2
 files:
   - backend/main.py:3264-3460
   - miniapp/src/HistoryPage.jsx

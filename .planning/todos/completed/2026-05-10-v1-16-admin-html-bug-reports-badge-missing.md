@@ -2,6 +2,7 @@
 created: 2026-05-10T16:26:37Z
 title: v1.16 admin.html missing Bug Reports (N) badge
 area: ui
+priority: P2
 files:
   - backend/admin.html (zero references to bugReports/bug_reports)
   - backend/main.py:4450 (backend exposes bugReports.count + bugReports.unread)

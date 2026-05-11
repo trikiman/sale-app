@@ -1,0 +1,76 @@
+function cmdInitTodos(cwd, area, raw) {
+  const config = loadConfig(cwd);
+  const now = new Date();
+
+  // List todos (reuse existing logic)
+  const pendingDir = path.join(planningDir(cwd), 'todos', 'pending');
+  let count = 0;
+  const todos = [];
+
+  try {
+    const files = fs.readdirSync(pendingDir).filter(f => f.endsWith('.md'));
+    for (const file of files) {
+      try {
+        const content = fs.readFileSync(path.join(pendingDir, file), 'utf-8');
+        const createdMatch = content.match(/^created:\s*(.+)$/m);
+        const titleMatch = content.match(/^title:\s*(.+)$/m);
+        const areaMatch = content.match(/^area:\s*(.+)$/m);
+        const todoArea = areaMatch ? areaMatch[1].trim() : 'general';
+        // v1.22 TOOL-01: optional priority frontmatter. P1/P2/P3/P4.
+        // Default P3 when missing or invalid. See ~/.kiro/skills/gsd-check-todos/SKILL.md
+        const priorityMatch = content.match(/^priority:\s*(P[1-4])\b/m);
+        const todoPriority = priorityMatch ? priorityMatch[1] : 'P3';
+
+        if (area && todoArea !== area) continue;
+
+        count++;
+        todos.push({
+          file,
+          created: createdMatch ? createdMatch[1].trim() : 'unknown',
+          title: titleMatch ? titleMatch[1].trim() : 'Untitled',
+          area: todoArea,
+          priority: todoPriority,
+          path: toPosixPath(path.relative(cwd, path.join(planningDir(cwd), 'todos', 'pending', file))),
+        });
+      } catch { /* intentionally empty */ }
+    }
+  } catch { /* intentionally empty */ }
+
+  // v1.22 TOOL-01: stable sort by (priorityRank, createdTs ascending).
+  // P1 first, then P2/P3/P4; within each priority, oldest created first.
+  const priorityRank = { P1: 1, P2: 2, P3: 3, P4: 4 };
+  todos.sort((a, b) => {
+    const rankA = priorityRank[a.priority] || 3;
+    const rankB = priorityRank[b.priority] || 3;
+    if (rankA !== rankB) return rankA - rankB;
+    const tsA = Date.parse(a.created) || 0;
+    const tsB = Date.parse(b.created) || 0;
+    return tsA - tsB;
+  });
+
+  const result = {
+    // Config
+    commit_docs: config.commit_docs,
+
+    // Timestamps
+    date: now.toISOString().split('T')[0],
+    timestamp: now.toISOString(),
+
+    // Todo inventory
+    todo_count: count,
+    todos,
+    area_filter: area || null,
+
+    // Paths
+    pending_dir: toPosixPath(path.relative(cwd, path.join(planningDir(cwd), 'todos', 'pending'))),
+    completed_dir: toPosixPath(path.relative(cwd, path.join(planningDir(cwd), 'todos', 'completed'))),
+
+    // File existence
+    planning_exists: fs.existsSync(planningDir(cwd)),
+    todos_dir_exists: fs.existsSync(path.join(planningDir(cwd), 'todos')),
+    pending_dir_exists: fs.existsSync(path.join(planningDir(cwd), 'todos', 'pending')),
+  };
+
+  output(withProjectRoot(cwd, result), raw);
+}
+

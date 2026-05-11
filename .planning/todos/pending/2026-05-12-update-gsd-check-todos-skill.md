@@ -2,6 +2,7 @@
 created: 2026-05-12T15:45:00Z
 title: Update /gsd-check-todos skill to support priority display + multi-select
 area: tooling
+priority: P4
 files:
   - ~/.kiro/skills/gsd-check-todos/SKILL.md
   - ~/.kiro/get-shit-done/workflows/check-todos.md

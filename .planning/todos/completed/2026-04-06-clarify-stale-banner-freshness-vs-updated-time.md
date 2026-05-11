@@ -2,6 +2,7 @@
 created: 2026-04-06T06:40:16.136Z
 title: Clarify stale banner freshness vs updated time
 area: api
+priority: P3
 files:
   - backend/main.py:805-876
   - miniapp/src/App.jsx:1099-1435
