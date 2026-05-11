@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.21
 milestone_name: VLESS Pool Self-Healing & Reload Pipeline
-status: defining_requirements
-last_updated: "2026-05-12T16:00:00.000Z"
+status: in_progress
+last_updated: "2026-05-12T20:00:00.000Z"
 last_activity: 2026-05-12
 progress:
   total_phases: 3
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
-current_phase: 67
+  completed_phases: 2
+  total_plans: 6
+  completed_plans: 6
+  percent: 66
+current_phase: 69
 current_phase_status: not_started
 current_phase_resume_file: null
 ---
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-05-12)
 
 ## Current Position
 
-Phase: not started (defining requirements complete; REQUIREMENTS.md + ROADMAP.md drafted 2026-05-12; awaiting `/gsd-plan-phase 67`).
-Next step: `/gsd-plan-phase 67` to produce per-deliverable PLAN.md files for Phase 67 (Admitted-Node Self-Healing Loop).
-Status: v1.20 shipped and archived 2026-05-12 (tag `v1.20`, 15/15 requirements, 6 phases + 3 late inserts, 20 commits). v1.21 initiated same day from the two P1 todos that were root cause of the 4-day VLESS outage 2026-05-06 → 05-10. Both todos consumed into REQUIREMENTS.md REL-13/14/15 + OBS-06/07 and moved to `.planning/todos/completed/`.
-Last activity: 2026-05-12 — v1.20 archived + v1.21 requirements + roadmap drafted.
+Phase: Phase 69 ready to start. Phases 67 + 68 code-complete locally and pushed to origin.
+Next step: write `.planning/phases/69-drift-visibility/69-CONTEXT.md` + 69-01/02/03 plans, implement, run full suite, commit, push.
+Status: v1.21 two of three phases shipped + pushed. Phase 67 Admitted-Node Self-Healing Loop + Phase 68 xray Auto-Reload — 18 tests total, 342 passed + 3 baseline unchanged. Phase 67 also live-verified on EC2 post-hotfix (10/10 reprobes pass, pool healthy). Phase 68 awaiting operator sudoers deploy + live restart-triggered proof per `68-VERIFICATION.md`.
+Last activity: 2026-05-12 — Phase 68 three atomic commits (`139b55e`, `4091782`, `45e026b`) pushed to origin/main.
 
 ## Milestone Goal (v1.21 — active)
 
@@ -52,9 +52,9 @@ Last activity: 2026-05-12 — v1.20 archived + v1.21 requirements + roadmap draf
 
 ## Next Up
 
-- `/gsd-plan-phase 67` — produce per-deliverable PLAN.md files for Phase 67 (Admitted-Node Self-Healing Loop)
-- After 67 plans drafted: `/gsd-execute-phase 67`, then `/gsd-verify-work 67`
-- After Phase 67 ships: `/gsd-discuss-phase 68` for xray auto-reload (depends on 67's reliable admitted-set signal)
+- `/gsd-plan-phase 69` — produce per-deliverable PLAN.md files for Phase 69 (Drift Visibility — `/api/health/deep` + `/admin/status` + proxy_events)
+- After Phase 69 ships: invoke `/gsd-audit-milestone` skill to produce `.planning/v1.21-MILESTONE-AUDIT.md`
+- **STOP before `/gsd-complete-milestone`** per user's standing instruction — await manual review before archiving
 - v1.22 candidate milestone: UX debt cleanup (admin Bug Reports badge, stale-banner copy, history search unrestricted mode) — 3 pending todos in `.planning/todos/pending/`
 
 ## Completed Milestones
@@ -118,6 +118,8 @@ Last activity: 2026-05-12 — v1.20 archived + v1.21 requirements + roadmap draf
 | v1.20 milestone SHIPPED + ARCHIVED + TAGGED | 2026-05-12 |
 | v1.21 milestone STARTED (VLESS Pool Self-Healing & Reload Pipeline, 3 phases, 8 requirements) | 2026-05-12 |
 | v1.21 REQUIREMENTS.md + ROADMAP.md drafted | 2026-05-12 |
+| v1.21 Phase 67 (Admitted-Node Self-Healing Loop) shipped + live-verified on EC2 post-hotfix | 2026-05-12 |
+| v1.21 Phase 68 (xray Auto-Reload on Admission Change) code-complete + pushed (awaiting sudoers deploy) | 2026-05-12 |
 
 ---
 *Last updated: 2026-05-12 after v1.21 milestone started. REQUIREMENTS.md has 8 requirements (3 REL, 2 OBS, 3 OPS) across 3 phases (67-69). ROADMAP.md has all phase details with driving evidence from 2026-05-10 outage. Two P1 todos consumed into v1.21 scope and moved to .planning/todos/completed/. Next: `/gsd-plan-phase 67` to produce per-deliverable PLAN.md files.*
