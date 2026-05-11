@@ -1,5 +1,15 @@
 # Milestones
 
+## v1.20 Cart-Add Latency & User-Facing Responsiveness (Shipped: 2026-05-11)
+
+**Phases completed:** 5 phases, 15 plans, 0 tasks
+
+**Key accomplishments:**
+
+- (none recorded)
+
+---
+
 ## v1.19 Production Reliability & 24/7 Uptime (Shipped: 2026-05-05)
 
 **Phases completed:** 3 phases (59-61), 8 plans
