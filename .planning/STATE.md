@@ -2,8 +2,8 @@
 gsd_state_version: 1.0
 milestone: v1.21
 milestone_name: VLESS Pool Self-Healing & Reload Pipeline
-status: awaiting_audit
-last_updated: "2026-05-12T22:00:00.000Z"
+status: live_verified
+last_updated: "2026-05-12T23:00:00.000Z"
 last_activity: 2026-05-12
 progress:
   total_phases: 3
@@ -12,7 +12,7 @@ progress:
   completed_plans: 9
   percent: 100
 current_phase: 69
-current_phase_status: code_shipped
+current_phase_status: live_verified
 current_phase_resume_file: null
 ---
 
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-05-12)
 
 ## Current Position
 
-Phase: All 3 v1.21 phases code-complete and committed. Awaiting milestone audit + operator live verification.
-Next step: `/gsd-audit-milestone` to produce `.planning/v1.21-MILESTONE-AUDIT.md`. STOP before `/gsd-complete-milestone` per user's standing instruction.
-Status: Phase 67 shipped + live-verified on EC2 post-hotfix (4 commits). Phase 68 code shipped, awaiting operator sudoers deploy + restart-triggered proof (3 commits). Phase 69 code shipped, awaiting deploy + drift-injection proof (3 commits). Total 10 commits this milestone (67 × 4 + 68 × 3 + 69 × 3). Full test suite 355 passed + 3 baseline Windows-only failures unchanged.
-Last activity: 2026-05-12 — Phase 69 three atomic commits (`0888b58`, `0a544a3`, `e3a02cd`); all v1.21 code shipped.
+Phase: All 3 v1.21 phases live-verified on EC2. Milestone audit updated with live evidence. Awaiting manual `/gsd-complete-milestone` invocation.
+Next step: Operator reviews `.planning/v1.21-MILESTONE-AUDIT.md`. When ready, run `/gsd-complete-milestone` to archive v1.21 + tag.
+Status: 14 commits shipped (67 ×4, 68 ×3, 69 ×3, state/audit ×4). Full test suite 355 passed + 3 baseline unchanged. Live EC2 proof captured: Phase 67 reprobe daemon passing 18/18 admitted nodes, Phase 68 sudoers deployed + xray systemctl reload-or-restart succeeded in 299ms, Phase 69 `/api/health/deep` xray_drift block surfaces correctly. 13/13 smoke checks green via `scripts/_ec2_smoke_v121.sh` on live host.
+Last activity: 2026-05-12 — Phase 68 + 69 live verification complete; milestone audit refreshed with captured evidence.
 
 ## Milestone Goal (v1.21 — active)
 
@@ -122,6 +122,9 @@ Last activity: 2026-05-12 — Phase 69 three atomic commits (`0888b58`, `0a544a3
 | v1.21 Phase 68 (xray Auto-Reload on Admission Change) code-complete + pushed (awaiting sudoers deploy) | 2026-05-12 |
 | v1.21 Phase 69 (Drift Visibility — /api/health/deep + pool_refresh_complete) code-complete | 2026-05-12 |
 | v1.21 all 3 phases + 9 plans shipped locally; awaiting milestone audit + operator live verification | 2026-05-12 |
+| v1.21 Phase 68 sudoers deployed + xray systemctl reload-or-restart live-verified (299ms) | 2026-05-12 |
+| v1.21 Phase 69 /api/health/deep xray_drift block live-verified on EC2 (drift injection + recovery) | 2026-05-12 |
+| v1.21 smoke script 13/13 green on live EC2; milestone audit refreshed | 2026-05-12 |
 
 ---
 *Last updated: 2026-05-12 after v1.21 milestone started. REQUIREMENTS.md has 8 requirements (3 REL, 2 OBS, 3 OPS) across 3 phases (67-69). ROADMAP.md has all phase details with driving evidence from 2026-05-10 outage. Two P1 todos consumed into v1.21 scope and moved to .planning/todos/completed/. Next: `/gsd-plan-phase 67` to produce per-deliverable PLAN.md files.*

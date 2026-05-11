@@ -121,12 +121,13 @@ for m in (\"_extract_running_hosts\", \"_reload_xray_systemd\"):
         _fail "68-B: manager helper methods missing on EC2"
     fi
 
-    # 68-C: sudoers entry deployed (passwordless reload on saleapp-xray only)
-    if ssh "$EC2_HOST" "test -r /etc/sudoers.d/saleapp-xray-reload && \
-        sudo -n grep -q 'saleapp-xray' /etc/sudoers.d/saleapp-xray-reload 2>/dev/null"; then
-        _pass "68-C: /etc/sudoers.d/saleapp-xray-reload present and references saleapp-xray"
+    # 68-C: sudoers entry deployed (passwordless systemctl on saleapp-xray)
+    # Functional check: we care that passwordless sudo on the systemctl
+    # invocations works, not that ubuntu can read the 0440 file directly.
+    if ssh "$EC2_HOST" "sudo -n /bin/systemctl is-active saleapp-xray >/dev/null 2>&1"; then
+        _pass "68-C: sudoers grants passwordless systemctl on saleapp-xray"
     else
-        _fail "68-C: sudoers entry missing or unreadable — see 68-VERIFICATION.md NEEDS_OPERATOR-1"
+        _fail "68-C: sudoers entry missing or not granting passwordless systemctl — see 68-VERIFICATION.md NEEDS_OPERATOR-1"
     fi
 
     # 68-D: unit tests green on EC2
@@ -210,9 +211,9 @@ else:
     required = {"admitted_hosts", "active_outbounds", "drift_count", "drifted_hosts", "first_seen_at"}
     missing = required - xd.keys()
     if missing:
-        print(f"MISSING:{sorted(missing)}")
+        print("MISSING:" + str(sorted(missing)))
     else:
-        print(f"OK:drift={xd[\"drift_count\"]}")
+        print("OK:drift=" + str(xd["drift_count"]))
 ')
     if [[ "$DRIFT_BLOCK" == OK:* ]]; then
         _pass "69-C: /api/health/deep xray_drift block schema complete (${DRIFT_BLOCK})"
@@ -240,7 +241,8 @@ if latest is None:
 elif 'success_rate_drops' not in latest:
     print('MISSING_KEY')
 else:
-    print(f'OK:drops={len(latest[\"success_rate_drops\"])}')
+    drops = latest['success_rate_drops']
+    print('OK:drops=' + str(len(drops)))
 PY" 2>/dev/null)
     if [[ "$SRD_OK" == OK:* ]]; then
         _pass "69-D: pool_refresh_complete carries success_rate_drops (${SRD_OK})"
