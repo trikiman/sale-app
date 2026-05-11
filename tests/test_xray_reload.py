@@ -187,3 +187,155 @@ def test_reload_constants_locked():
         "reload-or-restart",
         "saleapp-xray",
     ]
+
+
+# ── refresh_proxy_list wiring (68-02) ────────────────────────────────────
+
+def _make_fake_node(host: str):
+    """Return a VlessNode with only the fields _probe_candidates_in_parallel
+    + replace_nodes need so the test doesn't pin unrelated parser internals."""
+    from vless.parser import VlessNode
+
+    return VlessNode(
+        uuid="11111111-1111-1111-1111-111111111111",
+        host=host,
+        port=443,
+        name="fake",
+    )
+
+
+def test_refresh_skips_reload_when_admitted_set_unchanged(pm, monkeypatch):
+    """Admission set identical to running-config set → no systemctl call, outcome=unchanged."""
+    # Seed active.json with the SAME host that admission will yield.
+    pm._xray_config_path.write_text(
+        json.dumps(
+            {
+                "outbounds": [
+                    {
+                        "tag": "vless-1",
+                        "protocol": "vless",
+                        "settings": {"vnext": [{"address": "7.7.7.7"}]},
+                    }
+                ]
+            }
+        )
+    )
+    fake = _make_fake_node("7.7.7.7")
+    call_log: list[str] = []
+    monkeypatch.setattr(
+        pm,
+        "_reload_xray_systemd",
+        lambda: (call_log.append("called") or ("ok", 10, None)),
+    )
+    monkeypatch.setattr(
+        "vless.manager.sources.fetch_igareck_list", lambda: "irrelevant"
+    )
+    monkeypatch.setattr(
+        "vless.manager.sources.parse_vless_list", lambda t: ([fake], [])
+    )
+    monkeypatch.setattr(
+        "vless.manager.sources.filter_ru_nodes", lambda ns: ([fake], [])
+    )
+    monkeypatch.setattr(pm, "_probe_candidates_in_parallel", lambda cands: [fake])
+    # _rebuild_and_restart_xray exercises the in-process path; stub it.
+    monkeypatch.setattr(pm, "_rebuild_and_restart_xray", lambda: None)
+
+    pm.refresh_proxy_list()
+
+    # No reload call — set unchanged.
+    assert call_log == []
+    lines = [
+        json.loads(line)
+        for line in pm._events_path.read_text().splitlines()
+        if line.strip()
+    ]
+    completes = [e for e in lines if e.get("event") == "pool_refresh_complete"]
+    assert len(completes) == 1
+    evt = completes[0]
+    assert evt["restart_outcome"] == "unchanged"
+    assert evt["xray_restart_triggered"] is False
+    assert evt["added_hosts"] == []
+    assert evt["removed_hosts"] == []
+
+
+def test_refresh_triggers_reload_when_admitted_set_differs(pm, monkeypatch):
+    """Admission set differs from running-config set → _reload_xray_systemd invoked,
+    pool_refresh_complete event captures full diff."""
+    # active.json already has 1.1.1.1 + 2.2.2.2 from the fixture.
+    # Admission will yield 9.9.9.9 — diff forces reload.
+    fake = _make_fake_node("9.9.9.9")
+    call_log: list[str] = []
+
+    def fake_reload():
+        call_log.append("called")
+        return "ok", 42, None
+
+    monkeypatch.setattr(pm, "_reload_xray_systemd", fake_reload)
+    monkeypatch.setattr(
+        "vless.manager.sources.fetch_igareck_list", lambda: "irrelevant"
+    )
+    monkeypatch.setattr(
+        "vless.manager.sources.parse_vless_list", lambda t: ([fake], [])
+    )
+    monkeypatch.setattr(
+        "vless.manager.sources.filter_ru_nodes", lambda ns: ([fake], [])
+    )
+    monkeypatch.setattr(pm, "_probe_candidates_in_parallel", lambda cands: [fake])
+    monkeypatch.setattr(pm, "_rebuild_and_restart_xray", lambda: None)
+
+    pm.refresh_proxy_list()
+
+    assert call_log == ["called"]
+    lines = [
+        json.loads(line)
+        for line in pm._events_path.read_text().splitlines()
+        if line.strip()
+    ]
+    completes = [e for e in lines if e.get("event") == "pool_refresh_complete"]
+    assert len(completes) == 1
+    evt = completes[0]
+    assert evt["restart_outcome"] == "ok"
+    assert evt["xray_restart_triggered"] is True
+    assert evt["admitted_hosts_after"] == ["9.9.9.9"]
+    assert evt["admitted_hosts_before"] == ["1.1.1.1", "2.2.2.2"]
+    assert evt["added_hosts"] == ["9.9.9.9"]
+    assert evt["removed_hosts"] == ["1.1.1.1", "2.2.2.2"]
+    assert evt["restart_duration_ms"] == 42
+
+
+def test_refresh_emits_xray_restart_failed_event_on_systemctl_failure(pm, monkeypatch):
+    """Non-ok reload outcome should emit a separate xray_restart_failed event."""
+    fake = _make_fake_node("8.8.8.8")
+    monkeypatch.setattr(
+        pm,
+        "_reload_xray_systemd",
+        lambda: ("failed", 120, "Unit not found"),
+    )
+    monkeypatch.setattr(
+        "vless.manager.sources.fetch_igareck_list", lambda: "irrelevant"
+    )
+    monkeypatch.setattr(
+        "vless.manager.sources.parse_vless_list", lambda t: ([fake], [])
+    )
+    monkeypatch.setattr(
+        "vless.manager.sources.filter_ru_nodes", lambda ns: ([fake], [])
+    )
+    monkeypatch.setattr(pm, "_probe_candidates_in_parallel", lambda cands: [fake])
+    monkeypatch.setattr(pm, "_rebuild_and_restart_xray", lambda: None)
+
+    pm.refresh_proxy_list()
+
+    lines = [
+        json.loads(line)
+        for line in pm._events_path.read_text().splitlines()
+        if line.strip()
+    ]
+    failed_events = [e for e in lines if e.get("event") == "xray_restart_failed"]
+    assert len(failed_events) == 1
+    assert failed_events[0]["stderr_tail"] == "Unit not found"
+    assert failed_events[0]["duration_ms"] == 120
+    # pool_refresh_complete also emitted with outcome=failed
+    completes = [e for e in lines if e.get("event") == "pool_refresh_complete"]
+    assert len(completes) == 1
+    assert completes[0]["restart_outcome"] == "failed"
+    assert completes[0]["xray_restart_triggered"] is False

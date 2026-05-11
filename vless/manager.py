@@ -427,11 +427,64 @@ class VlessProxyManager:
 
         admitted = self._apply_subnet_diversity(admitted)
 
+        # v1.21 REL-14: capture running xray host set BEFORE pool write so
+        # the admission diff is accurate. On first deploy / missing config,
+        # running_before is empty and every admitted host counts as added.
+        running_before = self._extract_running_hosts()
+        admitted_hosts_after: set[str] = {n.host for n in admitted}
+        added_hosts = sorted(admitted_hosts_after - running_before)
+        removed_hosts = sorted(running_before - admitted_hosts_after)
+
         new_pool = pool_state.replace_nodes(self._pool, admitted, verified_country="RU")
         with self._lock:
             self._pool = new_pool
             pool_state.save(self._pool, self._pool_path)
             self._rebuild_and_restart_xray()
+
+        # REL-14: only trigger systemctl when the admitted host set differs
+        # from the running-config set. Set comparison is order-independent
+        # (see 68-CONTEXT.md §D3) and port-agnostic (hosts are the stable
+        # identifier; port-only changes are rare enough to wait for the
+        # next natural refresh).
+        if admitted_hosts_after == running_before:
+            restart_outcome: str = "unchanged"
+            restart_duration_ms: int | None = None
+            restart_stderr_tail: str | None = None
+        else:
+            restart_outcome, restart_duration_ms, restart_stderr_tail = (
+                self._reload_xray_systemd()
+            )
+
+        # OBS-07: one pool_refresh_complete per refresh with full admission
+        # diff + restart outcome. Per-node vless_node_admitted events below
+        # stay for back-compat with admin tooling that reads them.
+        self._track_event(
+            "pool_refresh_complete",
+            {
+                "admitted_count": len(admitted),
+                "admitted_hosts_before": sorted(running_before),
+                "admitted_hosts_after": sorted(admitted_hosts_after),
+                "added_hosts": added_hosts,
+                "removed_hosts": removed_hosts,
+                "xray_restart_triggered": restart_outcome == "ok",
+                "restart_duration_ms": restart_duration_ms,
+                "restart_outcome": restart_outcome,
+                "restart_stderr_tail": restart_stderr_tail,
+            },
+        )
+        if restart_outcome == "failed":
+            # Dedicated event so operator alerts can fire on this alone,
+            # independently of every pool_refresh_complete.
+            self._track_event(
+                "xray_restart_failed",
+                {
+                    "duration_ms": restart_duration_ms,
+                    "stderr_tail": restart_stderr_tail,
+                    "added_hosts": added_hosts,
+                    "removed_hosts": removed_hosts,
+                },
+            )
+
         for node in admitted:
             self._track_event(
                 "vless_node_admitted",
