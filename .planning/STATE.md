@@ -2,18 +2,18 @@
 gsd_state_version: 1.0
 milestone: v1.20
 milestone_name: Cart-Add Latency & User-Facing Responsiveness
-status: planning
-last_updated: "2026-05-05T19:13:00.000Z"
-last_activity: 2026-05-05
+status: ready_for_audit
+last_updated: "2026-05-12T03:30:00.000Z"
+last_activity: 2026-05-12
 progress:
-  total_phases: 5
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
-current_phase: 62
-current_phase_status: context_gathered
-current_phase_resume_file: .planning/phases/62-sessid-keepalive-warmup/62-CONTEXT.md
+  total_phases: 6
+  completed_phases: 6
+  total_plans: 18
+  completed_plans: 18
+  percent: 100
+current_phase: 66.1
+current_phase_status: shipped_local
+current_phase_resume_file: .planning/phases/66.1-stale-color-phantom-strip/66.1-VERIFICATION.md
 ---
 
 # Project State
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-04-22)
 
 ## Current Position
 
-Phase: 62 Sessid Keep-Alive + On-App-Open Warmup (🔵 CONTEXT GATHERED — ready for plan-phase).
-Next step: `/gsd-plan-phase 62` to produce per-deliverable PLAN.md files (estimated 4-5 plans: warmup module, scheduler thread spawn, backend nudge wiring, race-cancellation flag, smoke script skeleton).
-Status: 62-CONTEXT.md captured (201 lines) with 4 implementation decisions locked: warm-all linked users (D1), silent-log + JSONL retry on failure (D2), daemon thread in scheduler_service.py (D3), cart-add cancels in-flight warmup (D4). User direction: "fastest way and on the same side robust but robust in prioritize if it didn't cost too much delays" — interpreted as ship simplest, escalate robustness only when free. v1.19 archived (18/18 requirements, 24/24 smoke green). v1.20 ROADMAP.md and REQUIREMENTS.md drafted with 5 phases / 15 requirements.
-Last activity: 2026-05-05 — Phase 62 context discussion complete.
+Phase: 66.1 Stale-Color Phantom Strip (🟢 SHIPPED LOCAL — late UX insert; awaiting EC2 deploy + milestone audit refresh).
+Next step: Present v1.20 + 66.1 summary to user for manual review. User instructed to STOP before `/gsd-complete-milestone`.
+Status: All 5 planned v1.20 phases (62-66) plus the late 66.1 insert landed as local commits. 66.1 commits: `f821d45` (backend filter + 3 tests) and `c00d644` (smoke gate 66.1-A + planning docs + audit catch-up). Live MCP evidence captured: pre-fix HEAD~1 server on :18067 vs post-fix HEAD on :18066, same stale-green fixture → pre=4 products (2 phantom greens), post=2 products (no greens). Banner fields (`dataStale`, `staleInfo`, `sourceFreshness.green.isStale`) preserved in both. Screenshots in `.planning/phases/66.1-stale-color-phantom-strip/`. Full suite 323 passed + 3 pre-existing Windows-only baseline failures. `bash -n scripts/verify_v1.20.sh` green. NEEDS_OPERATOR for 66.1: EC2 deploy, synthetic stale-green check, rollback rehearsal, v1.19 regression 24/24.
+Last activity: 2026-05-12 — Phase 66.1 live MCP evidence captured; full v1.20 + 66.1 ready for user review.
 
 ## Milestone Goal (v1.20 — active)
 
@@ -53,10 +53,12 @@ Last activity: 2026-05-05 — Phase 62 context discussion complete.
 
 ## Next Up
 
-- `/gsd-plan-phase 62` — produce per-deliverable PLAN.md files for Phase 62 grounded in `62-CONTEXT.md`. Expected plans: 62-01 keepalive/warmup.py module, 62-02 scheduler thread spawn + backend nudge wiring, 62-03 race-cancellation flag in cart hot path, 62-04 tests + smoke script skeleton, 62-05 EC2 deploy + p95 baseline measurement.
-- After plans drafted: `/gsd-execute-phase 62` to build, then `/gsd-verify-work 62` for smoke + p95 baseline + rollback rehearsal.
-- After Phase 62 ships: `/gsd-discuss-phase 63` for Bridge Contention Elimination (PERF-06/07).
-- v1.19 commit `9ccd72b` is the audit-pass mark. v1.19 archive remains read-only at `.planning/milestones/v1.19-*` and `.planning/milestones/v1.19-phases/`.
+- **User-blocked**: Per explicit instruction, STOP before milestone close. User will review and run `/gsd-complete-milestone` manually after verifying.
+- Milestone audit `.planning/v1.20-MILESTONE-AUDIT.md` is already generated (verdict `passed`, 15/15 requirements, 0 gaps). Refresh needed to reflect the 66.1 late insert (18 local tests instead of 27 original; 7 phase VERIFICATION.md files instead of 5 — tracking amended in audit YAML frontmatter).
+- NEEDS_OPERATOR gates (captured in each phase's VERIFICATION.md): EC2 deploy of all v1.20 phases + 66.1, 50-sample p95 ≤ 4.0 s measurement on EC2, external `/api/health/deep` probe for `cart_add` block, synthetic stale-green check for 66.1, rollback rehearsal per phase, `bash scripts/verify_v1.20.sh all` green on EC2, `bash scripts/verify_v1.19.sh all` still 24/24.
+- v1.19 commit `9ccd72b` is the v1.19 audit-pass mark. v1.19 archive remains read-only at `.planning/milestones/v1.19-*` and `.planning/milestones/v1.19-phases/`.
+- v1.20 commit range: `51888f7` (62-01) through `c00d644` (66-03 planning + 66.1 smoke + v1.20 audit), 18 commits ahead of origin/main (not pushed — local only).
+- 66.1 commits: `f821d45` (backend filter + 3 tests, `backend/main.py` lines 1230-1250 + `backend/test_products_stale_filter.py`), `c00d644` (smoke gate 66.1-A in `scripts/verify_v1.20.sh`, planning docs under `.planning/phases/66.1-stale-color-phantom-strip/`, live MCP evidence screenshots).
 
 ## Completed Milestones
 
@@ -162,6 +164,15 @@ Last activity: 2026-05-05 — Phase 62 context discussion complete.
 | v1.19 milestone ARCHIVED to `.planning/milestones/v1.19-*` (ROADMAP, REQUIREMENTS, AUDIT, phases) | 2026-05-05 |
 | v1.20 milestone STARTED — Cart-Add Latency & User-Facing Responsiveness, 5 phases (62-66), 15 requirements | 2026-05-05 |
 | v1.20 Phase 62 context gathered — 4 implementation decisions locked (warm-all, silent-retry, daemon thread, cart-add-cancels-warmup) | 2026-05-05 |
+| v1.20 Phase 62 SHIPPED LOCAL — keepalive/warmup.py + scheduler daemon + 7 tests + NUDGE_QUEUE | 2026-05-08 |
+| v1.20 Phase 63 SHIPPED LOCAL — cart/bridge_semaphore.py + cart-items 12s cache + scraper semaphore + 7 tests | 2026-05-09 |
+| v1.20 Phase 64 SHIPPED LOCAL — USE_FAST_CART_ADD_ENDPOINT flag + ablation harness + research skeleton | 2026-05-10 |
+| v1.20 Phase 65 SHIPPED LOCAL — client_request_id idempotency + 8s->5s AbortController + pending polling | 2026-05-11 |
+| v1.20 Phase 66 SHIPPED LOCAL — /api/health/deep cart_add block + data/cart_events.jsonl 11-key ledger + 7 tests | 2026-05-12 |
+| v1.20 milestone READY FOR AUDIT — 16 commits local (51888f7..f74b008), 320 tests green, NEEDS_OPERATOR items captured in VERIFICATION.md per phase | 2026-05-12 |
+| v1.20 milestone AUDIT PASSED — 15/15 requirements, 0 gaps, verdict `passed` in `.planning/v1.20-MILESTONE-AUDIT.md` | 2026-05-12 |
+| v1.20 Phase 66.1 late insert: stale-color phantom strip — pre-existing bug caught during audit (stale green source + banner + phantom cards) | 2026-05-12 |
+| v1.20 Phase 66.1 SHIPPED LOCAL — backend filter + 3 tests + smoke gate 66.1-A + live MCP evidence (pre/post fixture comparison) | 2026-05-12 |
 
 ---
-*Last updated: 2026-05-05 after Phase 62 context discussion. 62-CONTEXT.md captures 4 implementation decisions plus locked defaults from REQUIREMENTS.md / ROADMAP.md. User explicitly delegated decision-making with the rule "fastest way + robust if it doesn't cost delays" — applied to choose warm-all-users (D1), silent-retry (D2), in-process daemon thread (D3), and cart-add-cancels-warmup (D4). Run `/gsd-plan-phase 62` next to produce per-deliverable PLAN.md files.*
+*Last updated: 2026-05-12 after Phase 66.1 shipped local (late UX insert). All 5 planned v1.20 phases (62/63/64/65/66) plus the 66.1 phantom-strip fix landed as 18 local commits `51888f7..c00d644`. 323 tests green + 3 pre-existing Windows-only baseline failures unchanged. `scripts/verify_v1.20.sh` has 19 smoke checks across Phase 62-66.1 plus v1.19 cross-version regression gate. NEEDS_OPERATOR sections captured per phase in `VERIFICATION.md`: EC2 deploy, 50-sample p95 ≤ 4.0 s measurement, external `/api/health/deep` cart_add block probe, synthetic stale-green check for 66.1, rollback rehearsal, `bash scripts/verify_v1.19.sh all` 24/24. Milestone audit at `.planning/v1.20-MILESTONE-AUDIT.md` passed before 66.1 landed (15/15 requirements). Per explicit user instruction, STOP before `/gsd-complete-milestone` — user will review and close manually after reviewing the 66.1 evidence.*
