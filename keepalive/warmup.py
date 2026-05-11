@@ -71,8 +71,13 @@ CART_ADD_FLAG_FRESH_S = 15.0
 # blow past PERF-05's 3 s p95 budget. Module-local so cart hot path stays
 # unchanged.
 WARMUP_TIMEOUT = httpx.Timeout(connect=5.0, read=5.0, write=3.0, pool=3.0)
-WARMUP_URL = "https://vkusvill.ru/personal/"
-WARMUP_ENDPOINT_LABEL = "GET /personal/"
+# v1.20 Phase 66.3: switched from https://vkusvill.ru/personal/ (GET, 5-7 s
+# TTFB through our bridge — 4-in-5 timeouts in production) to basket_recalc
+# (POST, 1.6-2.3 s TTFB). Same session-touch work on VkusVill's side, no
+# HTML page render. Live probes on EC2 2026-05-12 confirmed the 3x speedup.
+# basket_recalc is the same endpoint used by cart/vkusvill_api.py::get_cart.
+WARMUP_URL = "https://vkusvill.ru/ajax/delivery_order/basket_recalc.php"
+WARMUP_ENDPOINT_LABEL = "POST basket_recalc"
 WARMUP_PROXY = "socks5h://127.0.0.1:10808"
 WARMUP_USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -428,7 +433,27 @@ def _warmup_single_user(user_id_hash: str, cookies_path: str, trigger: str,
         return
 
     old_sessid = str(doc.get("sessid") or "")
+    old_user_id = doc.get("user_id")
     cookie_header = _cookie_header_from_doc(doc)
+
+    # v1.20 Phase 66.3: basket_recalc.php requires user_id + sessid form fields
+    # to authenticate. If either is missing we can't post a valid warmup, so
+    # skip cleanly rather than 404 VkusVill with an incomplete payload. The
+    # user's next login will refresh the metadata and warmup resumes.
+    if not old_sessid or not old_user_id:
+        _emit_event({
+            "timestamp_iso": _now_iso(),
+            "user_id_hash": user_id_hash,
+            "trigger": trigger,
+            "endpoint": WARMUP_ENDPOINT_LABEL,
+            "success": False,
+            "outcome": "skipped_missing_session",
+            "latency_ms": 0,
+            "sessid_changed": False,
+        })
+        with _STATE_LOCK:
+            _LAST_WARMUP_AT[user_id_hash] = t_start
+        return
 
     if stop_event.is_set():
         return
@@ -438,14 +463,23 @@ def _warmup_single_user(user_id_hash: str, cookies_path: str, trigger: str,
     new_user_id: "int | None" = None
 
     try:
-        resp = httpx.get(
+        # v1.20 Phase 66.3: basket_recalc.php is the lightest authenticated
+        # endpoint that performs the VkusVill-side session touch we need.
+        # Live EC2 probes show ~1.8 s p95 vs ~6 s for /personal/ — 3x speedup
+        # on the exact session-warming work we care about. Secondary benefit:
+        # basket_recalc also pre-warms the user's basket cache on VkusVill's
+        # side, so the next cart-add hot path is slightly faster too.
+        resp = httpx.post(
             WARMUP_URL,
             timeout=WARMUP_TIMEOUT,
             proxy=WARMUP_PROXY,
             headers={
                 "User-Agent": WARMUP_USER_AGENT,
                 "Cookie": cookie_header,
+                "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                "X-Requested-With": "XMLHttpRequest",
             },
+            data={"user_id": str(old_user_id), "sessid": str(old_sessid)},
             follow_redirects=False,
         )
         if resp.status_code == 200:

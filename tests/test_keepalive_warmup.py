@@ -221,23 +221,23 @@ def test_cart_add_active_cancellation(three_linked_users, monkeypatch):
     """Pre-set CART_ADD_ACTIVE[hash] -> cancelled_by_cart_add; 0 HTTP for that user.
 
     Other two users still warm through the real _warmup_single_user path,
-    but httpx.get is stubbed so no real network is hit.
+    but httpx.post is stubbed so no real network is hit.
     """
     monkeypatch.setattr(warmup, "_pool_is_healthy", lambda: True)
 
     http_called = {"n": 0}
 
-    def fake_get(url, **kwargs):
+    def fake_post(url, **kwargs):
         http_called["n"] += 1
 
         class _Resp:
             status_code = 200
-            text = "<html></html>"
+            text = '{"success":"Y","error":"","basket":{}}'
 
         return _Resp()
 
     import httpx
-    monkeypatch.setattr(httpx, "get", fake_get)
+    monkeypatch.setattr(httpx, "post", fake_post)
 
     # Flag the first user as having an active cart-add.
     flagged_hash = three_linked_users[0][0]
@@ -253,7 +253,7 @@ def test_cart_add_active_cancellation(three_linked_users, monkeypatch):
     assert cancelled[0]["latency_ms"] == 0
     assert cancelled[0]["success"] is False
 
-    # Other two users should have hit httpx.get once each
+    # Other two users should have hit httpx.post once each
     assert http_called["n"] == 2
 
 
@@ -311,3 +311,46 @@ def test_jsonl_rotation_at_ten_mb():
     assert len(new_lines) == 1
     loaded = json.loads(new_lines[0])
     assert loaded["outcome"] == "ok"
+
+
+# ---------------------------------------------------------------------------
+# 8. test_skips_when_session_metadata_missing (Phase 66.3)
+# ---------------------------------------------------------------------------
+def test_skips_when_session_metadata_missing(tmp_path, monkeypatch):
+    """basket_recalc requires user_id + sessid form fields. If either is
+    missing in cookies.json, warmup should skip cleanly (not fire an
+    unauthenticated POST) and emit outcome='skipped_missing_session'."""
+    monkeypatch.setattr(warmup, "_pool_is_healthy", lambda: True)
+
+    # Cookie doc WITHOUT sessid / user_id (freshly seeded, not yet extracted).
+    p = tmp_path / "cookies.json"
+    p.write_text(json.dumps({
+        "cookies": [{"name": "BITRIX_SM_SALE_UID", "value": "abc123"}],
+        # sessid missing
+        # user_id missing
+    }))
+    uid_hash = warmup.hash_user_id("444")
+    monkeypatch.setattr(
+        warmup, "_collect_linked_users", lambda: [(uid_hash, str(p))]
+    )
+
+    # httpx.post must NOT be called.
+    calls = {"n": 0}
+
+    def boom(*a, **kw):
+        calls["n"] += 1
+        raise AssertionError("httpx.post called despite missing session metadata")
+
+    import httpx
+    monkeypatch.setattr(httpx, "post", boom)
+
+    warmup._run_cycle(threading.Event())
+
+    assert calls["n"] == 0, "warmup must not POST when session metadata missing"
+    events = _read_jsonl()
+    skipped = [e for e in events if e.get("outcome") == "skipped_missing_session"]
+    assert len(skipped) == 1, f"expected 1 skipped_missing_session, got {len(skipped)}: {events}"
+    assert skipped[0]["user_id_hash"] == uid_hash
+    assert skipped[0]["latency_ms"] == 0
+    assert skipped[0]["success"] is False
+    assert skipped[0]["endpoint"] == warmup.WARMUP_ENDPOINT_LABEL
