@@ -754,6 +754,19 @@ function App() {
           // Backend couldn't reach VkusVill — keep optimistic state
           continue
         }
+        // v1.20 Phase 66.2 fix: Phase 63's cache-hit path (from_cache: true)
+        // returns items_count as an int but items: [] because the cached
+        // snapshot only has the count, not the full list. Using that empty
+        // list to rebuild cartItemsById wipes the optimistic state seeded
+        // by handleAddToCart, causing the stepper to fall back to a "status
+        // unknown" icon until the 12s cache expires. Skip the rebuild on
+        // cache hits — keep the optimistic state the caller just set.
+        if (cart.from_cache && Array.isArray(cart.items) && cart.items.length === 0 && (cart.items_count || 0) > 0) {
+          if (typeof cart.items_count === 'number') {
+            setCartCount(cart.items_count)
+          }
+          return { ok: true, itemsCount: cart.items_count, itemIds: cartItemIds, itemsById: cartItemsById, fromCache: true }
+        }
         if (cart.items_count != null) {
           const { itemIds, itemsById } = buildCartItemMap(cart.items || [])
           setCartCount(cart.items_count)
