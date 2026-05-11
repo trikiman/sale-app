@@ -102,31 +102,51 @@ Family members see every VkusVill discount (green/red/yellow) the moment it appe
 - ✓ **QA-05**: Milestone verification includes live production cart-add proof and history-semantic checks — v1.14
 
 - ✓ **REL-01..12, OBS-01..03, OPS-06..08**: v1.19 Production Reliability & 24/7 Uptime — 18/18 requirements satisfied, 78 tests on EC2, 24/24 smoke green, external `/api/health/deep` live with 8-key OBS-02 schema — v1.19 (shipped 2026-05-05)
+- ✓ **PERF-03..05**: v1.20 Sessid keep-alive + on-app-open warmup + anti-spam floor (Phase 62 + late 66.3 endpoint retune /personal/ → basket_recalc, 3× speedup live-verified) — v1.20 (shipped 2026-05-12)
+- ✓ **PERF-06..07**: v1.20 Per-user cart-items 12s cache during pending cart-add + global scraper semaphore with 10s timeout (Phase 63) — v1.20
+- ✓ **PERF-08..09**: v1.20 USE_FAST_CART_ADD_ENDPOINT feature-flag scaffolding + ablation harness (Phase 64 scaffolding; HAR spike deferred) — v1.20
+- ✓ **UX-01..03**: v1.20 Frontend 5s AbortController + polling on AbortError + client_request_id idempotency (Phase 65 + late 66.2 stepper cache-hit fix) — v1.20
+- ✓ **OBS-04..05**: v1.20 `/api/health/deep` cart_add block + `data/cart_events.jsonl` 11-key ledger (Phase 66) — v1.20
+- ✓ **OPS-09..11**: v1.20 scripts/verify_v1.20.sh with 19 smoke checks + v1.19 cross-version regression gate + rollback rehearsed per phase — v1.20
+- ✓ **66.1 Stale-Color Phantom Strip (late insert)**: `/api/products` drops products of stale color; matches VkusVill "Зелёных ценников сейчас нет" empty-state UX — v1.20
 
 ### Active
 
 <!-- Current scope. Building toward these. -->
 
-- v1.20 cart-add latency optimization & user-facing responsiveness. Scope: 20-min sessid keep-alive + on-app-open warmup eliminating cold-path penalty (~1.5 s); per-user mutex skipping basket_recalc during active add + scraper semaphore freeing the bridge during cart hot path (~5 s); VkusVill API surface spike for lighter endpoints + 16-field payload trim; frontend pending-polling on AbortError preventing the false-fail-then-double-add UX pattern observed 2026-05-05; cart-add observability (`p50/p95/p99` in `/api/health/deep` + per-attempt JSONL ledger).
+- v1.21 VLESS Pool Self-Healing & Reload Pipeline. Scope: periodic per-node re-probe of admitted VLESS nodes (not just at admission); xray auto-reload on admission rewrite; per-node production success rate tracking; health surface for xray-config-drift. Fixes root cause of 4-day outage 2026-05-06 → 05-10 where admitted nodes went silently 0% alive and xray never picked up pool refresh.
 
-## Current Milestone: v1.20 Cart-Add Latency & User-Facing Responsiveness
+## Current Milestone: v1.21 VLESS Pool Self-Healing & Reload Pipeline
 
-**Goal:** Cut end-to-end cart-add latency from the current 3-12 s envelope to a 2-4 s envelope, and eliminate the false-fail-then-double-add UX pattern that surfaces whenever VkusVill's server takes >8 s. Continues the v1.19 robust-over-fast cultural commitment: every phase ships with a scripted EC2 smoke test (`scripts/verify_v1.20.sh`), `VERIFICATION.md`, p50/p95/p99 latency regression check against an EC2-measured baseline, and rehearsed rollback path.
+**Goal:** Eliminate the "pool passes admission once, then quietly goes 0% alive for days" failure mode by making admitted nodes self-heal under real production traffic and by ensuring xray reloads config whenever the admitted set changes.
 
-**Target features** (finalized via `.planning/REQUIREMENTS.md` v1.20):
-- 20-min sessid keep-alive task in `scheduler_service.py` for users with recent activity, plus on-MiniApp-open opportunistic warmup (anti-spam: ≤ 1 per user per 15 min); eliminates the ~1.5 s cold-sessid revalidation tax (PERF-03/04/05)
-- Per-user mutex skipping `basket_recalc.php` while a `basket_add.php` is in flight (eliminates DB row-lock contention on VkusVill's side); global scraper semaphore pausing detail fetches during active cart-add (frees the VLESS tunnel) (PERF-06/07)
-- HAR-driven spike of VkusVill's API surface for lighter cart endpoints; 16-field payload ablation-trimmed to minimum (PERF-08/09)
-- Frontend `AbortController` 8 s → 5 s + on-AbortError pending-polling at `/api/cart/add-status/{attempt_id}` for up to 15 s; backend `client_request_id` idempotency preventing duplicate VkusVill POSTs (UX-01/02/03)
-- `/api/health/deep` `cart_add` block (`p50/p95/p99_ms`, `success_rate_1h/24h`, `double_add_rate_1h`); structured `data/cart_events.jsonl` with hashed user IDs (OBS-04/05)
-- Per-phase smoke gate `scripts/verify_v1.20.sh` carrying p95 baseline; rollback rehearsal mandatory (OPS-09/10/11)
+**Target features** (finalized via `.planning/REQUIREMENTS.md` v1.21):
+- Periodic per-node re-probe every ~10 min on each admitted node through the running bridge; failures cooldown, drop from active outbounds, trigger pool refresh if admitted set falls below MIN_HEALTHY (REL-13)
+- xray auto-reload on pool refresh when admitted host set changes (passwordless systemctl restart hook OR in-process xray management) — breaks the 4-day-outage pattern where pool.json had 16 healthy nodes but running xray routed to a single dead one (REL-14)
+- Per-node production success rate tracked in pool entries as sliding window; node treated as dead when rate → 0 even if observatory still reports alive (REL-15)
+- `/api/health/deep` + `/admin/status` surface "xray stale" reason when `pool.nodes[].host` doesn't match `xray.config.outbounds[].address` — next outage visible in minutes, not days (OBS-06)
+- scripts/verify_v1.21.sh carries forward v1.19 + v1.20 smoke gates, adds per-phase EC2 checks for the new guarantees (OPS-12/13/14)
 
 **Key context:**
-- 2026-05-05 live UAT: user added onion via MiniApp — first attempt 10.8 s backend success but frontend 8 s abort showed "fail", user retried, second attempt 3.6 s succeeded, **net result: double-added product** (0.7 kg instead of 0.35 kg)
-- Bridge probe confirms healthy: anon HEAD `vkusvill.ru/` ~520 ms, auth HEAD/GET `/personal/` ~400-600 ms, ~330 ms total bridge overhead. The slow path is VkusVill's `basket_add.php` heavy-compute (auth + product + price + delivery + DB write), not our infrastructure.
-- ~5 s of the 10.8 s slow-path is self-inflicted: bridge multiplexing contention (~2.5 s), DB row-lock contention vs parallel `basket_recalc.php` (~2.5 s), stale-sessid revalidation (~1.5 s). All three are addressable on our side.
-- v1.19 reliability gains must not regress: pool drift visibility, breaker state, deep health endpoint, smoke gate `scripts/verify_v1.19.sh` retained as cross-version regression guard alongside `scripts/verify_v1.20.sh`.
-- User preference (recorded in memory, reaffirmed 2026-05-05): no fast hotfixes — formal GSD workflow end-to-end, safe/robust over fast.
+- Root-cause evidence for 2026-05-06 → 05-10 outage captured in `.planning/todos/pending/2026-05-10-vless-pool-admission-lacks-dynamic-rehealth.md` and `2026-05-10-xray-not-reloaded-after-pool-admission.md` — both todos consumed into this milestone and archived on ship.
+- Manual fix on 2026-05-10 (sudo systemctl restart saleapp-xray + whitelist 8 probed-good nodes) dropped bridge `vkusvill.ru/` probe from HTTP 000 (15s timeout) to HTTP 200 (1.4-5s) immediately. Scheduler completed a full cycle within 2 minutes. That is the shape of the fix this milestone automates.
+- v1.20 reliability gains must not regress: warmup daemon, cart-items cache, bridge semaphore, idempotency index, /api/health/deep cart_add block. scripts/verify_v1.20.sh retained as cross-version regression guard alongside scripts/verify_v1.21.sh.
+- User preference (recorded, reaffirmed 2026-05-12): robust-over-fast, no hotfixes, formal GSD workflow end-to-end, each phase independently testable and rollback-safe.
+
+## Previous Shipped Milestone: v1.20 Cart-Add Latency & User-Facing Responsiveness (2026-05-12)
+
+**Goal:** Cut end-to-end cart-add latency from the 3-12 s envelope to 2-4 s, and eliminate the false-fail-then-double-add UX pattern observed 2026-05-05 live UAT.
+
+**Shipped features:**
+- 20-min sessid keep-alive daemon + on-MiniApp-open warmup nudge with anti-spam floor
+- Per-user cart-items 12s cache + global scraper semaphore freeing the VLESS tunnel during cart-add
+- USE_FAST_CART_ADD_ENDPOINT feature-flag scaffolding (HAR spike deferred as tech debt)
+- Frontend 5s AbortController + on-AbortError polling + backend client_request_id idempotency (eliminates the double-add UX bug)
+- /api/health/deep cart_add block (p50/p95/p99, success_rate, double_add_rate) + data/cart_events.jsonl 11-key ledger
+- Late fixes: 66.1 stale-color phantom strip (phantom cards when source stale), 66.2 cart stepper cache-hit UI fix (⟲ flash after add), 66.3 warmup endpoint retune `/personal/` → `basket_recalc` (3× speedup live-verified 6s → 1.8s)
+- scripts/verify_v1.20.sh with 19 smoke checks + v1.19 cross-version regression gate + rollback rehearsed per phase
+
+_Archive: `.planning/milestones/v1.20-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md`, `.planning/milestones/v1.20-phases/`, `.planning/milestones/v1.20-SESSION-REPORT-2026-05-12.md`. Tag: v1.20._
 
 ## Previous Shipped Milestone: v1.19 Production Reliability & 24/7 Uptime (2026-05-05)
 
@@ -220,6 +240,7 @@ Search and polish improvements for the History page:
 
 ## Next Milestone Candidates
 
+- **v1.22 UX Debt Cleanup**: v1.16 admin Bug Reports badge (backend ready, UI never wired), stale-banner copy clarification (partially resolved by 66.1), history search unrestricted mode (old v1.5 bug).
 - Reverse-engineered/private API path for green data only if cadence + robustness work still cannot meet freshness targets
 - Deeper admin observability for scraper health trends and historical freshness drift
 - Larger-scale frontend data-path work such as server-driven pagination or virtualization if card performance still degrades as product volume grows
@@ -323,5 +344,5 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-05 after v1.19 milestone shipped (Production Reliability & 24/7 Uptime, phases 59-61, 18/18 requirements, 24/24 smoke green) and v1.20 (Cart-Add Latency & UX Responsiveness, phases 62-66) initiated based on 2026-05-05 live UAT evidence of cart-add double-add caused by frontend (8 s) / backend (10 s) / VkusVill (10.8 s) timeout mismatch.*
+*Last updated: 2026-05-12 after v1.20 (Cart-Add Latency & User-Facing Responsiveness) shipped and archived (15/15 requirements, 6 phases 62-66 + 66.1/.2/.3, 20 commits, tag v1.20). v1.21 (VLESS Pool Self-Healing & Reload Pipeline) initiated to close the root causes of the 4-day VLESS outage 2026-05-06 → 05-10.*
 
