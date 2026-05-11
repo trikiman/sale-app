@@ -22,78 +22,98 @@
 - ✅ **v1.18** Geo Resolver & Scraper Recovery — Phase 58 (shipped 2026-04-25)
 - ✅ **v1.19** Production Reliability & 24/7 Uptime — Phases 59-61 (shipped 2026-05-05)
 - ✅ **v1.20** Cart-Add Latency & User-Facing Responsiveness — Phases 62-66 + 66.1/.2/.3 (shipped 2026-05-12, tag `v1.20`)
-- ⏳ **v1.21** VLESS Pool Self-Healing & Reload Pipeline — Phases 67-69 (active, started 2026-05-12)
+- ✅ **v1.21** VLESS Pool Self-Healing & Reload Pipeline — Phases 67-69 (shipped 2026-05-12, tag `v1.21`)
+- ⏳ **v1.22** UX Debt Cleanup + Tooling Polish — Phases 70-73 (active, started 2026-05-12)
 
-## v1.21 VLESS Pool Self-Healing & Reload Pipeline (ACTIVE — started 2026-05-12)
+## v1.22 UX Debt Cleanup + Tooling Polish (ACTIVE — started 2026-05-12)
 
-Eliminate the "pool passes admission once, then quietly goes 0% alive for days" failure mode. Converts the manual fix rehearsed on 2026-05-10 (`sudo systemctl restart saleapp-xray` after whitelisting 8 probed-good nodes) into a deterministic self-healing loop plus a visible drift signal so the next outage is caught in minutes, not days.
+Three UI/API bugs that have been sitting in `.planning/todos/pending/` since earlier milestones shipped half the fix but never closed the UI loop. Plus one tooling polish (`/gsd-check-todos` priority-aware triage). Small per-phase scope (~20-100 LOC each), tight milestone discipline preserved from v1.21.
 
-Driving evidence (2026-05-10 incident — 4-day silent outage):
+Driving evidence (from pending todos):
 
-| Layer | What went wrong | How v1.21 fixes it |
-|---|---|---|
-| Admitted nodes | Passed admission once, never re-probed through running bridge | REL-13 periodic 10-min re-probe on live bridge |
-| xray config reload | `data/vless_pool.json` + `bin/xray/configs/active.json` rewritten every hour, running xray never re-read them | REL-14 auto-`systemctl reload-or-restart saleapp-xray` on admission set change |
-| Dead-node signal | Observatory probes through dead outbound also failed; no alive signal from observatory ever | REL-15 per-node production success-rate tracking (100-sample sliding window) |
-| Visibility | Pool showed `size=16, quarantined=7` = looked healthy while real reachability was 0% | OBS-06 `/api/health/deep` xray_drift block + degraded/unhealthy thresholds |
-| Postmortem | No per-refresh event ledger; 4-day outage only noticed by manual live probe | OBS-07 pool_refresh_complete JSONL event with admitted/removed hosts + restart timing |
+| Area | Todo | Age | v1.22 Phase |
+|---|---|---|---|
+| History search | `2026-04-02-history-search-shows-all-matching-products-from-catalog` — search filters out products currently on sale if they match query, only shows history-only items | ~40 days | Phase 70 |
+| Stale banner UX | `2026-04-06-clarify-stale-banner-freshness-vs-updated-time` — "Обновлено: 09:36" + stale warning looks contradictory to user | ~36 days | Phase 71 |
+| Admin badge | `2026-05-10-v1-16-admin-html-bug-reports-badge-missing` — Phase 61 Success Criterion 3 never wired in admin.html | ~2 days | Phase 72 |
+| Kiro tooling | `2026-05-12-update-gsd-check-todos-skill` — flat list, no priority sort, no multi-select | 0 days | Phase 73 |
 
-Empirical targets (measured on EC2 2026-05-10):
-- Post-restart bridge → `vkusvill.ru/` probe: HTTP 200 in 1.4-5s (was HTTP 000 with 15s timeout)
-- Scheduler full cycle after restart: 2 minutes (was zero complete cycles in 4 days)
-- Admitted RU nodes after whitelist rebuild: 8 probed-good (was 16 stale + 7 quarantined)
-
-**Goal:** Convert the 2026-05-10 manual fix into a deterministic self-healing loop with a visible drift signal.
-**Granularity:** Medium
-**Phases:** 3 (67-69)
-**Requirements:** 8 (REL-13..15, OBS-06..07, OPS-12..14)
+**Goal:** Close accumulated UX/UI debt from v1.5 / v1.10 / v1.16, plus a tooling polish so future milestones triage todos faster.
+**Granularity:** Small
+**Phases:** 4 (70-73)
+**Requirements:** 7 (3 UX, 1 TOOL, 3 OPS)
 
 ### Phases
 
-- [x] **Phase 67: Admitted-Node Self-Healing Loop** — Scheduler task re-probes each admitted VLESS node through the running bridge every ≤ 10 min using `_probe_vkusvill` (authenticated HEAD against vkusvill.ru). Probe failures move node into existing 4h VkusVill cooldown; pool refresh only triggers when admitted pool would drop below `MIN_HEALTHY`. Per-node 100-sample sliding `success_rate` tracked in `VlessProxyManager`; nodes with `success_rate < 0.1` treated as dead even if observatory still reports alive. Smoke gate: induce a pool-wide failure (hosts-block for 60s), verify re-probe detects it within 2 min. (REL-13, REL-15) — **SHIPPED 2026-05-12** (commits `aa433ff`, `0598224`, `c4df629`, hotfix `a234f6d`)
-- [x] **Phase 68: xray Auto-Reload on Admission Change** — When `refresh_proxy_list` admits a host set whose `host` list differs from the running xray config, scheduler calls `sudo systemctl reload-or-restart saleapp-xray`. Passwordless sudoers entry for `ubuntu` on that specific unit added in deploy. Unchanged admission set → no restart. Throttle: ≤ 1 restart per 90s to prevent churn. Systemd stays the lifecycle owner (in-process xray management explicitly out-of-scope per v1.15 D7). Smoke gate: force admission set change on EC2, verify xray restarts within 10s and bridge reachability returns to HTTP 200 within 90s. (REL-14) — **CODE SHIPPED 2026-05-12** (commits `139b55e`, `4091782`, `45e026b`); awaiting operator sudoers deploy + live restart-triggered proof per `.planning/phases/68-xray-auto-reload-on-admission-change/68-VERIFICATION.md`
-- [x] **Phase 69: Drift Visibility — /api/health/deep + /admin/status + proxy_events** — `/api/health/deep` gains `xray_drift` block (`admitted_hosts`, `active_outbounds`, `drift_count`). When `drift_count > 0` for >5 min → status `degraded`; when also `last_cycle_age_s > 10 min` → `unhealthy`. `/admin/status.reliability.xray_drift` mirrors the block. Every `refresh_proxy_list` writes one `pool_refresh_complete` JSONL line to `data/proxy_events.jsonl` with admitted_count/added_hosts/removed_hosts/xray_restart_triggered/restart_duration_ms/success_rate_drops. Smoke gate: external curl of `/api/health/deep` returns 200 when pool+xray in sync, 503 with `xray_stale_config:N_nodes_drifted` reason when drift injected. (OBS-06, OBS-07) — **CODE SHIPPED 2026-05-12** (commits `0888b58`, `0a544a3`, `e3a02cd`); awaiting operator deploy + live drift-injection proof per `.planning/phases/69-drift-visibility/69-VERIFICATION.md`
+- [ ] **Phase 70: History Search Catalog-Wide** — Remove the `total_sale_count > 0` filter from `/api/history/search` so ANY product in `product_catalog` matching the query is returned. Result rows carry `currentSaleType: "green" | "red" | "yellow" | null` so `HistoryPage.jsx` can render live badges on history cards that match today's sale. Search behaves like VkusVill's own search: every matching product visible, live-vs-history differentiated by visual treatment. Smoke gate: seeded test against "цезарь" with a fixture green product → result includes the green product with `currentSaleType: "green"`. (UX-BUG-01)
+
+- [ ] **Phase 71: Stale Banner Clarification** — Align the UI's "Обновлено: HH:MM" label with the per-source stale banner so they don't contradict. Pick option (A) switch header label to oldest-source-time, or (B) inline-annotate banner with "(green: 30m old)". Discuss → plan → ship in one phase. Re-examine the 10-minute stale threshold constant if v1.10 cadence changes suggest it's wrong. Smoke gate: synthetic fixture with green mtime 25 min old, red + yellow fresh → banner AND header both reflect the stale source. (UX-COPY-01)
+
+- [ ] **Phase 72: admin.html Bug Reports Badge** — Add ~20 lines to `backend/admin.html` mirroring the existing `proxy-badge` (line 426) / `cart-pending-count` (line 407) patterns: new `<span id="bug-reports-badge">` hidden by default, `applyStatus(data)` reads `data.bugReports.count/unread`, shows `Bug Reports (N)` when N > 0, optional click opens `/admin/bug-reports`. Backend side shipped in v1.16 (`/admin/status.bugReports.{count,unread}`), this is pure UI. If v1.21 `xray_drift` card makes sense to add in the same file for the same cost, include it as UX-BADGE-02 late-insert. Smoke gate: curl `/admin/status` mock with `bugReports.count=3,unread=2` → admin.html contains `Bug Reports (2)` badge string. (UX-BADGE-01)
+
+- [ ] **Phase 73: gsd-check-todos Skill Polish** — Kiro-side skill file edits under `~/.kiro/skills/gsd-check-todos/SKILL.md` and `~/.kiro/get-shit-done/workflows/check-todos.md`. Adds `priority: P1|P2|P3|P4` frontmatter (existing defaults to P3), sorts list P1 → P4 then age, adds `--by-area` flag. New action: `fold into milestone` — when no active milestone, prompt `/gsd-new-milestone` with selected todo scopes pre-filled. Documents frontmatter schema explicitly. Updates all 4 current pending todos with explicit priority values. No EC2 deploy. Smoke gate: running the updated skill against a synthetic 5-todo directory returns them in P1-first order, and the `fold into milestone` option appears. (TOOL-01)
 
 ### Phase Details
 
-### Phase 67: Admitted-Node Self-Healing Loop
-**Goal:** Make admitted VLESS nodes continuously verify they're alive under real production conditions (not just at admission). Periodic re-probe every ≤10 min + per-node success-rate truth signal from production traffic.
-**Depends on:** v1.20 closed (needs the v1.19 pool_snapshot infrastructure + v1.20 `/api/health/deep` to build on); v1.20 regression gate must stay green.
-**Requirements:** REL-13, REL-15 — plus continued OPS-12 / OPS-13 / OPS-14.
-**Success Criteria** (what must be TRUE):
-  1. [ ] `scheduler_service.py` re-probe task: iterates admitted nodes every 10 min, fires authenticated `HEAD vkusvill.ru/` via `_probe_vkusvill` through the running bridge, routes failures to the existing 4h VkusVill cooldown.
-  2. [ ] `VlessProxyManager` pool entries track `last_success_at` (unix ts) and a 100-sample sliding `success_rate` (float 0..1). Updated on every real cart-add, scrape call, and re-probe.
-  3. [ ] When a pool entry's `success_rate < 0.1` and sample count >= 20, node is excluded from active outbounds on next refresh even if observatory reports alive.
-  4. [ ] EC2 smoke gate: induce pool-wide failure via `hosts`-override for 60s; scheduler re-probe detects it within 2 min; pool drops below MIN_HEALTHY triggering refresh; after hosts restored, scheduler recovers within 2 min without manual intervention.
-  5. [ ] `scripts/verify_v1.21.sh` skeleton exists with Phase-67 smoke checks; idempotent; runs over SSH.
-  6. [ ] v1.19 + v1.20 smoke scripts stay green (cross-version regression preserved).
-**Plans:** TBD via `/gsd-plan-phase 67`
-
-### Phase 68: xray Auto-Reload on Admission Change
-**Goal:** Stop the "pool is healthy but xray still routing to dead May 5 outbound" failure mode. When refresh admits a different host set than what xray is running, reload xray.
-**Depends on:** Phase 67 (re-probe must be working so we have a trustworthy admitted set to reload against; without 67, auto-reload churns on stale admission).
-**Requirements:** REL-14 — plus continued OPS-12 / OPS-13 / OPS-14.
+### Phase 70: History Search Catalog-Wide
+**Goal:** Fix v1.5 regression where searching history for a product currently on sale returns no results because the filter excludes `total_sale_count == 0` items that never had a sale recorded but exist in `product_catalog`.
+**Depends on:** v1.21 closed (no new VLESS infra, just a backend filter removal + miniapp rendering tweak); v1.21 regression gate must stay green.
+**Requirements:** UX-BUG-01 — plus continued OPS-15/16/17.
 **Success Criteria:**
-  1. [ ] `VlessProxyManager.refresh_proxy_list` compares new admitted host set vs current running xray config host set; if different, calls `subprocess.run(["sudo", "systemctl", "reload-or-restart", "saleapp-xray"])`.
-  2. [ ] Deploy step adds passwordless sudoers entry for `ubuntu` on `saleapp-xray.service` only (no broader sudo). Rehearsed in both Phase 68 deploy and rollback procedures.
-  3. [ ] Throttle: ≤ 1 restart per 90s (in-memory timestamp); additional admission changes within that window defer until throttle clears. Admission events during throttle logged to `proxy_events.jsonl` as `xray_restart_deferred`.
-  4. [ ] Restart observability: emit `pool_refresh_complete` with `xray_restart_triggered=true` + `restart_duration_ms`. On restart failure (systemd exit ≠ 0), emit `xray_restart_failed` with stderr tail and leave pool state unchanged.
-  5. [ ] EC2 smoke gate: force admission set change (e.g. swap `data/vless_pool.json` with a different host list), verify xray restarts within 10s and `active_outbounds` in new xray config matches `admitted_hosts` in pool json.
-  6. [ ] Rollback rehearsal: revert Phase 68, confirm systemd unit unchanged, sudoers entry removed cleanly, no stale state in `data/`.
-**Plans:** TBD via `/gsd-plan-phase 68`
+  1. [ ] `/api/history/search?q=...` returns products from `product_catalog` matching the query regardless of `total_sale_count`. Existing sort (relevance) preserved.
+  2. [ ] Response rows carry `currentSaleType: str | null` derived from the latest merged products set (green/red/yellow). `null` when product is not on sale today.
+  3. [ ] `miniapp/src/HistoryPage.jsx` renders currently-on-sale matches with the same green/red/yellow badge as `App.jsx` main page; history-only matches keep ghost-card treatment.
+  4. [ ] Regression pin: `backend/test_history_search_catalog_wide.py` seeds a catalog row for "цезарь салат" with `total_sale_count=0` AND a current green sale for the same product id, asserts the search returns it with `currentSaleType == "green"`.
+  5. [ ] v1.21 + v1.20 + v1.19 smoke scripts stay green.
+**Plans:** TBD via `/gsd-plan-phase 70`
 
-### Phase 69: Drift Visibility — /api/health/deep + /admin/status + proxy_events
-**Goal:** Make the "pool says healthy but xray is stale" state visible. When it happens in future it should surface in minutes via existing uptime monitors, not go unnoticed for days.
-**Depends on:** Phase 67 + Phase 68 (drift detection needs both signals working; before 67/68, drift is uncomputable or unfixable).
-**Requirements:** OBS-06, OBS-07 — plus continued OPS-12 / OPS-13 / OPS-14.
+### Phase 71: Stale Banner Clarification
+**Goal:** Stop showing a freshly-updated header timestamp next to a stale-source warning without explaining the semantic difference. User-reported confusion since v1.10.
+**Depends on:** Phase 70 (not strictly, but phases 70/71 share the miniapp build).
+**Requirements:** UX-COPY-01 — plus continued OPS-15/16/17.
 **Success Criteria:**
-  1. [ ] `/api/health/deep` response `snapshot["xray_drift"]` = `{admitted_hosts: int, active_outbounds: int, drift_count: int}`. Absent when pool snapshot unavailable (no-ledger fallback, same pattern as v1.20 cart_add block).
-  2. [ ] When `drift_count > 0` for >5 min (tracked via `_drift_first_seen_monotonic` per-node): `reasons[]` gains `xray_stale_config:{N}_nodes_drifted` (degraded threshold); when also `last_cycle_age_s > 10 min`: same reason but deep health flips to `unhealthy`.
-  3. [ ] `/admin/status.reliability.xray_drift` mirrors the block (same shape, same freshness).
-  4. [ ] `data/proxy_events.jsonl` emits `pool_refresh_complete` on every refresh with: `admitted_count`, `added_hosts[]`, `removed_hosts[]`, `xray_restart_triggered` (bool), `restart_duration_ms` (int when triggered), `success_rate_drops[]` (hosts demoted by REL-15). Existing event-type schemas unchanged.
-  5. [ ] EC2 smoke gate: external `curl https://vkusvillsale.vercel.app/api/health/deep` returns 200 when pool+xray in sync; inject drift (rewrite pool JSON with different hosts, skip xray restart for 6 min), verify endpoint flips to 503 with `xray_stale_config` reason; trigger manual restart, verify 200 returns within 30 s.
-  6. [ ] v1.21 smoke checks total ≥ 12 green across Phase 67/68/69; v1.20 + v1.19 regression 19 + 24 = 43 green.
-**Plans:** TBD via `/gsd-plan-phase 69`
+  1. [ ] Pick option A OR B (see REQUIREMENTS.md UX-COPY-01) — decision captured in 71-CONTEXT.md during `/gsd-discuss-phase 71`. Default leaning: option (B) inline-annotate banner, since it keeps the `Обновлено` label's "latest merged payload" semantic intact and user can see per-source staleness directly in the warning.
+  2. [ ] Copy clarifies `Обновлено` vs the per-source stale banner without requiring user to read help text — one-sentence banner addition is enough.
+  3. [ ] 10-minute source-stale threshold re-verified against current green/red/yellow cadence (cron every ~5 min). If wrong, adjust the constant; if right, document the check in 71-VERIFICATION.md.
+  4. [ ] Regression pin: `miniapp/src/__tests__/stale-banner.test.jsx` asserts banner contains per-source age text when at least one source is stale.
+  5. [ ] Live MCP check via Chrome DevTools: page with synthetic stale fixture shows banner AND header both reflecting the stale source, screenshot captured.
+**Plans:** TBD via `/gsd-plan-phase 71`
+
+### Phase 72: admin.html Bug Reports Badge
+**Goal:** Ship the v1.16 Phase 61 Success Criterion 3 UI side — backend has the counts for 2 weeks already.
+**Depends on:** nothing from v1.22 (independent, smallest phase).
+**Requirements:** UX-BADGE-01 — plus continued OPS-15/16/17. Optionally folds in UX-BADGE-02 (v1.21 `xray_drift` card) if cheap.
+**Success Criteria:**
+  1. [ ] `backend/admin.html` gains `<span id="bug-reports-badge" class="badge" hidden>Bug Reports (0)</span>` placed next to `proxy-badge` in the status row.
+  2. [ ] `applyStatus(data)` updates badge text from `data.bugReports.unread` (fallback `data.bugReports.count`), toggles `hidden` attribute when count is 0.
+  3. [ ] Badge click navigates to `/admin/bug-reports` (existing endpoint).
+  4. [ ] Smoke gate: curl `/admin/status` with `-H "X-Admin-Token: $T"` against EC2 returns `bugReports.count >= 0`; assert admin.html at HEAD contains the badge span.
+  5. [ ] Optional UX-BADGE-02 late-insert: if adding a small `xray_drift` card is <10 LOC using the same `applyStatus` hook, do it. Otherwise defer to v1.23.
+**Plans:** TBD via `/gsd-plan-phase 72`
+
+### Phase 73: gsd-check-todos Skill Polish
+**Goal:** Make todo triage take minutes, not a file-by-file read. Priority sort + fold-into-milestone action.
+**Depends on:** nothing (skill file edits only, no product code change).
+**Requirements:** TOOL-01 — plus continued OPS-15/16/17 (cross-cutting; no EC2 smoke needed for this phase).
+**Success Criteria:**
+  1. [ ] `priority: P1|P2|P3|P4` frontmatter documented + recognized by the skill; todos missing the field default to P3.
+  2. [ ] List output sorted P1 → P4, then by age (oldest first within priority). Flag: `--by-area` groups by area instead.
+  3. [ ] New action `fold into milestone` in the skill's action menu: when no active milestone, routes to `/gsd-new-milestone` with selected todos pre-filled as requirements-seed; when active milestone, prompts user to add as phase or to stack in `v2 requirements` section.
+  4. [ ] The 4 currently pending todos updated in-place with explicit priority:
+     * `2026-04-02-history-search-...` → P2 (consumed into v1.22 UX-BUG-01)
+     * `2026-04-06-clarify-stale-banner-...` → P3 (consumed into v1.22 UX-COPY-01)
+     * `2026-05-10-v1-16-admin-html-bug-reports-badge` → P2 (consumed into v1.22 UX-BADGE-01)
+     * `2026-05-12-update-gsd-check-todos-skill` → P4 (this phase itself)
+  5. [ ] Three "consumed" todos move to `.planning/todos/completed/` when their corresponding v1.22 phase ships.
+  6. [ ] Frontmatter schema documented in `~/.kiro/skills/gsd-check-todos/SKILL.md` — `priority`, `area`, `files`, `created` explicit with valid values.
+**Plans:** TBD via `/gsd-plan-phase 73`
+
+## v1.21 VLESS Pool Self-Healing & Reload Pipeline (SHIPPED 2026-05-12, tag `v1.21`)
+
+Full scope shipped, 8/8 requirements, 3 phases (67-69). Archive: `.planning/milestones/v1.21-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md` + `.planning/milestones/v1.21-phases/` (3 directories).
+
+**Goal:** Convert the 2026-05-10 manual fix into a deterministic self-healing loop with visible drift signal.
+**Shipped:** Phase 67 (Admitted-Node Self-Healing Loop with reprobe daemon + REL-15 success_rate tracking), Phase 68 (xray Auto-Reload on Admission Change — live-verified with 299ms systemctl reload-or-restart), Phase 69 (Drift Visibility via `/api/health/deep` xray_drift block + `pool_refresh_complete` JSONL event schema completion).
 
 ## v1.20 Cart-Add Latency & User-Facing Responsiveness (SHIPPED 2026-05-12, tag `v1.20`)
 

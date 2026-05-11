@@ -109,29 +109,46 @@ Family members see every VkusVill discount (green/red/yellow) the moment it appe
 - ✓ **OBS-04..05**: v1.20 `/api/health/deep` cart_add block + `data/cart_events.jsonl` 11-key ledger (Phase 66) — v1.20
 - ✓ **OPS-09..11**: v1.20 scripts/verify_v1.20.sh with 19 smoke checks + v1.19 cross-version regression gate + rollback rehearsed per phase — v1.20
 - ✓ **66.1 Stale-Color Phantom Strip (late insert)**: `/api/products` drops products of stale color; matches VkusVill "Зелёных ценников сейчас нет" empty-state UX — v1.20
+- ✓ **REL-13..15**: v1.21 VLESS Pool Self-Healing & Reload Pipeline — admitted-node reprobe daemon every 10 min, xray auto-reload on admission diff via passwordless systemctl (live-verified 299ms reload), per-node success_rate tracking with dead-host exclusion — v1.21 (shipped 2026-05-12)
+- ✓ **OBS-06..07**: v1.21 /api/health/deep xray_drift block (degraded >5min, unhealthy + stale cycle >10min) + pool_refresh_complete JSONL event with admission diff + success_rate_drops — v1.21
+- ✓ **OPS-12..14**: v1.21 scripts/verify_v1.21.sh with 13 smoke checks live-verified on EC2 + v1.20/v1.19 cross-version regression + per-phase rollback rehearsal — v1.21
 
 ### Active
 
 <!-- Current scope. Building toward these. -->
 
-- v1.21 VLESS Pool Self-Healing & Reload Pipeline. Scope: periodic per-node re-probe of admitted VLESS nodes (not just at admission); xray auto-reload on admission rewrite; per-node production success rate tracking; health surface for xray-config-drift. Fixes root cause of 4-day outage 2026-05-06 → 05-10 where admitted nodes went silently 0% alive and xray never picked up pool refresh.
+- v1.22 UX Debt Cleanup + Tooling Polish. Scope: close three pending UX todos that shipped half-fixes in v1.5/v1.10/v1.16 but never closed the UI loop (history search catalog-wide, stale banner clarification, admin.html Bug Reports badge), plus polish `/gsd-check-todos` skill with priority-aware triage so future milestones triage todos faster. 4 phases (70-73), 7 requirements, all small (~20-100 LOC per phase).
 
-## Current Milestone: v1.21 VLESS Pool Self-Healing & Reload Pipeline
+## Current Milestone: v1.22 UX Debt Cleanup + Tooling Polish
 
-**Goal:** Eliminate the "pool passes admission once, then quietly goes 0% alive for days" failure mode by making admitted nodes self-heal under real production traffic and by ensuring xray reloads config whenever the admitted set changes.
+**Goal:** Clear accumulated UX debt from earlier milestones that never closed the UI side, plus a skill-file polish so `/gsd-check-todos` surfaces priority + supports fold-into-milestone.
 
-**Target features** (finalized via `.planning/REQUIREMENTS.md` v1.21):
-- Periodic per-node re-probe every ~10 min on each admitted node through the running bridge; failures cooldown, drop from active outbounds, trigger pool refresh if admitted set falls below MIN_HEALTHY (REL-13)
-- xray auto-reload on pool refresh when admitted host set changes (passwordless systemctl restart hook OR in-process xray management) — breaks the 4-day-outage pattern where pool.json had 16 healthy nodes but running xray routed to a single dead one (REL-14)
-- Per-node production success rate tracked in pool entries as sliding window; node treated as dead when rate → 0 even if observatory still reports alive (REL-15)
-- `/api/health/deep` + `/admin/status` surface "xray stale" reason when `pool.nodes[].host` doesn't match `xray.config.outbounds[].address` — next outage visible in minutes, not days (OBS-06)
-- scripts/verify_v1.21.sh carries forward v1.19 + v1.20 smoke gates, adds per-phase EC2 checks for the new guarantees (OPS-12/13/14)
+**Target features** (finalized via `.planning/REQUIREMENTS.md` v1.22):
+- History search returns ALL products from `product_catalog` matching the query, not just history-only rows; live-sale matches carry `currentSaleType` so MiniApp renders green/red/yellow badges inline with ghost cards (UX-BUG-01, Phase 70)
+- Stale banner + updated-time header align semantically — pick option (A) header switches to per-source oldest or (B) banner inline-annotates with per-source age — ship in one phase after a quick discuss decision (UX-COPY-01, Phase 71)
+- `backend/admin.html` renders a `Bug Reports (N)` badge in the status row, closing v1.16 Phase 61 Success Criterion 3 (~20 LOC, backend counts already exposed since v1.16) (UX-BADGE-01, Phase 72)
+- `/gsd-check-todos` skill + workflow adds `priority: P1|P2|P3|P4` frontmatter, sorts P1-first, supports `fold into milestone` multi-select action; all 4 current pending todos updated with explicit priority values (TOOL-01, Phase 73)
+- `scripts/verify_v1.22.sh` grows phase-by-phase and chains `verify_v1.21.sh all` at the end (which already chains v1.20 + v1.19) so all four milestones' smoke gates stay green (OPS-15/16/17)
 
 **Key context:**
-- Root-cause evidence for 2026-05-06 → 05-10 outage captured in `.planning/todos/pending/2026-05-10-vless-pool-admission-lacks-dynamic-rehealth.md` and `2026-05-10-xray-not-reloaded-after-pool-admission.md` — both todos consumed into this milestone and archived on ship.
-- Manual fix on 2026-05-10 (sudo systemctl restart saleapp-xray + whitelist 8 probed-good nodes) dropped bridge `vkusvill.ru/` probe from HTTP 000 (15s timeout) to HTTP 200 (1.4-5s) immediately. Scheduler completed a full cycle within 2 minutes. That is the shape of the fix this milestone automates.
-- v1.20 reliability gains must not regress: warmup daemon, cart-items cache, bridge semaphore, idempotency index, /api/health/deep cart_add block. scripts/verify_v1.20.sh retained as cross-version regression guard alongside scripts/verify_v1.21.sh.
-- User preference (recorded, reaffirmed 2026-05-12): robust-over-fast, no hotfixes, formal GSD workflow end-to-end, each phase independently testable and rollback-safe.
+- All 3 UX todos have been sitting in `.planning/todos/pending/` since April/May — cohesive milestone since all three are UI-layer polish with backend already shipped.
+- Scope deliberately tight (option B from user scope choice): 3 UX + 1 tooling, no bigger-scope UX creep. Mirrors the v1.21 discipline of rejecting unrelated concerns.
+- `admin.html` already has `proxy-badge` (line 426), `cart-pending-count` (line 407), `log-count` (line 500) patterns to copy from for UX-BADGE-01. Zero new backend work for Phase 72.
+- If adding a v1.21 `xray_drift` card to `admin.html` in Phase 72 is cheap (<10 LOC), fold it in as UX-BADGE-02 late insert. Otherwise defer.
+- No EC2 deploy needed for Phase 73 — it's Kiro-side skill files only.
+- User preference (reaffirmed 2026-05-12): robust-over-fast, no hotfixes, formal GSD workflow end-to-end, each phase independently testable and rollback-safe.
+
+## Previous Shipped Milestone: v1.21 VLESS Pool Self-Healing & Reload Pipeline (2026-05-12)
+
+**Goal:** Convert the 2026-05-10 manual fix (`sudo systemctl restart saleapp-xray` after pool whitelist rebuild) into a deterministic self-healing loop with visible drift signal, so the next outage is caught in minutes not days.
+
+**Shipped features:**
+- Phase 67 admitted-node reprobe daemon firing every 10 min through the running bridge (REL-13), with REL-15 per-host success_rate tracking (100-sample sliding window, dead at rate<0.1 with ≥20 samples). Live-verified 18/18 admitted nodes passing reprobe post-hotfix.
+- Phase 68 xray auto-reload on admission set diff via `sudo systemctl reload-or-restart saleapp-xray` (throttled 90s, 30s timeout). Passwordless sudoers deployed to `/etc/sudoers.d/saleapp-xray-reload`. First live reload executed 2026-05-12 in **299ms**. Systemd stays lifecycle owner per v1.15 D7.
+- Phase 69 `/api/health/deep` `xray_drift` block (admitted_hosts, active_outbounds, drift_count, drifted_hosts, first_seen_at) with 5-min degraded / 10-min unhealthy thresholds. Live drift injection proved detection+recovery. `pool_refresh_complete` JSONL event carries full admission diff + success_rate_drops.
+- `scripts/verify_v1.21.sh` 13 smoke checks, 13/13 green live on EC2 post-deploy. Chains `verify_v1.20.sh` + `verify_v1.19.sh`.
+
+_Archive: `.planning/milestones/v1.21-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md`, `.planning/milestones/v1.21-phases/{67,68,69}-*/`. Tag: v1.21._
 
 ## Previous Shipped Milestone: v1.20 Cart-Add Latency & User-Facing Responsiveness (2026-05-12)
 
@@ -240,9 +257,9 @@ Search and polish improvements for the History page:
 
 ## Next Milestone Candidates
 
-- **v1.22 UX Debt Cleanup**: v1.16 admin Bug Reports badge (backend ready, UI never wired), stale-banner copy clarification (partially resolved by 66.1), history search unrestricted mode (old v1.5 bug).
+- **v1.23 Observability & Admin Polish**: surface v1.21 `xray_drift` block in `admin.html` as a card (if not folded into v1.22 Phase 72); Telegram alerts on `xray_restart_failed` and breaker state transitions (v1.19 REL-FUT-05); historical drift trace / rate-of-change panels.
+- **v1.24 Detail-Path Performance or Data Deep Dive**: Phase 64 HAR capture + ablation sweep + `FAST_CART_ADD_URL` go/no-go decision (v1.20 deferred); Playwright slow-path test for miniapp (v1.20 NEEDS_OPERATOR-1).
 - Reverse-engineered/private API path for green data only if cadence + robustness work still cannot meet freshness targets
-- Deeper admin observability for scraper health trends and historical freshness drift
 - Larger-scale frontend data-path work such as server-driven pagination or virtualization if card performance still degrades as product volume grows
 
 ## Context
@@ -344,5 +361,5 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-12 after v1.20 (Cart-Add Latency & User-Facing Responsiveness) shipped and archived (15/15 requirements, 6 phases 62-66 + 66.1/.2/.3, 20 commits, tag v1.20). v1.21 (VLESS Pool Self-Healing & Reload Pipeline) initiated to close the root causes of the 4-day VLESS outage 2026-05-06 → 05-10.*
+*Last updated: 2026-05-12 after v1.21 (VLESS Pool Self-Healing & Reload Pipeline) shipped, tagged, and live-verified on EC2 (8/8 requirements, 3 phases 67-69, 14 commits, first live systemctl xray reload in 299ms). v1.22 (UX Debt Cleanup + Tooling Polish) initiated to close 3 pending UX todos (history search, stale banner, admin badge) plus 1 tooling polish (/gsd-check-todos priority triage).*
 

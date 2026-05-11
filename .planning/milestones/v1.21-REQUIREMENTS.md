@@ -1,0 +1,106 @@
+# Requirements — v1.21 VLESS Pool Self-Healing & Reload Pipeline
+
+## Milestone Goal
+
+Eliminate the "pool passes admission once, then quietly goes 0% alive for days" failure mode by making admitted nodes self-heal under real production traffic and by ensuring xray reloads config whenever the admitted set changes. Root-cause fix for the 4-day outage 2026-05-06 → 05-10 where `data/vless_pool.json` showed 16 healthy admitted RU nodes while live bridge probes to `vkusvill.ru` returned HTTP 000 (15 s timeout) for 5/5 tries.
+
+Continue the v1.19 / v1.20 robust-over-fast cultural commitment: every phase ships with a scripted EC2 smoke test (`scripts/verify_v1.21.sh`), a `VERIFICATION.md`, end-to-end rollback rehearsal, and a cross-version regression gate against `scripts/verify_v1.20.sh` + `scripts/verify_v1.19.sh`.
+
+Driving evidence (captured in `.planning/todos/pending/` before v1.21 started):
+
+- `2026-05-10-vless-pool-admission-lacks-dynamic-rehealth.md` — nodes passed admission then were silently blocked by VkusVill minutes later. Observatory probe generated only dead events (never alive) so balancer had no rotation signal. Pool showed healthy (`size=16, quarantined=7`), end-to-end reachability was 0%.
+- `2026-05-10-xray-not-reloaded-after-pool-admission.md` — real root cause of the 4-day outage. Pool refresh fetched upstream nodes, probed with live `_probe_vkusvill`, admitted survivors, rewrote `data/vless_pool.json` + `bin/xray/configs/active.json`. But the running xray process (PID 3914525 on EC2, started 2026-05-05, systemd-managed) read its config once at startup and never picked up rewrites. For ~4 days xray routed every request to a dead outbound from May 5.
+- Manual fix 2026-05-10: `sudo systemctl restart saleapp-xray` after whitelisting 8 probed-good nodes. Bridge went from HTTP 000 (15 s timeout) to HTTP 200 (1.4-5 s) immediately. Scheduler completed a full cycle with red 43 / yellow 101 / green 2 / merged 146 within 2 minutes.
+
+The milestone converts that manual fix into a deterministic self-healing loop plus a visible drift signal so the next outage is caught in minutes, not days.
+
+## Requirements
+
+### Reliability — Admitted-Node Self-Healing
+
+- [ ] **REL-13**: A scheduler task re-probes each admitted VLESS node through the running bridge every ≤ 10 min using `_probe_vkusvill` with a valid authenticated HEAD against `vkusvill.ru`. Probe failures move the node into the existing 4h VkusVill cooldown. The scheduler only triggers a `refresh_proxy_list` when the admitted pool would drop below `MIN_HEALTHY` after failures; routine probe failures do not cause refresh churn.
+- [ ] **REL-14**: When `refresh_proxy_list` admits a node set whose `host` list differs from the currently-running xray config, the scheduler calls `sudo systemctl reload-or-restart saleapp-xray` (passwordless sudo required, rehearsed in Phase 68 deploy). When the host set is unchanged, no restart fires. Restart is throttled to ≤ 1 per 90 s to prevent churn. Alternative implementation (in-process xray lifecycle management) is explicitly out of scope — keep systemd as the lifecycle owner.
+- [ ] **REL-15**: `VlessProxyManager` tracks `last_success_at` and a 100-sample sliding `success_rate` per pool entry. When a node's `success_rate < 0.1` over the window, the node is treated as dead even if observatory still reports it alive, and is removed from the active outbound set on the next refresh. Observatory output stays the source of truth for per-probe reachability; success_rate is the production-traffic truth signal.
+
+### Observability — Xray Config Drift
+
+- [ ] **OBS-06**: `/api/health/deep` response gains an optional `xray_drift` block with three fields: `admitted_hosts` (count from `data/vless_pool.json`), `active_outbounds` (count from the running xray config snapshot), `drift_count` (size of the admitted-not-in-active symmetric difference). When `drift_count > 0` for more than 5 minutes, deep health flips to `degraded` with reason `xray_stale_config:{N}_nodes_drifted`; when `drift_count > 0` and `last_cycle_age_s > 10 min`, flips to `unhealthy`. Block is also surfaced via `/admin/status.reliability.xray_drift` for the admin dashboard.
+- [ ] **OBS-07**: Every `refresh_proxy_list` run emits one JSONL line to `data/proxy_events.jsonl` with: `event: pool_refresh_complete`, `admitted_count`, `added_hosts[]`, `removed_hosts[]`, `xray_restart_triggered` (bool), `restart_duration_ms` (int when triggered), `success_rate_drops[]` (hosts demoted to dead by REL-15). Enables offline post-mortem of every pool refresh. Existing schema for other proxy_events.jsonl event types unchanged.
+
+### Operations — v1.19/v1.20 Continuity
+
+- [ ] **OPS-12**: `scripts/verify_v1.21.sh` is created alongside v1.19/v1.20 smoke scripts. `verify_v1.21.sh all` chains `verify_v1.20.sh all` and `verify_v1.19.sh all` at the end — all three must stay green on EC2. Grows phase-by-phase with checks per REL-13/14/15, OBS-06/07.
+- [ ] **OPS-13**: Every v1.21 phase includes an end-to-end outage reproduction on EC2: induce a pool-wide failure (e.g. block VkusVill via hosts override for 60 seconds), verify REL-13 re-probe detects it, verify REL-14 auto-reload fires, verify OBS-06 drift signal flips to `degraded` then back to `healthy` when the block lifts. Automated check in the smoke script with a 2-minute budget.
+- [ ] **OPS-14**: Rollback rehearsal for every v1.21 phase on a throwaway worktree: `git revert` each phase commit, `python -m pytest backend/ tests/ -q` green, `bash scripts/verify_v1.20.sh all` green post-revert, confirm no stray systemd units, sudoers entries, or scheduler state files persist. Rehearsed before ship, not after.
+
+## v2 Requirements
+
+### Carried forward from v1.19 (still deferred)
+
+- **REL-FUT-01** — Probe failure-reason classification (DNS / TLS / HTTP-4xx / timeout)
+- **REL-FUT-02** — Multi-target probe (VkusVill + ipinfo.io)
+- **REL-FUT-03** — Per-node VkusVill failure counter + auto-quarantine *(partially resolved by REL-15)*
+- **REL-FUT-04** — Auto-trigger pool refresh on entering `half_open` *(resolved by REL-13)*
+- **REL-FUT-05** — Telegram alert on breaker state changes (dedup'd)
+- **REL-FUT-06** — Replenish to `MAX_CACHED` instead of `MIN_HEALTHY + 1`
+- **REL-FUT-07** — Shorter cooldown for non-block failures (TLS = 15 min)
+- **REL-FUT-08** — Predictive refresh when quarantine > replenish rate
+
+### Carried forward from v1.20 tech debt
+
+- Phase 64 HAR capture + live ablation sweep + go/no-go decision for `FAST_CART_ADD_URL` swap — scaffolding shipped in v1.20, spike work deferred (requires operator browser session)
+- Phase 65 NEEDS_OPERATOR-1 Playwright slow-path test (`miniapp/tests/test_cart_slow_path.py`)
+- Phase 66 `_cart_add_attempts` TTL is 30 s so `p95_1h` reflects ~30 s of traffic — bump TTL or persist resolved attempts to a bounded ring buffer for true 1 h accuracy
+
+### Carried forward to v1.22
+
+- **v1.16 admin.html Bug Reports badge** — backend exposes `bugReports.count/unread`, admin UI never wired it (20 LOC fix)
+- **Stale-banner copy clarification** — partially resolved by 66.1; UX copy could still be clearer
+- **History search unrestricted mode** — old v1.5 bug, search filter too restrictive on catalog-only matches
+
+## Out of Scope
+
+| Feature | Reason |
+|---|---|
+| In-process xray lifecycle management | Keeps systemd as lifecycle owner per v1.15 D7; unifying would unify lifecycle with backend crashes too |
+| Migration off xray to WireGuard or direct VLESS | v1.15/v1.17/v1.18 already validated xray + VLESS+Reality is the right choice; bridge is healthy at ~330 ms overhead when alive |
+| Multi-tenant pool sharding | Family-scale doesn't justify the infra |
+| Auto-rotation to a different geo (non-RU) when all RU nodes blocked | REL-13 already quarantines blocked nodes, and the pool has 20+ RU nodes as buffer; cross-geo is a different failure mode |
+| Telegram alerting on pool health drops | v1.19 REL-FUT-05 (deferred); re-evaluate after v1.21 data shows whether manual observation is still sufficient |
+| xray config validation before reload | systemd unit already fails cleanly on invalid config; adding a pre-flight adds complexity without new safety |
+
+## Traceability
+
+(Provisional phase mapping; finalized by `/gsd-roadmapper`.)
+
+| Requirement | Provisional Phase | Status |
+|---|---|---|
+| REL-13 | Phase 67 (Admitted-node re-probe loop) | Defined |
+| REL-14 | Phase 68 (xray auto-reload on admission) | Defined |
+| REL-15 | Phase 67 or 68 (Per-node success rate — implementation depends on D1 decision) | Defined |
+| OBS-06 | Phase 69 (Drift visibility + /api/health/deep + /admin/status) | Defined |
+| OBS-07 | Phase 69 | Defined |
+| OPS-12 | All phases (cross-cutting) | Defined |
+| OPS-13 | All phases (cross-cutting) | Defined |
+| OPS-14 | All phases (cross-cutting) | Defined |
+
+**Coverage:**
+- v1.21 requirements: 8 total (3 REL, 2 OBS, 3 OPS)
+- Mapped to phases: 8 (provisional, 3 phases)
+- Unmapped: 0 ✓
+
+## Prior Milestone — Archived
+
+v1.20 Cart-Add Latency & User-Facing Responsiveness shipped 2026-05-12 with 15/15 requirements satisfied + 3 late inserts (66.1/66.2/66.3). Full archive:
+- `.planning/milestones/v1.20-ROADMAP.md`
+- `.planning/milestones/v1.20-REQUIREMENTS.md`
+- `.planning/milestones/v1.20-MILESTONE-AUDIT.md`
+- `.planning/milestones/v1.20-SESSION-REPORT-2026-05-12.md`
+- `.planning/milestones/v1.20-phases/{62,63,64,65,66,66.1,66.2,66.3}-*/`
+- Git tag `v1.20`, commits `51888f7..4890bd0`
+
+The v1.19 + v1.20 smoke scripts `scripts/verify_v1.19.sh` + `scripts/verify_v1.20.sh` are retained as cross-version reliability regression guards; v1.21 adds `scripts/verify_v1.21.sh` alongside.
+
+---
+*Requirements defined: 2026-05-12*
+*Prior milestone v1.20 archived 2026-05-12*
