@@ -112,31 +112,49 @@ Family members see every VkusVill discount (green/red/yellow) the moment it appe
 - ✓ **REL-13..15**: v1.21 VLESS Pool Self-Healing & Reload Pipeline — admitted-node reprobe daemon every 10 min, xray auto-reload on admission diff via passwordless systemctl (live-verified 299ms reload), per-node success_rate tracking with dead-host exclusion — v1.21 (shipped 2026-05-12)
 - ✓ **OBS-06..07**: v1.21 /api/health/deep xray_drift block (degraded >5min, unhealthy + stale cycle >10min) + pool_refresh_complete JSONL event with admission diff + success_rate_drops — v1.21
 - ✓ **OPS-12..14**: v1.21 scripts/verify_v1.21.sh with 13 smoke checks live-verified on EC2 + v1.20/v1.19 cross-version regression + per-phase rollback rehearsal — v1.21
+- ✓ **UX-BUG-01**: v1.22 History search returns ALL products from `product_catalog` matching the query; live-sale rows carry `currentSaleType` for inline green/red/yellow badges on ghost cards (Phase 70) — v1.22 (shipped 2026-05-13)
+- ✓ **UX-COPY-01**: v1.22 Stale banner rescoped to `Источники устарели` with per-source age; semantically distinct from the updated-time header (Phase 71) — v1.22
+- ✓ **UX-BADGE-01/02**: v1.22 `backend/admin.html` renders `Bug Reports (N)` + `Drift (N)` attention badges + `[hidden]` CSS hotfix (`825008c`) after live MCP caught `.badge { display: inline-block }` override (Phase 72) — v1.22
+- ✓ **TOOL-01**: v1.22 `/gsd-check-todos` skill adds `priority: P1|P2|P3|P4` frontmatter + P1-first sort + visible priority labels (Phase 73) — v1.22
+- ✓ **OPS-15..17**: v1.22 `scripts/verify_v1.22.sh` chains v1.21→v1.20→v1.19 smoke scripts; 9/9 live-verified on EC2 + per-phase rollback rehearsal — v1.22
 
 ### Active
 
 <!-- Current scope. Building toward these. -->
 
-- v1.22 UX Debt Cleanup + Tooling Polish. Scope: close three pending UX todos that shipped half-fixes in v1.5/v1.10/v1.16 but never closed the UI loop (history search catalog-wide, stale banner clarification, admin.html Bug Reports badge), plus polish `/gsd-check-todos` skill with priority-aware triage so future milestones triage todos faster. 4 phases (70-73), 7 requirements, all small (~20-100 LOC per phase).
+- v1.23 Detail-Path Performance + UX Polish. Scope: close the three user-visible issues surfaced during v1.22 live MCP verification — cold-path `/api/product/{id}/details` taking 8-15s on first open (legacy pre-v1.15 SOCKS5-era HEAD probe loop, now redundant since xray leastPing picks fastest outbound), card grid reflow when cart button morphs into quantity stepper, cart panel missing a trash button per row. 3 phases (74-76), 7 requirements (2 PERF, 2 UX, 3 OPS), all small.
 
-## Current Milestone: v1.22 UX Debt Cleanup + Tooling Polish
+## Current Milestone: v1.23 Detail-Path Performance + UX Polish
 
-**Goal:** Clear accumulated UX debt from earlier milestones that never closed the UI side, plus a skill-file polish so `/gsd-check-todos` surfaces priority + supports fold-into-milestone.
+**Goal:** Cold-path card open p95 ≤ 2s. Zero card-grid layout shift. Trash button on every cart-panel row.
 
-**Target features** (finalized via `.planning/REQUIREMENTS.md` v1.22):
-- History search returns ALL products from `product_catalog` matching the query, not just history-only rows; live-sale matches carry `currentSaleType` so MiniApp renders green/red/yellow badges inline with ghost cards (UX-BUG-01, Phase 70)
-- Stale banner + updated-time header align semantically — pick option (A) header switches to per-source oldest or (B) banner inline-annotates with per-source age — ship in one phase after a quick discuss decision (UX-COPY-01, Phase 71)
-- `backend/admin.html` renders a `Bug Reports (N)` badge in the status row, closing v1.16 Phase 61 Success Criterion 3 (~20 LOC, backend counts already exposed since v1.16) (UX-BADGE-01, Phase 72)
-- `/gsd-check-todos` skill + workflow adds `priority: P1|P2|P3|P4` frontmatter, sorts P1-first, supports `fold into milestone` multi-select action; all 4 current pending todos updated with explicit priority values (TOOL-01, Phase 73)
-- `scripts/verify_v1.22.sh` grows phase-by-phase and chains `verify_v1.21.sh all` at the end (which already chains v1.20 + v1.19) so all four milestones' smoke gates stay green (OPS-15/16/17)
+**Target features** (finalized via `.planning/REQUIREMENTS.md` v1.23):
+- Cold-path `GET /api/product/{id}/details` p95 ≤ 2s. Remove per-proxy HEAD probe loop in `backend/main.py::product_details` (pre-v1.15 SOCKS5-era artifact; xray `observatory`+`leastPing` already picks fastest live outbound per v1.17). Tighten httpx timeouts: connect 4s→1s, read 6s→3s. Keep 3 retries. (PERF-10, Phase 74)
+- `data/detail_events.jsonl` ledger with one line per `/api/product/{id}/details` call: `{ts, product_id, duration_ms, cached, retry_count, outcome}`. Bounded file, tail-readable from admin. Follows v1.20 `cart_events.jsonl` pattern. (PERF-11, Phase 74)
+- Product card grid reserves the stepper slot via fixed min-height so the "not-in-cart" (cart button) and "in-cart" (full stepper) states occupy the same vertical space. Neighbors no longer reflow. Lighthouse CLS ≤ 0.1. (UX-SHIFT-01, Phase 75)
+- Cart panel item rows gain a trash/remove button firing `POST /api/cart/remove` (backend already exists — frontend wiring only). Optimistic UI with spinner, error toast + re-enable on failure, panel refresh on success. (UX-CART-01, Phase 76)
+- `scripts/verify_v1.23.sh` grows phase-by-phase and chains `verify_v1.22.sh all` (which chains v1.21→v1.20→v1.19) so all five milestones' smoke gates stay green through v1.23 deploy (OPS-18/19/20).
 
 **Key context:**
-- All 3 UX todos have been sitting in `.planning/todos/pending/` since April/May — cohesive milestone since all three are UI-layer polish with backend already shipped.
-- Scope deliberately tight (option B from user scope choice): 3 UX + 1 tooling, no bigger-scope UX creep. Mirrors the v1.21 discipline of rejecting unrelated concerns.
-- `admin.html` already has `proxy-badge` (line 426), `cart-pending-count` (line 407), `log-count` (line 500) patterns to copy from for UX-BADGE-01. Zero new backend work for Phase 72.
-- If adding a v1.21 `xray_drift` card to `admin.html` in Phase 72 is cheap (<10 LOC), fold it in as UX-BADGE-02 late insert. Otherwise defer.
-- No EC2 deploy needed for Phase 73 — it's Kiro-side skill files only.
-- User preference (reaffirmed 2026-05-12): robust-over-fast, no hotfixes, formal GSD workflow end-to-end, each phase independently testable and rollback-safe.
+- All 3 issues captured as todos 2026-05-13 during v1.22 live MCP session. Confirmed via live Chrome DevTools MCP on https://vkusvillsale.vercel.app/: first card open ~16s, second open ~2s (cache hit); card grid visibly reflows when stepper appears.
+- Cold-path root cause is a legacy pre-v1.15 SOCKS5 pool-era per-proxy HEAD probe loop. Since v1.17 (xray observatory+leastPing) the bridge at `127.0.0.1:10808` always points at the fastest live outbound; since v1.19 pre-flight probes already catch broken bridges; since v1.21 the reprobe daemon + REL-15 success_rate tracking keep the admitted pool alive. The Python-side probe is dead weight at 4-12s cost.
+- Phase 74 is backend-only (python). Phases 75/76 are frontend-only (React/CSS). Scope tight like v1.21/v1.22 — no creep.
+- User preference (reaffirmed 2026-05-13 during v1.22 verification): "one ping is 30-40ms, why 4 sec I don't get" — 4s timeout is absurd for a healthy VLESS bridge. 1s connect / 3s read is still 10-30x over the healthy case with 2-3x margin on worst case.
+- Every phase requires live MCP verification before declaring shipped — the v1.21 "push ≠ verified" lesson + the v1.22 Phase 72 `[hidden]` hotfix both proved code review alone is insufficient for UI changes. UI bugs surface only in real browsers.
+- User preference: robust-over-fast, atomic commits per plan deliverable, STOP before `/gsd-complete-milestone` for manual review.
+
+## Previous Shipped Milestone: v1.22 UX Debt Cleanup + Tooling Polish (2026-05-13)
+
+**Goal:** Clear accumulated UX debt from earlier milestones (v1.5/v1.10/v1.16) that never closed the UI side, plus a skill-file polish for `/gsd-check-todos` priority-aware triage.
+
+**Shipped features:**
+- Phase 70 UX-BUG-01 History search catalog-wide: `backend/main.py::history_search` now returns ALL products from `product_catalog` matching the query (not just `total_sale_count > 0` rows). Live-sale matches carry `currentSaleType` for green/red/yellow badge rendering. Regression guarded by `backend/test_history_search_catalog_wide.py` (force-added since `test_*.py` is gitignored).
+- Phase 71 UX-COPY-01 Stale banner clarification: rescoped to `Источники устарели` (plural, per-source) with inline age annotation. User no longer sees the contradictory "Обновлено: 09:36 + stale warning" pair.
+- Phase 72 UX-BADGE-01/02 admin.html attention badges: `Bug Reports (N)` + `Drift (N)` badges in status row, mirroring existing `proxy-badge`/`cart-pending-count` patterns. UX-BADGE-02 folded in as late insert for the v1.21 `xray_drift` card. Live MCP caught a `.badge { display: inline-block }` rule overriding `[hidden]` — shipped hotfix `825008c` adding `[hidden] { display: none !important; }`.
+- Phase 73 TOOL-01 `/gsd-check-todos` skill polish: `priority: P1|P2|P3|P4` frontmatter across all pending todos, P1-first sort in the CLI output, visible priority labels. Kiro-side only, local 3/3 smoke green + CLI synthetic-fixture validation.
+- `scripts/verify_v1.22.sh` 9 smoke checks + chains v1.21→v1.20→v1.19 regression. 7/7 requirements + 1 late insert (UX-BADGE-02), 16 commits `5513ede..f56f285` (including `[hidden]` hotfix `825008c` and obsolete todo cleanup `f56f285`).
+
+_Archive: `.planning/milestones/v1.22-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md`, `.planning/milestones/v1.22-phases/{70,71,72,73}-*/`. Tag: v1.22._
 
 ## Previous Shipped Milestone: v1.21 VLESS Pool Self-Healing & Reload Pipeline (2026-05-12)
 
@@ -257,8 +275,8 @@ Search and polish improvements for the History page:
 
 ## Next Milestone Candidates
 
-- **v1.23 Observability & Admin Polish**: surface v1.21 `xray_drift` block in `admin.html` as a card (if not folded into v1.22 Phase 72); Telegram alerts on `xray_restart_failed` and breaker state transitions (v1.19 REL-FUT-05); historical drift trace / rate-of-change panels.
-- **v1.24 Detail-Path Performance or Data Deep Dive**: Phase 64 HAR capture + ablation sweep + `FAST_CART_ADD_URL` go/no-go decision (v1.20 deferred); Playwright slow-path test for miniapp (v1.20 NEEDS_OPERATOR-1).
+- **v1.24 Observability & Tooling Deep Dive**: Telegram alerts on `xray_restart_failed` and breaker state transitions (v1.19 REL-FUT-05); historical drift trace / rate-of-change panels; Vitest/RTL wiring for miniapp (caught only via live MCP in v1.22; snapshot test would've caught the `[hidden]` CSS bug in CI); multi-select fold-into-milestone in `/gsd-check-todos`; `/gsd-add-todo` skill priority capture at creation time (P4 pending todo).
+- **v1.25 Detail-Path Deep Dive** (conditional on v1.23 PERF-10 results): Phase 64 HAR capture + ablation sweep + `FAST_CART_ADD_URL` go/no-go decision (v1.20 deferred); Playwright slow-path test for miniapp (v1.20 NEEDS_OPERATOR-1); background pre-warm of top-visible product details (v1.23 out-of-scope — "measure PERF-10 alone first"); SSE `/api/stream` graceful-shutdown short-circuit on SIGTERM (observed stuck restart loops during v1.22 Phase 72 verification).
 - Reverse-engineered/private API path for green data only if cadence + robustness work still cannot meet freshness targets
 - Larger-scale frontend data-path work such as server-driven pagination or virtualization if card performance still degrades as product volume grows
 
@@ -361,5 +379,5 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-12 after v1.21 (VLESS Pool Self-Healing & Reload Pipeline) shipped, tagged, and live-verified on EC2 (8/8 requirements, 3 phases 67-69, 14 commits, first live systemctl xray reload in 299ms). v1.22 (UX Debt Cleanup + Tooling Polish) initiated to close 3 pending UX todos (history search, stale banner, admin badge) plus 1 tooling polish (/gsd-check-todos priority triage).*
+*Last updated: 2026-05-13 after v1.22 (UX Debt Cleanup + Tooling Polish) shipped, tagged, and live-verified on EC2 (7/7 requirements + 1 late insert UX-BADGE-02, 4 phases 70-73, 16 commits including `[hidden]` hotfix `825008c` and obsolete todo cleanup `f56f285`). v1.23 (Detail-Path Performance + UX Polish) initiated to close 3 issues surfaced during v1.22 live MCP verification: cold-path card open 8-15s, card grid reflow on stepper morph, cart panel missing trash button. 3 phases (74-76), 7 requirements (2 PERF, 2 UX, 3 OPS), scope tight per v1.21/v1.22 discipline.*
 

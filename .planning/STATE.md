@@ -1,18 +1,18 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.22
-milestone_name: UX Debt Cleanup + Tooling Polish
-status: awaiting_audit_review
+milestone: v1.23
+milestone_name: Detail-Path Performance + UX Polish
+status: ready_to_plan
 last_updated: "2026-05-13T00:00:00.000Z"
-last_activity: 2026-05-12
+last_activity: 2026-05-13
 progress:
-  total_phases: 4
-  completed_phases: 4
-  total_plans: 8
-  completed_plans: 8
-  percent: 100
-current_phase: 73
-current_phase_status: live_verified
+  total_phases: 3
+  completed_phases: 0
+  total_plans: 0
+  completed_plans: 0
+  percent: 0
+current_phase: 74
+current_phase_status: not_started
 current_phase_resume_file: null
 ---
 
@@ -20,39 +20,42 @@ current_phase_resume_file: null
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-05-12)
+See: .planning/PROJECT.md (updated 2026-05-13)
 
 **Core value:** Family members see every VkusVill discount and can add to cart in one tap
-**Current focus:** v1.22 UX Debt Cleanup + Tooling Polish — close 3 UI/API bugs documented in `.planning/todos/pending/` since April/May (history search catalog-wide, stale banner clarification, admin.html Bug Reports badge) plus `/gsd-check-todos` skill polish. 4 phases (70-73), 7 requirements (3 UX, 1 TOOL, 3 OPS).
+**Current focus:** v1.23 Detail-Path Performance + UX Polish — close the three user-visible issues surfaced during v1.22 live MCP verification 2026-05-13 (cold-path card open 8-15s, card grid reflow on stepper morph, cart panel missing trash button). 3 phases (74-76), 7 requirements (2 PERF, 2 UX, 3 OPS).
 
 ## Current Position
 
-Phase: All 4 v1.22 phases code-complete. Phases 70/71/72 live-verified on EC2 (9/9 smoke green). Phase 73 is Kiro-side only; local 3/3 smoke green + CLI synthetic-fixture sort validation. Awaiting user review of `.planning/v1.22-MILESTONE-AUDIT.md` before `/gsd-complete-milestone v1.22`.
-Next step: User reviews the audit. On approval, run `/gsd-complete-milestone v1.22` to tag + archive.
-Status: 14 commits shipped this milestone (`baa4a77..9e62355`). Full suite 360 passed + 3 baseline Windows-only unchanged. All 4 consumed todos moved to `.planning/todos/completed/`.
-Last activity: 2026-05-13 — Phase 73 complete, milestone audit drafted, ready for user review.
+Phase: v1.22 shipped + tagged + archived 2026-05-13. v1.23 REQUIREMENTS.md + ROADMAP.md drafted with 3 phases (74-76) and 7 requirements. Next: `/gsd-discuss-phase 74` for Product Details Cold-Path Latency, or direct plan if context is already clear.
+Next step: Plan Phase 74 (PERF-10/11 — remove legacy per-proxy HEAD probe loop in `backend/main.py::product_details`, tighten httpx timeouts connect 4s→1s / read 6s→3s, add `data/detail_events.jsonl` ledger).
+Status: v1.22 archived to `.planning/milestones/v1.22-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md` + `.planning/milestones/v1.22-phases/{70,71,72,73}-*/`. Tag `v1.22` pushed. 16 commits `5513ede..f56f285` (including Phase 72 `[hidden]` hotfix `825008c` and todo cleanup `f56f285`).
+Last activity: 2026-05-13 — v1.22 closed, v1.23 scope defined, ready to plan Phase 74.
 
-## Milestone Goal (v1.22 — active)
+## Milestone Goal (v1.23 — active)
 
-- History search returns ALL products from `product_catalog` matching the query, not just `total_sale_count > 0` rows; `currentSaleType` field lets MiniApp render green/red/yellow badges inline with ghost cards (UX-BUG-01)
-- Stale banner + updated-time header align semantically (option A header-switches or B banner-annotates, picked in discuss) so user no longer sees "Обновлено: 09:36 + stale warning" contradiction (UX-COPY-01)
-- `backend/admin.html` renders `Bug Reports (N)` badge mirroring existing `proxy-badge` / `cart-pending-count` patterns — closes v1.16 Phase 61 Success Criterion 3 (~20 LOC) (UX-BADGE-01)
-- `/gsd-check-todos` skill adds `priority: P1|P2|P3|P4` frontmatter, P1-first sort, fold-into-milestone action (TOOL-01)
-- `scripts/verify_v1.22.sh` chains `verify_v1.21.sh all` (which chains v1.20 + v1.19); all four milestones' smoke gates stay green through v1.22 deploy (OPS-15/16/17)
+- Cold-path `GET /api/product/{id}/details` p95 ≤ 2s (PERF-10). Remove per-proxy HEAD probe loop (legacy pre-v1.15 SOCKS5-era artifact; xray `observatory`+`leastPing` already picks the fastest live outbound). Tighten httpx timeouts: connect 4s→1s, read 6s→3s. Keep 3 retries.
+- `data/detail_events.jsonl` ledger emits one line per `/api/product/{id}/details` call with `{ts, product_id, duration_ms, cached, retry_count, outcome}` (PERF-11). Bounded file, tail-readable from admin, following v1.20 `cart_events.jsonl` pattern.
+- Zero visible card-grid layout shift when product card's cart button morphs into quantity stepper (UX-SHIFT-01). Reserve stepper slot via fixed card min-height. Lighthouse CLS ≤ 0.1 on main page.
+- Cart panel item rows gain a trash/remove button (UX-CART-01). Frontend wiring only — backend `cart.remove(product_id)` already exists. Optimistic UI with spinner, error toast on failure, panel refresh on success.
+- `scripts/verify_v1.23.sh` grows phase-by-phase and chains `verify_v1.22.sh all` (which chains v1.21 + v1.20 + v1.19) so all five milestones' smoke gates stay green through v1.23 deploy (OPS-18/19/20).
 
-## Previous Milestone (v1.21 — shipped 2026-05-12, tag `v1.21`)
+## Previous Milestone (v1.22 — shipped 2026-05-13, tag `v1.22`)
 
-- VLESS Pool Self-Healing & Reload Pipeline — all 8 requirements satisfied, 3 phases (67/68/69)
-- 14 commits `fcc740f..44fba0f`, tag `v1.21` pushed to origin
-- Live-verified on EC2: 13/13 smoke checks green, first systemctl xray reload in 299ms, drift injection proved OBS-06 detection + recovery
-- Archive: `.planning/milestones/v1.21-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md` + `.planning/milestones/v1.21-phases/` (3 directories)
+- UX Debt Cleanup + Tooling Polish — 7/7 requirements + 1 late insert (UX-BADGE-02), 4 phases (70/71/72/73)
+- 16 commits `5513ede..f56f285`, tag `v1.22` pushed to origin
+- 3/4 phases live-verified on EC2 via Chrome DevTools MCP 2026-05-13 (Phase 73 is Kiro-side only, local 3/3 smoke green)
+- Phase 72 shipped `[hidden]` hotfix `825008c` after live MCP caught a `.badge { display: inline-block }` override making badges show "(0)" when they should be invisible — v1.21 "push ≠ verified" lesson reinforced
+- Archive: `.planning/milestones/v1.22-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md` + `.planning/milestones/v1.22-phases/{70,71,72,73}-*/`
 
 ## Next Up
 
-- User reviews `.planning/v1.22-MILESTONE-AUDIT.md`.
-- On approval: `/gsd-complete-milestone v1.22` → tag `v1.22` + archive phase dirs to `.planning/milestones/v1.21-phases/` style layout.
-- **STOP before auto-complete** per user's standing instruction.
-- v1.23 candidate: SSE graceful-shutdown fix, Telegram alerts on breaker state / xray_restart_failed, richer admin bug-reports UI, Vitest wiring for miniapp, multi-select fold-into-milestone in /gsd-check-todos.
+- `/gsd-discuss-phase 74` or direct plan for Product Details Cold-Path Latency (PERF-10/11). Backend target: `backend/main.py::product_details` endpoint (lines ~525-625, two-phase probe loop) + pair with `backend/detail_service.py` existing cache.
+- Phase 75 (UX-SHIFT-01) — CSS-only fix in `miniapp/src/App.jsx` + `miniapp/src/index.css` for card min-height slot reservation.
+- Phase 76 (UX-CART-01) — trash button in `miniapp/src/CartPanel.jsx`, calls existing `POST /api/cart/remove`.
+- After each phase: live MCP verification (v1.21 "push ≠ verified" lesson — code-review-only is insufficient for UI changes).
+- Move consumed todos from `.planning/todos/pending/` to `.planning/todos/completed/` as each phase ships.
+- After Phase 76: `.planning/v1.23-MILESTONE-AUDIT.md` + tag `v1.23` + archive. **STOP before `/gsd-complete-milestone`** per user's standing instruction.
 
 ## Completed Milestones
 
@@ -79,47 +82,41 @@ Last activity: 2026-05-13 — Phase 73 complete, milestone audit drafted, ready 
 | v1.19 Production Reliability & 24/7 Uptime | 59-61 | 2026-05-05 |
 | v1.20 Cart-Add Latency & User-Facing Responsiveness | 62-66 + 66.1/.2/.3 | 2026-05-12 |
 | v1.21 VLESS Pool Self-Healing & Reload Pipeline | 67-69 | 2026-05-12 |
+| v1.22 UX Debt Cleanup + Tooling Polish | 70-73 | 2026-05-13 |
 
 ## Accumulated Context
 
-- v1.21 shipped: admitted-node reprobe daemon every 10 min through bridge (REL-13), per-host success_rate tracking (REL-15), xray auto-reload via passwordless systemctl on admission-set diff (REL-14, 299ms live), `/api/health/deep` xray_drift block + `pool_refresh_complete` event schema (OBS-06/07), 13/13 smoke live-verified
-- v1.20 shipped: 20-min keepalive daemon + on-open warmup nudge (PERF-03/04/05), per-user cart-items 12s cache + global scraper semaphore (PERF-06/07), USE_FAST_CART_ADD_ENDPOINT feature-flag scaffolding (PERF-08/09), frontend client_request_id idempotency + 5s AbortController + polling-on-abort (UX-01/02/03), /api/health/deep cart_add block + data/cart_events.jsonl 11-key ledger (OBS-04/05)
-- v1.19 shipped: pre-flight VLESS probe + 3-state breaker + /api/health/deep + pool drift visibility
-- 2026-05-10 outage manual fix automated by v1.21: self-healing loop now catches "pool healthy but xray stale" state in minutes, not days
+- v1.22 shipped: history search catalog-wide with `currentSaleType` field (Phase 70 UX-BUG-01), stale banner rescoped to `Источники устарели` with per-source age (Phase 71 UX-COPY-01), admin.html `Bug Reports (N)` + `Drift (N)` attention badges + `[hidden]` hotfix (Phase 72 UX-BADGE-01/02), `/gsd-check-todos` priority-aware triage with P1-first sort (Phase 73 TOOL-01)
+- v1.21 shipped: admitted-node reprobe daemon every 10 min through bridge (REL-13), per-host success_rate tracking (REL-15), xray auto-reload via passwordless systemctl on admission-set diff (REL-14, 299ms live), `/api/health/deep` xray_drift block + `pool_refresh_complete` event schema (OBS-06/07)
+- v1.20 shipped: 20-min keepalive daemon + on-open warmup nudge (PERF-03/04/05), per-user cart-items 12s cache + global scraper semaphore (PERF-06/07), USE_FAST_CART_ADD_ENDPOINT feature-flag scaffolding (PERF-08/09), frontend client_request_id idempotency + 5s AbortController + polling-on-abort (UX-01/02/03), `/api/health/deep` cart_add block + `data/cart_events.jsonl` 11-key ledger (OBS-04/05)
+- v1.19 shipped: pre-flight VLESS probe + 3-state breaker + `/api/health/deep` + pool drift visibility
+- User bug-report feature (modal with category/textarea/screenshot upload) discovered already shipped in production during v1.22 live verification — obsolete todo removed `f56f285`
 
 ### Pending Todos (see `.planning/todos/pending/`)
 
-- **[P2]** `2026-04-02-history-search-shows-all-matching-products-from-catalog` — consumed into v1.22 UX-BUG-01 (Phase 70). Moves to completed/ when 70 ships.
-- **[P3]** `2026-04-06-clarify-stale-banner-freshness-vs-updated-time` — consumed into v1.22 UX-COPY-01 (Phase 71). Moves to completed/ when 71 ships.
-- **[P2]** `2026-05-10-v1-16-admin-html-bug-reports-badge-missing` — consumed into v1.22 UX-BADGE-01 (Phase 72). Moves to completed/ when 72 ships.
-- **[P4]** `2026-05-12-update-gsd-check-todos-skill` — consumed into v1.22 TOOL-01 (Phase 73). Phase 73 executes the todo's scope directly.
+- **[P2]** `2026-05-13-product-details-cold-path-8-15s` — consumed into v1.23 PERF-10/11 (Phase 74). Moves to completed/ when 74 ships.
+- **[P2]** `2026-05-13-card-ui-shift-on-details-load` — consumed into v1.23 UX-SHIFT-01 (Phase 75). Moves to completed/ when 75 ships.
+- **[P3]** `2026-05-13-cart-panel-remove-trash-button` — consumed into v1.23 UX-CART-01 (Phase 76). Moves to completed/ when 76 ships.
+- **[P4]** `2026-05-13-update-gsd-add-todo-skill` — deferred to a future `/gsd-quick`-able tooling task; not in v1.23 scope.
 
 ## Known Bugs
 
-- (none open — v1.21 closed the self-healing gap, v1.20 closed stale-color phantoms, cart stepper, and warmup endpoint choice)
+- (none open — v1.22 closed the UX debt list; v1.23 opens 3 fresh issues surfaced during the v1.22 live verification session, all scoped into phases 74/75/76)
 
 ## Timeline
 
 | Event | Date |
 |-------|------|
-| v1.14 milestone closed and archived | 2026-04-22 |
-| v1.15 shipped (VLESS proxy migration) | 2026-04-23 |
-| v1.17 shipped (VLESS timeout hardening) | 2026-04-25 |
-| v1.18 shipped (geo resolver + scraper recovery) | 2026-04-25 |
 | v1.19 shipped + archived | 2026-05-05 |
-| 4-day VLESS outage (pool.json healthy, xray routing to dead May 5 outbound) | 2026-05-06 → 05-10 |
-| Manual fix: sudo systemctl restart saleapp-xray + pool whitelist rebuild | 2026-05-10 |
-| v1.20 milestone STARTED | 2026-05-05 |
 | v1.20 milestone SHIPPED + ARCHIVED + TAGGED | 2026-05-12 |
-| v1.21 milestone STARTED (VLESS Pool Self-Healing & Reload Pipeline, 3 phases, 8 requirements) | 2026-05-12 |
-| v1.21 all 3 phases shipped + live-verified on EC2 (299ms xray reload, 13/13 smoke green) | 2026-05-12 |
-| v1.21 SHIPPED + ARCHIVED + TAGGED | 2026-05-12 |
-| v1.22 milestone STARTED (UX Debt Cleanup + Tooling Polish, 4 phases, 7 requirements) | 2026-05-12 |
-| v1.22 Phase 70 (History Search Catalog-Wide) shipped + live-verified on EC2 | 2026-05-12 |
-| v1.22 Phase 71 (Stale Banner Clarification) shipped + live-verified on EC2 | 2026-05-12 |
-| v1.22 Phase 72 (admin.html Bug Reports + Drift Badges, UX-BADGE-02 fold-in) shipped + live-verified on EC2 | 2026-05-12 |
-| v1.22 Phase 73 (/gsd-check-todos Skill Polish) shipped locally — Kiro-side only, no EC2 | 2026-05-13 |
-| v1.22 milestone audit drafted; awaiting user review before `/gsd-complete-milestone` | 2026-05-13 |
+| v1.21 milestone SHIPPED + ARCHIVED + TAGGED (299ms xray reload live) | 2026-05-12 |
+| v1.22 milestone STARTED (UX Debt Cleanup + Tooling Polish, 4 phases, 7 reqs) | 2026-05-12 |
+| v1.22 Phase 70 (History Search Catalog-Wide) shipped + live-verified | 2026-05-12 |
+| v1.22 Phase 71 (Stale Banner Clarification) shipped + live-verified | 2026-05-12 |
+| v1.22 Phase 72 (admin.html Bug Reports + Drift Badges + `[hidden]` hotfix) shipped + live-verified | 2026-05-12/13 |
+| v1.22 Phase 73 (/gsd-check-todos Skill Polish) shipped locally | 2026-05-13 |
+| v1.22 SHIPPED + ARCHIVED + TAGGED (16 commits `5513ede..f56f285`) | 2026-05-13 |
+| v1.23 milestone STARTED (Detail-Path Performance + UX Polish, 3 phases 74-76, 7 reqs) | 2026-05-13 |
 
 ---
-*Last updated: 2026-05-12 after v1.21 archived + tagged. v1.22 REQUIREMENTS.md + ROADMAP.md drafted with 4 phases (70-73) and 7 requirements (3 UX, 1 TOOL, 3 OPS). Three UX todos + one tooling todo consumed into scope (stay in pending/ until their phase ships). Next: `/gsd-discuss-phase 70` for History Search Catalog-Wide.*
+*Last updated: 2026-05-13 after v1.22 archived + tagged. v1.23 REQUIREMENTS.md + ROADMAP.md drafted. 3 new todos (card UI shift, trash button, cold-path latency) consumed into phases 74-76. Next: `/gsd-discuss-phase 74` or direct plan for Product Details Cold-Path Latency.*

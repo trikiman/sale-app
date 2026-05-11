@@ -1,84 +1,75 @@
-# Requirements — v1.22 UX Debt Cleanup + Tooling Polish
+# Requirements — v1.23 Detail-Path Performance + UX Polish
 
 ## Milestone Goal
 
-Clear the accumulated UX debt across earlier milestones that never made it into a dedicated phase. Three UI/API bugs have been sitting in `.planning/todos/pending/` for weeks, each small on its own but visible to family-scale users every day. Plus one tooling polish for `/gsd-check-todos` so future milestone triage takes minutes instead of reading every todo file.
+Close the user-visible slowness and layout-shift issues surfaced during v1.22 live MCP verification. The biggest complaint is the 8-15 second cold-path latency when opening a product card for the first time — a legacy artifact from the pre-v1.15 SOCKS5 pool era that adds zero value now that xray's `observatory` + `leastPing` already picks the fastest live outbound. Same interaction also causes a visible grid reflow when the details load and the card's cart-button morphs into a quantity stepper — fixable with a CSS slot reservation.
 
-v1.20 shipped reliability. v1.21 shipped self-healing infrastructure. v1.22 shipps the UI catching up to v1.5 / v1.10 / v1.16 backends that already solved half the problem.
+Three pending todos captured 2026-05-13 during v1.22 verification. Scope intentionally tight (matches v1.21/v1.22 discipline).
 
-Continue the v1.19 / v1.20 / v1.21 robust-over-fast cultural commitment: every phase ships with a scripted test, a `VERIFICATION.md`, rollback rehearsal, and a cross-version regression gate against the v1.21 smoke script (which chains into v1.20 + v1.19).
+Driving evidence from live verification 2026-05-13 on https://vkusvillsale.vercel.app/:
 
-Driving evidence (from `.planning/todos/pending/`):
-
-- `2026-04-02-history-search-shows-all-matching-products-from-catalog.md` — v1.5 regression. History search filters to `total_sale_count > 0` only, so a product that IS currently on sale AND matches the search can be absent from results. User searches "цезарь", salad is on sale right now, salad doesn't appear, user thinks the product is missing. Backend `product_catalog` table has 16 K seeded rows but the filter hides them.
-- `2026-04-06-clarify-stale-banner-freshness-vs-updated-time.md` — v1.10 gap. MiniApp can show `Обновлено: 09:36` (latest merged payload time) alongside the stale-data banner (per-source file mtime > 10 min). The two timestamps mean different things but the UI doesn't explain the difference. Users see "freshly updated + warning" and correctly call it confusing.
-- `2026-05-10-v1-16-admin-html-bug-reports-badge-missing.md` — v1.16 gap. Phase 61 Success Criterion 3 required a Bug Reports (N) badge in `admin.html`. Backend ships the counts (`bugReports.count` + `bugReports.unread`) but the admin UI has zero references. Verified by grep at commit HEAD. Small cosmetic fix (~20 LOC) mirroring the existing `proxy-badge` pattern.
-- `2026-05-12-update-gsd-check-todos-skill.md` — tooling. Current `/gsd-check-todos` prints a flat list with no priority, no roadmap correlation, no multi-select. Triage is slow when 5+ todos are open. Add priority frontmatter + P1-first sort + fold-into-milestone action.
+- **Cold-path card open** ~16 s measured on first tap, ~2 s on second tap of the same card (cache hit).
+- **Card grid reflow** observed when details finish loading — card grows to fit the stepper control, neighbors jump left/right.
+- **No trash button** on cart panel item rows — user must navigate back to main page to remove an item via the stepper.
 
 ## Requirements
 
-### UX Debt — Data Surface
+### Detail-Path Performance
 
-- [ ] **UX-BUG-01**: `/api/history/search?q=...` returns ALL products from `product_catalog` that match the query, not just history items with `total_sale_count > 0`. Result rows carry a new `currentSaleType` field (`"green" | "red" | "yellow" | null`) so the frontend can render live badges next to history cards. MiniApp `HistoryPage.jsx` renders currently-on-sale matches with the same color treatment as the main page (green/red/yellow badge), history-only matches keep ghost-card styling. Search UX matches VkusVill's own: all matching products visible regardless of sale state.
+- [ ] **PERF-10**: Cold-path `GET /api/product/{id}/details` p95 ≤ 2 s (measured on never-before-cached products through live Vercel). Achieved by (a) removing the per-proxy HEAD probe loop in `backend/main.py::product_details` since xray's leastPing already picks the fastest live outbound, and (b) tightening the fetch timeouts to match a healthy VLESS bridge profile (connect 4s → 1s, read 6s → 3s). Retry count stays at 3 so flaky tail fetches still recover.
 
-- [ ] **UX-COPY-01**: Stale banner and updated-time header are semantically aligned. Pick ONE of:
-  * (A) Header label switches to oldest-source-time (matches banner basis), OR
-  * (B) Banner surfaces which source is stale and by how much, inline next to the warning.
-  
-  Decision made in `/gsd-discuss-phase 71` with a quick user check. Ship whichever option the user picks. Copy clarifies that "Обновлено" is merged-payload time, not per-source freshness. If the 10-minute stale threshold needs retuning after v1.10 green/red/yellow cadence changes, adjust the constant in the same phase.
+- [ ] **PERF-11**: Cold-path latency ledger emits one JSONL entry per `/api/product/{id}/details` call into `data/detail_events.jsonl` with `{ts, product_id, duration_ms, cached: bool, retry_count, outcome: "ok|failed|fallback"}`. Enables post-shift measurement without re-running synthetic benchmarks. Ledger TTL and prune behavior follow the v1.20 `cart_events.jsonl` pattern (bounded file, tail-read from admin).
 
-- [ ] **UX-BADGE-01**: `backend/admin.html` renders a `Bug Reports (N)` badge in the status row, hidden when count is 0, visible with unread count when greater. Click navigates to `/admin/bug-reports` (existing endpoint). Implementation mirrors existing `proxy-badge` pattern (lines 426-427) and `cart-pending-count` pattern (line 407). No new backend work — `/admin/status.bugReports.{count,unread}` is already exposed.
+### UX Polish
 
-### Tooling Polish
+- [ ] **UX-SHIFT-01**: Product card grid on main page experiences zero visible layout shift when the cart-button morphs into the quantity stepper after a product is added. Achieved by reserving the stepper's space in the card's fixed min-height, so the "not-in-cart" state has a small blank slot and the "in-cart" state fills that slot with no height change. Cumulative Layout Shift (CLS) score measured via Lighthouse ≤ 0.1 on the main page.
 
-- [ ] **TOOL-01**: `/gsd-check-todos` skill adds priority-aware triage. Concrete scope:
-  * `priority: P1|P2|P3|P4` frontmatter field (existing todos default to P3).
-  * List sorted P1 → P4, then by age. Flag: `--by-area` groups instead.
-  * New action: `fold into milestone` — when no active milestone, prompt `/gsd-new-milestone` with selected todo scopes pre-filled. When active, prompt user to add as phase.
-  * Document the frontmatter schema in `~/.kiro/skills/gsd-check-todos/SKILL.md` (currently implicit).
-  * Update existing pending todos in-place with explicit priority values.
+- [ ] **UX-CART-01**: Cart panel item rows gain a trash/remove button (🗑️ icon or equivalent) that fires `POST /api/cart/remove`. Backend `cart.remove(product_id)` already exists (shipped earlier milestones). Pure frontend wiring: optimistic UI with spinner while request in flight, error toast + re-enable on failure, panel refresh on success. No backend diff required.
 
-### Operations — v1.19/v1.20/v1.21 Continuity
+### Operations — Continuity
 
-- [ ] **OPS-15**: `scripts/verify_v1.22.sh` is created alongside v1.19/v1.20/v1.21 smoke scripts. `verify_v1.22.sh all` chains `verify_v1.21.sh all` at the end (which already chains v1.20 + v1.19). Grows phase-by-phase with checks per UX-BUG-01, UX-COPY-01, UX-BADGE-01, TOOL-01. Expected 4-6 new checks minimum.
+- [ ] **OPS-18**: `scripts/verify_v1.23.sh` chains `verify_v1.22.sh all` at the end (which already chains v1.21 + v1.20 + v1.19). Grows phase-by-phase with checks per PERF-10/11, UX-SHIFT-01, UX-CART-01.
 
-- [ ] **OPS-16**: Every v1.22 phase includes end-to-end verification on EC2 where applicable (UX-BUG-01 needs backend deploy + real data, UX-COPY-01 needs live miniapp check via Chrome DevTools MCP, UX-BADGE-01 needs admin.html deploy + auth), or local-only where EC2 is not needed (TOOL-01 is Kiro-side only). Rollback rehearsal per phase.
+- [ ] **OPS-19**: Each v1.23 phase includes live MCP verification where the UI surface is affected (PERF-10 measures cold-path latency via live curl + Chrome DevTools MCP trace; UX-SHIFT-01 captures Lighthouse CLS before+after; UX-CART-01 screenshots trash button + verifies remove action via MCP click + cart refresh). No phase is "code-complete but unverified" — the v1.21 lesson holds.
 
-- [ ] **OPS-17**: Cross-version regression gate stays green — `bash scripts/verify_v1.21.sh all` (which includes v1.20 + v1.19 chain) must pass post-deploy. Every v1.22 change is additive to existing contracts; any breaking change to `/api/products`, `/api/history/*`, `/admin/status`, or the miniapp build is out-of-scope and should be flagged as a late-milestone concern requiring scope-decision.
+- [ ] **OPS-20**: Cross-version regression gate stays green — `bash scripts/verify_v1.22.sh all` (which chains back to v1.19) must pass post-deploy. Every v1.23 change is additive; any contract break is out of scope and requires scope-decision.
 
 ## v2 Requirements
 
 ### Carried forward from v1.19 (still deferred)
 
-- **REL-FUT-01** — Probe failure-reason classification (DNS / TLS / HTTP-4xx / timeout)
-- **REL-FUT-02** — Multi-target probe (VkusVill + ipinfo.io)
-- **REL-FUT-05** — Telegram alert on breaker state changes (dedup'd) and `xray_restart_failed` events
-- **REL-FUT-06** — Replenish to `MAX_CACHED` instead of `MIN_HEALTHY + 1`
-- **REL-FUT-07** — Shorter cooldown for non-block failures (TLS = 15 min)
-- **REL-FUT-08** — Predictive refresh when quarantine > replenish rate
+- **REL-FUT-01..08, OBS-FUT-01..03** — same list as v1.22 audit.
 
 ### Carried forward from v1.20 tech debt
 
-- Phase 64 HAR capture + live ablation sweep + go/no-go decision for `FAST_CART_ADD_URL` swap — scaffolding shipped in v1.20, spike work deferred (requires operator browser session)
-- Phase 65 NEEDS_OPERATOR-1 Playwright slow-path test (`miniapp/tests/test_cart_slow_path.py`)
-- Phase 66 `_cart_add_attempts` TTL is 30 s so `p95_1h` reflects ~30 s of traffic — bump TTL or persist resolved attempts to a bounded ring buffer for true 1 h accuracy
+- Phase 64 HAR capture + live ablation sweep + go/no-go decision for `FAST_CART_ADD_URL` swap.
+- Phase 65 NEEDS_OPERATOR-1 Playwright slow-path test.
+- Phase 66 `_cart_add_attempts` TTL extension for true 1h p95 accuracy.
 
 ### Carried forward from v1.21 tech debt
 
-- `admin.html` currently does not surface the new v1.21 `xray_drift` block — `/admin/status.reliability.xray_drift` is returned by the backend but not yet rendered in the admin UI. **Eligible for late insert into v1.22** if UX-COPY-01 / UX-BADGE-01 work touches `admin.html` anyway and a small card addition is cheap.
-- Throttle `XRAY_RESTART_THROTTLE_S = 90.0` is in-memory only. Low risk at family-scale but not persisted across scheduler restarts. Reconsider if we see restart churn after v1.21 self-healing lands more widely.
-- `_DRIFT_FIRST_SEEN` is in-process; each backend worker has its own clock. Currently single-worker on EC2, so fine. If we ever scale to multiple backend workers the clock would need consolidation.
+- `XRAY_RESTART_THROTTLE_S = 90.0` is in-memory only (low risk at family-scale).
+- `_DRIFT_FIRST_SEEN` is in-process; each backend worker has its own clock (single-worker on EC2 so fine).
+- Telegram alerts on `xray_restart_failed` / breaker state transitions (v1.19 REL-FUT-05).
+
+### Carried forward from v1.22 tech debt
+
+- Vitest/RTL wiring for miniapp so future UI changes get automated test coverage (caught the admin.html `[hidden]` CSS override issue only via live MCP; a snapshot test would have caught it in CI).
+- Multi-select fold-into-milestone in `/gsd-check-todos` (needs AskUserQuestion multi-select primitive in Kiro tooling).
+- `--by-area` flag for `/gsd-check-todos` (priority sort covers primary need).
+- Richer admin UI for individual bug reports (JSON view is adequate for family-scale).
+- SSE `/api/stream` graceful-shutdown short-circuit on SIGTERM (observed stuck restart loops during Phase 72 verification).
+- `/gsd-add-todo` skill priority capture at creation time (P4 — nice-to-have, not blocking).
 
 ## Out of Scope
 
 | Feature | Reason |
 |---|---|
-| History page sort / filter dropdown beyond what UX-BUG-01 already touches | Scope creep; current UX-BUG-01 fixes the filter bug — richer controls are a different feature, separate milestone |
-| Cart item optimistic-state animations | Cosmetic polish; v1.20 already closed the false-fail-then-double-add blocker |
-| Subgroup "expand all" / multi-select | Different UX surface; no pending todo for it |
-| admin.html theming / dark mode | Visual polish unrelated to the specific gap fix |
-| Migration of `admin.html` to the miniapp React stack | Long-running refactor, separate workstream if ever needed |
-| `gsd-check-todos` UI in Kiro (vs CLI-style output) | TOOL-01 is skill-file-only; IDE panel is separate scope |
+| Full rewrite of product details fetch pipeline | PERF-10 is a surgical fix to a specific legacy artifact; a rewrite is separate scope |
+| Background pre-warm of top-visible product details | Option B from the cold-path todo — deferred to measure if PERF-10 alone is sufficient before adding concurrency cost |
+| Admin UI restyle / dark-mode polish | Scope creep |
+| Vitest/RTL wiring for miniapp | Tech debt deferred to a future tooling milestone |
+| SSE graceful-shutdown fix | Observed behavior but infrastructure-layer issue, separate from detail-path + UX |
 
 ## Traceability
 
@@ -86,30 +77,31 @@ Driving evidence (from `.planning/todos/pending/`):
 
 | Requirement | Provisional Phase | Status |
 |---|---|---|
-| UX-BUG-01 | Phase 70 (History search catalog-wide) | Defined |
-| UX-COPY-01 | Phase 71 (Stale banner clarification) | Defined |
-| UX-BADGE-01 | Phase 72 (admin.html Bug Reports badge) | Defined |
-| TOOL-01 | Phase 73 (gsd-check-todos skill polish) | Defined |
-| OPS-15 | All phases (cross-cutting) | Defined |
-| OPS-16 | All phases (cross-cutting) | Defined |
-| OPS-17 | All phases (cross-cutting) | Defined |
+| PERF-10 | Phase 74 (Cold-path product_details latency) | Defined |
+| PERF-11 | Phase 74 (ledger ships alongside core fix) | Defined |
+| UX-SHIFT-01 | Phase 75 (Card grid layout shift) | Defined |
+| UX-CART-01 | Phase 76 (Cart panel trash button) | Defined |
+| OPS-18 | All phases (cross-cutting) | Defined |
+| OPS-19 | All phases (cross-cutting) | Defined |
+| OPS-20 | All phases (cross-cutting) | Defined |
 
 **Coverage:**
-- v1.22 requirements: 7 total (3 UX, 1 TOOL, 3 OPS)
-- Mapped to phases: 7 (provisional, 4 phases)
+- v1.23 requirements: 7 total (2 PERF, 2 UX, 3 OPS)
+- Mapped to phases: 7 (provisional, 3 phases)
 - Unmapped: 0 ✓
 
 ## Prior Milestone — Archived
 
-v1.21 VLESS Pool Self-Healing & Reload Pipeline shipped 2026-05-12 with 8/8 requirements satisfied across 3 phases (67/68/69). Full archive:
-- `.planning/milestones/v1.21-ROADMAP.md`
-- `.planning/milestones/v1.21-REQUIREMENTS.md`
-- `.planning/milestones/v1.21-MILESTONE-AUDIT.md`
-- `.planning/milestones/v1.21-phases/{67-admitted-node-self-healing-loop,68-xray-auto-reload-on-admission-change,69-drift-visibility}/`
-- Git tag `v1.21`, commits `fcc740f..44fba0f` (14 commits), live-verified on EC2 2026-05-12
+v1.22 UX Debt Cleanup + Tooling Polish shipped 2026-05-13 with 7/7 requirements + 1 late insert (UX-BADGE-02 xray_drift badge fold-in) across 4 phases (70/71/72/73). Full archive:
+- `.planning/milestones/v1.22-ROADMAP.md`
+- `.planning/milestones/v1.22-REQUIREMENTS.md`
+- `.planning/milestones/v1.22-MILESTONE-AUDIT.md`
+- `.planning/milestones/v1.22-phases/{70,71,72,73}-*/`
+- Git tag `v1.22`, commits `5513ede..f56f285` (16 commits including Phase 72 `[hidden]` hotfix `825008c`)
+- 3/4 phases live-verified on EC2 via Chrome DevTools MCP 2026-05-13
 
-The v1.19 + v1.20 + v1.21 smoke scripts are retained as cross-version reliability regression guards; v1.22 adds `scripts/verify_v1.22.sh` alongside.
+The v1.19 + v1.20 + v1.21 + v1.22 smoke scripts are retained as cross-version reliability regression guards; v1.23 adds `scripts/verify_v1.23.sh` alongside.
 
 ---
-*Requirements defined: 2026-05-12*
-*Prior milestone v1.21 archived 2026-05-12*
+*Requirements defined: 2026-05-13*
+*Prior milestone v1.22 archived 2026-05-13*

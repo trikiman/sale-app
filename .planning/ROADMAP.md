@@ -23,90 +23,80 @@
 - ✅ **v1.19** Production Reliability & 24/7 Uptime — Phases 59-61 (shipped 2026-05-05)
 - ✅ **v1.20** Cart-Add Latency & User-Facing Responsiveness — Phases 62-66 + 66.1/.2/.3 (shipped 2026-05-12, tag `v1.20`)
 - ✅ **v1.21** VLESS Pool Self-Healing & Reload Pipeline — Phases 67-69 (shipped 2026-05-12, tag `v1.21`)
-- ⏳ **v1.22** UX Debt Cleanup + Tooling Polish — Phases 70-73 (active, started 2026-05-12)
+- ✅ **v1.22** UX Debt Cleanup + Tooling Polish — Phases 70-73 (shipped 2026-05-13, tag `v1.22`)
+- ⏳ **v1.23** Detail-Path Performance + UX Polish — Phases 74-76 (active, started 2026-05-13)
 
-## v1.22 UX Debt Cleanup + Tooling Polish (ACTIVE — started 2026-05-12)
+## v1.23 Detail-Path Performance + UX Polish (ACTIVE — started 2026-05-13)
 
-Three UI/API bugs that have been sitting in `.planning/todos/pending/` since earlier milestones shipped half the fix but never closed the UI loop. Plus one tooling polish (`/gsd-check-todos` priority-aware triage). Small per-phase scope (~20-100 LOC each), tight milestone discipline preserved from v1.21.
+Close the three user-visible issues surfaced during v1.22 live MCP verification 2026-05-13: cold-path card open taking 8-15 seconds, card grid reflow when details finish loading, cart panel missing a trash button. Two of three are UI polish; the cold-path fix is surgical backend work removing a legacy pre-v1.15 SOCKS5-era probe that duplicates what xray's leastPing already does.
 
-Driving evidence (from pending todos):
+Driving evidence from live MCP verification 2026-05-13:
 
-| Area | Todo | Age | v1.22 Phase |
+| Area | Issue | Measured | v1.23 Phase |
 |---|---|---|---|
-| History search | `2026-04-02-history-search-shows-all-matching-products-from-catalog` — search filters out products currently on sale if they match query, only shows history-only items | ~40 days | Phase 70 |
-| Stale banner UX | `2026-04-06-clarify-stale-banner-freshness-vs-updated-time` — "Обновлено: 09:36" + stale warning looks contradictory to user | ~36 days | Phase 71 |
-| Admin badge | `2026-05-10-v1-16-admin-html-bug-reports-badge-missing` — Phase 61 Success Criterion 3 never wired in admin.html | ~2 days | Phase 72 |
-| Kiro tooling | `2026-05-12-update-gsd-check-todos-skill` — flat list, no priority sort, no multi-select | 0 days | Phase 73 |
+| Detail fetch latency | First product card open takes 8-15s (cache-miss path) | ~16s first open, ~2s reopen | Phase 74 (PERF-10/11) |
+| Card grid reflow | Card grows when stepper replaces cart-button, neighbors jump | Visible layout shift | Phase 75 (UX-SHIFT-01) |
+| Cart panel removal | No trash button per row; user must navigate back to main page | UX friction observed | Phase 76 (UX-CART-01) |
 
-**Goal:** Close accumulated UX/UI debt from v1.5 / v1.10 / v1.16, plus a tooling polish so future milestones triage todos faster.
+**Goal:** Cold-path card open p95 ≤ 2 s. Zero card grid layout shift. Trash button on every cart row.
 **Granularity:** Small
-**Phases:** 4 (70-73)
-**Requirements:** 7 (3 UX, 1 TOOL, 3 OPS)
+**Phases:** 3 (74-76)
+**Requirements:** 7 (2 PERF, 2 UX, 3 OPS)
 
 ### Phases
 
-- [x] **Phase 70: History Search Catalog-Wide** — Remove the `total_sale_count > 0` filter from `/api/history/search` so ANY product in `product_catalog` matching the query is returned. Result rows carry `currentSaleType: "green" | "red" | "yellow" | null` so `HistoryPage.jsx` can render live badges on history cards that match today's sale. Search behaves like VkusVill's own search: every matching product visible, live-vs-history differentiated by visual treatment. Smoke gate: seeded test against "цезарь" with a fixture green product → result includes the green product with `currentSaleType: "green"`. (UX-BUG-01) — **SHIPPED 2026-05-12** (commits `baa4a77`, `ba3cbd5`, `53ab983`, `321c25d`, `bba508a`; 5/5 tests + 3/3 smoke live-verified on EC2)
+- [ ] **Phase 74: Product Details Cold-Path Latency** — Remove the per-proxy HEAD probe loop in `backend/main.py::product_details`. Go straight to `127.0.0.1:10808` (xray bridge). Tighten httpx timeouts: connect 4s → 1s, read 6s → 3s. Keep 3 retries so flaky tail fetches recover. Rationale: xray `observatory` + `leastPing` (v1.17) already picks the fastest live outbound, v1.19 pre-flight probe already catches broken bridges, v1.21 reprobe daemon keeps admitted pool alive, and v1.21 REL-15 tracks per-node success_rate. The Python-side probe is legacy work at 4-12s cost. Pair with PERF-11 latency ledger so before+after is measurable. Smoke gate: live MCP + curl of 5 never-cached product_ids, assert p95 ≤ 2s. (PERF-10, PERF-11)
 
-- [x] **Phase 71: Stale Banner Clarification** — Align the UI's "Обновлено: HH:MM" label with the per-source stale banner so they don't contradict. Pick option (A) switch header label to oldest-source-time, or (B) inline-annotate banner with "(green: 30m old)". Discuss → plan → ship in one phase. Re-examine the 10-minute stale threshold constant if v1.10 cadence changes suggest it's wrong. Smoke gate: synthetic fixture with green mtime 25 min old, red + yellow fresh → banner AND header both reflect the stale source. (UX-COPY-01) — **SHIPPED 2026-05-12** (commits `01ac9bb`, `cdd4937`, `cdb7a86`; chose option B, banner rescoped to "Источники устарели" with per-source age inline; 3/3 smoke live-verified on EC2)
+- [ ] **Phase 75: Card Grid Layout Shift Fix** — Reserve the quantity-stepper slot in the product card's fixed min-height so the "not-in-cart" state (just a cart button) and "in-cart" state (full stepper) occupy the same vertical space. Neighbors no longer reflow. CSS-only change to `miniapp/src/App.jsx` + `miniapp/src/index.css`. Smoke gate: Lighthouse CLS ≤ 0.1 on main page before vs after. (UX-SHIFT-01)
 
-- [x] **Phase 72: admin.html Bug Reports Badge** — Add ~20 lines to `backend/admin.html` mirroring the existing `proxy-badge` (line 426) / `cart-pending-count` (line 407) patterns: new `<span id="bug-reports-badge">` hidden by default, `applyStatus(data)` reads `data.bugReports.count/unread`, shows `Bug Reports (N)` when N > 0, optional click opens `/admin/bug-reports`. Backend side shipped in v1.16 (`/admin/status.bugReports.{count,unread}`), this is pure UI. If v1.21 `xray_drift` card makes sense to add in the same file for the same cost, include it as UX-BADGE-02 late-insert. Smoke gate: curl `/admin/status` mock with `bugReports.count=3,unread=2` → admin.html contains `Bug Reports (2)` badge string. (UX-BADGE-01) — **SHIPPED 2026-05-12** (commits `69098b3`, `87388de`, `6ed91ad`; UX-BADGE-02 xray_drift badge folded in same phase; 3/3 smoke live-verified on EC2)
-
-- [x] **Phase 73: gsd-check-todos Skill Polish** — Kiro-side skill file edits under `~/.kiro/skills/gsd-check-todos/SKILL.md` and `~/.kiro/get-shit-done/workflows/check-todos.md`. Adds `priority: P1|P2|P3|P4` frontmatter (existing defaults to P3), sorts list P1 → P4 then age, adds `--by-area` flag. New action: `fold into milestone` — when no active milestone, prompt `/gsd-new-milestone` with selected todo scopes pre-filled. Documents frontmatter schema explicitly. Updates all 4 current pending todos with explicit priority values. No EC2 deploy. Smoke gate: running the updated skill against a synthetic 5-todo directory returns them in P1-first order, and the `fold into milestone` option appears. (TOOL-01) — **SHIPPED 2026-05-13** (commits `43b4fc8`, `9e62355`; priority + sort + schema doc + 4 in-tree annotations; fold-into-milestone multi-select deferred to v1.23+; 3/3 local smoke green)
+- [ ] **Phase 76: Cart Panel Trash Button** — Add a trash icon button to every row in `CartPanel.jsx`. Click fires `POST /api/cart/remove` (existing endpoint). Optimistic UI: disable + spinner during request, error toast + re-enable on failure, panel refresh on success. Frontend-only. Smoke gate: live MCP click on trash button removes item + cart count decrements correctly. (UX-CART-01)
 
 ### Phase Details
 
-### Phase 70: History Search Catalog-Wide
-**Goal:** Fix v1.5 regression where searching history for a product currently on sale returns no results because the filter excludes `total_sale_count == 0` items that never had a sale recorded but exist in `product_catalog`.
-**Depends on:** v1.21 closed (no new VLESS infra, just a backend filter removal + miniapp rendering tweak); v1.21 regression gate must stay green.
-**Requirements:** UX-BUG-01 — plus continued OPS-15/16/17.
+### Phase 74: Product Details Cold-Path Latency
+**Goal:** Drop `GET /api/product/{id}/details` cold-path p95 from ~16 s to ≤ 2 s by removing redundant pre-v1.15 probe logic and matching httpx timeouts to healthy VLESS bridge profile.
+**Depends on:** v1.22 closed (no direct infrastructure dependency, but cross-version regression gate must stay green).
+**Requirements:** PERF-10, PERF-11 — plus continued OPS-18/19/20.
 **Success Criteria:**
-  1. [ ] `/api/history/search?q=...` returns products from `product_catalog` matching the query regardless of `total_sale_count`. Existing sort (relevance) preserved.
-  2. [ ] Response rows carry `currentSaleType: str | null` derived from the latest merged products set (green/red/yellow). `null` when product is not on sale today.
-  3. [ ] `miniapp/src/HistoryPage.jsx` renders currently-on-sale matches with the same green/red/yellow badge as `App.jsx` main page; history-only matches keep ghost-card treatment.
-  4. [ ] Regression pin: `backend/test_history_search_catalog_wide.py` seeds a catalog row for "цезарь салат" with `total_sale_count=0` AND a current green sale for the same product id, asserts the search returns it with `currentSaleType == "green"`.
-  5. [ ] v1.21 + v1.20 + v1.19 smoke scripts stay green.
-**Plans:** TBD via `/gsd-plan-phase 70`
+  1. [ ] `backend/main.py::product_details` no longer executes the per-proxy HEAD probe loop. Single code path: check cache → fetch via xray bridge → retry up to 3 times.
+  2. [ ] httpx.Timeout tightened: connect 4.0 → 1.0, read 6.0 → 3.0. Retry loop preserves at 3.
+  3. [ ] New `data/detail_events.jsonl` ledger: one line per request with `ts, product_id, duration_ms, cached (bool), retry_count, outcome`. Bounded file (pruned via same mechanism as `cart_events.jsonl`).
+  4. [ ] Unit test: `backend/test_product_details_latency.py` mocks httpx and asserts the ledger records the happy path + cached path + failed path correctly.
+  5. [ ] Live MCP: 5 synthetic cold-path fetches via `curl -w "%{time_total}"` against never-cached product_ids, p95 ≤ 2 s.
+  6. [ ] v1.22 + v1.21 + v1.20 + v1.19 regression green.
+**Plans:** TBD via `/gsd-plan-phase 74`
 
-### Phase 71: Stale Banner Clarification
-**Goal:** Stop showing a freshly-updated header timestamp next to a stale-source warning without explaining the semantic difference. User-reported confusion since v1.10.
-**Depends on:** Phase 70 (not strictly, but phases 70/71 share the miniapp build).
-**Requirements:** UX-COPY-01 — plus continued OPS-15/16/17.
+### Phase 75: Card Grid Layout Shift Fix
+**Goal:** Eliminate the visible reflow when a product card morphs from "not-in-cart" (cart button) to "in-cart" (full stepper) state.
+**Depends on:** Phase 74 not required; independent CSS work.
+**Requirements:** UX-SHIFT-01 — plus continued OPS-18/19/20.
 **Success Criteria:**
-  1. [ ] Pick option A OR B (see REQUIREMENTS.md UX-COPY-01) — decision captured in 71-CONTEXT.md during `/gsd-discuss-phase 71`. Default leaning: option (B) inline-annotate banner, since it keeps the `Обновлено` label's "latest merged payload" semantic intact and user can see per-source staleness directly in the warning.
-  2. [ ] Copy clarifies `Обновлено` vs the per-source stale banner without requiring user to read help text — one-sentence banner addition is enough.
-  3. [ ] 10-minute source-stale threshold re-verified against current green/red/yellow cadence (cron every ~5 min). If wrong, adjust the constant; if right, document the check in 71-VERIFICATION.md.
-  4. [ ] Regression pin: `miniapp/src/__tests__/stale-banner.test.jsx` asserts banner contains per-source age text when at least one source is stale.
-  5. [ ] Live MCP check via Chrome DevTools: page with synthetic stale fixture shows banner AND header both reflecting the stale source, screenshot captured.
-**Plans:** TBD via `/gsd-plan-phase 71`
+  1. [ ] Product card has a fixed min-height that accommodates the tallest of the two states (stepper). "Not-in-cart" state has small reserved space at the bottom.
+  2. [ ] Grid row height no longer varies per-card, so adding an item to cart doesn't reflow neighbors.
+  3. [ ] Lighthouse CLS score on main page ≤ 0.1 (measured before + after via DevTools MCP Performance trace).
+  4. [ ] Regression pin: `miniapp/src/__tests__/card-layout.test.jsx` if Vitest is wired (else deferred to future Vitest phase and documented in VERIFICATION.md NEEDS_OPERATOR).
+  5. [ ] Live MCP: add 3 products to cart, screenshot main page before/after, diff shows no shift.
+**Plans:** TBD via `/gsd-plan-phase 75`
 
-### Phase 72: admin.html Bug Reports Badge
-**Goal:** Ship the v1.16 Phase 61 Success Criterion 3 UI side — backend has the counts for 2 weeks already.
-**Depends on:** nothing from v1.22 (independent, smallest phase).
-**Requirements:** UX-BADGE-01 — plus continued OPS-15/16/17. Optionally folds in UX-BADGE-02 (v1.21 `xray_drift` card) if cheap.
+### Phase 76: Cart Panel Trash Button
+**Goal:** Let users remove items directly from the cart panel without navigating back to the main page.
+**Depends on:** nothing (backend `cart.remove(product_id)` already exists).
+**Requirements:** UX-CART-01 — plus continued OPS-18/19/20.
 **Success Criteria:**
-  1. [ ] `backend/admin.html` gains `<span id="bug-reports-badge" class="badge" hidden>Bug Reports (0)</span>` placed next to `proxy-badge` in the status row.
-  2. [ ] `applyStatus(data)` updates badge text from `data.bugReports.unread` (fallback `data.bugReports.count`), toggles `hidden` attribute when count is 0.
-  3. [ ] Badge click navigates to `/admin/bug-reports` (existing endpoint).
-  4. [ ] Smoke gate: curl `/admin/status` with `-H "X-Admin-Token: $T"` against EC2 returns `bugReports.count >= 0`; assert admin.html at HEAD contains the badge span.
-  5. [ ] Optional UX-BADGE-02 late-insert: if adding a small `xray_drift` card is <10 LOC using the same `applyStatus` hook, do it. Otherwise defer to v1.23.
-**Plans:** TBD via `/gsd-plan-phase 72`
+  1. [ ] Every row in `CartPanel.jsx` has a trash icon button (🗑️ or SVG) on the right side.
+  2. [ ] Click fires `POST /api/cart/remove` with `{user_id, product_id}`. Button disables + shows spinner during request.
+  3. [ ] On success: row animates out, panel count decrements, toast confirms.
+  4. [ ] On error: button re-enables, row stays visible, toast shows reason.
+  5. [ ] Live MCP: click trash button, assert row disappears and main-page cart count decrements.
+  6. [ ] No regression on main-page stepper-to-zero remove path.
+**Plans:** TBD via `/gsd-plan-phase 76`
 
-### Phase 73: gsd-check-todos Skill Polish
-**Goal:** Make todo triage take minutes, not a file-by-file read. Priority sort + fold-into-milestone action.
-**Depends on:** nothing (skill file edits only, no product code change).
-**Requirements:** TOOL-01 — plus continued OPS-15/16/17 (cross-cutting; no EC2 smoke needed for this phase).
-**Success Criteria:**
-  1. [ ] `priority: P1|P2|P3|P4` frontmatter documented + recognized by the skill; todos missing the field default to P3.
-  2. [ ] List output sorted P1 → P4, then by age (oldest first within priority). Flag: `--by-area` groups by area instead.
-  3. [ ] New action `fold into milestone` in the skill's action menu: when no active milestone, routes to `/gsd-new-milestone` with selected todos pre-filled as requirements-seed; when active milestone, prompts user to add as phase or to stack in `v2 requirements` section.
-  4. [ ] The 4 currently pending todos updated in-place with explicit priority:
-     * `2026-04-02-history-search-...` → P2 (consumed into v1.22 UX-BUG-01)
-     * `2026-04-06-clarify-stale-banner-...` → P3 (consumed into v1.22 UX-COPY-01)
-     * `2026-05-10-v1-16-admin-html-bug-reports-badge` → P2 (consumed into v1.22 UX-BADGE-01)
-     * `2026-05-12-update-gsd-check-todos-skill` → P4 (this phase itself)
-  5. [ ] Three "consumed" todos move to `.planning/todos/completed/` when their corresponding v1.22 phase ships.
-  6. [ ] Frontmatter schema documented in `~/.kiro/skills/gsd-check-todos/SKILL.md` — `priority`, `area`, `files`, `created` explicit with valid values.
-**Plans:** TBD via `/gsd-plan-phase 73`
+## v1.22 UX Debt Cleanup + Tooling Polish (SHIPPED 2026-05-13, tag `v1.22`)
+
+Full scope shipped, 7/7 requirements + 1 late insert (UX-BADGE-02), 4 phases (70-73). Archive: `.planning/milestones/v1.22-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md` + `.planning/milestones/v1.22-phases/` (4 directories).
+
+**Goal:** Close accumulated UX debt from v1.5/v1.10/v1.16 plus `/gsd-check-todos` skill polish.
+**Shipped:** History search catalog-wide with `currentSaleType` live badges (Phase 70 UX-BUG-01), stale banner rescoped to `Источники устарели` with per-source age (Phase 71 UX-COPY-01), admin.html `Bug Reports (N)` + `Drift (N)` attention badges + `[hidden]` hotfix (Phase 72 UX-BADGE-01/02), `/gsd-check-todos` priority-aware triage (Phase 73 TOOL-01).
 
 ## v1.21 VLESS Pool Self-Healing & Reload Pipeline (SHIPPED 2026-05-12, tag `v1.21`)
 
