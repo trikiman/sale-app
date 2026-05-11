@@ -993,6 +993,34 @@ def _load_admitted_host_set() -> set[str] | None:
     return hosts
 
 
+def _load_current_sale_types() -> dict[str, str]:
+    """Return ``{product_id_str: "green" | "red" | "yellow"}`` from today's ``proposals.json``.
+
+    v1.22 Phase 70 UX-BUG-01. Source of truth for "is this product on sale
+    right now and what color?" — distinct from ``sale_sessions`` (which is
+    sale-continuity truth and can lag by up to one scraper cycle).
+
+    Empty dict on missing/malformed :data:`PROPOSALS_PATH` — search results
+    then fall back to the historical ``last_sale_type``, same defensive
+    pattern as :func:`_load_admitted_host_set`.
+    """
+    try:
+        with open(PROPOSALS_PATH, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return {}
+    out: dict[str, str] = {}
+    for product in data.get("products", []) or []:
+        pid = product.get("id")
+        ptype = product.get("type")
+        if pid is None or not isinstance(ptype, str):
+            continue
+        if ptype not in ("green", "red", "yellow"):
+            continue
+        out[str(pid)] = ptype
+    return out
+
+
 def _pool_snapshot_for_health() -> dict:
     """Best-effort pool snapshot via VlessProxyManager.pool_snapshot().
 
@@ -4797,10 +4825,16 @@ def history_get_products(
             LIMIT ? OFFSET ?
         """, params + [per_page, offset])
 
+        # v1.22 UX-BUG-01: load today's live sale types BEFORE row construction
+        # so every row can carry the current-color signal for live-badge rendering.
+        sale_types = _load_current_sale_types()
+
         products = []
         for row in c.fetchall():
+            pid = row["product_id"]
+            current_type = sale_types.get(str(pid))
             products.append({
-                "id": row["product_id"],
+                "id": pid,
                 "name": row["name"],
                 "category": row["category"],
                 "group": row["group_name"] or "",
@@ -4815,6 +4849,7 @@ def history_get_products(
                 "usual_time": row["usual_sale_time"],
                 "avg_window_min": row["avg_catch_window_min"] or 0,
                 "is_currently_on_sale": False,  # Will be enriched below
+                "currentSaleType": current_type,  # v1.22 UX-BUG-01
             })
 
         # Check which products are currently on sale + get old_price
@@ -4840,7 +4875,10 @@ def history_get_products(
             old_prices = {row["product_id"]: row["old_price"] for row in c.fetchall()}
 
             for p in products:
-                p["is_currently_on_sale"] = p["id"] in active_ids
+                # v1.22 UX-BUG-01: live AND / OR today's-proposals carries it
+                p["is_currently_on_sale"] = (
+                    p["id"] in active_ids or p.get("currentSaleType") is not None
+                )
                 p["last_old_price"] = old_prices.get(p["id"]) or 0
 
         conn.close()
