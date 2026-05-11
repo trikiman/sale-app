@@ -536,7 +536,9 @@ def _vkusvill_backoff_active() -> bool:
 async def product_details(product_id: str):
     """Fetch full product details from VkusVill product page (on-demand)."""
     import re
-    from backend import detail_service
+    from backend import detail_service, detail_events
+
+    _detail_start = _time.time()
 
     product = _load_product_record(product_id)
     url = product.get('url', '') if product else ''
@@ -547,6 +549,13 @@ async def product_details(product_id: str):
     # Check cache first — instant return
     cached = detail_service.read_cache(product_id)
     if cached:
+        detail_events.append_event(
+            product_id=product_id,
+            duration_ms=int((_time.time() - _detail_start) * 1000),
+            cached=True,
+            retry_count=0,
+            outcome="cached",
+        )
         return cached
 
     # Fetch HTML via xray bridge — no per-proxy HEAD probe needed.
@@ -607,9 +616,23 @@ async def product_details(product_id: str):
         logger.info(
             f"[DETAIL-FETCH] Product {product_id}: all {retry_count} attempts failed ({last_error})"
         )
+        detail_events.append_event(
+            product_id=product_id,
+            duration_ms=int((_time.time() - _detail_start) * 1000),
+            cached=False,
+            retry_count=retry_count,
+            outcome="failed",
+        )
         return _fallback_product_details(product_id, product, last_error or "Bridge fetch failed")
 
     if len(html) < 500:
+        detail_events.append_event(
+            product_id=product_id,
+            duration_ms=int((_time.time() - _detail_start) * 1000),
+            cached=False,
+            retry_count=retry_count,
+            outcome="fallback",
+        )
         return _fallback_product_details(product_id, product, "Empty HTML response")
 
     def strip_tags(s):
@@ -682,6 +705,14 @@ async def product_details(product_id: str):
 
     # Cache for next time
     detail_service.write_cache(product_id, result)
+
+    detail_events.append_event(
+        product_id=product_id,
+        duration_ms=int((_time.time() - _detail_start) * 1000),
+        cached=False,
+        retry_count=retry_count,
+        outcome="ok",
+    )
 
     return result
 
