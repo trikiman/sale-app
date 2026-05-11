@@ -166,6 +166,90 @@ PY" 2>/dev/null)
 fi
 
 # ---------------------------------------------------------------------------
+# Phase 69: Drift Visibility — /api/health/deep + /admin/status + proxy_events (OBS-06, OBS-07 completion)
+# ---------------------------------------------------------------------------
+if [[ "$PHASE" == "69" || "$PHASE" == "all" ]]; then
+    _banner "Phase 69 — Drift Visibility"
+
+    # 69-A: OBS-06 thresholds locked + helpers present
+    if ssh "$EC2_HOST" "cd /home/ubuntu/saleapp && python3 -c '
+from backend.main import (
+    _compute_xray_drift_block,
+    _extract_running_xray_hosts_for_health,
+    _load_admitted_host_set,
+    _DEEP_DRIFT_DEGRADED_S,
+    _DEEP_DRIFT_UNHEALTHY_CYCLE_AGE_S,
+    _DRIFT_FIRST_SEEN,
+)
+assert _DEEP_DRIFT_DEGRADED_S == 300, _DEEP_DRIFT_DEGRADED_S
+assert _DEEP_DRIFT_UNHEALTHY_CYCLE_AGE_S == 600, _DEEP_DRIFT_UNHEALTHY_CYCLE_AGE_S
+'"; then
+        _pass "69-A: OBS-06 thresholds locked (300s degraded, 600s unhealthy) + helpers present"
+    else
+        _fail "69-A: OBS-06 helpers or thresholds check FAILED on EC2"
+    fi
+
+    # 69-B: unit tests green on EC2
+    if ssh "$EC2_HOST" "cd /home/ubuntu/saleapp && python3 -m pytest tests/test_xray_drift_health.py -q 2>&1 | tail -3 | grep -Eq '12 passed'"; then
+        _pass "69-B: tests/test_xray_drift_health.py — 12/12 green on EC2"
+    else
+        _fail "69-B: tests/test_xray_drift_health.py FAILED on EC2 (expect 12 passed)"
+    fi
+
+    # 69-C: /api/health/deep returns xray_drift block with full schema (via Vercel)
+    DRIFT_BLOCK=$(curl -fsS --max-time 10 "${VERCEL_BASE}/api/health/deep" 2>/dev/null | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except Exception:
+    print("PARSE_ERR"); raise SystemExit(0)
+xd = d.get("xray_drift")
+if xd is None:
+    print("ABSENT")
+else:
+    required = {"admitted_hosts", "active_outbounds", "drift_count", "drifted_hosts", "first_seen_at"}
+    missing = required - xd.keys()
+    if missing:
+        print(f"MISSING:{sorted(missing)}")
+    else:
+        print(f"OK:drift={xd[\"drift_count\"]}")
+')
+    if [[ "$DRIFT_BLOCK" == OK:* ]]; then
+        _pass "69-C: /api/health/deep xray_drift block schema complete (${DRIFT_BLOCK})"
+    else
+        _fail "69-C: xray_drift block missing or incomplete ($DRIFT_BLOCK)"
+    fi
+
+    # 69-D: pool_refresh_complete event carries success_rate_drops
+    SRD_OK=$(ssh "$EC2_HOST" "python3 - <<'PY'
+import json, os
+p = '/home/ubuntu/saleapp/data/proxy_events.jsonl'
+if not os.path.exists(p):
+    print('NO_FILE'); raise SystemExit(0)
+latest = None
+with open(p) as f:
+    for ln in f:
+        try:
+            d = json.loads(ln)
+            if d.get('event') == 'pool_refresh_complete':
+                latest = d
+        except Exception:
+            pass
+if latest is None:
+    print('NO_EVENT')
+elif 'success_rate_drops' not in latest:
+    print('MISSING_KEY')
+else:
+    print(f'OK:drops={len(latest[\"success_rate_drops\"])}')
+PY" 2>/dev/null)
+    if [[ "$SRD_OK" == OK:* ]]; then
+        _pass "69-D: pool_refresh_complete carries success_rate_drops (${SRD_OK})"
+    else
+        _fail "69-D: success_rate_drops missing from latest pool_refresh_complete ($SRD_OK)"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
 # Cross-version: v1.20 + v1.19 regression (OPS-12 carryover)
 # ---------------------------------------------------------------------------
 if [[ "$PHASE" == "all" ]]; then
