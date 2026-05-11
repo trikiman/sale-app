@@ -93,6 +93,79 @@ PY" 2>/dev/null)
 fi
 
 # ---------------------------------------------------------------------------
+# Phase 68: xray Auto-Reload on Admission Change (REL-14, OBS-07 partial)
+# ---------------------------------------------------------------------------
+if [[ "$PHASE" == "68" || "$PHASE" == "all" ]]; then
+    _banner "Phase 68 — xray Auto-Reload on Admission Change"
+
+    # 68-A: REL-14 constants locked in vless/manager.py
+    if ssh "$EC2_HOST" "cd /home/ubuntu/saleapp && python3 -c '
+from vless.manager import XRAY_RESTART_THROTTLE_S, XRAY_RESTART_TIMEOUT_S, SYSTEMCTL_ARGS
+assert XRAY_RESTART_THROTTLE_S == 90.0, XRAY_RESTART_THROTTLE_S
+assert XRAY_RESTART_TIMEOUT_S == 30.0, XRAY_RESTART_TIMEOUT_S
+assert SYSTEMCTL_ARGS == [\"sudo\", \"systemctl\", \"reload-or-restart\", \"saleapp-xray\"], SYSTEMCTL_ARGS
+'"; then
+        _pass "68-A: REL-14 constants locked (throttle=90s, timeout=30s, argv shape)"
+    else
+        _fail "68-A: REL-14 constants check FAILED on EC2"
+    fi
+
+    # 68-B: _extract_running_hosts + _reload_xray_systemd on VlessProxyManager
+    if ssh "$EC2_HOST" "cd /home/ubuntu/saleapp && python3 -c '
+from vless.manager import VlessProxyManager
+for m in (\"_extract_running_hosts\", \"_reload_xray_systemd\"):
+    assert hasattr(VlessProxyManager, m), f\"missing {m}\"
+'"; then
+        _pass "68-B: VlessProxyManager exposes _extract_running_hosts + _reload_xray_systemd"
+    else
+        _fail "68-B: manager helper methods missing on EC2"
+    fi
+
+    # 68-C: sudoers entry deployed (passwordless reload on saleapp-xray only)
+    if ssh "$EC2_HOST" "test -r /etc/sudoers.d/saleapp-xray-reload && \
+        sudo -n grep -q 'saleapp-xray' /etc/sudoers.d/saleapp-xray-reload 2>/dev/null"; then
+        _pass "68-C: /etc/sudoers.d/saleapp-xray-reload present and references saleapp-xray"
+    else
+        _fail "68-C: sudoers entry missing or unreadable — see 68-VERIFICATION.md NEEDS_OPERATOR-1"
+    fi
+
+    # 68-D: unit tests green on EC2
+    if ssh "$EC2_HOST" "cd /home/ubuntu/saleapp && python3 -m pytest tests/test_xray_reload.py -q 2>&1 | tail -3 | grep -Eq '12 passed'"; then
+        _pass "68-D: tests/test_xray_reload.py — 12/12 green on EC2"
+    else
+        _fail "68-D: tests/test_xray_reload.py FAILED on EC2 (expect 12 passed)"
+    fi
+
+    # 68-E: most recent pool_refresh_complete event has the Phase-68 schema
+    POOL_EVT=$(ssh "$EC2_HOST" "python3 - <<'PY'
+import json, os
+p = '/home/ubuntu/saleapp/data/proxy_events.jsonl'
+if not os.path.exists(p):
+    print('NO_FILE'); raise SystemExit(0)
+latest = None
+with open(p) as f:
+    for ln in f:
+        try:
+            d = json.loads(ln)
+            if d.get('event') == 'pool_refresh_complete':
+                latest = d
+        except Exception:
+            pass
+if latest is None:
+    print('NO_EVENT')
+else:
+    required = {'admitted_count','admitted_hosts_before','admitted_hosts_after','added_hosts','removed_hosts','xray_restart_triggered','restart_outcome'}
+    missing = required - latest.keys()
+    print('OK' if not missing else f'MISSING:{sorted(missing)}')
+PY" 2>/dev/null)
+    if [[ "$POOL_EVT" == "OK" ]]; then
+        _pass "68-E: pool_refresh_complete event carries REL-14 + OBS-07 schema"
+    else
+        _fail "68-E: pool_refresh_complete event missing or incomplete ($POOL_EVT)"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
 # Cross-version: v1.20 + v1.19 regression (OPS-12 carryover)
 # ---------------------------------------------------------------------------
 if [[ "$PHASE" == "all" ]]; then
