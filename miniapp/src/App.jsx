@@ -1626,7 +1626,19 @@ function App() {
     }
     return Object.entries(sourceFreshness)
       .filter(([, info]) => info?.isStale)
-      .map(([color]) => labels[color] || color)
+      .map(([color, info]) => {
+        const base = labels[color] || color
+        // v1.22 UX-COPY-01: surface per-source age inline so the banner
+        // is self-explanatory (e.g. "зелёные (30 мин.)") and no longer
+        // contradicts the merged-payload `Обновлено` header.
+        if (info?.status === 'missing') {
+          return `${base} (нет файла)`
+        }
+        if (typeof info?.ageMinutes === 'number') {
+          return `${base} (${Math.round(info.ageMinutes)} мин.)`
+        }
+        return base
+      })
   }, [sourceFreshness])
 
   // Dynamic header based on active filters
@@ -1942,12 +1954,15 @@ function App() {
           Обновлено: {updatedAt ? new Date(updatedAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' }) : '---'}
         </div>
 
-        {/* Stale data warning — shown when merge detected old files */}
+        {/* v1.22 UX-COPY-01: banner rescoped from "data" (generic, looks
+            contradictory next to Обновлено: HH:MM) to "sources" (narrower,
+            matches reality — source files are stale, merged payload is
+            still recent). Per-source age surfaced inline by staleColorLabels. */}
         {dataStale && (
           <div
             className="mt-2 px-4 py-2 rounded-xl bg-yellow-500/20 border border-yellow-500/50 text-yellow-300 text-center text-xs anim-scale"
           >
-            ⚠️ Данные устарели{staleColorLabels.length ? `: ${staleColorLabels.join(', ')}` : ''} — товары и цены могут не совпадать с сайтом
+            ⚠️ Источники устарели{staleColorLabels.length ? `: ${staleColorLabels.join(', ')}` : ''} — товары и цены могут не совпадать с сайтом
           </div>
         )}
 
