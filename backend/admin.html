@@ -202,6 +202,13 @@
       border: 1px solid #334155;
     }
 
+    /* v1.22 UX-BADGE-01 hotfix: the HTML `hidden` attribute must win over
+       the existing `.badge { display: inline-block }` rule. Without this,
+       Bug Reports (0) and Drift (0) stay visible even when counters are 0. */
+    [hidden] {
+      display: none !important;
+    }
+
     /* v1.22 UX-BADGE-01: attention-colored badge for bug reports + xray drift. */
     .badge-warn {
       background: #78350f;
