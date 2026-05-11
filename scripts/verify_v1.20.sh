@@ -329,6 +329,20 @@ PY" 2>/dev/null)
 fi
 
 # ---------------------------------------------------------------------------
+# Phase 66.1: Stale-Color Phantom Strip (/api/products filter)
+# ---------------------------------------------------------------------------
+if [[ "$PHASE" == "66.1" || "$PHASE" == "all" ]]; then
+    _banner "Phase 66.1 — Stale-Color Phantom Strip"
+
+    # 66.1-A: backend test_products_stale_filter.py is 3/3 green on EC2
+    if ssh "$EC2_HOST" "cd /home/ubuntu/saleapp && python3 -m pytest backend/test_products_stale_filter.py -q 2>&1 | tail -3 | grep -Eq '3 passed'"; then
+        _pass "66.1-A: backend/test_products_stale_filter.py — 3/3 green on EC2"
+    else
+        _fail "66.1-A: backend/test_products_stale_filter.py FAILED on EC2"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
 # Cross-phase: v1.19 regression (OPS-11 carryover)
 # ---------------------------------------------------------------------------
 if [[ "$PHASE" == "all" ]]; then
