@@ -55,25 +55,25 @@ if [[ "$PHASE" == "70" || "$PHASE" == "all" ]]; then
     fi
 
     # 70-C: /api/history/products result rows carry currentSaleType key
-    HAS_KEY=$(curl -fsS --max-time 10 "${VERCEL_BASE}/api/history/products?search=тест&per_page=1" 2>/dev/null | python3 -c '
-import json, sys
+    curl -fsS --max-time 10 "${VERCEL_BASE}/api/history/products?search=%D1%82%D0%B5%D1%81%D1%82&per_page=1" > /tmp/_70c.json 2>/dev/null || true
+    R=$(python3 -c "
+import json
 try:
-    d = json.load(sys.stdin)
-except Exception:
-    print("PARSE_ERR"); raise SystemExit(0)
-products = d.get("products", [])
-if not products:
-    print("NO_PRODUCTS")
-else:
-    has_key = "currentSaleType" in products[0]
-    print("OK" if has_key else "MISSING_KEY")
-')
-    if [[ "$HAS_KEY" == "OK" ]]; then
+    d = json.load(open('/tmp/_70c.json'))
+    p = d.get('products', [])
+    if not p:
+        print('NO_PRODUCTS')
+    else:
+        print('OK' if 'currentSaleType' in p[0] else 'MISSING_KEY')
+except Exception as e:
+    print('PARSE_ERR:' + str(e))
+" 2>&1)
+    if [[ "$R" == "OK" ]]; then
         _pass "70-C: /api/history/products response rows include currentSaleType"
-    elif [[ "$HAS_KEY" == "NO_PRODUCTS" ]]; then
-        _pass "70-C: /api/history/products responded (empty result — search 'тест' returned 0; schema OK)"
+    elif [[ "$R" == "NO_PRODUCTS" ]]; then
+        _pass "70-C: /api/history/products responded (empty result — search 'тест' returned 0; schema cannot be checked)"
     else
-        _fail "70-C: currentSaleType key missing from /api/history/products response ($HAS_KEY)"
+        _fail "70-C: currentSaleType key missing from /api/history/products response ($R)"
     fi
 fi
 
