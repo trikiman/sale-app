@@ -68,7 +68,11 @@ function ConfidenceDots({ level }) {
 
 // History card — vertical layout matching mockup
 const HistoryCard = memo(function HistoryCard({ product, onClick, isFavorite, onToggleFavorite, searchActive }) {
-  const type = product.last_sale_type || 'green'
+  // v1.22 UX-BUG-01: prefer live sale type (from today's proposals.json) over
+  // historical last_sale_type. Live search results should render with their
+  // CURRENT badge color, matching the main page. Falls back to last_sale_type
+  // for history-only rows, then 'green' as final default.
+  const type = product.currentSaleType || product.last_sale_type || 'green'
   const tc = TYPE_COLORS[type] || TYPE_COLORS.green
   const hasSales = product.total_sale_count > 0
   const isGhost = !hasSales && !product.is_currently_on_sale
