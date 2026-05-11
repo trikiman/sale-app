@@ -34,6 +34,21 @@ logger = logging.getLogger(__name__)
 REPROBE_INTERVAL_S = 600.0        # 10 min — re-probe cadence.
 REPROBE_BOOT_GRACE_S = 120.0      # 2 min — let the scheduler settle before cycle 1.
 
+# Bridge endpoint for re-probe. Matches vless.config_gen.XRAY_LISTEN_*;
+# hard-coded here to avoid an import cycle (reprobe is imported from
+# scheduler_service which also imports vless stack during startup).
+# The address is a stable contract via xray systemd unit.
+#
+# NOTE: the admission-time `_probe_vkusvill(proxy=None)` deliberately does
+# a DIRECT probe (no SOCKS5), because admission needs to distinguish "RU
+# exit works" (candidate passes) from "direct from this box works" (EC2
+# IP is not RU, always fails on VkusVill). Steady-state re-probe wants
+# the opposite signal: "does a packet through the live bridge reach
+# VkusVill right now?" — so we MUST pass proxy=REPROBE_BRIDGE_ADDR here.
+# Passing proxy=None here (pre-67-04 bug) marked every admitted node as
+# dead within the first cycle, because EC2-direct hits VkusVill's anti-bot.
+REPROBE_BRIDGE_ADDR = "127.0.0.1:10808"
+
 _BASE_DIR = Path(__file__).resolve().parent.parent
 PROXY_EVENTS_PATH = _BASE_DIR / "data" / "proxy_events.jsonl"
 
@@ -64,8 +79,11 @@ def _run_cycle(proxy_manager, stop_event: threading.Event) -> dict:
 
     For every host returned by ``proxy_manager.iter_admitted_hosts()``:
 
-      1. Call ``proxy_manager._probe_vkusvill(proxy=None)`` — goes through
-         the running local xray bridge, same path production traffic takes.
+      1. Call ``proxy_manager._probe_vkusvill(proxy=REPROBE_BRIDGE_ADDR)`` —
+         routes through the running local xray bridge, same path
+         production traffic takes. (Passing ``proxy=None`` would do a
+         DIRECT probe from EC2 which VkusVill's anti-bot always rejects
+         — see module docstring NOTE and 67.1 bugfix commit.)
       2. Record the outcome via ``record_outcome`` so the REL-15 sliding
          window stays up-to-date.
       3. On failure, route the host to ``mark_vkusvill_blocked`` with
@@ -87,8 +105,11 @@ def _run_cycle(proxy_manager, stop_event: threading.Event) -> dict:
         if stop_event.is_set():
             break
         try:
-            # proxy=None routes through the running bridge (127.0.0.1:10808).
-            ok = proxy_manager._probe_vkusvill(proxy=None)  # noqa: SLF001
+            # proxy=REPROBE_BRIDGE_ADDR routes through the running xray
+            # bridge — the same path production cart/scrape traffic uses.
+            # See module docstring NOTE above for why proxy=None would be
+            # WRONG here (EC2-direct always fails on VkusVill's anti-bot).
+            ok = proxy_manager._probe_vkusvill(proxy=REPROBE_BRIDGE_ADDR)  # noqa: SLF001
         except Exception:  # noqa: BLE001 — probe must never crash the cycle
             ok = False
         summary["probed"] += 1
