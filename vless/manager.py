@@ -77,6 +77,17 @@ SUCCESS_RATE_WINDOW = 100
 SUCCESS_RATE_MIN_SAMPLES = 20
 SUCCESS_RATE_DEAD_THRESHOLD = 0.1
 
+# v1.21 REL-14: xray auto-reload on admission change. When refresh_proxy_list
+# admits a host set whose ``host`` list differs from the currently-running
+# xray config, the manager calls ``sudo systemctl reload-or-restart
+# saleapp-xray``. Throttled to ≤ 1 restart per XRAY_RESTART_THROTTLE_S
+# seconds via an in-memory monotonic clock. Systemd remains the lifecycle
+# owner per v1.15 D7 — in-process xray management is explicitly out of scope.
+# See .planning/phases/68-xray-auto-reload-on-admission-change/68-CONTEXT.md.
+XRAY_RESTART_THROTTLE_S = 90.0
+XRAY_RESTART_TIMEOUT_S = 30.0
+SYSTEMCTL_ARGS = ["sudo", "systemctl", "reload-or-restart", "saleapp-xray"]
+
 
 class VlessProxyManager:
     """Drop-in replacement for :class:`proxy_manager.ProxyManager`.
@@ -135,6 +146,11 @@ class VlessProxyManager:
         self._outcomes: dict[str, list[bool]] = {}
         self._last_success_at: dict[str, float] = {}
         self._outcomes_lock = threading.Lock()
+
+        # v1.21 REL-14: in-memory throttle for xray systemctl
+        # reload-or-restart. 0.0 (never restarted) → first admission
+        # change fires immediately. See 68-CONTEXT.md §D2.
+        self._last_xray_restart_monotonic: float = 0.0
 
         self._prune_expired_cooldowns()
 
@@ -1027,6 +1043,101 @@ class VlessProxyManager:
             self._last_crash_at = datetime.now().isoformat(timespec="seconds")
             raise
 
+    def _extract_running_hosts(self) -> set[str]:
+        """Return the host set referenced by the currently-running xray config.
+
+        Reads ``bin/xray/configs/active.json`` (written on last refresh or
+        startup). Empty set on missing/malformed file — the correct
+        "recover by restarting" signal on first deploy.
+
+        Iterates ``outbounds[].settings.vnext[].address``. Non-VLESS
+        outbounds (``direct``, ``dns``, ``block``) have no ``vnext`` and
+        are skipped silently.
+
+        See 68-CONTEXT.md §D4 — the host set, not the list, is the
+        comparison key; order and port changes do not trigger a reload.
+        """
+        try:
+            with self._xray_config_path.open("r", encoding="utf-8") as fh:
+                config = json.load(fh)
+        except (OSError, json.JSONDecodeError):
+            return set()
+        hosts: set[str] = set()
+        for outbound in config.get("outbounds", []) or []:
+            settings = outbound.get("settings") or {}
+            for vnext_entry in settings.get("vnext") or []:
+                addr = vnext_entry.get("address")
+                if isinstance(addr, str) and addr:
+                    hosts.add(addr)
+        return hosts
+
+    def _reload_xray_systemd(self) -> tuple[str, int | None, str | None]:
+        """Issue ``systemctl reload-or-restart saleapp-xray`` with throttle.
+
+        Returns ``(outcome, duration_ms, stderr_tail)`` where ``outcome`` is
+        one of ``"ok"``, ``"throttled"``, ``"failed"`` or ``"skipped"``.
+
+        ``"skipped"`` covers two cases that are intentionally NOT systemctl
+        paths (see 68-CONTEXT.md §D6):
+
+          * Windows dev box — ``subprocess.run(["sudo", ...])`` would fail
+            noisily and integration is EC2-only.
+          * Legacy / test path where the manager owns an in-process
+            ``XrayProcess`` — the caller restarts via
+            ``_rebuild_and_restart_xray`` instead.
+
+        Throttle: at most one restart per :data:`XRAY_RESTART_THROTTLE_S`
+        seconds using a monotonic clock. The next refresh will fire naturally
+        when the throttle window clears if the admission-diff persists.
+        """
+        import subprocess
+        import sys
+
+        if sys.platform == "win32":
+            return "skipped", None, "platform=win32"
+        if self._xray is not None:
+            # In-process xray — caller handles restart via existing path.
+            return "skipped", None, "in_process_xray_owned"
+
+        now = time.monotonic()
+        elapsed = now - self._last_xray_restart_monotonic
+        if elapsed < XRAY_RESTART_THROTTLE_S and self._last_xray_restart_monotonic > 0.0:
+            self._log(
+                f"xray restart throttled "
+                f"({elapsed:.1f}s < {XRAY_RESTART_THROTTLE_S:.0f}s window)"
+            )
+            return "throttled", None, None
+
+        start = time.monotonic()
+        try:
+            proc = subprocess.run(
+                SYSTEMCTL_ARGS,
+                timeout=XRAY_RESTART_TIMEOUT_S,
+                capture_output=True,
+                text=True,
+            )
+        except subprocess.TimeoutExpired as exc:
+            duration_ms = int((time.monotonic() - start) * 1000)
+            tail = exc.stderr if isinstance(exc.stderr, str) else "timeout"
+            self._log(f"xray systemctl timed out after {XRAY_RESTART_TIMEOUT_S}s")
+            return "failed", duration_ms, (tail or "timeout")[:500]
+        except OSError as exc:
+            duration_ms = int((time.monotonic() - start) * 1000)
+            self._log(f"xray systemctl spawn failed: {exc}")
+            return "failed", duration_ms, str(exc)[:500]
+
+        duration_ms = int((time.monotonic() - start) * 1000)
+        if proc.returncode == 0:
+            self._last_xray_restart_monotonic = time.monotonic()
+            self._log(f"xray systemctl reload-or-restart ok ({duration_ms} ms)")
+            return "ok", duration_ms, None
+        stderr_tail = (proc.stderr or "").strip()[-500:]
+        self._log(
+            f"xray systemctl reload-or-restart FAILED "
+            f"(rc={proc.returncode}, stderr={stderr_tail!r})"
+        )
+        return "failed", duration_ms, stderr_tail
+
     def _write_active_config(self, config: dict) -> None:
         """Atomically write the xray config to :attr:`_xray_config_path`.
 
@@ -1119,4 +1230,7 @@ __all__ = [
     "SUCCESS_RATE_WINDOW",
     "SUCCESS_RATE_MIN_SAMPLES",
     "SUCCESS_RATE_DEAD_THRESHOLD",
+    "XRAY_RESTART_THROTTLE_S",
+    "XRAY_RESTART_TIMEOUT_S",
+    "SYSTEMCTL_ARGS",
 ]
