@@ -107,6 +107,32 @@ else
 fi
 
 echo ""
+echo "=== Phase 73: /gsd-check-todos Skill Polish ==="
+
+REPO_ROOT="/home/ubuntu/saleapp"
+
+if grep -q '^priority:\s*P[1-4]' "$REPO_ROOT/.planning/todos/pending/2026-05-12-update-gsd-check-todos-skill.md" 2>/dev/null; then
+    _ok "73-A: pending skill-polish todo carries explicit priority frontmatter"
+else
+    _no "73-A: pending skill-polish todo missing priority field"
+fi
+
+if [[ -f "$REPO_ROOT/.planning/phases/73-gsd-check-todos-skill-polish/SKILL.md.post73" ]] \
+   && [[ -f "$REPO_ROOT/.planning/phases/73-gsd-check-todos-skill-polish/check-todos.md.post73" ]] \
+   && [[ -f "$REPO_ROOT/.planning/phases/73-gsd-check-todos-skill-polish/cmdInitTodos.cjs.post73" ]]; then
+    _ok "73-B: in-tree snapshots of post-73 SKILL/workflow/CLI present"
+else
+    _no "73-B: one or more post-73 snapshots missing"
+fi
+
+if grep -q 'Priority ladder' "$REPO_ROOT/.planning/phases/73-gsd-check-todos-skill-polish/SKILL.md.post73" \
+   && grep -q 'priorityRank' "$REPO_ROOT/.planning/phases/73-gsd-check-todos-skill-polish/cmdInitTodos.cjs.post73"; then
+    _ok "73-C: priority schema + sort code captured in snapshots"
+else
+    _no "73-C: snapshots missing expected markers"
+fi
+
+echo ""
 echo "=== Summary ==="
 if [[ $FAIL -eq 0 ]]; then
     echo "ALL PASS"

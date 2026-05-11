@@ -157,6 +157,40 @@ fi
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
+# Phase 73: /gsd-check-todos Skill Polish (TOOL-01) — Kiro-side only, no EC2
+# ---------------------------------------------------------------------------
+if [[ "$PHASE" == "73" || "$PHASE" == "all" ]]; then
+    _banner "Phase 73 — /gsd-check-todos Skill Polish"
+
+    # Resolve repo root for grep regardless of where the script was invoked.
+    REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+
+    # 73-A: pending todo has explicit priority field
+    if grep -q '^priority:\s*P[1-4]' "$REPO_ROOT/.planning/todos/pending/2026-05-12-update-gsd-check-todos-skill.md" 2>/dev/null; then
+        _pass "73-A: pending skill-polish todo carries explicit priority frontmatter"
+    else
+        _fail "73-A: pending skill-polish todo missing priority field"
+    fi
+
+    # 73-B: in-tree snapshots of modified skill + workflow + CLI exist
+    if [[ -f "$REPO_ROOT/.planning/phases/73-gsd-check-todos-skill-polish/SKILL.md.post73" ]] \
+       && [[ -f "$REPO_ROOT/.planning/phases/73-gsd-check-todos-skill-polish/check-todos.md.post73" ]] \
+       && [[ -f "$REPO_ROOT/.planning/phases/73-gsd-check-todos-skill-polish/cmdInitTodos.cjs.post73" ]]; then
+        _pass "73-B: in-tree snapshots of post-73 SKILL/workflow/CLI present"
+    else
+        _fail "73-B: one or more post-73 snapshots missing"
+    fi
+
+    # 73-C: snapshot captures priority schema + sort logic
+    if grep -q 'Priority ladder' "$REPO_ROOT/.planning/phases/73-gsd-check-todos-skill-polish/SKILL.md.post73" \
+       && grep -q 'priorityRank' "$REPO_ROOT/.planning/phases/73-gsd-check-todos-skill-polish/cmdInitTodos.cjs.post73"; then
+        _pass "73-C: priority schema documented + priorityRank sort code captured"
+    else
+        _fail "73-C: snapshot does not contain expected priority schema / sort markers"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
 # Cross-version: v1.21 + v1.20 + v1.19 regression (OPS-15/16/17 carryover)
 # ---------------------------------------------------------------------------
 if [[ "$PHASE" == "all" ]]; then
