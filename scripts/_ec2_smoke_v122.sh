@@ -86,6 +86,27 @@ else
 fi
 
 echo ""
+echo "=== Phase 72: admin.html Bug Reports + Drift Badges ==="
+
+if grep -q 'id="bug-reports-badge"' backend/admin.html; then
+    _ok "72-A: admin.html contains bug-reports-badge span"
+else
+    _no "72-A: bug-reports-badge span missing"
+fi
+
+if grep -q 'id="xray-drift-badge"' backend/admin.html; then
+    _ok "72-B: admin.html contains xray-drift-badge span (UX-BADGE-02)"
+else
+    _no "72-B: xray-drift-badge span missing"
+fi
+
+if grep -q 'data.bugReports' backend/admin.html; then
+    _ok "72-C: applyStatus reads data.bugReports"
+else
+    _no "72-C: applyStatus missing data.bugReports reference"
+fi
+
+echo ""
 echo "=== Summary ==="
 if [[ $FAIL -eq 0 ]]; then
     echo "ALL PASS"

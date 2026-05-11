@@ -113,7 +113,47 @@ if [[ "$PHASE" == "71" || "$PHASE" == "all" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
-# Phase 72/73 blocks will be appended as those phases ship
+# Phase 72: admin.html Bug Reports Badge (UX-BADGE-01 + UX-BADGE-02)
+# ---------------------------------------------------------------------------
+if [[ "$PHASE" == "72" || "$PHASE" == "all" ]]; then
+    _banner "Phase 72 — admin.html Bug Reports + Drift Badges"
+
+    # 72-A: bug-reports-badge span present in admin.html
+    if ssh "$EC2_HOST" "cd /home/ubuntu/saleapp && grep -q 'id=\"bug-reports-badge\"' backend/admin.html"; then
+        _pass "72-A: admin.html contains bug-reports-badge span"
+    else
+        _fail "72-A: bug-reports-badge span missing from backend/admin.html"
+    fi
+
+    # 72-B: xray-drift-badge span present (UX-BADGE-02 fold-in)
+    if ssh "$EC2_HOST" "cd /home/ubuntu/saleapp && grep -q 'id=\"xray-drift-badge\"' backend/admin.html"; then
+        _pass "72-B: admin.html contains xray-drift-badge span (UX-BADGE-02 folded in)"
+    else
+        _fail "72-B: xray-drift-badge span missing from backend/admin.html"
+    fi
+
+    # 72-C: applyStatus wiring reads data.bugReports
+    if ssh "$EC2_HOST" "cd /home/ubuntu/saleapp && grep -q 'data.bugReports' backend/admin.html"; then
+        _pass "72-C: applyStatus reads data.bugReports"
+    else
+        _fail "72-C: applyStatus does not reference data.bugReports"
+    fi
+
+    # 72-D: /admin/status still exposes bugReports schema (no regression)
+    if [[ -z "${ADMIN_TOKEN:-}" ]]; then
+        _pass "72-D: skipped (ADMIN_TOKEN not set in env; set it to test /admin/status schema live)"
+    else
+        HAS=$(ssh "$EC2_HOST" "curl -fsS --max-time 10 -H 'X-Admin-Token: ${ADMIN_TOKEN}' http://127.0.0.1:8000/admin/status 2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); br=d.get(\"bugReports\",{}); print(\"OK\" if \"count\" in br and \"unread\" in br else \"MISSING\")'" 2>/dev/null)
+        if [[ "$HAS" == "OK" ]]; then
+            _pass "72-D: /admin/status exposes bugReports.{count,unread}"
+        else
+            _fail "72-D: /admin/status does not expose bugReports schema ($HAS)"
+        fi
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# Phase 73 block will be appended as that phase ships
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
