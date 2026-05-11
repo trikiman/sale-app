@@ -62,6 +62,30 @@ except Exception as e:
 fi
 
 echo ""
+echo "=== Phase 71: Stale Banner Clarification ==="
+
+# 71-A: source file contains new banner string
+if grep -q 'Источники устарели' miniapp/src/App.jsx 2>/dev/null; then
+    _ok "71-A: miniapp source contains 'Источники устарели'"
+else
+    _no "71-A: 'Источники устарели' missing from miniapp source"
+fi
+
+# 71-B: old banner string gone from source
+if grep -q 'Данные устарели' miniapp/src/App.jsx 2>/dev/null; then
+    _no "71-B: legacy 'Данные устарели' still in miniapp/src/App.jsx"
+else
+    _ok "71-B: legacy 'Данные устарели' removed from miniapp source"
+fi
+
+# 71-C: staleColorLabels includes per-source age
+if grep -q 'ageMinutes' miniapp/src/App.jsx && grep -q 'мин.' miniapp/src/App.jsx; then
+    _ok "71-C: staleColorLabels includes per-source age formatting"
+else
+    _no "71-C: per-source age formatting missing from miniapp source"
+fi
+
+echo ""
 echo "=== Summary ==="
 if [[ $FAIL -eq 0 ]]; then
     echo "ALL PASS"

@@ -78,7 +78,42 @@ except Exception as e:
 fi
 
 # ---------------------------------------------------------------------------
-# Phase 71/72/73 blocks will be appended as those phases ship
+# Phase 71: Stale Banner Clarification (UX-COPY-01)
+# ---------------------------------------------------------------------------
+if [[ "$PHASE" == "71" || "$PHASE" == "all" ]]; then
+    _banner "Phase 71 — Stale Banner Clarification"
+
+    # 71-A: miniapp dist contains new banner string (via EC2 — source of truth
+    # for what Vercel serves is the committed miniapp/ source; but EC2 also
+    # stores the built dist under /home/ubuntu/saleapp/miniapp/dist/).
+    if ssh "$EC2_HOST" "cd /home/ubuntu/saleapp && grep -rq 'Источники устарели' miniapp/dist/ 2>/dev/null"; then
+        _pass "71-A: miniapp bundle on EC2 contains 'Источники устарели' banner string"
+    else
+        # Fallback: check source (Vercel builds from source on every deploy).
+        if ssh "$EC2_HOST" "cd /home/ubuntu/saleapp && grep -q 'Источники устарели' miniapp/src/App.jsx"; then
+            _pass "71-A: miniapp source contains 'Источники устарели' (dist may be stale; Vercel rebuilds on deploy)"
+        else
+            _fail "71-A: 'Источники устарели' not found in miniapp source or dist on EC2"
+        fi
+    fi
+
+    # 71-B: old banner string 'Данные устарели' is NO LONGER in source
+    if ssh "$EC2_HOST" "cd /home/ubuntu/saleapp && grep -q 'Данные устарели' miniapp/src/App.jsx 2>/dev/null"; then
+        _fail "71-B: legacy 'Данные устарели' string still present in miniapp/src/App.jsx — copy was not fully replaced"
+    else
+        _pass "71-B: legacy 'Данные устарели' string removed from miniapp source"
+    fi
+
+    # 71-C: staleColorLabels block includes per-source age formatting
+    if ssh "$EC2_HOST" "cd /home/ubuntu/saleapp && grep -q 'ageMinutes' miniapp/src/App.jsx && grep -q 'мин.' miniapp/src/App.jsx"; then
+        _pass "71-C: staleColorLabels includes per-source age (ageMinutes + 'мин.' pattern present)"
+    else
+        _fail "71-C: per-source age formatting missing from miniapp/src/App.jsx"
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# Phase 72/73 blocks will be appended as those phases ship
 # ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
