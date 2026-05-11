@@ -1229,6 +1229,24 @@ def get_products():
         if isinstance(data.get("products"), list):
             for product in data["products"]:
                 product["subgroup"] = _sanitize_subgroup_label(product.get("subgroup"))
+        # v1.20 Phase 66.1: drop stale-color phantom cards. When a color's
+        # source file is >10 min old we consider the items for that color a
+        # lie — VkusVill may have removed them (e.g. "Зелёных ценников
+        # сейчас нет" on vkusvill.ru/promo/ while our green_products.json is
+        # stale). The dataStale banner already warns the user; dropping the
+        # phantom cards matches VkusVill's own empty-state UX and prevents
+        # tap-to-add on items that no longer exist. sourceFreshness +
+        # staleInfo + greenLiveCount keep their values; only products[] is
+        # filtered. When all three sources are stale the list is empty.
+        stale_types = {
+            color for color, info in source_freshness.items()
+            if isinstance(info, dict) and info.get("isStale")
+        }
+        if stale_types and isinstance(data.get("products"), list):
+            data["products"] = [
+                p for p in data["products"]
+                if p.get("type") not in stale_types
+            ]
         return data
     except json.JSONDecodeError:
         raise HTTPException(status_code=500, detail="Invalid JSON data")
