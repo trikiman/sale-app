@@ -120,3 +120,56 @@ def test_dead_node_excluded_from_active_outbounds(pm):
     assert snap["size"] == 2
     assert snap["dead_by_success_rate_count"] == 1
     assert snap["active_outbounds"] == 1  # only 5.6.7.8 is alive
+
+
+# ---------------------------------------------------------------------------
+# 5. Re-probe cycle routes failures to mark_vkusvill_blocked (67-02)
+# ---------------------------------------------------------------------------
+def test_reprobe_cycle_marks_failed_host_cooldown(pm, monkeypatch):
+    """When _probe_vkusvill returns False, mark_vkusvill_blocked is called."""
+    from keepalive.reprobe import _run_cycle
+
+    # Force probe to always fail.
+    monkeypatch.setattr(pm, "_probe_vkusvill", lambda proxy=None: False)
+    blocked = []
+
+    def capture(host, reason="timeout"):
+        blocked.append((host, reason))
+
+    monkeypatch.setattr(pm, "mark_vkusvill_blocked", capture)
+    stop = threading.Event()
+    summary = _run_cycle(pm, stop)
+    assert summary["probed"] == 2
+    assert summary["passed"] == 0
+    assert len(summary["failed_hosts"]) == 2
+    assert len(blocked) == 2
+    assert all(reason == "reprobe_fail" for _, reason in blocked)
+
+
+# ---------------------------------------------------------------------------
+# 6. Boot grace is respected before first cycle (67-02)
+# ---------------------------------------------------------------------------
+def test_reprobe_boot_grace_respected(pm, monkeypatch):
+    """start_reprobe_loop respects BOOT_GRACE before firing cycle 1."""
+    import time
+    from keepalive import reprobe
+
+    monkeypatch.setattr(reprobe, "REPROBE_BOOT_GRACE_S", 0.5)
+    monkeypatch.setattr(reprobe, "REPROBE_INTERVAL_S", 0.5)
+    cycles = []
+
+    def fake_cycle(pm_arg, stop):
+        cycles.append(time.monotonic())
+        return {"admitted_count": 0, "probed": 0, "passed": 0, "failed_hosts": []}
+
+    monkeypatch.setattr(reprobe, "_run_cycle", fake_cycle)
+    stop = threading.Event()
+    t_start = time.monotonic()
+    thread = threading.Thread(target=reprobe.start_reprobe_loop, args=(stop, pm), daemon=True)
+    thread.start()
+    time.sleep(1.2)  # past boot grace (0.5s) + first cycle + interval (0.5s)
+    stop.set()
+    thread.join(timeout=3.0)
+    assert len(cycles) >= 1, f"expected at least 1 cycle, got {len(cycles)}"
+    # First cycle fired >= 0.4s after start (boot grace = 0.5s, allow 0.1s tolerance)
+    assert cycles[0] - t_start >= 0.4, f"first cycle too early: {cycles[0] - t_start:.2f}s"

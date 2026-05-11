@@ -782,6 +782,26 @@ def main():
     )
     keepalive_thread.start()
 
+    # v1.21 REL-13: VLESS pool self-healing re-probe daemon. Every 10 min
+    # iterates admitted hosts, re-probes each through the running bridge
+    # (proxy=None), and routes failures into the existing 4h VkusVill
+    # cooldown. See .planning/phases/67-admitted-node-self-healing-loop/
+    # 67-CONTEXT.md §SPEC Lock. The scheduler uses LOCAL ProxyManager
+    # instances inside cycle functions (no module-level singleton), so the
+    # daemon constructs its own instance — the pool file on disk is the
+    # source of truth and both instances read it.
+    from keepalive.reprobe import start_reprobe_loop
+    from proxy_manager import ProxyManager as _ReprobePM
+    _reprobe_proxy_manager = _ReprobePM(log_func=log)
+    _reprobe_stop_event = threading.Event()
+    reprobe_thread = threading.Thread(
+        target=start_reprobe_loop,
+        args=(_reprobe_stop_event, _reprobe_proxy_manager),
+        name="scheduler-reprobe",
+        daemon=True,
+    )
+    reprobe_thread.start()
+
     breaker = _load_breaker_state()
     log(
         f"Loaded breaker state: {breaker.state} "

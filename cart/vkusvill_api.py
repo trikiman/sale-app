@@ -115,6 +115,24 @@ class VkusVillCart:
         self._sessid_ts = None
         self._session_stale = False
 
+    def _record_proxy_outcome(self, success: bool) -> None:
+        """v1.21 REL-15: record basket_add.php outcome against head-of-list host.
+
+        ``host=None`` routes through the VlessProxyManager head-of-list
+        heuristic (xray ``leastPing`` picks the pool's head most of the
+        time, so this is a reasonable attribution for sliding-window
+        sampling). Wrapped in try/except because outcome recording must
+        never propagate into the cart-add hot path.
+        """
+        if self._proxy_manager is None:
+            return
+        if not hasattr(self._proxy_manager, "record_outcome"):
+            return
+        try:
+            self._proxy_manager.record_outcome(host=None, success=success)
+        except Exception:
+            logger.debug("record_outcome failed", exc_info=True)
+
     def _ensure_session(self):
         """Load cookies and build raw Cookie header string."""
         if self._initialized:
@@ -540,6 +558,8 @@ class VkusVillCart:
                     logger.info(f"🛒 [CART-ADD] product={product_id} | VkusVill responded in {(time.monotonic() - t_req)*1000:.0f}ms, total={(time.monotonic() - t_start)*1000:.0f}ms")
                 except httpx.TimeoutException as e:
                     logger.error(f"🛒 [CART-ADD] product={product_id} | TIMEOUT after {(time.monotonic() - t_start)*1000:.0f}ms: {e}")
+                    # v1.21 REL-15: record outcome against the head-of-list host.
+                    self._record_proxy_outcome(False)
                     return {
                         'success': False,
                         'pending': True,
@@ -549,21 +569,30 @@ class VkusVillCart:
                     }
                 except httpx.ConnectError as e:
                     logger.error(f"🛒 [CART-ADD] product={product_id} | ConnectError after {(time.monotonic() - t_start)*1000:.0f}ms: {e}")
+                    self._record_proxy_outcome(False)
                     return {'success': False, 'error': str(e), 'error_type': 'transient'}
                 except httpx.HTTPError as e:
                     logger.error(f"🛒 [CART-ADD] product={product_id} | HTTP error after {(time.monotonic() - t_start)*1000:.0f}ms: {e}")
+                    self._record_proxy_outcome(False)
                     return {'success': False, 'error': str(e), 'error_type': 'http'}
                 except json.JSONDecodeError:
                     logger.error(f"🛒 [CART-ADD] product={product_id} | non-JSON after {(time.monotonic() - t_start)*1000:.0f}ms")
+                    self._record_proxy_outcome(False)
                     return {'success': False, 'error': 'Invalid response from VkusVill', 'error_type': 'invalid_response'}
 
             if not last_result:
+                self._record_proxy_outcome(False)
                 return {'success': False, 'error': 'No response'}
 
             # Parse response
             success_val = last_result.get('success')
             success = str(success_val).upper() in ['Y', 'TRUE', '1']
             error = last_result.get('error', '')
+
+            # v1.21 REL-15: record outcome against the head-of-list host once
+            # a definitive success/fail signal is known. host=None uses the
+            # mark_current_node_blocked head-of-list heuristic.
+            self._record_proxy_outcome(success)
 
             # Classify error_type based on response content
             error_type = None

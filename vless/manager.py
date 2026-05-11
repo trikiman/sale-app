@@ -58,6 +58,11 @@ UA = (
 
 # Refresh pipeline knobs
 _REFRESH_MAX_TIME_S = 180
+
+# v1.21 REL-15: per-host success rate tracking
+SUCCESS_RATE_WINDOW = 100
+SUCCESS_RATE_MIN_SAMPLES = 20
+SUCCESS_RATE_DEAD_THRESHOLD = 0.1
 _NODE_TEST_CONCURRENCY = 8
 _NODE_TEST_TIMEOUT_S = 12.0
 _MAX_PER_SUBNET = 3
@@ -113,6 +118,13 @@ class VlessProxyManager:
         self._direct_check = {"checked_at": 0.0, "ok": None}
         self._xray: XrayProcess | None = None
         self._last_config_reload: str | None = None
+
+        # v1.21 REL-15: per-host production outcome tracking (in-memory only;
+        # resets on process restart, re-populated by the re-probe loop + real
+        # cart/scrape traffic within 10 min).
+        self._outcomes: dict[str, list[bool]] = {}
+        self._last_success_at: dict[str, float] = {}
+        self._outcomes_lock = threading.Lock()
         self._last_crash_at: str | None = None
 
         # v1.21 REL-15: per-host production outcome tracking (in-memory
