@@ -2,17 +2,17 @@
 gsd_state_version: 1.0
 milestone: v1.22
 milestone_name: UX Debt Cleanup + Tooling Polish
-status: defining_requirements
-last_updated: "2026-05-12T23:30:00.000Z"
+status: awaiting_audit_review
+last_updated: "2026-05-13T00:00:00.000Z"
 last_activity: 2026-05-12
 progress:
   total_phases: 4
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
-current_phase: 70
-current_phase_status: not_started
+  completed_phases: 4
+  total_plans: 8
+  completed_plans: 8
+  percent: 100
+current_phase: 73
+current_phase_status: live_verified
 current_phase_resume_file: null
 ---
 
@@ -27,10 +27,10 @@ See: .planning/PROJECT.md (updated 2026-05-12)
 
 ## Current Position
 
-Phase: not started (REQUIREMENTS.md + ROADMAP.md drafted 2026-05-12; awaiting `/gsd-plan-phase 70`).
-Next step: `/gsd-discuss-phase 70` (History Search Catalog-Wide) to capture implementation decisions in 70-CONTEXT.md, then `/gsd-plan-phase 70` for 70-01/02-PLAN.md.
-Status: v1.21 shipped 2026-05-12, archived to `.planning/milestones/v1.21-*`, tag `v1.21` pushed. 3 pending UX todos consumed into v1.22 scope (will move to `.planning/todos/completed/` as each phase ships). 1 tooling todo consumed into Phase 73.
-Last activity: 2026-05-12 — v1.21 archived + tagged + v1.22 requirements/roadmap drafted.
+Phase: All 4 v1.22 phases code-complete. Phases 70/71/72 live-verified on EC2 (9/9 smoke green). Phase 73 is Kiro-side only; local 3/3 smoke green + CLI synthetic-fixture sort validation. Awaiting user review of `.planning/v1.22-MILESTONE-AUDIT.md` before `/gsd-complete-milestone v1.22`.
+Next step: User reviews the audit. On approval, run `/gsd-complete-milestone v1.22` to tag + archive.
+Status: 14 commits shipped this milestone (`baa4a77..9e62355`). Full suite 360 passed + 3 baseline Windows-only unchanged. All 4 consumed todos moved to `.planning/todos/completed/`.
+Last activity: 2026-05-13 — Phase 73 complete, milestone audit drafted, ready for user review.
 
 ## Milestone Goal (v1.22 — active)
 
@@ -49,11 +49,10 @@ Last activity: 2026-05-12 — v1.21 archived + tagged + v1.22 requirements/roadm
 
 ## Next Up
 
-- `/gsd-discuss-phase 70` — capture 70-CONTEXT.md for History Search Catalog-Wide
-- `/gsd-plan-phase 70` → execute → verify → ship
-- Repeat for 71 (Stale Banner Clarification), 72 (admin.html Bug Reports Badge), 73 (gsd-check-todos Polish)
-- After Phase 73 ships: invoke `gsd-audit-milestone` skill to produce `.planning/v1.22-MILESTONE-AUDIT.md`
-- STOP before `/gsd-complete-milestone` per user's standing instruction — await manual review
+- User reviews `.planning/v1.22-MILESTONE-AUDIT.md`.
+- On approval: `/gsd-complete-milestone v1.22` → tag `v1.22` + archive phase dirs to `.planning/milestones/v1.21-phases/` style layout.
+- **STOP before auto-complete** per user's standing instruction.
+- v1.23 candidate: SSE graceful-shutdown fix, Telegram alerts on breaker state / xray_restart_failed, richer admin bug-reports UI, Vitest wiring for miniapp, multi-select fold-into-milestone in /gsd-check-todos.
 
 ## Completed Milestones
 
@@ -116,6 +115,11 @@ Last activity: 2026-05-12 — v1.21 archived + tagged + v1.22 requirements/roadm
 | v1.21 all 3 phases shipped + live-verified on EC2 (299ms xray reload, 13/13 smoke green) | 2026-05-12 |
 | v1.21 SHIPPED + ARCHIVED + TAGGED | 2026-05-12 |
 | v1.22 milestone STARTED (UX Debt Cleanup + Tooling Polish, 4 phases, 7 requirements) | 2026-05-12 |
+| v1.22 Phase 70 (History Search Catalog-Wide) shipped + live-verified on EC2 | 2026-05-12 |
+| v1.22 Phase 71 (Stale Banner Clarification) shipped + live-verified on EC2 | 2026-05-12 |
+| v1.22 Phase 72 (admin.html Bug Reports + Drift Badges, UX-BADGE-02 fold-in) shipped + live-verified on EC2 | 2026-05-12 |
+| v1.22 Phase 73 (/gsd-check-todos Skill Polish) shipped locally — Kiro-side only, no EC2 | 2026-05-13 |
+| v1.22 milestone audit drafted; awaiting user review before `/gsd-complete-milestone` | 2026-05-13 |
 
 ---
 *Last updated: 2026-05-12 after v1.21 archived + tagged. v1.22 REQUIREMENTS.md + ROADMAP.md drafted with 4 phases (70-73) and 7 requirements (3 UX, 1 TOOL, 3 OPS). Three UX todos + one tooling todo consumed into scope (stay in pending/ until their phase ships). Next: `/gsd-discuss-phase 70` for History Search Catalog-Wide.*
