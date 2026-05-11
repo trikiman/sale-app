@@ -898,6 +898,18 @@ _HEALTH_CART_ADD_WINDOW_1H_S = 3600.0
 _HEALTH_CART_ADD_WINDOW_24H_S = 86400.0
 _HEALTH_CART_ADD_DOUBLE_ADD_WINDOW_S = 30.0
 
+# v1.21 Phase 69 OBS-06: xray config drift thresholds. Drift is the
+# symmetric difference between admitted hosts (data/vless_pool.json) and
+# the set of hosts the running xray config references. When drift
+# persists > _DEEP_DRIFT_DEGRADED_S, /api/health/deep severity flips to
+# degraded; when also cycle age > _DEEP_DRIFT_UNHEALTHY_CYCLE_AGE_S,
+# severity flips to unhealthy. First-seen tracking keyed on the exact
+# drifted-set so a drift that resolves and re-appears with a different
+# set resets the clock.
+_DEEP_DRIFT_DEGRADED_S = 300               # 5 min (OBS-06)
+_DEEP_DRIFT_UNHEALTHY_CYCLE_AGE_S = 600    # 10 min (OBS-06)
+_DRIFT_FIRST_SEEN: dict[frozenset, tuple[float, str]] = {}
+
 
 def _load_breaker_snapshot() -> dict:
     """Read the scheduler's persisted breaker state. Non-blocking; best-effort.
@@ -931,6 +943,54 @@ def _check_xray_listening() -> dict:
             return {"listening": True, "port": _XRAY_SOCKS_PORT}
     except OSError:
         return {"listening": False, "port": _XRAY_SOCKS_PORT}
+
+
+def _extract_running_xray_hosts_for_health() -> set[str] | None:
+    """Return the host set referenced by the running xray config.
+
+    v1.21 OBS-06. Mirrors :meth:`vless.manager.VlessProxyManager._extract_running_hosts`
+    but lives in the backend so ``/api/health/deep`` doesn't have to
+    construct a full manager instance on every hit. Returns ``None``
+    (distinct from an empty set) on missing or malformed
+    ``bin/xray/configs/active.json`` so the drift block stays absent
+    rather than reporting spurious "all admitted hosts drifted".
+    """
+    from pathlib import Path as _Path
+    cfg_path = _Path(__file__).resolve().parent.parent / "bin" / "xray" / "configs" / "active.json"
+    try:
+        with cfg_path.open("r", encoding="utf-8") as fh:
+            config = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return None
+    hosts: set[str] = set()
+    for outbound in config.get("outbounds", []) or []:
+        settings = outbound.get("settings") or {}
+        for vnext_entry in settings.get("vnext") or []:
+            addr = vnext_entry.get("address")
+            if isinstance(addr, str) and addr:
+                hosts.add(addr)
+    return hosts
+
+
+def _load_admitted_host_set() -> set[str] | None:
+    """Return the admitted-host set from ``data/vless_pool.json``.
+
+    v1.21 OBS-06. Returns ``None`` on missing/malformed file so the
+    drift block is absent rather than reporting "all outbounds drifted".
+    """
+    from pathlib import Path as _Path
+    pool_path = _Path(__file__).resolve().parent.parent / "data" / "vless_pool.json"
+    try:
+        with pool_path.open("r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except (OSError, json.JSONDecodeError):
+        return None
+    hosts: set[str] = set()
+    for node in data.get("nodes", []) or []:
+        host = node.get("host")
+        if isinstance(host, str) and host:
+            hosts.add(host)
+    return hosts
 
 
 def _pool_snapshot_for_health() -> dict:
@@ -1058,6 +1118,81 @@ def _compute_cart_add_block() -> tuple[dict | None, str | None]:
         reason = f"cart_add_p95_high:{int(p95)}ms"
 
     return block, reason
+
+
+def _compute_xray_drift_block(
+    pool: dict,
+    cycle_age: float | None,
+) -> tuple[dict | None, str | None, bool]:
+    """Compute the ``xray_drift`` block for ``/api/health/deep``.
+
+    v1.21 Phase 69 OBS-06. Returns ``(block, reason, is_critical)``.
+
+    * ``block`` is ``None`` when the pool snapshot is unavailable, the
+      running xray config can't be read, or the admitted host list can't
+      be loaded — same no-ledger fallback as :func:`_compute_cart_add_block`.
+    * ``reason`` is non-None only when drift has persisted for more than
+      :data:`_DEEP_DRIFT_DEGRADED_S` seconds (OBS-06 degraded threshold).
+    * ``is_critical`` is True when drift is present AND the last cycle
+      age exceeds :data:`_DEEP_DRIFT_UNHEALTHY_CYCLE_AGE_S` — promotes
+      severity to ``unhealthy`` in :func:`_build_reliability_snapshot`.
+
+    First-seen tracking uses ``frozenset(drifted_hosts)`` as the key so
+    that "drift resolved then a different drift appeared" correctly
+    resets the clock (see 69-CONTEXT.md §D4).
+    """
+    if not pool or not pool.get("available"):
+        return None, None, False
+
+    active_set = _extract_running_xray_hosts_for_health()
+    if active_set is None:
+        return None, None, False
+
+    admitted_set = _load_admitted_host_set()
+    if admitted_set is None:
+        return None, None, False
+
+    drifted = admitted_set.symmetric_difference(active_set)
+    drift_count = len(drifted)
+    drifted_sorted = sorted(drifted)
+
+    now_mono = _time.monotonic()
+    drifted_key = frozenset(drifted)
+
+    # Prune any stale first-seen entry whose set no longer matches the
+    # current drift. Keeps the dict bounded to at most one live entry.
+    for stale_key in list(_DRIFT_FIRST_SEEN.keys()):
+        if stale_key != drifted_key:
+            _DRIFT_FIRST_SEEN.pop(stale_key, None)
+
+    first_seen_iso: str | None = None
+    first_seen_mono: float = now_mono
+    if drift_count > 0:
+        if drifted_key in _DRIFT_FIRST_SEEN:
+            first_seen_mono, first_seen_iso = _DRIFT_FIRST_SEEN[drifted_key]
+        else:
+            first_seen_iso = datetime.now().isoformat(timespec="seconds")
+            _DRIFT_FIRST_SEEN[drifted_key] = (now_mono, first_seen_iso)
+            first_seen_mono = now_mono
+
+    block = {
+        "admitted_hosts": len(admitted_set),
+        "active_outbounds": len(active_set),
+        "drift_count": drift_count,
+        "drifted_hosts": drifted_sorted,
+        "first_seen_at": first_seen_iso,
+    }
+
+    reason: str | None = None
+    is_critical = False
+    if drift_count > 0:
+        age_s = now_mono - first_seen_mono
+        if age_s >= _DEEP_DRIFT_DEGRADED_S:
+            reason = f"xray_stale_config:{drift_count}_nodes_drifted"
+            if cycle_age is not None and cycle_age > _DEEP_DRIFT_UNHEALTHY_CYCLE_AGE_S:
+                is_critical = True
+
+    return block, reason, is_critical
 
 
 def _build_reliability_snapshot() -> dict:
