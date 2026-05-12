@@ -1441,6 +1441,24 @@ def get_products():
         ALL_COLORS = {"green", "red", "yellow"}
         all_stale = bool(stale_types) and ALL_COLORS.issubset(stale_types)
 
+        # v1.25 OPS-25: admin force-stale-all override. When active,
+        # synthesize all-stale response regardless of actual freshness.
+        # Use case: deterministic Phase 78 UX regression testing.
+        if _FORCE_STALE_ALL_UNTIL and _FORCE_STALE_ALL_UNTIL > _time.time():
+            all_stale = True
+            stale_types = set(ALL_COLORS)
+            # Fake source_freshness so downstream reads see stale state.
+            for color in ALL_COLORS:
+                existing = source_freshness.get(color) or {}
+                source_freshness[color] = {
+                    **existing,
+                    "isStale": True,
+                    "ageMinutes": int(existing.get("ageMinutes") or 30),
+                    "status": existing.get("status") or "stale",
+                }
+            data["sourceFreshness"] = source_freshness
+            data["dataStale"] = True
+
         if all_stale:
             # All 3 sources stale — surface a staleAll block but DO NOT strip.
             # Find the stalest source to report `since` + `ageMinutesMax`.
@@ -5761,6 +5779,12 @@ def admin_proxy_history(
 
 _proxy_refresh_status = {"running": False, "last_result": None, "started_at": None}
 
+# v1.25 OPS-25: force-stale-all override for deterministic Phase 78 testing.
+# When set (by the admin endpoint below), /api/products synthesizes the
+# staleAll response regardless of real source freshness until the
+# timestamp expires. None → normal behavior.
+_FORCE_STALE_ALL_UNTIL: Optional[float] = None
+
 @app.post("/admin/proxy-refresh")
 def admin_proxy_refresh(
     background_tasks: BackgroundTasks,
@@ -5829,6 +5853,79 @@ def admin_proxy_logs(
         return {"lines": parsed, "total": len(all_lines)}
     except Exception as e:
         return {"lines": [], "total": 0, "error": str(e)}
+
+
+# v1.25 OPS-24: force-clear VLESS probe-failure quarantine.
+# Use case: upstream VLESS provider glitch marks all nodes dead for 5 min,
+# quarantine populates with 200+ hosts, takes 20 min+ to naturally expire
+# despite nodes being healthy again. This endpoint gives ops a one-shot
+# escape hatch without SSH + file editing.
+@app.post("/admin/vless/quarantine/clear")
+def admin_vless_quarantine_clear(
+    token: Optional[str] = Header(None, alias="X-Admin-Token"),
+):
+    """Wipe data/pool_quarantine.json. Returns snapshot of prior state."""
+    _require_token(token)
+    from vless import quarantine
+    snap = quarantine.snapshot()
+    quarantine.clear_all()
+    logger.info(f"[ADMIN] Cleared VLESS quarantine — was {snap['count']} hosts")
+    return {
+        "cleared_count": snap["count"],
+        "previous_hosts": snap["hosts"],
+    }
+
+
+# v1.25 OPS-25: force stale-all override for deterministic UX testing.
+# Sets a time-limited flag that causes /api/products to return the
+# staleAll response (products preserved + banner data) regardless of
+# real source freshness. Use case: visual verification of Phase 78
+# UX-STALE-01/02 without waiting 15+ min for real staleness.
+@app.post("/admin/force-stale-all")
+def admin_force_stale_all(
+    duration_s: int = Query(600, ge=30, le=3600),
+    token: Optional[str] = Header(None, alias="X-Admin-Token"),
+):
+    """Set time-limited staleAll override for UX regression testing.
+
+    duration_s clamped to [30, 3600] (30s .. 1h).
+    """
+    _require_token(token)
+    import time as _t
+    global _FORCE_STALE_ALL_UNTIL
+    _FORCE_STALE_ALL_UNTIL = _t.time() + duration_s
+    logger.info(f"[ADMIN] Force-stale-all active for {duration_s}s")
+    return {
+        "force_stale_until": _FORCE_STALE_ALL_UNTIL,
+        "duration_s": duration_s,
+    }
+
+
+@app.post("/admin/force-stale-all/clear")
+def admin_force_stale_all_clear(
+    token: Optional[str] = Header(None, alias="X-Admin-Token"),
+):
+    """Clear the force-stale-all override immediately."""
+    _require_token(token)
+    global _FORCE_STALE_ALL_UNTIL
+    was_active = _FORCE_STALE_ALL_UNTIL is not None and _FORCE_STALE_ALL_UNTIL > __import__("time").time()
+    _FORCE_STALE_ALL_UNTIL = None
+    return {"was_active": was_active, "cleared": True}
+
+
+@app.post("/admin/test-alert")
+def admin_test_alert(
+    token: Optional[str] = Header(None, alias="X-Admin-Token"),
+):
+    """Fire a test admin alert to verify Telegram wiring. Bypasses cooldown."""
+    _require_token(token)
+    from backend import admin_alerts
+    result = admin_alerts.send_admin_alert(
+        "test_alert",
+        "Test alert from /admin/test-alert — wiring OK ✅",
+        force=True,
+    )
+    return result
 
 
 # ─── Admin Panel (HTML served from backend/admin.html) ───────────────────────
