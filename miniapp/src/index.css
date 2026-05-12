@@ -3804,3 +3804,42 @@ body.cart-open {
   background: #f8fafc;
   border-color: rgba(0, 0, 0, 0.12);
 }
+
+
+/* === v1.23 UX-CART-01: Cart panel per-row remove button === */
+.cart-item-remove-btn {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  margin-left: 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(239, 68, 68, 0.25);
+  background: rgba(239, 68, 68, 0.08);
+  color: #ef4444;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.cart-item-remove-btn:hover:not(:disabled) {
+  background: rgba(239, 68, 68, 0.18);
+  transform: scale(1.08);
+}
+
+.cart-item-remove-btn:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.cart-item-remove-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+[data-theme="light"] .cart-item-remove-btn {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+}

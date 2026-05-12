@@ -111,7 +111,17 @@ export default function CartPanel({ isOpen, onClose, userId }) {
     }
 
     const handleClearAll = async () => {
-        if (window.Telegram?.WebApp?.showConfirm) {
+        // v1.23 UX-CART-02: truthy check of `window.Telegram.WebApp.showConfirm`
+        // matches everywhere — the Telegram SDK script loads on every page,
+        // so the method exists outside Telegram runtime too. But the callback
+        // only fires inside Telegram WebView, so the Promise hangs forever
+        // in desktop Chrome. Detect a real Telegram runtime via non-empty
+        // `initData` (empty string when app is loaded directly in a browser).
+        const isTelegramRuntime = typeof window !== 'undefined'
+            && typeof window.Telegram?.WebApp?.initData === 'string'
+            && window.Telegram.WebApp.initData.length > 0
+
+        if (isTelegramRuntime && window.Telegram.WebApp.showConfirm) {
             const ok = await new Promise(r => window.Telegram.WebApp.showConfirm('Очистить всю корзину?', r))
             if (!ok) return
         } else if (typeof window.confirm === 'function') {
@@ -222,6 +232,18 @@ export default function CartPanel({ isOpen, onClose, userId }) {
                                             <span className="cart-qty-value">{isBusy ? '…' : formatQuantity(item.quantity)}</span>
                                             <button className="cart-qty-btn" onClick={() => handleQuantity(item.id, 1)} disabled={isBusy || !item.can_buy || atMax}>+</button>
                                         </div>
+                                        {/* v1.23 UX-CART-01: dedicated always-visible remove button.
+                                            The minus-becomes-trash shortcut at quantity=step still works,
+                                            but now users have a clear one-tap remove affordance for any quantity. */}
+                                        <button
+                                            className="cart-item-remove-btn"
+                                            onClick={() => handleRemove(item.id)}
+                                            disabled={isBusy}
+                                            title="Удалить из корзины"
+                                            aria-label="Удалить из корзины"
+                                        >
+                                            🗑
+                                        </button>
                                     </div>
                                 )
                             })}
