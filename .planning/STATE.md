@@ -1,7 +1,7 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.23
-milestone_name: Detail-Path Performance + UX Polish
+milestone: v1.24
+milestone_name: Pool Self-Heal Hardening + Outage UX
 status: ready_to_plan
 last_updated: "2026-05-13T00:00:00.000Z"
 last_activity: 2026-05-13
@@ -11,7 +11,7 @@ progress:
   total_plans: 0
   completed_plans: 0
   percent: 0
-current_phase: 74
+current_phase: 77
 current_phase_status: not_started
 current_phase_resume_file: null
 ---
@@ -23,39 +23,41 @@ current_phase_resume_file: null
 See: .planning/PROJECT.md (updated 2026-05-13)
 
 **Core value:** Family members see every VkusVill discount and can add to cart in one tap
-**Current focus:** v1.23 Detail-Path Performance + UX Polish — close the three user-visible issues surfaced during v1.22 live MCP verification 2026-05-13 (cold-path card open 8-15s, card grid reflow on stepper morph, cart panel missing trash button). 3 phases (74-76), 7 requirements (2 PERF, 2 UX, 3 OPS).
+**Current focus:** v1.24 Pool Self-Heal Hardening + Outage UX — eliminate the ~1h family-facing outage observed 2026-05-13 when VLESS pool collapsed. Recovery must take minutes not an hour. During rebuild, users see cached data with stale badges. Plus automated enforcement of style guide v2 rules. 3 phases (77-79), 9 requirements (4 REL, 2 UX, 2 TOOL, 1 optional OBS).
 
 ## Current Position
 
-Phase: v1.22 shipped + tagged + archived 2026-05-13. v1.23 REQUIREMENTS.md + ROADMAP.md drafted with 3 phases (74-76) and 7 requirements. Next: `/gsd-discuss-phase 74` for Product Details Cold-Path Latency, or direct plan if context is already clear.
-Next step: Plan Phase 74 (PERF-10/11 — remove legacy per-proxy HEAD probe loop in `backend/main.py::product_details`, tighten httpx timeouts connect 4s→1s / read 6s→3s, add `data/detail_events.jsonl` ledger).
-Status: v1.22 archived to `.planning/milestones/v1.22-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md` + `.planning/milestones/v1.22-phases/{70,71,72,73}-*/`. Tag `v1.22` pushed. 16 commits `5513ede..f56f285` (including Phase 72 `[hidden]` hotfix `825008c` and todo cleanup `f56f285`).
-Last activity: 2026-05-13 — v1.22 closed, v1.23 scope defined, ready to plan Phase 74.
+Phase: v1.23 shipped + tagged + archived 2026-05-13 (10 commits `e5574f3..91a6e30`). v1.24 REQUIREMENTS.md + ROADMAP.md drafted with 3 phases (77-79) and 9 requirements. Next: `/gsd-plan-phase 77` for Pool Self-Heal Hardening (the P1 priority — 1h outage observation drove this milestone).
+Next step: Plan Phase 77 (REL-16/17/18/19 — persistent quarantine deadlist, refresh throttle, lower water mark, scheduler graceful degrade).
+Status: v1.23 archived to `.planning/milestones/v1.23-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md` + `.planning/milestones/v1.23-phases/{74,75,76}-*/`. Tag `v1.23` pushed. 10 commits.
+Last activity: 2026-05-13 — v1.23 closed, v1.24 scope defined driven by real outage observation.
 
-## Milestone Goal (v1.23 — active)
+## Milestone Goal (v1.24 — active)
 
-- Cold-path `GET /api/product/{id}/details` p95 ≤ 2s (PERF-10). Remove per-proxy HEAD probe loop (legacy pre-v1.15 SOCKS5-era artifact; xray `observatory`+`leastPing` already picks the fastest live outbound). Tighten httpx timeouts: connect 4s→1s, read 6s→3s. Keep 3 retries.
-- `data/detail_events.jsonl` ledger emits one line per `/api/product/{id}/details` call with `{ts, product_id, duration_ms, cached, retry_count, outcome}` (PERF-11). Bounded file, tail-readable from admin, following v1.20 `cart_events.jsonl` pattern.
-- Zero visible card-grid layout shift when product card's cart button morphs into quantity stepper (UX-SHIFT-01). Reserve stepper slot via fixed card min-height. Lighthouse CLS ≤ 0.1 on main page.
-- Cart panel item rows gain a trash/remove button (UX-CART-01). Frontend wiring only — backend `cart.remove(product_id)` already exists. Optimistic UI with spinner, error toast on failure, panel refresh on success.
-- `scripts/verify_v1.23.sh` grows phase-by-phase and chains `verify_v1.22.sh all` (which chains v1.21 + v1.20 + v1.19) so all five milestones' smoke gates stay green through v1.23 deploy (OPS-18/19/20).
+- Pool recovery p95 ≤ 10 min after full collapse (REL-16 quarantine deadlist with 20-min TTL, REL-17 refresh throttle ≥60s, REL-18 lower water mark at 10 with rate-of-decline check, REL-19 scheduler graceful degrade when pool 0 for >2 min)
+- Zero "empty grid" when cached data exists — `/api/products` returns last-good snapshot with `stale_all: true` flag instead of stripping products (UX-STALE-01). Stale banner upgraded to prominent card per style guide v2 (UX-STALE-02).
+- Style guide v2 rules enforced automatically — stylelint rejects off-scale spacing (TOOL-02), eslint rejects inline `style=` (TOOL-03). Pre-commit + `npm run lint` integrated.
+- `scripts/verify_v1.24.sh` chains v1.23→v1.22→v1.21→v1.20→v1.19 smoke scripts (OPS-21/22/23).
+- Optional: Telegram admin alert when pool 0 > 10 min (OBS-08, conditional on Phase 77 trivially absorbing it)
 
-## Previous Milestone (v1.22 — shipped 2026-05-13, tag `v1.22`)
+## Previous Milestone (v1.23 — shipped 2026-05-13, tag `v1.23`)
 
-- UX Debt Cleanup + Tooling Polish — 7/7 requirements + 1 late insert (UX-BADGE-02), 4 phases (70/71/72/73)
-- 16 commits `5513ede..f56f285`, tag `v1.22` pushed to origin
-- 3/4 phases live-verified on EC2 via Chrome DevTools MCP 2026-05-13 (Phase 73 is Kiro-side only, local 3/3 smoke green)
-- Phase 72 shipped `[hidden]` hotfix `825008c` after live MCP caught a `.badge { display: inline-block }` override making badges show "(0)" when they should be invisible — v1.21 "push ≠ verified" lesson reinforced
-- Archive: `.planning/milestones/v1.22-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md` + `.planning/milestones/v1.22-phases/{70,71,72,73}-*/`
+- Detail-Path Performance + UX Polish — 7/7 requirements + 1 late insert (UX-CART-02), 3 phases (74/75/76)
+- 10 commits `e5574f3..91a6e30`, tag `v1.23` pushed to origin
+- Phase 74: Cold-path `/api/product/{id}/details` p95 dropped from ~16s → 0.678s (25× improvement), live-verified on EC2
+- Phase 75: Card grid layout shift eliminated via `min-height: 36px` lock, DOM-diff verified on production
+- Phase 76: Cart panel trash button per row + Очистить desktop Chrome fallback fix (late insert UX-CART-02)
+- Style guide v2 upgrade (`docs/miniapp-ui-style-guide.md`) — codified spacing/shadow/motion tokens, state patterns, accessibility rules, 12-point review checklist
+- Archive: `.planning/milestones/v1.23-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md` + `.planning/milestones/v1.23-phases/{74,75,76}-*/`
 
 ## Next Up
 
-- `/gsd-discuss-phase 74` or direct plan for Product Details Cold-Path Latency (PERF-10/11). Backend target: `backend/main.py::product_details` endpoint (lines ~525-625, two-phase probe loop) + pair with `backend/detail_service.py` existing cache.
-- Phase 75 (UX-SHIFT-01) — CSS-only fix in `miniapp/src/App.jsx` + `miniapp/src/index.css` for card min-height slot reservation.
-- Phase 76 (UX-CART-01) — trash button in `miniapp/src/CartPanel.jsx`, calls existing `POST /api/cart/remove`.
-- After each phase: live MCP verification (v1.21 "push ≠ verified" lesson — code-review-only is insufficient for UI changes).
+- `/gsd-plan-phase 77` or direct plan for Pool Self-Heal Hardening (REL-16/17/18/19, optional OBS-08). Target files: `vless/manager.py` (quarantine + throttle), `scheduler_service.py` (graceful degrade), new `tests/test_vless_quarantine.py`.
+- Phase 78 (UX-STALE-01/02) — backend `/api/products` + frontend stale badge + prominent banner.
+- Phase 79 (TOOL-02/03) — stylelint + eslint configs, pre-commit wiring, baseline `TODO(v1.25)` debt list.
+- After each phase: live MCP or EC2 smoke verification — v1.21 "push ≠ verified" lesson still applies.
 - Move consumed todos from `.planning/todos/pending/` to `.planning/todos/completed/` as each phase ships.
-- After Phase 76: `.planning/v1.23-MILESTONE-AUDIT.md` + tag `v1.23` + archive. **STOP before `/gsd-complete-milestone`** per user's standing instruction.
+- After Phase 79: `.planning/v1.24-MILESTONE-AUDIT.md` + tag `v1.24` + archive. **STOP before `/gsd-complete-milestone`** per user's standing instruction (manual archive via Move-Item is the established pattern).
 
 ## Completed Milestones
 
@@ -83,40 +85,43 @@ Last activity: 2026-05-13 — v1.22 closed, v1.23 scope defined, ready to plan P
 | v1.20 Cart-Add Latency & User-Facing Responsiveness | 62-66 + 66.1/.2/.3 | 2026-05-12 |
 | v1.21 VLESS Pool Self-Healing & Reload Pipeline | 67-69 | 2026-05-12 |
 | v1.22 UX Debt Cleanup + Tooling Polish | 70-73 | 2026-05-13 |
+| v1.23 Detail-Path Performance + UX Polish | 74-76 | 2026-05-13 |
 
 ## Accumulated Context
 
-- v1.22 shipped: history search catalog-wide with `currentSaleType` field (Phase 70 UX-BUG-01), stale banner rescoped to `Источники устарели` with per-source age (Phase 71 UX-COPY-01), admin.html `Bug Reports (N)` + `Drift (N)` attention badges + `[hidden]` hotfix (Phase 72 UX-BADGE-01/02), `/gsd-check-todos` priority-aware triage with P1-first sort (Phase 73 TOOL-01)
-- v1.21 shipped: admitted-node reprobe daemon every 10 min through bridge (REL-13), per-host success_rate tracking (REL-15), xray auto-reload via passwordless systemctl on admission-set diff (REL-14, 299ms live), `/api/health/deep` xray_drift block + `pool_refresh_complete` event schema (OBS-06/07)
-- v1.20 shipped: 20-min keepalive daemon + on-open warmup nudge (PERF-03/04/05), per-user cart-items 12s cache + global scraper semaphore (PERF-06/07), USE_FAST_CART_ADD_ENDPOINT feature-flag scaffolding (PERF-08/09), frontend client_request_id idempotency + 5s AbortController + polling-on-abort (UX-01/02/03), `/api/health/deep` cart_add block + `data/cart_events.jsonl` 11-key ledger (OBS-04/05)
-- v1.19 shipped: pre-flight VLESS probe + 3-state breaker + `/api/health/deep` + pool drift visibility
-- User bug-report feature (modal with category/textarea/screenshot upload) discovered already shipped in production during v1.22 live verification — obsolete todo removed `f56f285`
+- v1.23 shipped: cold-path product_details 25× faster (Phase 74 PERF-10/11), card grid layout shift eliminated (Phase 75 UX-SHIFT-01), cart panel trash button + clear-cart Telegram fallback (Phase 76 UX-CART-01 + UX-CART-02 late insert), style guide v2 upgrade
+- v1.22 shipped: history search catalog-wide, stale banner clarification, admin.html attention badges, `/gsd-check-todos` priority triage
+- v1.21 shipped: VLESS pool self-heal (admitted-node reprobe + xray auto-reload via passwordless systemctl), pool drift visibility
+- v1.20 shipped: cart-add latency work, 11-key JSONL ledger, `/api/health/deep` cart_add block
+- **2026-05-13 ~60-min outage** observed directly during v1.23 verification session — pool 20/20 quarantined, 0 healthy for ~1h. Drove v1.24 scope. v1.21 self-heal works for partial drift but not full collapse.
 
 ### Pending Todos (see `.planning/todos/pending/`)
 
-- **[P2]** `2026-05-13-product-details-cold-path-8-15s` — consumed into v1.23 PERF-10/11 (Phase 74). Moves to completed/ when 74 ships.
-- **[P2]** `2026-05-13-card-ui-shift-on-details-load` — consumed into v1.23 UX-SHIFT-01 (Phase 75). Moves to completed/ when 75 ships.
-- **[P3]** `2026-05-13-cart-panel-remove-trash-button` — consumed into v1.23 UX-CART-01 (Phase 76). Moves to completed/ when 76 ships.
-- **[P4]** `2026-05-13-update-gsd-add-todo-skill` — deferred to a future `/gsd-quick`-able tooling task; not in v1.23 scope.
+- **[P1]** `2026-05-13-vless-pool-slow-recovery-1h-outage.md` — consumed into v1.24 Phase 77 (REL-16/17/18/19). Moves to completed/ when 77 ships.
+- **[P2]** `2026-05-13-empty-grid-when-all-sources-stale-during-pool-recovery.md` — consumed into v1.24 Phase 78 (UX-STALE-01/02). Moves to completed/ when 78 ships.
+- **[P4]** `2026-05-13-update-gsd-add-todo-skill.md` — still deferred.
 
 ## Known Bugs
 
-- (none open — v1.22 closed the UX debt list; v1.23 opens 3 fresh issues surfaced during the v1.22 live verification session, all scoped into phases 74/75/76)
+- Pool recovery slow after full collapse (captured as P1 todo, scoped into Phase 77). Currently manifests as ~1h outage when pool fully dies. v1.21 self-heal handles partial drift; v1.24 Phase 77 handles full collapse.
+- Empty grid when all 3 sources stale (captured as P2 todo, scoped into Phase 78). Pairs with pool-recovery fix.
 
 ## Timeline
 
 | Event | Date |
 |-------|------|
 | v1.19 shipped + archived | 2026-05-05 |
-| v1.20 milestone SHIPPED + ARCHIVED + TAGGED | 2026-05-12 |
-| v1.21 milestone SHIPPED + ARCHIVED + TAGGED (299ms xray reload live) | 2026-05-12 |
-| v1.22 milestone STARTED (UX Debt Cleanup + Tooling Polish, 4 phases, 7 reqs) | 2026-05-12 |
-| v1.22 Phase 70 (History Search Catalog-Wide) shipped + live-verified | 2026-05-12 |
-| v1.22 Phase 71 (Stale Banner Clarification) shipped + live-verified | 2026-05-12 |
-| v1.22 Phase 72 (admin.html Bug Reports + Drift Badges + `[hidden]` hotfix) shipped + live-verified | 2026-05-12/13 |
-| v1.22 Phase 73 (/gsd-check-todos Skill Polish) shipped locally | 2026-05-13 |
-| v1.22 SHIPPED + ARCHIVED + TAGGED (16 commits `5513ede..f56f285`) | 2026-05-13 |
-| v1.23 milestone STARTED (Detail-Path Performance + UX Polish, 3 phases 74-76, 7 reqs) | 2026-05-13 |
+| v1.20 SHIPPED + ARCHIVED + TAGGED | 2026-05-12 |
+| v1.21 SHIPPED + ARCHIVED + TAGGED (299ms xray reload live) | 2026-05-12 |
+| v1.22 SHIPPED + ARCHIVED + TAGGED | 2026-05-13 |
+| v1.23 STARTED — Detail-Path Performance + UX Polish | 2026-05-13 |
+| v1.23 Phase 74 shipped + live-verified (25× cold-path improvement) | 2026-05-13 |
+| v1.23 Phase 75 shipped + live-verified (zero layout shift) | 2026-05-13 |
+| v1.23 Phase 76 shipped (cart trash button + clear-cart fallback, late insert UX-CART-02) | 2026-05-13 |
+| v1.23 SHIPPED + ARCHIVED + TAGGED (10 commits) | 2026-05-13 |
+| ~60-min VLESS pool outage observed during v1.23 verification (drove v1.24 scope) | 2026-05-13 |
+| Style guide v2 upgrade committed | 2026-05-13 |
+| v1.24 STARTED — Pool Self-Heal Hardening + Outage UX, 3 phases 77-79, 9 reqs | 2026-05-13 |
 
 ---
-*Last updated: 2026-05-13 after v1.22 archived + tagged. v1.23 REQUIREMENTS.md + ROADMAP.md drafted. 3 new todos (card UI shift, trash button, cold-path latency) consumed into phases 74-76. Next: `/gsd-discuss-phase 74` or direct plan for Product Details Cold-Path Latency.*
+*Last updated: 2026-05-13 after v1.23 archived + tagged. v1.24 REQUIREMENTS.md + ROADMAP.md drafted directly from observed ~1h pool outage + style guide v2 enforcement gap. Next: `/gsd-plan-phase 77` for Pool Self-Heal Hardening.*

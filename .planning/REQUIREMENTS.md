@@ -1,75 +1,98 @@
-# Requirements — v1.23 Detail-Path Performance + UX Polish
+# Requirements — v1.24 Pool Self-Heal Hardening + Outage UX
 
 ## Milestone Goal
 
-Close the user-visible slowness and layout-shift issues surfaced during v1.22 live MCP verification. The biggest complaint is the 8-15 second cold-path latency when opening a product card for the first time — a legacy artifact from the pre-v1.15 SOCKS5 pool era that adds zero value now that xray's `observatory` + `leastPing` already picks the fastest live outbound. Same interaction also causes a visible grid reflow when the details load and the card's cart-button morphs into a quantity stepper — fixable with a CSS slot reservation.
+Eliminate the ~1 hour family-facing outage pattern observed 2026-05-13. When VLESS pool collapses, recovery must take minutes not an hour, and during the rebuild window users must see cached data with stale badges instead of an empty "0 всего" grid. Pair this with codifying the style guide v2 rules from 2026-05-13 into automated lint checks so UX regressions like the header visual-weight violation get caught in CI.
 
-Three pending todos captured 2026-05-13 during v1.22 verification. Scope intentionally tight (matches v1.21/v1.22 discipline).
+Three pending todos surfaced during v1.23 verification:
+- P1 `2026-05-13-vless-pool-slow-recovery-1h-outage.md` — 60-min recovery time, no quarantine memory, no refresh throttle, no operator alert
+- P2 `2026-05-13-empty-grid-when-all-sources-stale-during-pool-recovery.md` — v1.22 phantom-strip hides cached data when all 3 sources stale
+- Style guide v2 (docs/miniapp-ui-style-guide.md, committed `91a6e30`) — enforcement checklist needs automated tooling
 
-Driving evidence from live verification 2026-05-13 on https://vkusvillsale.vercel.app/:
+Scope intentionally tight (matches v1.21/v1.22/v1.23 discipline) — 3 phases, small.
 
-- **Cold-path card open** ~16 s measured on first tap, ~2 s on second tap of the same card (cache hit).
-- **Card grid reflow** observed when details finish loading — card grows to fit the stepper control, neighbors jump left/right.
-- **No trash button** on cart panel item rows — user must navigate back to main page to remove an item via the stepper.
+Driving evidence:
+- **16:19 → 17:30 MSK 2026-05-13**: VLESS pool collapsed (20 quarantined, 0 healthy). Self-heal loop parsed 519 nodes → 231 RU → probed them 19 times in 15 min, wasted work because no quarantine memory across refreshes
+- User observation: "grid is back but it so bad when cusite didnt work around 1 hour"
+- `/api/health/deep` during incident: `status: degraded, pool.size: 0, quarantined_count: 20, reasons: ["pool_below_min_healthy:0_lt_7"]`
+- MiniApp during incident: `📦 0 всего 🟢 0 🔴 0 🟡 0` despite `data/proposals.json` having 174 cached products (16/35/123)
+- Header visual-weight violation surfaced via screenshot — "Выйти" green-tinted while sibling controls stay neutral, no explicit rule in style guide v1
 
 ## Requirements
 
-### Detail-Path Performance
+### Pool Self-Heal Hardening
 
-- [ ] **PERF-10**: Cold-path `GET /api/product/{id}/details` p95 ≤ 2 s (measured on never-before-cached products through live Vercel). Achieved by (a) removing the per-proxy HEAD probe loop in `backend/main.py::product_details` since xray's leastPing already picks the fastest live outbound, and (b) tightening the fetch timeouts to match a healthy VLESS bridge profile (connect 4s → 1s, read 6s → 3s). Retry count stays at 3 so flaky tail fetches still recover.
+- [ ] **REL-16**: VLESS pool refresh uses persistent quarantine memory. When a node probes as dead, it's added to `data/pool_quarantine.json` with a TTL (default 20 min). Subsequent refreshes skip nodes in quarantine. Probe time drops from ~3 min (probe all 231) to ~30 s (probe only unknown-state nodes). Measured via `pool_refresh_complete` JSONL event `duration_ms` field.
 
-- [ ] **PERF-11**: Cold-path latency ledger emits one JSONL entry per `/api/product/{id}/details` call into `data/detail_events.jsonl` with `{ts, product_id, duration_ms, cached: bool, retry_count, outcome: "ok|failed|fallback"}`. Enables post-shift measurement without re-running synthetic benchmarks. Ledger TTL and prune behavior follow the v1.20 `cart_events.jsonl` pattern (bounded file, tail-read from admin).
+- [ ] **REL-17**: Refresh throttle — minimum 60 s between full refreshes. If a scrape fails and pool is already refreshing or just refreshed within the last 60 s, scraper backs off instead of triggering another refresh. Prevents the 19-refreshes-in-15-min thrash observed 2026-05-13. Implemented in `vless/manager.py::ensure_pool`.
 
-### UX Polish
+- [ ] **REL-18**: Lower-water-mark earlier warning — `min_healthy` check fires at `size ≤ 10` (currently 7). Rate-of-decline check: if pool lost 3+ nodes in 5 min, trigger proactive refresh even if still above 7. Catches collapse earlier, less time in degraded state.
 
-- [ ] **UX-SHIFT-01**: Product card grid on main page experiences zero visible layout shift when the cart-button morphs into the quantity stepper after a product is added. Achieved by reserving the stepper's space in the card's fixed min-height, so the "not-in-cart" state has a small blank slot and the "in-cart" state fills that slot with no height change. Cumulative Layout Shift (CLS) score measured via Lighthouse ≤ 0.1 on the main page.
+- [ ] **REL-19**: Scheduler graceful degrade — when pool is 0 for >2 min, scraper skips the cycle (exit 0 with "skipped_pool_dead" outcome) instead of failing with exit 1. Emits `scheduler_pool_dead` JSONL event. Reduces log noise, makes dashboards truthful, frees CPU for pool refresh to complete faster.
 
-- [ ] **UX-CART-01**: Cart panel item rows gain a trash/remove button (🗑️ icon or equivalent) that fires `POST /api/cart/remove`. Backend `cart.remove(product_id)` already exists (shipped earlier milestones). Pure frontend wiring: optimistic UI with spinner while request in flight, error toast + re-enable on failure, panel refresh on success. No backend diff required.
+### Outage UX
+
+- [ ] **UX-STALE-01**: When all 3 source colors stale simultaneously, `/api/products` endpoint returns the last-good snapshot from `proposals.json` with a `stale_all: true` flag instead of stripping products. Client shows cached products with per-card `⏳ stale` badge. Fixes the "empty grid" observed 2026-05-13 when pool rebuilt. Pairs with REL-19.
+
+- [ ] **UX-STALE-02**: Stale banner UI upgraded from the thin yellow line to a prominent bordered card (per style guide v2 "State Patterns > Stale" section). Message includes per-source age + estimated recovery time: "Данные устарели. Источники: зелёные (25 мин), красные (27 мин), жёлтые (27 мин). Показаны последние известные цены. Обновление через ~N мин." Banner visible above the fold on mobile.
+
+### Style Guide v2 Enforcement
+
+- [ ] **TOOL-02**: `stylelint` config rejects off-scale `padding`/`margin`/`gap` values. Only `4/8/12/16/24/32/48` (via CSS var or literal) allowed. Stylelint runs in `npm run lint` and on pre-commit. Catches future visual-drift regressions at the file-save layer.
+
+- [ ] **TOOL-03**: ESLint rule rejects inline `style=` attribute in JSX (`react/forbid-dom-props` configured with `style` in the forbid list). Forces CSS class usage per style guide v2 rule. Exceptions require explicit ESLint disable comment with justification.
 
 ### Operations — Continuity
 
-- [ ] **OPS-18**: `scripts/verify_v1.23.sh` chains `verify_v1.22.sh all` at the end (which already chains v1.21 + v1.20 + v1.19). Grows phase-by-phase with checks per PERF-10/11, UX-SHIFT-01, UX-CART-01.
+- [ ] **OPS-21**: `scripts/verify_v1.24.sh` chains `verify_v1.23.sh all` and adds Phase 77/78/79 smoke checks. Grows phase-by-phase.
 
-- [ ] **OPS-19**: Each v1.23 phase includes live MCP verification where the UI surface is affected (PERF-10 measures cold-path latency via live curl + Chrome DevTools MCP trace; UX-SHIFT-01 captures Lighthouse CLS before+after; UX-CART-01 screenshots trash button + verifies remove action via MCP click + cart refresh). No phase is "code-complete but unverified" — the v1.21 lesson holds.
+- [ ] **OPS-22**: Each v1.24 phase includes live MCP verification where UI surface is affected. For pool phases, live simulate pool death (`echo "[]" > data/pool.json && systemctl restart saleapp-scheduler`) and measure recovery time via `/api/health/deep` polling.
 
-- [ ] **OPS-20**: Cross-version regression gate stays green — `bash scripts/verify_v1.22.sh all` (which chains back to v1.19) must pass post-deploy. Every v1.23 change is additive; any contract break is out of scope and requires scope-decision.
+- [ ] **OPS-23**: Cross-version regression gate green — `bash scripts/verify_v1.23.sh all` (which chains back to v1.19) passes post-deploy. All v1.24 changes additive.
+
+### Observability — Late consideration
+
+- [ ] **OBS-08** (conditional, may defer): Telegram admin alert when pool size stays at 0 for >10 min. Wires into existing `bot/notifier.py`. Only fires once per incident with 30-min cooldown. Addresses v1.19 REL-FUT-05 tech debt. **Decision: ship only if Phase 77/78 trivially absorbs this; otherwise defer to v1.25 observability milestone.**
 
 ## v2 Requirements
 
-### Carried forward from v1.19 (still deferred)
+### Carried forward from v1.19
 
-- **REL-FUT-01..08, OBS-FUT-01..03** — same list as v1.22 audit.
+- **REL-FUT-01..08, OBS-FUT-01..03** — same list as v1.23 audit.
 
-### Carried forward from v1.20 tech debt
+### Carried forward from v1.20
 
-- Phase 64 HAR capture + live ablation sweep + go/no-go decision for `FAST_CART_ADD_URL` swap.
-- Phase 65 NEEDS_OPERATOR-1 Playwright slow-path test.
-- Phase 66 `_cart_add_attempts` TTL extension for true 1h p95 accuracy.
+- Phase 64 HAR capture + `FAST_CART_ADD_URL` go/no-go decision
+- Phase 65 NEEDS_OPERATOR-1 Playwright slow-path test
+- Phase 66 `_cart_add_attempts` TTL extension for true 1h p95 accuracy
 
 ### Carried forward from v1.21 tech debt
 
-- `XRAY_RESTART_THROTTLE_S = 90.0` is in-memory only (low risk at family-scale).
-- `_DRIFT_FIRST_SEEN` is in-process; each backend worker has its own clock (single-worker on EC2 so fine).
-- Telegram alerts on `xray_restart_failed` / breaker state transitions (v1.19 REL-FUT-05).
+- `XRAY_RESTART_THROTTLE_S = 90.0` is in-memory only
+- `_DRIFT_FIRST_SEEN` is in-process; each backend worker has its own clock
 
 ### Carried forward from v1.22 tech debt
 
-- Vitest/RTL wiring for miniapp so future UI changes get automated test coverage (caught the admin.html `[hidden]` CSS override issue only via live MCP; a snapshot test would have caught it in CI).
-- Multi-select fold-into-milestone in `/gsd-check-todos` (needs AskUserQuestion multi-select primitive in Kiro tooling).
-- `--by-area` flag for `/gsd-check-todos` (priority sort covers primary need).
-- Richer admin UI for individual bug reports (JSON view is adequate for family-scale).
-- SSE `/api/stream` graceful-shutdown short-circuit on SIGTERM (observed stuck restart loops during Phase 72 verification).
-- `/gsd-add-todo` skill priority capture at creation time (P4 — nice-to-have, not blocking).
+- Vitest/RTL wiring for miniapp (style guide v2 review checklist would catch more regressions if snapshot tests existed)
+- Multi-select fold-into-milestone in `/gsd-check-todos`
+- Richer admin UI for individual bug reports
+
+### Carried forward from v1.23 tech debt
+
+- Background pre-warm of top-visible product details (deferred from PERF-10 decision; still not measured to be needed)
+- Lighthouse synthetic for main page CLS (declined in Phase 75 in favor of direct DOM measurement; revisit if regression lands)
+- Live click-through NEEDS_OPERATOR for cart trash button (Telegram-phone verification pending)
 
 ## Out of Scope
 
 | Feature | Reason |
 |---|---|
-| Full rewrite of product details fetch pipeline | PERF-10 is a surgical fix to a specific legacy artifact; a rewrite is separate scope |
-| Background pre-warm of top-visible product details | Option B from the cold-path todo — deferred to measure if PERF-10 alone is sufficient before adding concurrency cost |
-| Admin UI restyle / dark-mode polish | Scope creep |
-| Vitest/RTL wiring for miniapp | Tech debt deferred to a future tooling milestone |
-| SSE graceful-shutdown fix | Observed behavior but infrastructure-layer issue, separate from detail-path + UX |
+| Full VLESS provider migration | REL-16/17/18 harden the current igareck pipeline; provider switch is a bigger separate decision |
+| Pool node scraping from new sources | Same reason — stick with igareck for this milestone |
+| Dark/light theme re-audit of full miniapp | Style guide v2 codifies rules; systematic audit is a separate polish phase |
+| Vitest wiring for miniapp | v1.22 tech debt, still deferred; style guide v2 enforcement via stylelint + eslint is the interim measure |
+| Background pre-warm of product details | v1.23 out-of-scope, still measuring if PERF-10 alone is sufficient |
+| SSE `/api/stream` graceful-shutdown | Infrastructure-layer, separate from pool/UX |
 
 ## Traceability
 
@@ -77,31 +100,36 @@ Driving evidence from live verification 2026-05-13 on https://vkusvillsale.verce
 
 | Requirement | Provisional Phase | Status |
 |---|---|---|
-| PERF-10 | Phase 74 (Cold-path product_details latency) | Defined |
-| PERF-11 | Phase 74 (ledger ships alongside core fix) | Defined |
-| UX-SHIFT-01 | Phase 75 (Card grid layout shift) | Defined |
-| UX-CART-01 | Phase 76 (Cart panel trash button) | Defined |
-| OPS-18 | All phases (cross-cutting) | Defined |
-| OPS-19 | All phases (cross-cutting) | Defined |
-| OPS-20 | All phases (cross-cutting) | Defined |
+| REL-16 | Phase 77 (Quarantine memory + deadlist) | Defined |
+| REL-17 | Phase 77 (refresh throttle — pairs with REL-16) | Defined |
+| REL-18 | Phase 77 (lower-water-mark — same file) | Defined |
+| REL-19 | Phase 77 (scheduler graceful degrade) | Defined |
+| UX-STALE-01 | Phase 78 (backend flag + frontend rendering) | Defined |
+| UX-STALE-02 | Phase 78 (banner UI upgrade — same feature surface) | Defined |
+| TOOL-02 | Phase 79 (stylelint config) | Defined |
+| TOOL-03 | Phase 79 (eslint rule) | Defined |
+| OPS-21/22/23 | All phases (cross-cutting) | Defined |
+| OBS-08 | Conditional — fold into 77 if trivial, else defer | Conditional |
 
 **Coverage:**
-- v1.23 requirements: 7 total (2 PERF, 2 UX, 3 OPS)
-- Mapped to phases: 7 (provisional, 3 phases)
+- v1.24 requirements: 9 total (4 REL, 2 UX, 2 TOOL, 1 optional OBS)
+- Mapped to phases: 9 (provisional, 3 phases + 1 cross-cutting)
 - Unmapped: 0 ✓
 
 ## Prior Milestone — Archived
 
-v1.22 UX Debt Cleanup + Tooling Polish shipped 2026-05-13 with 7/7 requirements + 1 late insert (UX-BADGE-02 xray_drift badge fold-in) across 4 phases (70/71/72/73). Full archive:
-- `.planning/milestones/v1.22-ROADMAP.md`
-- `.planning/milestones/v1.22-REQUIREMENTS.md`
-- `.planning/milestones/v1.22-MILESTONE-AUDIT.md`
-- `.planning/milestones/v1.22-phases/{70,71,72,73}-*/`
-- Git tag `v1.22`, commits `5513ede..f56f285` (16 commits including Phase 72 `[hidden]` hotfix `825008c`)
-- 3/4 phases live-verified on EC2 via Chrome DevTools MCP 2026-05-13
+v1.23 Detail-Path Performance + UX Polish shipped 2026-05-13 with 7/7 requirements + 1 late insert (UX-CART-02 clear-cart desktop Chrome fallback) across 3 phases (74/75/76). Full archive:
+- `.planning/milestones/v1.23-ROADMAP.md`
+- `.planning/milestones/v1.23-REQUIREMENTS.md`
+- `.planning/milestones/v1.23-MILESTONE-AUDIT.md`
+- `.planning/milestones/v1.23-phases/{74,75,76}-*/`
+- Git tag `v1.23`, commits `e5574f3..91a6e30` (10 commits including milestone audit and style guide v2 upgrade)
+- Cold-path `/api/product/{id}/details` p95 dropped from ~16s → 0.678s (25× improvement)
+- Card grid layout shift eliminated via `min-height: 36px` lock
+- Cart panel trash button shipped + Очистить desktop Chrome fallback fixed
 
-The v1.19 + v1.20 + v1.21 + v1.22 smoke scripts are retained as cross-version reliability regression guards; v1.23 adds `scripts/verify_v1.23.sh` alongside.
+The v1.19 + v1.20 + v1.21 + v1.22 + v1.23 smoke scripts retained as cross-version regression guards; v1.24 adds `scripts/verify_v1.24.sh`.
 
 ---
 *Requirements defined: 2026-05-13*
-*Prior milestone v1.22 archived 2026-05-13*
+*Prior milestone v1.23 archived 2026-05-13*
