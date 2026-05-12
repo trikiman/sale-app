@@ -117,38 +117,47 @@ Family members see every VkusVill discount (green/red/yellow) the moment it appe
 - ✓ **UX-BADGE-01/02**: v1.22 `backend/admin.html` renders `Bug Reports (N)` + `Drift (N)` attention badges + `[hidden]` CSS hotfix (`825008c`) after live MCP caught `.badge { display: inline-block }` override (Phase 72) — v1.22
 - ✓ **TOOL-01**: v1.22 `/gsd-check-todos` skill adds `priority: P1|P2|P3|P4` frontmatter + P1-first sort + visible priority labels (Phase 73) — v1.22
 - ✓ **OPS-15..17**: v1.22 `scripts/verify_v1.22.sh` chains v1.21→v1.20→v1.19 smoke scripts; 9/9 live-verified on EC2 + per-phase rollback rehearsal — v1.22
-- ✓ **PERF-10..11**: v1.23 Cold-path `/api/product/{id}/details` p95 dropped from ~16s → 0.678s (25× improvement) via legacy HEAD-probe removal + tighter httpx timeouts (connect 1s, read 3s) + `data/detail_events.jsonl` ledger (Phase 74) — v1.23 (shipped 2026-05-13)
-- ✓ **UX-SHIFT-01**: v1.23 Card grid layout shift eliminated via `min-height: 36px` lock on `.card-price-row` + `.cart-inline-qty.compact`. DOM rect diff on real click proves no cascade (Phase 75) — v1.23
-- ✓ **UX-CART-01/02**: v1.23 Dedicated per-row 🗑 trash button in CartPanel + `isTelegramRuntime` runtime detection via `initData.length > 0` for Очистить clear-cart fallback in desktop Chrome (Phase 76) — v1.23
-- ✓ **OPS-18..20**: v1.23 `scripts/verify_v1.23.sh` chains v1.22→v1.21→v1.20→v1.19 smoke scripts + per-phase rollback rehearsal — v1.23
-- ✓ **Style guide v2**: v1.23 Added spacing/shadow/motion tokens, named breakpoints, visual-weight lint rule, state patterns (loading/empty/stale/error), accessibility rules, 12-point review checklist (docs/miniapp-ui-style-guide.md `91a6e30`) — v1.23
+- ✓ **REL-16..19**: v1.24 Pool Self-Heal Hardening — persistent quarantine deadlist (20-min TTL), refresh throttle (60s), lower water mark (MIN_HEALTHY=10) + rate-of-decline check, scheduler graceful degrade when pool 0 for 2+ cycles. Verifier-confirmed all 4 MUST-CONFIRM items in code. — v1.24 (shipped 2026-05-13)
+- ✓ **UX-STALE-01/02**: v1.24 Stale-State UX — `/api/products` preserves last-good snapshot + emits `staleAll` block when all 3 sources stale; per-card `⏳` badge + prominent bordered banner per style guide v2. — v1.24
+- ✓ **TOOL-02/03**: v1.24 Style Guide v2 Enforcement — stylelint + eslint `react/forbid-dom-props` (WARN), 46 inline-style violations baselined in `docs/style-guide-debt.md` for v1.25 refactor. — v1.24
+- ✓ **OPS-21..23**: v1.24 `scripts/verify_v1.24.sh` chains v1.23 back through v1.19. Verifier audit resolved 4 MUST-CONFIRM-IN-CODE items. — v1.24
 
 ### Active
 
 <!-- Current scope. Building toward these. -->
 
-- v1.24 Pool Self-Heal Hardening + Outage UX. Scope: eliminate the ~1h family-facing outage observed 2026-05-13 when VLESS pool collapsed. Pool recovery must take minutes not an hour (persistent quarantine deadlist, refresh throttle, lower water mark, scheduler graceful degrade). During rebuild, users see cached data with stale badges instead of empty "0 всего" grid. Automated enforcement of style guide v2 rules via stylelint + eslint. 3 phases (77-79), 9 requirements (4 REL, 2 UX, 2 TOOL, 1 optional OBS), all small-to-medium.
+- v1.25 Operator Visibility + Test Coverage. Scope: close the "time-to-notice" gap from v1.24 (Telegram alerts on pool outages + breaker transitions + xray restart failures), add admin escape hatches (force-clear quarantine, force-stale testing helper), add the integration tests the v1.24 verifier flagged (2026-05-13 collapse replay, scheduler-manager race, staleAll-empty edge), wire CI for lint enforcement + refactor the 46 inline-style debt entries. 3 phases (80-82), 13 requirements.
 
-## Current Milestone: v1.24 Pool Self-Heal Hardening + Outage UX
+## Current Milestone: v1.25 Operator Visibility + Test Coverage
 
-**Goal:** Pool recovery p95 ≤ 10 min. Zero "empty grid" when cached data exists. Style guide v2 rules enforced in CI.
+**Goal:** Operator notified of pool outage within 10 min via Telegram. Escape hatches for false-positive quarantine + deterministic Phase 78 testing. Integration tests replay the 2026-05-13 pattern. CI blocks future regressions.
 
-**Target features** (finalized via `.planning/REQUIREMENTS.md` v1.24):
-- Persistent quarantine deadlist with 20-min TTL (`data/pool_quarantine.json`). Refresh skips quarantined nodes. Probe time drops from ~3 min to ~30 s. (REL-16, Phase 77)
-- Refresh throttle (`REFRESH_MIN_INTERVAL_S = 60`) in `vless/manager.py::ensure_pool`. Prevents the 19-refreshes-in-15-min thrash observed 2026-05-13. (REL-17, Phase 77)
-- Lower water mark at `min_healthy = 10` (was 7) + rate-of-decline check (`3+ nodes lost in 5 min` triggers proactive refresh). Catches collapse earlier. (REL-18, Phase 77)
-- Scheduler graceful degrade — when pool 0 for >2 min, scrape skips with exit 0 + `scheduler_pool_dead` JSONL event instead of exit 1. Frees CPU for recovery. (REL-19, Phase 77)
-- `/api/products` returns last-good snapshot with `stale_all: true` flag instead of stripping products when all 3 sources stale. Frontend shows cached products with `⏳ stale` per-card badge. Stale banner upgraded to prominent card per style guide v2. (UX-STALE-01/02, Phase 78)
-- `stylelint` config rejects off-scale `padding`/`margin`/`gap`. `eslint` rule rejects inline `style=` in JSX. Both wired into `npm run lint` + pre-commit. (TOOL-02/03, Phase 79)
-- `scripts/verify_v1.24.sh` chains back through v1.19. (OPS-21/22/23)
-- Optional: Telegram admin alert when pool 0 > 10 min — fold into Phase 77 if trivial, else defer to v1.25 (OBS-08)
+**Target features** (finalized via `.planning/REQUIREMENTS.md` v1.25):
+- Telegram admin DM on pool size 0 for 10+ min (OBS-08), breaker state transitions (OBS-09), `xray_restart_failed` (OBS-10). Cooldowns prevent thrash. Dedupe via `data/admin_alerts.jsonl` ledger. (Phase 80)
+- `POST /admin/vless/quarantine/clear` (OPS-24) + `POST /admin/force-stale-all` (OPS-25). Requires `X-Admin-Token`. (Phase 80)
+- `tests/test_collapse_replay.py` — 20→0 in one cycle, 231 quarantined, recovery measured (QA-06). Race test for pool_state file reads (QA-07). `staleAll=true + products=[]` edge (QA-08). (Phase 81)
+- `.github/workflows/lint.yml` runs `npm run lint + lint:css`. Refactor 46 inline-style violations. Bump `react/forbid-dom-props` WARN→ERROR. Spacing-scale stylelint rule. (Phase 82)
+- `scripts/verify_v1.25.sh` chains v1.24 back through v1.19. (OPS-26/27/28)
 
 **Key context:**
-- Driving observation: **~60-min MiniApp outage 2026-05-13** during v1.23 verification session. Family member would see empty grid + stale banner for an hour and give up on the aggregator. This is worse than slow (v1.20) because slow-but-working retains trust; broken-for-an-hour destroys it.
-- v1.21 self-heal (REL-13/14/15) shipped admitted-node reprobe + xray auto-reload. That handles partial drift (some nodes dying). It does NOT handle full collapse (every node quarantined at once). v1.24 Phase 77 is the next iteration.
-- Style guide v2 (committed `91a6e30` during v1.23) defines the rules; v1.24 Phase 79 enforces them in CI. Without automation the rules drift back into bespoke-styles-per-component within 2-3 milestones.
-- User instruction: "go next autonomus dont stop" (2026-05-13) — autonomous mode, minimize questions, ship iteratively.
-- User preference (standing): robust-over-fast, atomic commits per plan deliverable, live MCP verification before declaring shipped, STOP before `/gsd-complete-milestone`.
+- **v1.24 verifier audit** (`.planning/milestones/v1.24-MILESTONE-VERIFICATION.md`) flagged OBS-08 deferral and missing 2026-05-13 collapse replay test as the highest-priority carry-forwards. v1.25 is the direct response.
+- **Operator lesson reinforced:** time-to-recover (v1.24) + time-to-notice (v1.25) together close the 60-min outage window that originally drove this work.
+- **Escape hatches** (OPS-24/25) are cheap (~20 LOC each) but high-value. Quarantine-clear saves manual EC2 intervention if the deadlist gets corrupted. Force-stale makes Phase 78 UX testable without waiting 15+ min for real staleness.
+- **CI wiring + refactor** pair naturally: CI is useless if baseline is dirty; baseline refactor is risky without CI. Phase 82 tackles both atomically.
+- **User directive 2026-05-13** — "audit first then continue" + "go next autonomus dont stop" — verifier audit PASSED, now proceeding autonomously.
+
+## Previous Shipped Milestone: v1.24 Pool Self-Heal Hardening + Outage UX (2026-05-13)
+
+**Goal:** Eliminate the ~1h family-facing outage observed 2026-05-13. Pool recovery from ~1h to ≤10 min. Zero "empty grid" during rebuild. Style guide v2 enforcement tooling.
+
+**Shipped features:**
+- Phase 77 REL-16/17/18/19: `vless/quarantine.py` persistent deadlist (20-min TTL default, 4h for repeat offenders with fail_count ≥3). `REFRESH_MIN_INTERVAL_S = 60` throttle in `ensure_pool`. `MIN_HEALTHY` bumped 7→10 with rate-of-decline check (3+ nodes lost in 5 min triggers proactive refresh). `_is_pool_dead()` in `scheduler_service.py` + `consecutive_pool_dead_cycles` counter + graceful skip with `scheduler_pool_dead` JSONL event on 2nd consecutive dead cycle. 15/15 unit tests green. Live EC2 confirmed `min_healthy: 10` active.
+- Phase 78 UX-STALE-01/02: `/api/products` preserves last-good snapshot + emits `staleAll{since, ageMinutesMax, oldestColor, estimatedRecoveryS}` block when all 3 sources stale (v1.22 partial-strip preserved). Frontend renders prominent bordered banner per style guide v2 State Patterns + per-card `⏳` badge on cards whose type is in `staleTypes` Set. `ProductCard` memo updated with `isStale` prop.
+- Phase 79 TOOL-02/03: `miniapp/.stylelintrc.json` with `stylelint-config-standard`. ESLint `react/forbid-dom-props` rule at WARN severity surfaces 46 inline-style violations baselined in `docs/style-guide-debt.md` for v1.25 refactor. `lint:css` script added.
+- Verifier audit (`.planning/milestones/v1.24-MILESTONE-VERIFICATION.md`): 4 MUST-CONFIRM-IN-CODE items resolved — quarantine layer placement ✓, `ageMinutes` key consistency ✓, `/api/products` cached-product preservation ✓, CI stylelint honestly flagged as soft (carried to v1.25). Final verdict PASS with "time-to-recover reduced, time-to-notice deferred to v1.25" honest scope framing.
+- `scripts/verify_v1.24.sh` 6-check Phase 77 smoke + chains v1.23→v1.22→v1.21→v1.20→v1.19. 9/9 requirements + OBS-08 deferred to v1.25.
+
+_Archive: `.planning/milestones/v1.24-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT,MILESTONE-VERIFICATION}.md`, `.planning/milestones/v1.24-phases/{77,78,79}-*/`. Tag: v1.24._
 
 ## Previous Shipped Milestone: v1.23 Detail-Path Performance + UX Polish (2026-05-13)
 
@@ -295,8 +304,8 @@ Search and polish improvements for the History page:
 
 ## Next Milestone Candidates
 
-- **v1.25 Observability + Vitest**: Telegram alerts on `xray_restart_failed` and breaker state transitions (v1.19 REL-FUT-05); Vitest/RTL wiring for miniapp (v1.22+ tech debt); historical drift trace / rate-of-change panels; HAR capture + `FAST_CART_ADD_URL` go/no-go decision (v1.20 deferred); Playwright slow-path test for miniapp (v1.20 NEEDS_OPERATOR-1); SSE `/api/stream` graceful-shutdown short-circuit on SIGTERM.
-- **v1.26 Style Guide Full Audit**: systematic refactor of inline styles to CSS classes (clean up v1.24 Phase 79 `TODO(v1.25)` debt list); unified elevation/shadow pass; focus-visible audit across all interactive elements; spacing scale migration across legacy components.
+- **v1.26 Style Guide Full Audit + Vitest Wiring**: systematic refactor of legacy CSS to CSS custom properties (spacing/shadow/motion scales); Vitest/RTL wiring for miniapp (v1.22+ tech debt); Playwright slow-path test (v1.20 NEEDS_OPERATOR-1); custom stylelint plugin for shorthand-value spacing-scale enforcement (if `declaration-property-value-allowed-list` approach in v1.25 TOOL-06 proves insufficient).
+- **v1.27 Detail-Path Deep Dive** (conditional on v1.23 PERF-10 data via v1.25 Phase 81 integration tests): Phase 64 HAR capture + `FAST_CART_ADD_URL` go/no-go decision (v1.20 deferred); background pre-warm of top-visible product details (v1.23 out-of-scope — "measure PERF-10 alone first"); SSE `/api/stream` graceful-shutdown short-circuit on SIGTERM.
 - Reverse-engineered/private API path for green data only if cadence + robustness work still cannot meet freshness targets
 - Larger-scale frontend data-path work such as server-driven pagination or virtualization if card performance still degrades as product volume grows
 
@@ -399,5 +408,5 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-13 after v1.23 (Detail-Path Performance + UX Polish) shipped, tagged, and live-verified on EC2 (7/7 requirements + 1 late insert UX-CART-02, 3 phases 74-76, 10 commits). v1.24 (Pool Self-Heal Hardening + Outage UX) initiated directly in response to the ~60-min VLESS pool outage observed during v1.23 verification. 3 phases (77-79), 9 requirements. User directive "go autonomous, don't stop" — minimal questions, iterative ship.*
+*Last updated: 2026-05-13 after v1.24 (Pool Self-Heal Hardening + Outage UX) shipped, tagged, archived, and verified on EC2 (9/9 requirements + OBS-08 deferred, 3 phases 77-79, 11 commits). Verifier audit resolved 4 MUST-CONFIRM-IN-CODE items; final verdict PASS with honest scope framing. v1.25 (Operator Visibility + Test Coverage) initiated directly in response to verifier carry-forwards: OBS-08 Telegram alerts + 2026-05-13 collapse replay test + CI wiring. 3 phases (80-82), 13 requirements. User directive: "go autonomous" — minimal questions, iterative ship.*
 

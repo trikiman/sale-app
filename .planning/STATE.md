@@ -1,7 +1,7 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.24
-milestone_name: Pool Self-Heal Hardening + Outage UX
+milestone: v1.25
+milestone_name: Operator Visibility + Test Coverage
 status: ready_to_plan
 last_updated: "2026-05-13T00:00:00.000Z"
 last_activity: 2026-05-13
@@ -11,7 +11,7 @@ progress:
   total_plans: 0
   completed_plans: 0
   percent: 0
-current_phase: 77
+current_phase: 80
 current_phase_status: not_started
 current_phase_resume_file: null
 ---
@@ -23,41 +23,39 @@ current_phase_resume_file: null
 See: .planning/PROJECT.md (updated 2026-05-13)
 
 **Core value:** Family members see every VkusVill discount and can add to cart in one tap
-**Current focus:** v1.24 Pool Self-Heal Hardening + Outage UX — eliminate the ~1h family-facing outage observed 2026-05-13 when VLESS pool collapsed. Recovery must take minutes not an hour. During rebuild, users see cached data with stale badges. Plus automated enforcement of style guide v2 rules. 3 phases (77-79), 9 requirements (4 REL, 2 UX, 2 TOOL, 1 optional OBS).
+**Current focus:** v1.25 Operator Visibility + Test Coverage — close the "time-to-notice" gap from v1.24 (Telegram alerts on pool-dead / breaker / xray-fail), add ops escape hatches (force-clear quarantine, force-stale for testing), add the integration tests the v1.24 verifier flagged, wire CI for lint enforcement. 3 phases (80-82), 13 requirements (3 OBS, 2 OPS-escape, 3 QA, 3 TOOL, 3 OPS-continuity).
 
 ## Current Position
 
-Phase: v1.23 shipped + tagged + archived 2026-05-13 (10 commits `e5574f3..91a6e30`). v1.24 REQUIREMENTS.md + ROADMAP.md drafted with 3 phases (77-79) and 9 requirements. Next: `/gsd-plan-phase 77` for Pool Self-Heal Hardening (the P1 priority — 1h outage observation drove this milestone).
-Next step: Plan Phase 77 (REL-16/17/18/19 — persistent quarantine deadlist, refresh throttle, lower water mark, scheduler graceful degrade).
-Status: v1.23 archived to `.planning/milestones/v1.23-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md` + `.planning/milestones/v1.23-phases/{74,75,76}-*/`. Tag `v1.23` pushed. 10 commits.
-Last activity: 2026-05-13 — v1.23 closed, v1.24 scope defined driven by real outage observation.
+v1.24 shipped + tagged + archived + verified 2026-05-13 (11 commits `4eb637e..3ae45bd`). v1.25 REQUIREMENTS.md + ROADMAP.md drafted. Next: `/gsd-plan-phase 80` for Telegram Alerts + Admin Escape Hatches.
 
-## Milestone Goal (v1.24 — active)
+## Milestone Goal (v1.25 — active)
 
-- Pool recovery p95 ≤ 10 min after full collapse (REL-16 quarantine deadlist with 20-min TTL, REL-17 refresh throttle ≥60s, REL-18 lower water mark at 10 with rate-of-decline check, REL-19 scheduler graceful degrade when pool 0 for >2 min)
-- Zero "empty grid" when cached data exists — `/api/products` returns last-good snapshot with `stale_all: true` flag instead of stripping products (UX-STALE-01). Stale banner upgraded to prominent card per style guide v2 (UX-STALE-02).
-- Style guide v2 rules enforced automatically — stylelint rejects off-scale spacing (TOOL-02), eslint rejects inline `style=` (TOOL-03). Pre-commit + `npm run lint` integrated.
-- `scripts/verify_v1.24.sh` chains v1.23→v1.22→v1.21→v1.20→v1.19 smoke scripts (OPS-21/22/23).
-- Optional: Telegram admin alert when pool 0 > 10 min (OBS-08, conditional on Phase 77 trivially absorbing it)
+- Telegram admin DM on pool size 0 for 10+ min (OBS-08), breaker state transitions (OBS-09), xray_restart_failed (OBS-10). Cooldowns prevent thrash.
+- `POST /admin/vless/quarantine/clear` (OPS-24) and `POST /admin/force-stale-all` (OPS-25) for ops + deterministic testing.
+- Integration test replaying 2026-05-13 collapse pattern (QA-06), scheduler-manager race (QA-07), staleAll+empty edge case (QA-08).
+- CI wiring (`.github/workflows/lint.yml`) + refactor of 46 baselined inline-style violations + bump `react/forbid-dom-props` to ERROR (TOOL-04/05/06).
+- `scripts/verify_v1.25.sh` chains v1.24→v1.23→v1.22→v1.21→v1.20→v1.19 (OPS-26/27/28).
 
-## Previous Milestone (v1.23 — shipped 2026-05-13, tag `v1.23`)
+## Previous Milestone (v1.24 — shipped 2026-05-13, tag `v1.24`)
 
-- Detail-Path Performance + UX Polish — 7/7 requirements + 1 late insert (UX-CART-02), 3 phases (74/75/76)
-- 10 commits `e5574f3..91a6e30`, tag `v1.23` pushed to origin
-- Phase 74: Cold-path `/api/product/{id}/details` p95 dropped from ~16s → 0.678s (25× improvement), live-verified on EC2
-- Phase 75: Card grid layout shift eliminated via `min-height: 36px` lock, DOM-diff verified on production
-- Phase 76: Cart panel trash button per row + Очистить desktop Chrome fallback fix (late insert UX-CART-02)
-- Style guide v2 upgrade (`docs/miniapp-ui-style-guide.md`) — codified spacing/shadow/motion tokens, state patterns, accessibility rules, 12-point review checklist
-- Archive: `.planning/milestones/v1.23-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md` + `.planning/milestones/v1.23-phases/{74,75,76}-*/`
+- Pool Self-Heal Hardening + Outage UX — 9/9 requirements + OBS-08 deferred to v1.25, 3 phases (77/78/79)
+- 11 commits `4eb637e..3ae45bd`, tag `v1.24` pushed to origin
+- Verifier audit resolved 4 MUST-CONFIRM-IN-CODE items; final verdict PASS
+- Persistent quarantine + refresh throttle + rate-of-decline + scheduler graceful degrade (Phase 77)
+- `/api/products` staleAll + per-card badge + prominent banner (Phase 78)
+- Stylelint + eslint forbid-dom-props + 46-entry inline-style debt baseline (Phase 79)
+- Live EC2 confirms MIN_HEALTHY=10 active
+- Archive: `.planning/milestones/v1.24-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT,MILESTONE-VERIFICATION}.md` + `.planning/milestones/v1.24-phases/{77,78,79}-*/`
 
 ## Next Up
 
-- `/gsd-plan-phase 77` or direct plan for Pool Self-Heal Hardening (REL-16/17/18/19, optional OBS-08). Target files: `vless/manager.py` (quarantine + throttle), `scheduler_service.py` (graceful degrade), new `tests/test_vless_quarantine.py`.
-- Phase 78 (UX-STALE-01/02) — backend `/api/products` + frontend stale badge + prominent banner.
-- Phase 79 (TOOL-02/03) — stylelint + eslint configs, pre-commit wiring, baseline `TODO(v1.25)` debt list.
-- After each phase: live MCP or EC2 smoke verification — v1.21 "push ≠ verified" lesson still applies.
-- Move consumed todos from `.planning/todos/pending/` to `.planning/todos/completed/` as each phase ships.
-- After Phase 79: `.planning/v1.24-MILESTONE-AUDIT.md` + tag `v1.24` + archive. **STOP before `/gsd-complete-milestone`** per user's standing instruction (manual archive via Move-Item is the established pattern).
+- `/gsd-plan-phase 80` or direct plan for Telegram Alerts + Admin Escape Hatches (OBS-08/09/10 + OPS-24/25). Target files: `bot/notifier.py` (send_admin_alert helper + cooldown ledger), `backend/main.py` (admin endpoints), `scheduler_service.py` + `vless/manager.py` (hook points for state transitions).
+- Phase 81 integration tests — consume Phase 80 force-stale endpoint for deterministic QA-06/07/08.
+- Phase 82 CI wiring — after inline-style refactor (Phase 82 also includes the refactor as TOOL-05).
+- After each phase: live MCP or EC2 smoke verification.
+- Move consumed todos as each phase ships.
+- After Phase 82: `.planning/v1.25-MILESTONE-AUDIT.md` + tag `v1.25` + archive. **STOP before `/gsd-complete-milestone`**.
 
 ## Completed Milestones
 
@@ -86,42 +84,34 @@ Last activity: 2026-05-13 — v1.23 closed, v1.24 scope defined driven by real o
 | v1.21 VLESS Pool Self-Healing & Reload Pipeline | 67-69 | 2026-05-12 |
 | v1.22 UX Debt Cleanup + Tooling Polish | 70-73 | 2026-05-13 |
 | v1.23 Detail-Path Performance + UX Polish | 74-76 | 2026-05-13 |
+| v1.24 Pool Self-Heal Hardening + Outage UX | 77-79 | 2026-05-13 |
 
 ## Accumulated Context
 
-- v1.23 shipped: cold-path product_details 25× faster (Phase 74 PERF-10/11), card grid layout shift eliminated (Phase 75 UX-SHIFT-01), cart panel trash button + clear-cart Telegram fallback (Phase 76 UX-CART-01 + UX-CART-02 late insert), style guide v2 upgrade
-- v1.22 shipped: history search catalog-wide, stale banner clarification, admin.html attention badges, `/gsd-check-todos` priority triage
-- v1.21 shipped: VLESS pool self-heal (admitted-node reprobe + xray auto-reload via passwordless systemctl), pool drift visibility
-- v1.20 shipped: cart-add latency work, 11-key JSONL ledger, `/api/health/deep` cart_add block
-- **2026-05-13 ~60-min outage** observed directly during v1.23 verification session — pool 20/20 quarantined, 0 healthy for ~1h. Drove v1.24 scope. v1.21 self-heal works for partial drift but not full collapse.
+- v1.24 shipped: pool recovery hardening (REL-16/17/18/19) + stale-state UX (UX-STALE-01/02) + style guide v2 enforcement tooling (TOOL-02/03). Verifier audit confirms all 4 MUST-CONFIRM items resolved in code. OBS-08 Telegram alert deferred to v1.25 by design.
+- Style guide v2 (`docs/miniapp-ui-style-guide.md` `91a6e30`) — design tokens, spacing scale, state patterns, accessibility rules, 12-point review checklist.
+- **Known outage precedent:** 2026-05-13 ~60 min VLESS pool outage drove v1.24 scope. Operator learned via MiniApp; v1.25 Phase 80 closes this "time-to-notice" gap with Telegram alerts.
 
 ### Pending Todos (see `.planning/todos/pending/`)
 
-- **[P1]** `2026-05-13-vless-pool-slow-recovery-1h-outage.md` — consumed into v1.24 Phase 77 (REL-16/17/18/19). Moves to completed/ when 77 ships.
-- **[P2]** `2026-05-13-empty-grid-when-all-sources-stale-during-pool-recovery.md` — consumed into v1.24 Phase 78 (UX-STALE-01/02). Moves to completed/ when 78 ships.
-- **[P4]** `2026-05-13-update-gsd-add-todo-skill.md` — still deferred.
+- **[P4]** `2026-05-13-update-gsd-add-todo-skill.md` — tooling skill polish, deferred. No phase consumes this in v1.25.
 
 ## Known Bugs
 
-- Pool recovery slow after full collapse (captured as P1 todo, scoped into Phase 77). Currently manifests as ~1h outage when pool fully dies. v1.21 self-heal handles partial drift; v1.24 Phase 77 handles full collapse.
-- Empty grid when all 3 sources stale (captured as P2 todo, scoped into Phase 78). Pairs with pool-recovery fix.
+- (none open — v1.24 closed the pool-recovery + stale-grid issues; verifier flagged a few edge cases like empty-source-files + newly-created-file but none are regressions)
 
 ## Timeline
 
 | Event | Date |
 |-------|------|
-| v1.19 shipped + archived | 2026-05-05 |
-| v1.20 SHIPPED + ARCHIVED + TAGGED | 2026-05-12 |
-| v1.21 SHIPPED + ARCHIVED + TAGGED (299ms xray reload live) | 2026-05-12 |
-| v1.22 SHIPPED + ARCHIVED + TAGGED | 2026-05-13 |
-| v1.23 STARTED — Detail-Path Performance + UX Polish | 2026-05-13 |
-| v1.23 Phase 74 shipped + live-verified (25× cold-path improvement) | 2026-05-13 |
-| v1.23 Phase 75 shipped + live-verified (zero layout shift) | 2026-05-13 |
-| v1.23 Phase 76 shipped (cart trash button + clear-cart fallback, late insert UX-CART-02) | 2026-05-13 |
-| v1.23 SHIPPED + ARCHIVED + TAGGED (10 commits) | 2026-05-13 |
-| ~60-min VLESS pool outage observed during v1.23 verification (drove v1.24 scope) | 2026-05-13 |
-| Style guide v2 upgrade committed | 2026-05-13 |
+| v1.23 SHIPPED + ARCHIVED + TAGGED (25× cold-path improvement, layout shift fix, cart trash + clear-cart fallback) | 2026-05-13 |
+| ~60-min VLESS pool outage observed during v1.23 verification — drove v1.24 scope | 2026-05-13 |
 | v1.24 STARTED — Pool Self-Heal Hardening + Outage UX, 3 phases 77-79, 9 reqs | 2026-05-13 |
+| v1.24 Phase 77 (Pool Self-Heal) shipped + live-verified on EC2 (MIN_HEALTHY=10 active) | 2026-05-13 |
+| v1.24 Phase 78 (Stale-State UX) shipped | 2026-05-13 |
+| v1.24 Phase 79 (Style Guide v2 Enforcement) shipped | 2026-05-13 |
+| v1.24 SHIPPED + ARCHIVED + TAGGED (9 commits, verifier audit PASS) | 2026-05-13 |
+| v1.25 STARTED — Operator Visibility + Test Coverage, 3 phases 80-82, 13 reqs | 2026-05-13 |
 
 ---
-*Last updated: 2026-05-13 after v1.23 archived + tagged. v1.24 REQUIREMENTS.md + ROADMAP.md drafted directly from observed ~1h pool outage + style guide v2 enforcement gap. Next: `/gsd-plan-phase 77` for Pool Self-Heal Hardening.*
+*Last updated: 2026-05-13 after v1.24 archived + tagged + verified. v1.25 scope driven by v1.24 verifier carry-forwards (OBS-08 Telegram alert, 2026-05-13 collapse replay test, CI wiring). Next: `/gsd-plan-phase 80` for Telegram Alerts + Admin Escape Hatches.*

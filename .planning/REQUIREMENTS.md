@@ -1,135 +1,112 @@
-# Requirements — v1.24 Pool Self-Heal Hardening + Outage UX
+# Requirements — v1.25 Operator Visibility + Test Coverage
 
 ## Milestone Goal
 
-Eliminate the ~1 hour family-facing outage pattern observed 2026-05-13. When VLESS pool collapses, recovery must take minutes not an hour, and during the rebuild window users must see cached data with stale badges instead of an empty "0 всего" grid. Pair this with codifying the style guide v2 rules from 2026-05-13 into automated lint checks so UX regressions like the header visual-weight violation get caught in CI.
-
-Three pending todos surfaced during v1.23 verification:
-- P1 `2026-05-13-vless-pool-slow-recovery-1h-outage.md` — 60-min recovery time, no quarantine memory, no refresh throttle, no operator alert
-- P2 `2026-05-13-empty-grid-when-all-sources-stale-during-pool-recovery.md` — v1.22 phantom-strip hides cached data when all 3 sources stale
-- Style guide v2 (docs/miniapp-ui-style-guide.md, committed `91a6e30`) — enforcement checklist needs automated tooling
-
-Scope intentionally tight (matches v1.21/v1.22/v1.23 discipline) — 3 phases, small.
+Close the "time-to-notice" gap identified in the v1.24 verifier audit. v1.24 reduced time-to-recover-once-detected from ~60 min to ≤10 min, but time-to-notice is unchanged — during the 2026-05-13 outage, the operator learned about the outage only by opening the MiniApp 60 min in. v1.25 fixes that via Telegram admin alerts on pool-dead + breaker transitions + xray restart failures, plus the ops escape hatches the verifier flagged (force-clear quarantine, force-stale testing helper). Pair with the integration tests the v1.24 audit called out as "MUST ADD before promoting to higher-severity enforcement" so the exact collapse pattern (20→0 in one cycle, 231 dead nodes, 20+ min of failed scrapes) is replayable in CI.
 
 Driving evidence:
-- **16:19 → 17:30 MSK 2026-05-13**: VLESS pool collapsed (20 quarantined, 0 healthy). Self-heal loop parsed 519 nodes → 231 RU → probed them 19 times in 15 min, wasted work because no quarantine memory across refreshes
-- User observation: "grid is back but it so bad when cusite didnt work around 1 hour"
-- `/api/health/deep` during incident: `status: degraded, pool.size: 0, quarantined_count: 20, reasons: ["pool_below_min_healthy:0_lt_7"]`
-- MiniApp during incident: `📦 0 всего 🟢 0 🔴 0 🟡 0` despite `data/proposals.json` having 174 cached products (16/35/123)
-- Header visual-weight violation surfaced via screenshot — "Выйти" green-tinted while sibling controls stay neutral, no explicit rule in style guide v1
+- **v1.24 verifier audit** (`.planning/milestones/v1.24-MILESTONE-VERIFICATION.md`): "time-to-recover reduced, time-to-notice deferred"
+- **2026-05-13 observation** — operator didn't know for 60 min; first signal was user opening MiniApp
+- **v1.24 Phase 77 unit test** — exercises 20→17 gradual decline; does NOT exercise the observed 20→0 in-one-cycle pattern
+- **v1.24 Phase 79** — stylelint + eslint configured but **no CI runs them**; rules are "documentation until CI is wired"
+- **v1.19 REL-FUT-05** — long-standing tech debt: Telegram alerts on `xray_restart_failed` / breaker state transitions
 
 ## Requirements
 
-### Pool Self-Heal Hardening
+### Operator Visibility
 
-- [ ] **REL-16**: VLESS pool refresh uses persistent quarantine memory. When a node probes as dead, it's added to `data/pool_quarantine.json` with a TTL (default 20 min). Subsequent refreshes skip nodes in quarantine. Probe time drops from ~3 min (probe all 231) to ~30 s (probe only unknown-state nodes). Measured via `pool_refresh_complete` JSONL event `duration_ms` field.
+- [ ] **OBS-08**: Telegram admin alert when pool size stays 0 for > 10 min. One-shot per incident with 30-min cooldown (prevent spam during recovery). Fires via existing `bot/notifier.py` infrastructure. Alert message includes pool size, quarantined count, last successful scrape ts. Recoverable — alert doesn't block recovery.
 
-- [ ] **REL-17**: Refresh throttle — minimum 60 s between full refreshes. If a scrape fails and pool is already refreshing or just refreshed within the last 60 s, scraper backs off instead of triggering another refresh. Prevents the 19-refreshes-in-15-min thrash observed 2026-05-13. Implemented in `vless/manager.py::ensure_pool`.
+- [ ] **OBS-09**: Telegram admin alert on breaker state transitions (`closed → open`, `open → half_open`, `half_open → closed`). 5-min cooldown between alerts for same transition type to prevent thrash spam. Addresses v1.19 REL-FUT-05 carry-forward.
 
-- [ ] **REL-18**: Lower-water-mark earlier warning — `min_healthy` check fires at `size ≤ 10` (currently 7). Rate-of-decline check: if pool lost 3+ nodes in 5 min, trigger proactive refresh even if still above 7. Catches collapse earlier, less time in degraded state.
+- [ ] **OBS-10**: Telegram admin alert on `xray_restart_failed` event. No cooldown (rare enough that each occurrence deserves operator attention). Includes xray process state + last successful reload ts.
 
-- [ ] **REL-19**: Scheduler graceful degrade — when pool is 0 for >2 min, scraper skips the cycle (exit 0 with "skipped_pool_dead" outcome) instead of failing with exit 1. Emits `scheduler_pool_dead` JSONL event. Reduces log noise, makes dashboards truthful, frees CPU for pool refresh to complete faster.
+### Operations — Escape Hatches
 
-### Outage UX
+- [ ] **OPS-24**: `POST /admin/vless/quarantine/clear` endpoint wipes `data/pool_quarantine.json`. Requires `X-Admin-Token`. Returns `{cleared_count, previous_entries}` for audit. Use case: false-positive quarantine event (e.g., upstream VLESS provider glitch marks all nodes dead for 5 min).
 
-- [ ] **UX-STALE-01**: When all 3 source colors stale simultaneously, `/api/products` endpoint returns the last-good snapshot from `proposals.json` with a `stale_all: true` flag instead of stripping products. Client shows cached products with per-card `⏳ stale` badge. Fixes the "empty grid" observed 2026-05-13 when pool rebuilt. Pairs with REL-19.
+- [ ] **OPS-25**: `POST /admin/force-stale-all` endpoint — sets a time-limited override (~10 min) that forces `/api/products` to return `staleAll=true` + cached products regardless of actual source freshness. Auto-expires. Use case: deterministic regression testing of v1.24 Phase 78 stale UX without waiting 15+ min for real staleness or pausing the scheduler. Requires `X-Admin-Token`.
 
-- [ ] **UX-STALE-02**: Stale banner UI upgraded from the thin yellow line to a prominent bordered card (per style guide v2 "State Patterns > Stale" section). Message includes per-source age + estimated recovery time: "Данные устарели. Источники: зелёные (25 мин), красные (27 мин), жёлтые (27 мин). Показаны последние известные цены. Обновление через ~N мин." Banner visible above the fold on mobile.
+### Test Coverage
 
-### Style Guide v2 Enforcement
+- [ ] **QA-06**: Integration test replays the 2026-05-13 collapse pattern — pool goes 20→0 in one cycle, 231 RU-filtered candidates are all quarantined, scheduler skips scrapes for N cycles, refresh eventually finds working nodes. Asserts (a) recovery completes within N refreshes, (b) `/api/products` returns cached products with `staleAll=true` throughout the collapse window, (c) no cycle re-probes a quarantined node (verified via probe-count telemetry). Goes into `tests/test_collapse_replay.py`.
 
-- [ ] **TOOL-02**: `stylelint` config rejects off-scale `padding`/`margin`/`gap` values. Only `4/8/12/16/24/32/48` (via CSS var or literal) allowed. Stylelint runs in `npm run lint` and on pre-commit. Catches future visual-drift regressions at the file-save layer.
+- [ ] **QA-07**: Concurrency test for scheduler-vs-manager race on `vless_pool.json`. Spawns a writer thread (simulating `manager.refresh_proxy_list` calling `pool_state.save`) and a reader thread (simulating `scheduler._is_pool_dead`); asserts reader never observes transient inconsistent state across N iterations. Relies on `os.replace` atomicity (already in production) — this test pins the invariant.
 
-- [ ] **TOOL-03**: ESLint rule rejects inline `style=` attribute in JSX (`react/forbid-dom-props` configured with `style` in the forbid list). Forces CSS class usage per style guide v2 rule. Exceptions require explicit ESLint disable comment with justification.
+- [ ] **QA-08**: `staleAll=true + products=[]` edge case test — backend behavior when source files exist with current mtime but are empty. Asserts the API response is still well-formed and the frontend `App.jsx` empty-state handler renders a useful message (not a blank screen).
+
+### Style Guide v2 Enforcement — CI Wiring
+
+- [ ] **TOOL-04**: GitHub Actions workflow runs `npm run lint` + `npm run lint:css` on every PR. Uses `--max-warnings 0` once baseline debt is refactored (TOOL-05). Until then, runs informationally with PR comment summarizing violation counts.
+
+- [ ] **TOOL-05**: Refactor the 46 baselined inline `style=` violations from `docs/style-guide-debt.md` into CSS classes. Extract common patterns (`grid-row-full`, `text-dimmed`, `clickable`). For truly-dynamic styles (chart widths, etc.), add explicit `// eslint-disable-next-line react/forbid-dom-props -- JUSTIFIED(v1.25): reason` markers so the count converges to zero. After refactor, bump `react/forbid-dom-props` from WARN → ERROR in `eslint.config.js`.
+
+- [ ] **TOOL-06**: Spacing-scale stylelint rule via `declaration-property-value-allowed-list` (not the previously-assumed custom plugin — verifier right to push back). Tokens from style guide v2: `4/8/12/16/24/32/48px` or `var(--space-*)`. Add rule, run, baseline any violations as additional `docs/style-guide-debt.md` entries. If count is high (>30), defer strict enforcement to v1.26.
 
 ### Operations — Continuity
 
-- [ ] **OPS-21**: `scripts/verify_v1.24.sh` chains `verify_v1.23.sh all` and adds Phase 77/78/79 smoke checks. Grows phase-by-phase.
+- [ ] **OPS-26**: `scripts/verify_v1.25.sh` chains `verify_v1.24.sh all` at the end. Phase 80/81/82 smoke checks grow as they ship.
 
-- [ ] **OPS-22**: Each v1.24 phase includes live MCP verification where UI surface is affected. For pool phases, live simulate pool death (`echo "[]" > data/pool.json && systemctl restart saleapp-scheduler`) and measure recovery time via `/api/health/deep` polling.
+- [ ] **OPS-27**: Each phase includes live verification where applicable. Phase 80 Telegram alert manually fired on EC2 (trigger pool-dead signal, verify admin DM lands). Phase 81 tests run in CI. Phase 82 verified by introducing a deliberate violation on a temp branch and confirming CI fails.
 
-- [ ] **OPS-23**: Cross-version regression gate green — `bash scripts/verify_v1.23.sh all` (which chains back to v1.19) passes post-deploy. All v1.24 changes additive.
-
-### Observability — Late consideration
-
-- [ ] **OBS-08** (conditional, may defer): Telegram admin alert when pool size stays at 0 for >10 min. Wires into existing `bot/notifier.py`. Only fires once per incident with 30-min cooldown. Addresses v1.19 REL-FUT-05 tech debt. **Decision: ship only if Phase 77/78 trivially absorbs this; otherwise defer to v1.25 observability milestone.**
+- [ ] **OPS-28**: Cross-version regression gate green — `bash scripts/verify_v1.24.sh all` passes post-deploy. All v1.25 changes additive.
 
 ## v2 Requirements
 
-### Carried forward from v1.19
+### Carried forward from earlier milestones
 
-- **REL-FUT-01..08, OBS-FUT-01..03** — same list as v1.23 audit.
+- **REL-FUT-01..04, REL-FUT-06..08, OBS-FUT-01..03** — v1.19 unaddressed items (REL-FUT-05 is consumed by v1.25 OBS-09/10)
+- **v1.20 deferred**: Phase 64 HAR capture + `FAST_CART_ADD_URL` go/no-go decision
+- **v1.20 NEEDS_OPERATOR-1**: Playwright slow-path test for miniapp
+- **v1.21 tech debt**: `XRAY_RESTART_THROTTLE_S` in-memory-only, `_DRIFT_FIRST_SEEN` in-process
+- **v1.22 tech debt**: Vitest/RTL wiring for miniapp (caught `[hidden]` CSS bug only via live MCP)
+- **v1.23 tech debt**: Background pre-warm of top-visible product details (deferred from PERF-10)
+- **v1.24 tech debt**: see `.planning/milestones/v1.24-MILESTONE-VERIFICATION.md` carry-forward list
 
-### Carried forward from v1.20
+### Explicitly deferred from v1.24 verifier audit
 
-- Phase 64 HAR capture + `FAST_CART_ADD_URL` go/no-go decision
-- Phase 65 NEEDS_OPERATOR-1 Playwright slow-path test
-- Phase 66 `_cart_add_attempts` TTL extension for true 1h p95 accuracy
-
-### Carried forward from v1.21 tech debt
-
-- `XRAY_RESTART_THROTTLE_S = 90.0` is in-memory only
-- `_DRIFT_FIRST_SEEN` is in-process; each backend worker has its own clock
-
-### Carried forward from v1.22 tech debt
-
-- Vitest/RTL wiring for miniapp (style guide v2 review checklist would catch more regressions if snapshot tests existed)
-- Multi-select fold-into-milestone in `/gsd-check-todos`
-- Richer admin UI for individual bug reports
-
-### Carried forward from v1.23 tech debt
-
-- Background pre-warm of top-visible product details (deferred from PERF-10 decision; still not measured to be needed)
-- Lighthouse synthetic for main page CLS (declined in Phase 75 in favor of direct DOM measurement; revisit if regression lands)
-- Live click-through NEEDS_OPERATOR for cart trash button (Telegram-phone verification pending)
+- Recovery-time p95 dashboard (can be built once QA-06 integration test produces measurable data)
+- Per-card badge list-view layout test (requires list-view redesign first)
+- WARN→ERROR bump for compliant rules (once TOOL-05 clears baseline)
 
 ## Out of Scope
 
 | Feature | Reason |
 |---|---|
-| Full VLESS provider migration | REL-16/17/18 harden the current igareck pipeline; provider switch is a bigger separate decision |
-| Pool node scraping from new sources | Same reason — stick with igareck for this milestone |
-| Dark/light theme re-audit of full miniapp | Style guide v2 codifies rules; systematic audit is a separate polish phase |
-| Vitest wiring for miniapp | v1.22 tech debt, still deferred; style guide v2 enforcement via stylelint + eslint is the interim measure |
-| Background pre-warm of product details | v1.23 out-of-scope, still measuring if PERF-10 alone is sufficient |
-| SSE `/api/stream` graceful-shutdown | Infrastructure-layer, separate from pool/UX |
+| Vitest/RTL full wiring | Separate milestone — would need its own design phase for choosing between Vitest + RTL vs. Playwright |
+| Historical drift trace / rate-of-change panels | Admin UI polish — belongs in dedicated observability milestone |
+| Full VLESS provider migration | Out-of-scope since v1.24 |
+| Mobile app / PWA hardening | Family uses Telegram MiniApp; no scope for standalone PWA |
 
 ## Traceability
 
-(Provisional phase mapping; finalized by `/gsd-roadmapper`.)
+(Provisional phase mapping.)
 
 | Requirement | Provisional Phase | Status |
 |---|---|---|
-| REL-16 | Phase 77 (Quarantine memory + deadlist) | Defined |
-| REL-17 | Phase 77 (refresh throttle — pairs with REL-16) | Defined |
-| REL-18 | Phase 77 (lower-water-mark — same file) | Defined |
-| REL-19 | Phase 77 (scheduler graceful degrade) | Defined |
-| UX-STALE-01 | Phase 78 (backend flag + frontend rendering) | Defined |
-| UX-STALE-02 | Phase 78 (banner UI upgrade — same feature surface) | Defined |
-| TOOL-02 | Phase 79 (stylelint config) | Defined |
-| TOOL-03 | Phase 79 (eslint rule) | Defined |
-| OPS-21/22/23 | All phases (cross-cutting) | Defined |
-| OBS-08 | Conditional — fold into 77 if trivial, else defer | Conditional |
+| OBS-08, OBS-09, OBS-10 | Phase 80 (Telegram alerts) | Defined |
+| OPS-24, OPS-25 | Phase 80 (admin escape hatches — pairs with alerts) | Defined |
+| QA-06, QA-07, QA-08 | Phase 81 (integration tests) | Defined |
+| TOOL-04, TOOL-05, TOOL-06 | Phase 82 (style guide CI + debt refactor) | Defined |
+| OPS-26/27/28 | All phases (cross-cutting) | Defined |
 
 **Coverage:**
-- v1.24 requirements: 9 total (4 REL, 2 UX, 2 TOOL, 1 optional OBS)
-- Mapped to phases: 9 (provisional, 3 phases + 1 cross-cutting)
+- v1.25 requirements: 13 total (3 OBS, 2 OPS-escape, 3 QA, 3 TOOL, 3 OPS-continuity)
+- Mapped to phases: 13 (3 phases + 1 cross-cutting)
 - Unmapped: 0 ✓
 
 ## Prior Milestone — Archived
 
-v1.23 Detail-Path Performance + UX Polish shipped 2026-05-13 with 7/7 requirements + 1 late insert (UX-CART-02 clear-cart desktop Chrome fallback) across 3 phases (74/75/76). Full archive:
-- `.planning/milestones/v1.23-ROADMAP.md`
-- `.planning/milestones/v1.23-REQUIREMENTS.md`
-- `.planning/milestones/v1.23-MILESTONE-AUDIT.md`
-- `.planning/milestones/v1.23-phases/{74,75,76}-*/`
-- Git tag `v1.23`, commits `e5574f3..91a6e30` (10 commits including milestone audit and style guide v2 upgrade)
-- Cold-path `/api/product/{id}/details` p95 dropped from ~16s → 0.678s (25× improvement)
-- Card grid layout shift eliminated via `min-height: 36px` lock
-- Cart panel trash button shipped + Очистить desktop Chrome fallback fixed
+v1.24 Pool Self-Heal Hardening + Outage UX shipped 2026-05-13 with 9/9 requirements (OBS-08 deferred to v1.25 by design) across 3 phases (77/78/79). Verifier audit produced `v1.24-MILESTONE-VERIFICATION.md` resolving 4 MUST-CONFIRM-IN-CODE items; final verdict PASS. Full archive:
+- `.planning/milestones/v1.24-ROADMAP.md`
+- `.planning/milestones/v1.24-REQUIREMENTS.md`
+- `.planning/milestones/v1.24-MILESTONE-AUDIT.md`
+- `.planning/milestones/v1.24-MILESTONE-VERIFICATION.md`
+- `.planning/milestones/v1.24-phases/{77,78,79}-*/`
+- Git tag `v1.24`, commits `4eb637e..3ae45bd` (11 commits including verification + bootstrap)
 
-The v1.19 + v1.20 + v1.21 + v1.22 + v1.23 smoke scripts retained as cross-version regression guards; v1.24 adds `scripts/verify_v1.24.sh`.
+Cross-version regression scripts retained through v1.19.
 
 ---
 *Requirements defined: 2026-05-13*
-*Prior milestone v1.23 archived 2026-05-13*
+*Prior milestone v1.24 archived 2026-05-13*
