@@ -612,6 +612,29 @@ class VlessProxyManager:
                     "removed_hosts": removed_hosts,
                 },
             )
+            # v1.25 OBS-10: admin Telegram alert on xray-restart-failed.
+            # Zero cooldown — rare enough that each occurrence deserves
+            # attention. Best-effort: any failure inside admin_alerts
+            # is swallowed by the module and must not affect pool state.
+            try:
+                from backend import admin_alerts
+                admin_alerts.send_admin_alert(
+                    "xray_restart_failed",
+                    (
+                        f"xray systemctl reload-or-restart FAILED\n\n"
+                        f"Duration: {restart_duration_ms} ms\n"
+                        f"Added hosts: {len(added_hosts)}\n"
+                        f"Removed hosts: {len(removed_hosts)}\n"
+                        f"stderr: <pre>{(restart_stderr_tail or '')[:300]}</pre>"
+                    ),
+                    extra={
+                        "duration_ms": restart_duration_ms,
+                        "added_count": len(added_hosts),
+                        "removed_count": len(removed_hosts),
+                    },
+                )
+            except Exception:  # noqa: BLE001
+                pass  # admin alerts must never break pool refresh
 
         for node in admitted:
             self._track_event(

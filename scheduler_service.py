@@ -178,7 +178,24 @@ def _load_breaker_state() -> BreakerState:
 
 
 def _persist_breaker_state(breaker: BreakerState) -> None:
-    """Atomically persist breaker to disk. Non-fatal on failure."""
+    """Atomically persist breaker to disk. Non-fatal on failure.
+
+    v1.25 OBS-09: also emits admin alert on state transition. Compares
+    ``breaker.state`` against the prior persisted value; if changed,
+    fires a ``breaker_transition`` alert via backend.admin_alerts.
+    5-min cooldown per transition type (closed→open, open→half_open,
+    half_open→closed) prevents thrash spam during flapping.
+    """
+    # v1.25 OBS-09: detect transition before overwriting file.
+    prev_state: str | None = None
+    try:
+        if os.path.exists(BREAKER_STATE_FILE):
+            with open(BREAKER_STATE_FILE, "r", encoding="utf-8") as fh:
+                prev = json.load(fh)
+                prev_state = prev.get("state")
+    except (OSError, json.JSONDecodeError):
+        prev_state = None
+
     tmp_path = BREAKER_STATE_FILE + ".tmp"
     try:
         os.makedirs(DATA_DIR, exist_ok=True)
@@ -194,6 +211,29 @@ def _persist_breaker_state(breaker: BreakerState) -> None:
                 os.remove(tmp_path)
         except OSError:
             pass
+        return  # don't alert if we couldn't even save
+
+    # v1.25 OBS-09: admin alert on state transition.
+    if prev_state and prev_state != breaker.state:
+        try:
+            from backend import admin_alerts
+            admin_alerts.send_admin_alert(
+                "breaker_transition",
+                (
+                    f"Breaker state changed: <b>{prev_state}</b> → <b>{breaker.state}</b>\n"
+                    f"Fails: {breaker.fails}\n"
+                    f"Cooldown: {breaker.cooldown_s}s"
+                ),
+                cooldown_s=300,  # 5-min cooldown per transition (same type may flap)
+                extra={
+                    "prev_state": prev_state,
+                    "new_state": breaker.state,
+                    "fails": breaker.fails,
+                    "cooldown_s": breaker.cooldown_s,
+                },
+            )
+        except Exception:  # noqa: BLE001
+            pass  # admin alerts must never break breaker state management
 
 
 def _log_script_output(script_name, output_text, tag=None):
@@ -620,6 +660,26 @@ def _run_scraper_set(scrapers, proxy_state):
                     consecutive_dead_cycles=consecutive,
                     recovered_size=refreshed_count,
                 )
+                # v1.25 OBS-08: recovery notification. Only fires if we
+                # were previously in a significant outage (≥ 4 cycles ≈
+                # 12 min) — avoids spamming on every 1-cycle blip.
+                if consecutive >= 4:
+                    try:
+                        from backend import admin_alerts
+                        admin_alerts.send_admin_alert(
+                            "scheduler_pool_recovered",
+                            (
+                                f"Pool recovered ✅\n\n"
+                                f"Dead cycles: {consecutive}\n"
+                                f"Recovered size: {refreshed_count}"
+                            ),
+                            extra={
+                                "consecutive_dead_cycles": consecutive,
+                                "recovered_size": refreshed_count,
+                            },
+                        )
+                    except Exception:  # noqa: BLE001
+                        pass
                 # Fall through to normal scrape path.
             else:
                 # Still dead after refresh attempt — now honor skip.
@@ -633,6 +693,27 @@ def _run_scraper_set(scrapers, proxy_state):
                         consecutive_dead_cycles=consecutive,
                         scrapers_skipped=[tag for _, tag, _ in scrapers],
                     )
+                    # v1.25 OBS-08: pool-dead alert. 4+ consecutive cycles
+                    # ≈ 12+ min of no data. 30-min cooldown prevents
+                    # spam during extended outages. First alert fires
+                    # fast; subsequent within cooldown are skipped.
+                    if consecutive >= 4:
+                        try:
+                            from backend import admin_alerts
+                            admin_alerts.send_admin_alert(
+                                "pool_dead",
+                                (
+                                    f"VLESS pool dead 🚨\n\n"
+                                    f"Dead cycles: {consecutive} (~{consecutive * 3} min)\n"
+                                    f"Last refresh returned 0 nodes — no recovery.\n"
+                                    f"Users see cached data with staleAll banner."
+                                ),
+                                extra={
+                                    "consecutive_dead_cycles": consecutive,
+                                },
+                            )
+                        except Exception:  # noqa: BLE001
+                            pass
                     return proxy_state, {
                         tag: {
                             "status_text": "SKIPPED (pool dead)",
