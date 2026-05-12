@@ -587,39 +587,80 @@ def _is_pool_dead() -> bool:
 
 
 def _run_scraper_set(scrapers, proxy_state):
-    # v1.24 REL-19: graceful degrade — if the VLESS pool is empty for
-    # 2+ consecutive cycles, skip scrape with exit 0 + JSONL event instead
-    # of burning 60-90s of Chrome startup per-scraper that will fail anyway.
-    # Observed 2026-05-13: pool=0 for ~1h, 19 pool-dead scrape cycles that
-    # all failed with exit 1. Graceful degrade frees CPU for pool refresh
-    # to complete faster and reduces log noise.
+    # v1.24 REL-19 + v1.25 hotfix: graceful degrade — if the VLESS pool is
+    # empty for 2+ consecutive cycles, skip the expensive Chrome startup
+    # (60-90s per scraper that will fail) but ALWAYS trigger pool refresh
+    # so recovery continues. The 2026-05-13 23:04 → 01:13 incident proved
+    # that skipping-without-refreshing is a terminal state: nothing else
+    # in the scheduler path calls ensure_pool(), so if we don't do it here,
+    # the pool stays at 0 forever.
     if _is_pool_dead():
         proxy_state["consecutive_pool_dead_cycles"] = (
             proxy_state.get("consecutive_pool_dead_cycles", 0) + 1
         )
         consecutive = proxy_state["consecutive_pool_dead_cycles"]
-        if consecutive >= 2:
-            log(
-                f"Pool dead for {consecutive} consecutive cycles — "
-                f"skipping scrape (REL-19 graceful degrade). "
-                f"Refresh daemon will recover."
-            )
-            _emit_scheduler_event(
-                "scheduler_pool_dead",
-                consecutive_dead_cycles=consecutive,
-                scrapers_skipped=[tag for _, tag, _ in scrapers],
-            )
-            # Return empty results marked as skipped — calling code uses
-            # this shape for cycle summary (SKIPPED preserves cycle slot).
-            return proxy_state, {
-                tag: {
-                    "status_text": "SKIPPED (pool dead)",
-                    "code": 0,  # not a failure — scheduler chose to skip
-                    "file_updated": False,
-                    "data_file": data_file,
+
+        # CRITICAL: always attempt pool refresh on every dead cycle, even
+        # when we're skipping scrape. This is the only path that calls
+        # ensure_pool() from the scheduler; without it, graceful-degrade
+        # becomes a terminal "stuck" state.
+        try:
+            from vless.manager import VlessProxyManager
+            log(f"Pool dead (cycle {consecutive}) — triggering refresh before deciding skip-or-run")
+            _refresh_pm = VlessProxyManager(log_func=log, register_atexit=False)
+            refreshed_count = _refresh_pm.ensure_pool()
+            log(f"  ensure_pool() returned {refreshed_count} nodes")
+            # Re-check after refresh — if pool came back, fall through to
+            # normal scrape path without the skip.
+            if not _is_pool_dead():
+                log(f"  Pool recovered to {refreshed_count} — proceeding with scrape")
+                proxy_state["consecutive_pool_dead_cycles"] = 0
+                _emit_scheduler_event(
+                    "scheduler_pool_recovered",
+                    consecutive_dead_cycles=consecutive,
+                    recovered_size=refreshed_count,
+                )
+                # Fall through to normal scrape path.
+            else:
+                # Still dead after refresh attempt — now honor skip.
+                if consecutive >= 2:
+                    log(
+                        f"Pool still dead after refresh ({consecutive} cycles) — "
+                        f"skipping scrape (REL-19). Next cycle will refresh again."
+                    )
+                    _emit_scheduler_event(
+                        "scheduler_pool_dead",
+                        consecutive_dead_cycles=consecutive,
+                        scrapers_skipped=[tag for _, tag, _ in scrapers],
+                    )
+                    return proxy_state, {
+                        tag: {
+                            "status_text": "SKIPPED (pool dead)",
+                            "code": 0,
+                            "file_updated": False,
+                            "data_file": data_file,
+                        }
+                        for _, tag, data_file in scrapers
+                    }
+        except Exception as e:  # noqa: BLE001
+            log(f"  Pool refresh attempt failed: {type(e).__name__}: {e}")
+            # Continue to skip if we can't even refresh.
+            if consecutive >= 2:
+                _emit_scheduler_event(
+                    "scheduler_pool_dead",
+                    consecutive_dead_cycles=consecutive,
+                    scrapers_skipped=[tag for _, tag, _ in scrapers],
+                    refresh_error=f"{type(e).__name__}: {str(e)[:200]}",
+                )
+                return proxy_state, {
+                    tag: {
+                        "status_text": "SKIPPED (pool dead)",
+                        "code": 0,
+                        "file_updated": False,
+                        "data_file": data_file,
+                    }
+                    for _, tag, data_file in scrapers
                 }
-                for _, tag, data_file in scrapers
-            }
     else:
         # Pool is alive (size > 0) — reset consecutive-dead counter.
         proxy_state["consecutive_pool_dead_cycles"] = 0
