@@ -379,6 +379,10 @@ body {
   align-items: center;
   justify-content: space-between;
   margin-top: auto;
+  /* v1.23 UX-SHIFT-01: lock row height to the taller of the two footer
+     states (cart-btn @ 36px vs cart-inline-qty.compact @ ~28px) so the
+     button↔stepper swap never changes card height or reflows the grid. */
+  min-height: 36px;
 }
 
 .card-prices {
@@ -1587,6 +1591,11 @@ body {
 .cart-inline-qty.compact {
   min-width: 90px;
   padding: 2px;
+  /* v1.23 UX-SHIFT-01: belt-and-braces height floor matching .cart-btn
+     so the cart-button↔stepper swap cannot produce a card-row reflow
+     even if a future edit changes .card-price-row height independently. */
+  min-height: 36px;
+  box-sizing: border-box;
 }
 
 .cart-inline-qty.detail {
