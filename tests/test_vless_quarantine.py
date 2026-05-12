@@ -270,3 +270,141 @@ def test_ensure_pool_rate_of_decline_triggers_refresh(tmp_path: Path, monkeypatc
     fake_count["v"] = 17
     pm.ensure_pool()
     assert len(refresh_calls) == 1, f"Pool decline of 3+ in 5 min must trigger refresh; history={list(pm._pool_size_history)}"
+
+
+# ── Scheduler graceful degrade (REL-19) ────────────────────────────
+
+
+def test_is_pool_dead_returns_true_when_pool_empty(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """REL-19: `_is_pool_dead` helper returns True when vless_pool.json is empty."""
+    # Write an empty pool file
+    pool_file = tmp_path / "vless_pool.json"
+    pool_file.write_text(json.dumps({"nodes": []}))
+
+    import scheduler_service
+    monkeypatch.setattr(scheduler_service, "DATA_DIR", str(tmp_path))
+
+    assert scheduler_service._is_pool_dead() is True
+
+
+def test_is_pool_dead_returns_false_when_pool_has_nodes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """REL-19: `_is_pool_dead` returns False when pool has at least 1 node."""
+    pool_file = tmp_path / "vless_pool.json"
+    pool_file.write_text(json.dumps({"nodes": [{"host": "1.2.3.4", "port": 443}]}))
+
+    import scheduler_service
+    monkeypatch.setattr(scheduler_service, "DATA_DIR", str(tmp_path))
+
+    assert scheduler_service._is_pool_dead() is False
+
+
+def test_is_pool_dead_returns_true_when_file_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """REL-19: missing pool file treated as dead (safer default)."""
+    import scheduler_service
+    monkeypatch.setattr(scheduler_service, "DATA_DIR", str(tmp_path))
+
+    assert scheduler_service._is_pool_dead() is True
+
+
+def test_scheduler_skips_scrape_after_two_dead_cycles(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """REL-19: 2nd consecutive dead-pool cycle → skip with exit 0 + event."""
+    pool_file = tmp_path / "vless_pool.json"
+    pool_file.write_text(json.dumps({"nodes": []}))
+
+    import scheduler_service
+    monkeypatch.setattr(scheduler_service, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(scheduler_service, "_SCHEDULER_EVENTS_PATH", str(tmp_path / "scheduler_events.jsonl"))
+    monkeypatch.setattr(scheduler_service, "log", lambda msg: None)
+
+    scrapers = [
+        ("scrape_green.py", "GREEN", "green_products.json"),
+        ("scrape_red.py", "RED", "red_products.json"),
+    ]
+
+    # Cycle 1 — first dead cycle, consecutive=1, should NOT skip yet.
+    proxy_state = {}
+    # We need to intercept _prepare_proxy_connectivity to avoid real work.
+    # But the graceful-degrade check runs BEFORE that — so we need to ensure
+    # the function returns before reaching _prepare_proxy_connectivity.
+    # Cycle 1 doesn't skip, so it would reach _prepare_proxy_connectivity.
+    # Monkeypatch it to a no-op returning (None, proxy_state) so the rest
+    # of _run_scraper_set doesn't execute either.
+    monkeypatch.setattr(
+        scheduler_service,
+        "_prepare_proxy_connectivity",
+        lambda state: (None, state),
+    )
+    # Also stub probe_bridge_alive to prevent real network
+    class FakeProbe:
+        ok = True
+        cached = True
+        reason = "cached"
+        status = 200
+        elapsed_s = 0.0
+    monkeypatch.setattr(scheduler_service, "probe_bridge_alive", lambda timeout: FakeProbe())
+    monkeypatch.setattr(scheduler_service, "run_script", lambda script, tag: 0)
+    monkeypatch.setattr(scheduler_service, "_check_file_updated", lambda path, before_ts: False)
+    monkeypatch.setattr(scheduler_service, "_classify_scraper_status", lambda code, updated: "FAKE")
+    monkeypatch.setattr(scheduler_service, "_kill_all_scraper_chrome", lambda: None)
+
+    # Cycle 1 — pool is dead but consecutive=1 → no skip yet
+    proxy_state, results = scheduler_service._run_scraper_set(scrapers, proxy_state)
+    assert proxy_state["consecutive_pool_dead_cycles"] == 1
+    # Didn't skip — all scrapers returned the run_script=0 result
+    for tag in ("GREEN", "RED"):
+        assert results[tag]["status_text"] != "SKIPPED (pool dead)"
+
+    # Cycle 2 — 2nd consecutive dead cycle → skip
+    proxy_state, results = scheduler_service._run_scraper_set(scrapers, proxy_state)
+    assert proxy_state["consecutive_pool_dead_cycles"] == 2
+    for tag in ("GREEN", "RED"):
+        assert results[tag]["status_text"] == "SKIPPED (pool dead)"
+        assert results[tag]["code"] == 0  # graceful — not a failure
+
+    # Verify scheduler_pool_dead event was emitted
+    events_file = tmp_path / "scheduler_events.jsonl"
+    assert events_file.exists()
+    events = [json.loads(line) for line in events_file.read_text().splitlines() if line.strip()]
+    dead_events = [e for e in events if e["event"] == "scheduler_pool_dead"]
+    assert len(dead_events) == 1
+    assert dead_events[0]["consecutive_dead_cycles"] == 2
+    assert set(dead_events[0]["scrapers_skipped"]) == {"GREEN", "RED"}
+
+
+def test_scheduler_resets_counter_when_pool_recovers(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """REL-19: consecutive-dead counter resets when pool has nodes again."""
+    pool_file = tmp_path / "vless_pool.json"
+
+    import scheduler_service
+    monkeypatch.setattr(scheduler_service, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(scheduler_service, "_SCHEDULER_EVENTS_PATH", str(tmp_path / "scheduler_events.jsonl"))
+    monkeypatch.setattr(scheduler_service, "log", lambda msg: None)
+    monkeypatch.setattr(
+        scheduler_service,
+        "_prepare_proxy_connectivity",
+        lambda state: (None, state),
+    )
+
+    class FakeProbe:
+        ok = True
+        cached = True
+        reason = "cached"
+        status = 200
+        elapsed_s = 0.0
+    monkeypatch.setattr(scheduler_service, "probe_bridge_alive", lambda timeout: FakeProbe())
+    monkeypatch.setattr(scheduler_service, "run_script", lambda script, tag: 0)
+    monkeypatch.setattr(scheduler_service, "_check_file_updated", lambda path, before_ts: False)
+    monkeypatch.setattr(scheduler_service, "_classify_scraper_status", lambda code, updated: "FAKE")
+    monkeypatch.setattr(scheduler_service, "_kill_all_scraper_chrome", lambda: None)
+
+    scrapers = [("scrape_green.py", "GREEN", "green_products.json")]
+
+    # Dead cycle 1
+    pool_file.write_text(json.dumps({"nodes": []}))
+    proxy_state, _ = scheduler_service._run_scraper_set(scrapers, {})
+    assert proxy_state["consecutive_pool_dead_cycles"] == 1
+
+    # Pool recovers
+    pool_file.write_text(json.dumps({"nodes": [{"host": "1.2.3.4", "port": 443}]}))
+    proxy_state, _ = scheduler_service._run_scraper_set(scrapers, proxy_state)
+    assert proxy_state["consecutive_pool_dead_cycles"] == 0, "Counter must reset on pool recovery"

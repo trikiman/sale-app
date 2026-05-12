@@ -549,7 +549,81 @@ def _prepare_proxy_connectivity(proxy_state):
     return pm, proxy_state
 
 
+# v1.24 REL-19: scheduler graceful degrade event ledger
+_SCHEDULER_EVENTS_PATH = os.path.join(DATA_DIR, "scheduler_events.jsonl")
+
+
+def _emit_scheduler_event(event_type: str, **fields) -> None:
+    """Append a JSONL event. Best-effort — never raises."""
+    try:
+        entry = {
+            "ts": round(time.time(), 3),
+            "event": event_type,
+            **fields,
+        }
+        os.makedirs(os.path.dirname(_SCHEDULER_EVENTS_PATH), exist_ok=True)
+        with open(_SCHEDULER_EVENTS_PATH, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry, separators=(",", ":"), ensure_ascii=False) + "\n")
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _is_pool_dead() -> bool:
+    """Cheap check — read the shared vless_pool.json directly.
+
+    Returns True if the VLESS pool has zero nodes. Using the raw file
+    read avoids spinning up a VlessProxyManager instance (which would
+    try to start xray), so this is safe to call before every scrape.
+    """
+    try:
+        pool_path = os.path.join(DATA_DIR, "vless_pool.json")
+        if not os.path.exists(pool_path):
+            return True
+        with open(pool_path, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        return len(data.get("nodes", [])) == 0
+    except Exception:  # noqa: BLE001 — broken file → treat as dead
+        return True
+
+
 def _run_scraper_set(scrapers, proxy_state):
+    # v1.24 REL-19: graceful degrade — if the VLESS pool is empty for
+    # 2+ consecutive cycles, skip scrape with exit 0 + JSONL event instead
+    # of burning 60-90s of Chrome startup per-scraper that will fail anyway.
+    # Observed 2026-05-13: pool=0 for ~1h, 19 pool-dead scrape cycles that
+    # all failed with exit 1. Graceful degrade frees CPU for pool refresh
+    # to complete faster and reduces log noise.
+    if _is_pool_dead():
+        proxy_state["consecutive_pool_dead_cycles"] = (
+            proxy_state.get("consecutive_pool_dead_cycles", 0) + 1
+        )
+        consecutive = proxy_state["consecutive_pool_dead_cycles"]
+        if consecutive >= 2:
+            log(
+                f"Pool dead for {consecutive} consecutive cycles — "
+                f"skipping scrape (REL-19 graceful degrade). "
+                f"Refresh daemon will recover."
+            )
+            _emit_scheduler_event(
+                "scheduler_pool_dead",
+                consecutive_dead_cycles=consecutive,
+                scrapers_skipped=[tag for _, tag, _ in scrapers],
+            )
+            # Return empty results marked as skipped — calling code uses
+            # this shape for cycle summary (SKIPPED preserves cycle slot).
+            return proxy_state, {
+                tag: {
+                    "status_text": "SKIPPED (pool dead)",
+                    "code": 0,  # not a failure — scheduler chose to skip
+                    "file_updated": False,
+                    "data_file": data_file,
+                }
+                for _, tag, data_file in scrapers
+            }
+    else:
+        # Pool is alive (size > 0) — reset consecutive-dead counter.
+        proxy_state["consecutive_pool_dead_cycles"] = 0
+
     pm, proxy_state = _prepare_proxy_connectivity(proxy_state)
 
     # v1.19 REL-01..05: pre-flight VLESS bridge probe. Detect silent
