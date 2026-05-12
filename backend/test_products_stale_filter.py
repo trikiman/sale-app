@@ -122,9 +122,14 @@ def test_stale_green_drops_green_products(monkeypatch, tmp_path):
     assert body["staleInfo"] == ["green (30m)"]
 
 
-def test_all_stale_drops_everything(monkeypatch, tmp_path):
-    """All three colors stale -> empty products list; banner fields still
-    carry all three stale entries."""
+def test_all_stale_preserves_products_and_adds_staleAll_block(monkeypatch, tmp_path):
+    """v1.24 UX-STALE-01: all three colors stale -> preserve last-good
+    snapshot (no strip) and surface `staleAll` block for frontend banner.
+
+    Replaces the pre-v1.24 behavior where all-stale dropped everything.
+    Rationale: when all 3 stale simultaneously, this is a pool-outage
+    scenario (not VkusVill removing content), so we show cached products
+    with stale badges instead of an empty grid."""
     _seed_data_dir(tmp_path, monkeypatch)
     _patch_freshness(monkeypatch, green_stale=True, red_stale=True, yellow_stale=True)
 
@@ -133,11 +138,48 @@ def test_all_stale_drops_everything(monkeypatch, tmp_path):
     assert resp.status_code == 200
     body = resp.json()
 
-    assert body["products"] == []
+    # Products preserved — no phantom-strip when all 3 stale.
+    assert len(body["products"]) == 4
+    types = sorted(p.get("type") for p in body["products"])
+    assert types == ["green", "green", "red", "yellow"]
+
+    # Banner fields still carry all 3 stale entries.
     assert body["dataStale"] is True
     assert len(body["staleInfo"]) == 3
-    for color in ("green", "red", "yellow"):
-        assert body["sourceFreshness"][color]["isStale"] is True
+
+    # New `staleAll` block surfaces the outage signal for the UI.
+    sa = body.get("staleAll")
+    assert sa is not None, f"staleAll missing: {list(body.keys())}"
+    assert sa["ageMinutesMax"] == 30
+    assert sa["oldestColor"] in {"green", "red", "yellow"}
+    assert sa["estimatedRecoveryS"] == 180  # ~3 min cycle heuristic
+    assert sa["since"] is not None
+
+
+def test_partial_stale_still_strips_no_staleAll(monkeypatch, tmp_path):
+    """v1.24 UX-STALE-01: partial stale (1-2 colors) keeps v1.22 Phase 66.1
+    strip behavior and does NOT emit the staleAll block.
+
+    Protects the v1.22 invariant: single-color stale = VkusVill may have
+    removed that color's items, so strip them to match the site's
+    empty-state UX. Only the all-3-stale case triggers the new preservation
+    path."""
+    _seed_data_dir(tmp_path, monkeypatch)
+    _patch_freshness(monkeypatch, green_stale=True, red_stale=True, yellow_stale=False)
+
+    client = TestClient(main.app)
+    resp = client.get("/api/products")
+    assert resp.status_code == 200
+    body = resp.json()
+
+    # Green + red dropped, yellow survives.
+    types = [p.get("type") for p in body["products"]]
+    assert "green" not in types
+    assert "red" not in types
+    assert types.count("yellow") == 1
+
+    # No staleAll block because only 2 of 3 stale.
+    assert body.get("staleAll") is None, f"staleAll should only fire when ALL 3 stale: {body.get('staleAll')}"
 
 
 def test_none_stale_no_regression(monkeypatch, tmp_path):

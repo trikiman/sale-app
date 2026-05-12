@@ -432,6 +432,11 @@ class ProductsResponse(BaseModel):
     staleInfo: Optional[List[str]] = None
     sourceFreshness: Optional[Dict[str, Any]] = None
     cycleState: Optional[Dict[str, Any]] = None
+    # v1.24 UX-STALE-01: all-3-sources-stale signal. Present only when
+    # green+red+yellow are ALL stale (pool-outage scenario). Client
+    # renders a prominent banner + per-card stale badges instead of
+    # empty grid.
+    staleAll: Optional[Dict[str, Any]] = None
     products: List[Product]
 
 
@@ -1420,20 +1425,47 @@ def get_products():
         if isinstance(data.get("products"), list):
             for product in data["products"]:
                 product["subgroup"] = _sanitize_subgroup_label(product.get("subgroup"))
-        # v1.20 Phase 66.1: drop stale-color phantom cards. When a color's
-        # source file is >10 min old we consider the items for that color a
-        # lie — VkusVill may have removed them (e.g. "Зелёных ценников
-        # сейчас нет" on vkusvill.ru/promo/ while our green_products.json is
-        # stale). The dataStale banner already warns the user; dropping the
-        # phantom cards matches VkusVill's own empty-state UX and prevents
-        # tap-to-add on items that no longer exist. sourceFreshness +
-        # staleInfo + greenLiveCount keep their values; only products[] is
-        # filtered. When all three sources are stale the list is empty.
+        # v1.20 Phase 66.1 + v1.24 UX-STALE-01: drop stale-color phantom
+        # cards, BUT preserve last-good snapshot when all 3 colors are stale
+        # simultaneously (pool-outage scenario — VkusVill hasn't deleted
+        # anything; we just can't reach it). When ≤2 colors stale, the old
+        # phantom-strip semantics apply (single-color outages = VkusVill may
+        # have emptied that color; strip to match their empty-state UX).
+        # When all 3 stale, surface a `staleAll` block so the client can
+        # render a prominent banner + per-card stale badges instead of
+        # showing an empty grid.
         stale_types = {
             color for color, info in source_freshness.items()
             if isinstance(info, dict) and info.get("isStale")
         }
-        if stale_types and isinstance(data.get("products"), list):
+        ALL_COLORS = {"green", "red", "yellow"}
+        all_stale = bool(stale_types) and ALL_COLORS.issubset(stale_types)
+
+        if all_stale:
+            # All 3 sources stale — surface a staleAll block but DO NOT strip.
+            # Find the stalest source to report `since` + `ageMinutesMax`.
+            oldest_color = None
+            oldest_age_m = 0
+            oldest_last_update = None
+            for color in ALL_COLORS:
+                info = source_freshness.get(color) or {}
+                age_m = int(info.get("ageMinutes") or 0)
+                if age_m > oldest_age_m:
+                    oldest_age_m = age_m
+                    oldest_color = color
+                    # _build_source_freshness uses "updatedAt"; tests may
+                    # use "lastUpdate". Check both.
+                    oldest_last_update = info.get("updatedAt") or info.get("lastUpdate")
+            data["staleAll"] = {
+                "since": oldest_last_update,
+                "ageMinutesMax": oldest_age_m,
+                "oldestColor": oldest_color,
+                # Heuristic recovery ETA — one scheduler cycle (~3 min).
+                # Not a guarantee; shown to the user as "~N min".
+                "estimatedRecoveryS": 180,
+            }
+        elif stale_types and isinstance(data.get("products"), list):
+            # Partial stale — v1.22 Phase 66.1 phantom-strip behavior.
             data["products"] = [
                 p for p in data["products"]
                 if p.get("type") not in stale_types
