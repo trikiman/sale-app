@@ -109,7 +109,7 @@ function getCartStep(unit, cartItem) {
   return isWeightedUnit(unit) ? 0.01 : 1
 }
 
-const ProductCard = memo(function ProductCard({ product, index, isFavorite, onToggleFavorite, favoritesLoading, onAddToCart, onSetCartQuantity, viewMode, cartState, cartItem, isCartBusy, onOpenDetail }) {
+const ProductCard = memo(function ProductCard({ product, index, isFavorite, onToggleFavorite, favoritesLoading, onAddToCart, onSetCartQuantity, viewMode, cartState, cartItem, isCartBusy, onOpenDetail, isStale }) {
   const [imageLoaded, setImageLoaded] = useState(false)
   const [imageError, setImageError] = useState(false)
   const metaBadges = getCardMetaBadges(product)
@@ -180,6 +180,19 @@ const ProductCard = memo(function ProductCard({ product, index, isFavorite, onTo
         <span className={`card-type-badge ${config.bg} ${config.text}`}>
           {config.label}
         </span>
+
+        {/* v1.24 UX-STALE-01: per-card stale badge when the source for
+            this card's type has gone stale. Visible alongside the favorite
+            heart; aria-label surfaces the reason for screen readers. */}
+        {isStale && (
+          <span
+            className="card-stale-badge"
+            title="Источник устарел — показаны последние известные цены"
+            aria-label="Данные устарели"
+          >
+            ⏳
+          </span>
+        )}
       </div>
 
       {/* Card Body */}
@@ -265,6 +278,7 @@ const ProductCard = memo(function ProductCard({ product, index, isFavorite, onTo
     && prev.isCartBusy === next.isCartBusy
     && prev.favoritesLoading === next.favoritesLoading
     && prev.viewMode === next.viewMode
+    && prev.isStale === next.isStale
 })
 
 function ScrollableChips({ selected, onSelect, items, className = '', favoritedIds, onToggleFavorite }) {
@@ -390,6 +404,10 @@ function App() {
   const [dataStale, setDataStale] = useState(() => !!initialProductsCache?.dataStale)
   const [greenMissing, setGreenMissing] = useState(() => !!initialProductsCache?.greenMissing)
   const [sourceFreshness, setSourceFreshness] = useState(() => initialProductsCache?.sourceFreshness || null)
+  // v1.24 UX-STALE-01: all-3-sources-stale signal from /api/products.
+  // When present, client renders prominent banner + per-card stale badges
+  // instead of the v1.22 phantom-strip empty-grid state.
+  const [staleAll, setStaleAll] = useState(() => initialProductsCache?.staleAll || null)
   const [scraperRunning, setScraperRunning] = useState(false)
   const [scraperDone, setScraperDone] = useState(false)
   const [showTokenInput, setShowTokenInput] = useState(false)
@@ -642,6 +660,7 @@ function App() {
           setDataStale(!!data.dataStale)
           setGreenMissing(!!data.greenMissing)
           setSourceFreshness(data.sourceFreshness || null)
+          setStaleAll(data.staleAll || null)
           setError(null)
           writeCachedJson(PRODUCTS_CACHE_KEY, {
             products: normalizedProducts,
@@ -650,6 +669,7 @@ function App() {
             dataStale: !!data.dataStale,
             greenMissing: !!data.greenMissing,
             sourceFreshness: data.sourceFreshness || null,
+            staleAll: data.staleAll || null,
           })
         } else if (Array.isArray(data) && data.length > 0) {
           setProducts(normalizeProductsPayload(data))
@@ -1641,6 +1661,18 @@ function App() {
       })
   }, [sourceFreshness])
 
+  // v1.24 UX-STALE-01: set of sale-type names whose source is currently
+  // stale. Used to render the per-card ⏳ badge so users know which
+  // products they're seeing are from a cached snapshot.
+  const staleTypes = useMemo(() => {
+    if (!sourceFreshness) return new Set()
+    const s = new Set()
+    for (const [color, info] of Object.entries(sourceFreshness)) {
+      if (info?.isStale) s.add(color)
+    }
+    return s
+  }, [sourceFreshness])
+
   // Dynamic header based on active filters
   const activeTypes = Object.entries(typeFilters).filter(([, active]) => active).map(([type]) => type)
   let headerTitle = 'Все акции ВкусВилл'
@@ -1957,8 +1989,31 @@ function App() {
         {/* v1.22 UX-COPY-01: banner rescoped from "data" (generic, looks
             contradictory next to Обновлено: HH:MM) to "sources" (narrower,
             matches reality — source files are stale, merged payload is
-            still recent). Per-source age surfaced inline by staleColorLabels. */}
-        {dataStale && (
+            still recent). Per-source age surfaced inline by staleColorLabels.
+
+            v1.24 UX-STALE-02: when all 3 sources stale simultaneously
+            (pool-outage scenario), show a prominent bordered card with
+            per-source ages + recovery ETA instead of the thin yellow line.
+            Per style guide v2 "State Patterns > Stale". */}
+        {staleAll && (
+          <div
+            className="stale-banner-prominent anim-scale"
+            role="status"
+            aria-live="polite"
+          >
+            <span className="stale-banner-prominent-icon">⏳</span>
+            <div className="stale-banner-prominent-body">
+              <strong className="stale-banner-prominent-title">Данные устарели</strong>
+              <span className="stale-banner-prominent-sources">
+                Источники{staleColorLabels.length ? `: ${staleColorLabels.join(', ')}` : ''}
+              </span>
+              <span className="stale-banner-prominent-hint">
+                Показаны последние известные цены. Обновление через ~{Math.round((staleAll.estimatedRecoveryS || 180) / 60)} мин.
+              </span>
+            </div>
+          </div>
+        )}
+        {dataStale && !staleAll && (
           <div
             className="mt-2 px-4 py-2 rounded-xl bg-yellow-500/20 border border-yellow-500/50 text-yellow-300 text-center text-xs anim-scale"
           >
@@ -2258,6 +2313,7 @@ function App() {
               isCartBusy={cartBusyIds.has(String(product.id))}
               favoritesLoading={favoritesLoading}
               viewMode={viewMode}
+              isStale={staleTypes.has(product.type)}
             />
           ))}
 
