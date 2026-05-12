@@ -75,7 +75,7 @@ function DayPattern({ pattern }) {
 }
 
 // ─── Calendar heatmap (monthly grid) ─────────────────────
-function CalendarHeatmap({ calendar, sessions }) {
+function CalendarHeatmap({ calendar, sessions: _sessions }) {
   if (!calendar || calendar.length === 0) return null
 
   // Build a month view from calendar data

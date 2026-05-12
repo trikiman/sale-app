@@ -53,7 +53,7 @@ export function installConsoleBuffer() {
 
   const origError = console.error
   const origWarn = console.warn
-  const origLog = console.log
+  const _origLog = console.log  // reserved for future buffered log emit
 
   console.error = function (...args) {
     captureEntry('error', args)

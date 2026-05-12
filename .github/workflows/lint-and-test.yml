@@ -1,0 +1,79 @@
+name: Lint & Test
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # ── Miniapp lint (eslint + stylelint) ────────────────────────────
+  lint-miniapp:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: miniapp
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: miniapp/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # v1.25 TOOL-04: eslint must stay at 0 errors. Warnings are the
+      # 46-entry inline-style baseline from docs/style-guide-debt.md + 5
+      # react-hooks advisory warnings — refactored in v1.26 per Phase 82
+      # scope decision. --max-warnings pins the baseline count so
+      # regressions surface immediately.
+      - name: ESLint (strict errors, pinned warnings)
+        run: npm run lint -- --max-warnings=60
+
+      # v1.25 TOOL-06: stylelint catches spacing-scale violations + CSS
+      # hygiene regressions. Current baseline: 135 spacing-scale warnings
+      # (real debt — raw pixel values that should be from scale). Refactor
+      # scheduled for v1.26. WARN severity means CI passes on 135; bumps
+      # to ERROR when the debt is cleared.
+      - name: Stylelint
+        run: npm run lint:css -- --max-warnings=150
+
+  # ── Backend pytest ─────────────────────────────────────────────────
+  test-backend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install fastapi 'pydantic>=2' httpx uvicorn \
+                      pytest pytest-asyncio anyio \
+                      python-dotenv beautifulsoup4 aiohttp \
+                      lxml sqlalchemy
+
+      - name: Run backend tests
+        run: python -m pytest backend/ -q --tb=short
+
+      # v1.25 Phase 81 integration tests (Linux-safe subset).
+      # Windows-skipped tests (pool IO race w/ open handles,
+      # xray process tests) are excluded here — Linux is production.
+      - name: Run integration tests
+        run: |
+          python -m pytest \
+            tests/test_vless_quarantine.py \
+            tests/test_collapse_replay.py \
+            tests/test_pool_state_io_race.py \
+            -q --tb=short

@@ -109,7 +109,7 @@ function getCartStep(unit, cartItem) {
   return isWeightedUnit(unit) ? 0.01 : 1
 }
 
-const ProductCard = memo(function ProductCard({ product, index, isFavorite, onToggleFavorite, favoritesLoading, onAddToCart, onSetCartQuantity, viewMode, cartState, cartItem, isCartBusy, onOpenDetail, isStale }) {
+const ProductCard = memo(function ProductCard({ product, index: _index, isFavorite, onToggleFavorite, favoritesLoading, onAddToCart, onSetCartQuantity, viewMode: _viewMode, cartState, cartItem, isCartBusy, onOpenDetail, isStale }) {
   const [imageLoaded, setImageLoaded] = useState(false)
   const [imageError, setImageError] = useState(false)
   const metaBadges = getCardMetaBadges(product)

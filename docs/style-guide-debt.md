@@ -2,13 +2,16 @@
 
 This doc tracks existing violations of `docs/miniapp-ui-style-guide.md` v2 rules. Phase 79 added the enforcement tooling (stylelint + eslint `react/forbid-dom-props`) at WARN level so these surface in `npm run lint` without blocking CI. Target: v1.25 refactor milestone bumps rule severity to ERROR after this debt list is empty.
 
-## Totals (baseline 2026-05-13)
+## Totals (baseline 2026-05-13, v1.25 Phase 82)
 
-| Rule | Severity | Count |
-|---|---|---|
-| `react/forbid-dom-props` (inline `style={}`) | `warn` | 46 |
-| `react-hooks/exhaustive-deps` | `warn` | 3 |
-| `react-hooks/set-state-in-effect` | `warn` | 1 |
+| Rule | Severity | Count (v1.24 baseline) | Count (v1.25 baseline) |
+|---|---|---|---|
+| `react/forbid-dom-props` (inline `style={}`) | `warn` | 46 | ~46 (App.jsx refactor deferred to v1.26) |
+| `react-hooks/exhaustive-deps` | `warn` | 3 | 3 |
+| `react-hooks/set-state-in-effect` | `warn` | 1 | 2 (one more surfaced) |
+| `declaration-property-value-allowed-list` (CSS spacing scale) | `warn` | — | **135 (v1.25 Phase 82 TOOL-06 baseline)** |
+| `no-unused-vars` errors | `error` | 23 | **0** (v1.25 Phase 82 fixed) |
+| `no-empty` errors | `error` | 3 | **0** (v1.25 Phase 82 fixed via `allowEmptyCatch`) |
 
 ## Inline `style={}` Violations (46)
 
@@ -64,8 +67,15 @@ These are React 19 + `react-hooks` plugin defaults; fixes are mechanical.
 
 ## When to bump rule severity
 
-v1.25 scope (proposed) — single milestone:
+v1.25 Phase 82 progress:
+- ✓ Cleared all 23 `no-unused-vars` errors (pragmatic: leading-underscore rename for props genuinely-unused)
+- ✓ Cleared all 3 `no-empty` errors (via `allowEmptyCatch: true` — these were best-effort try/catch)
+- ✓ CI wired via `.github/workflows/lint-and-test.yml` — blocks PRs on new errors
+- ✓ Stylelint spacing-scale rule added at WARN (135-violation baseline)
+
+v1.26 scope (proposed) — single milestone:
 - Clear inline `style={}` debt (46 → 0 or all explicitly opted-out with TODO markers)
 - Bump `react/forbid-dom-props` rule from `warn` → `error`
-- Enable strict spacing-scale stylelint rule with custom plugin
-- Bump `npm run lint` + `npm run lint:css` to pre-commit hook via husky or lint-staged
+- Clear 135-violation spacing-scale CSS debt (refactor raw pixel values to CSS custom properties from style guide v2 Spacing Scale section)
+- Bump `declaration-property-value-allowed-list` from WARN → ERROR
+- Enable `--max-warnings 0` in CI once debt is clear

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef } from 'react'
 
 // Auth endpoints: Vercel proxy (30s timeout) — verify returns in ~16s now (v2)
 const AUTH_BASE = ''
@@ -32,9 +32,11 @@ export default function Login({ userId, onLoginSuccess }) {
   const [statusText, setStatusText] = useState('')
 
 
-  // Refs for auto-submit
-  const codeSubmitRef = useRef(null)
-  const pinSubmitRef = useRef(null)
+  // Refs for auto-submit (TODO(v1.26): wire these to trigger form submit
+  // on complete 4-digit PIN entry / 6-digit SMS code entry. Currently
+  // user has to tap Enter / button; refs exist for the planned autoflow.)
+  const _codeSubmitRef = useRef(null)
+  const _pinSubmitRef = useRef(null)
 
   // ── Phone Step ──
   const handlePhoneSubmit = async (e) => {

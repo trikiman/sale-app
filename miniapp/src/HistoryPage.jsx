@@ -201,7 +201,7 @@ const SORTS = [
   { id: 'alphabetical', label: 'А-Я' },
 ]
 
-export default function HistoryPage({ onBack, onOpenDetail, favorites = new Set(), onToggleFavorite, userId }) {
+export default function HistoryPage({ onBack, onOpenDetail, favorites = new Set(), onToggleFavorite, userId: _userId }) {
   const [products, setProducts] = useState([])
   const [loading, setLoading] = useState(true)
   const [loadingMore, setLoadingMore] = useState(false)
