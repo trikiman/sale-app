@@ -45,9 +45,27 @@ XRAY_LOG_PATH = _BASE_DIR / "bin" / "xray" / "logs" / "xray.log"
 # API-compatible knobs lifted from proxy_manager.py. Changing any of these
 # changes observable behaviour; keep them in sync.
 MAX_CACHED = 30
-MIN_HEALTHY = 7
+# v1.24 REL-18: bumped from 7 → 10 so the pool has a larger buffer before
+# hitting zero. Observed 2026-05-13: pool collapsed from 20 → 0 in one cycle,
+# so even min_healthy=10 doesn't catch the collapse itself — but it does
+# trigger proactive refresh earlier and pairs with the rate-of-decline check.
+MIN_HEALTHY = 10
 CACHE_TTL = 86400  # 24h
 DIRECT_CHECK_TTL = 60
+
+# v1.24 REL-17: minimum wall-clock time between full refresh_proxy_list
+# invocations. During 2026-05-13 outage scheduler ran 19 refreshes in 15 min
+# (~1/min) because every failing scrape triggered one. Each refresh re-probes
+# all 231 RU-filtered candidates — pure wasted work.
+REFRESH_MIN_INTERVAL_S = 60.0
+
+# v1.24 REL-18: rate-of-decline detection window + threshold. If the pool
+# lost more than RATE_DECLINE_THRESHOLD nodes in the last
+# RATE_DECLINE_WINDOW_S seconds, ensure_pool forces a refresh even when
+# size is still above MIN_HEALTHY — earlier warning than the low-water mark.
+RATE_DECLINE_WINDOW_S = 5 * 60  # 5 minutes
+RATE_DECLINE_THRESHOLD = 3      # nodes lost to trigger proactive refresh
+_POOL_HISTORY_MAX = 20          # keep ~1h of samples at 3 min/cycle
 VKUSVILL_COOLDOWN_S = 4 * 3600
 PROBE_TIMEOUT = 8
 VKUSVILL_URL = "https://vkusvill.ru/"
@@ -152,6 +170,20 @@ class VlessProxyManager:
         # change fires immediately. See 68-CONTEXT.md §D2.
         self._last_xray_restart_monotonic: float = 0.0
 
+        # v1.24 REL-17: refresh throttle state. Tracks last full refresh
+        # via monotonic clock so callers can't DoS the probe pipeline
+        # with rapid ensure_pool() invocations (observed 2026-05-13:
+        # 19 refreshes in 15 min burned ~30s each doing useless re-probe
+        # of the same 231 RU-filtered candidates).
+        self._last_refresh_monotonic: float = 0.0
+
+        # v1.24 REL-18: pool size history for rate-of-decline detection.
+        # Stores (monotonic_ts, size) samples; capped at _POOL_HISTORY_MAX.
+        # ensure_pool() compares size now vs size RATE_DECLINE_WINDOW_S ago
+        # and triggers proactive refresh if we lost >= RATE_DECLINE_THRESHOLD.
+        from collections import deque as _deque
+        self._pool_size_history: _deque[tuple[float, int]] = _deque(maxlen=_POOL_HISTORY_MAX)
+
         self._prune_expired_cooldowns()
 
         if register_atexit:
@@ -208,6 +240,12 @@ class VlessProxyManager:
 
     def pool_healthy(self) -> bool:
         return self.pool_count() >= MIN_HEALTHY
+
+    @staticmethod
+    def _monotonic() -> float:
+        """Monotonic clock source, overridable for tests (REL-17/18)."""
+        import time as _time
+        return _time.monotonic()
 
     def remove_proxy(self, addr: str) -> None:
         """Remove a node from the pool or rotate away from the current bridge.
@@ -334,15 +372,58 @@ class VlessProxyManager:
         }
 
     def ensure_pool(self) -> int:
-        """Refresh if the pool is below :data:`MIN_HEALTHY` or stale (>24h)."""
+        """Refresh if the pool is below :data:`MIN_HEALTHY` or stale (>24h).
+
+        v1.24 changes:
+            - REL-17: refresh is throttled via ``REFRESH_MIN_INTERVAL_S``
+              (60s default). Second call within the window is a no-op and
+              returns current count without work.
+            - REL-18: proactively refresh when pool size dropped by >=
+              ``RATE_DECLINE_THRESHOLD`` (3) in the last
+              ``RATE_DECLINE_WINDOW_S`` (5 min), even if still above
+              ``MIN_HEALTHY``. Catches fast collapse before it hits zero.
+        """
         count = self.pool_count()
         stale = self.is_cache_stale()
-        if count >= MIN_HEALTHY and not stale:
+
+        # Record size sample for rate-of-decline detection.
+        # Use _monotonic() helper so tests can monkeypatch it.
+        now_mono = self._monotonic()
+        self._pool_size_history.append((now_mono, count))
+
+        # Check if size is declining fast — compare size 5 min ago vs now.
+        declining_fast = False
+        if len(self._pool_size_history) >= 2:
+            cutoff = now_mono - RATE_DECLINE_WINDOW_S
+            older_samples = [size for (ts, size) in self._pool_size_history if ts <= cutoff]
+            if older_samples:
+                size_then = older_samples[-1]
+                if size_then - count >= RATE_DECLINE_THRESHOLD:
+                    declining_fast = True
+
+        if count >= MIN_HEALTHY and not stale and not declining_fast:
             return count
+
+        # REL-17: Throttle — skip if last refresh was within the min interval.
+        elapsed = now_mono - self._last_refresh_monotonic
+        if self._last_refresh_monotonic > 0.0 and elapsed < REFRESH_MIN_INTERVAL_S:
+            self._log(
+                f"Refresh throttled — last refresh was {elapsed:.1f}s ago "
+                f"(min interval {REFRESH_MIN_INTERVAL_S}s); current pool={count}"
+            )
+            return count
+
         if stale:
             self._log(f"Daily refresh (cache > {CACHE_TTL // 3600}h old)")
+        elif declining_fast:
+            self._log(
+                f"Pool declining fast ({count} now, lost ≥{RATE_DECLINE_THRESHOLD} "
+                f"in last {RATE_DECLINE_WINDOW_S // 60} min) — refreshing proactively"
+            )
         else:
             self._log(f"Pool low ({count}/{MIN_HEALTHY}) — refreshing...")
+
+        self._last_refresh_monotonic = now_mono
         existing = {
             entry.get("host")
             for entry in self._pool.get("nodes", [])
@@ -392,10 +473,24 @@ class VlessProxyManager:
             for n in self._pool.get("nodes", [])
             if n.get("host") and self._is_node_dead(n)
         }
+        # v1.24 REL-16: persistent probe-failure deadlist — hosts that
+        # failed their probe in a recent refresh stay quarantined for
+        # 20 min (4 h if they've failed 3+ times). Drops probe work from
+        # ~231 RU-filtered to just the unknown-state set, collapsing
+        # refresh duration from ~30s to ~5-10s when deadlist is populated.
+        # Quarantine stored at host:port granularity to match the
+        # `{host}:{port}` keys in pool_quarantine.json.
+        from vless import quarantine as _quarantine
+        quarantined_host_ports = _quarantine.get_quarantined_hosts()
         exclude = exclude or set()
         candidates: list[VlessNode] = []
+        skipped_quarantine = 0
         for node in ru_nodes:
             if node.host in cooling or node.host in dead_hosts:
+                continue
+            node_key = f"{node.host}:{node.port}"
+            if node_key in quarantined_host_ports:
+                skipped_quarantine += 1
                 continue
             if node.host in exclude and any(
                 entry.get("host") == node.host for entry in self._pool.get("nodes", [])
@@ -413,6 +508,7 @@ class VlessProxyManager:
                 "ru_filtered": len(ru_nodes),
                 "candidates": len(candidates),
                 "cooldown_skipped": len([n for n in ru_nodes if n.host in cooling]),
+                "quarantine_skipped": skipped_quarantine,
             },
         )
 
@@ -421,6 +517,19 @@ class VlessProxyManager:
             return 0
 
         admitted = self._probe_candidates_in_parallel(candidates)
+
+        # v1.24 REL-16: record probe failures in the persistent quarantine.
+        # Candidates that didn't make it into admitted are treated as
+        # failed probes — get a 20-min TTL (4h on 3rd+ failure).
+        admitted_keys = {f"{n.host}:{n.port}" for n in admitted}
+        failed_keys = [
+            f"{c.host}:{c.port}" for c in candidates
+            if f"{c.host}:{c.port}" not in admitted_keys
+        ]
+        if failed_keys:
+            _quarantine.record_probe_failures(failed_keys, reason="probe_failed")
+            self._log(f"Quarantined {len(failed_keys)} probe-failed nodes (TTL 20 min)")
+
         if not admitted:
             self._log("Refresh produced no admitted nodes; pool unchanged")
             return 0

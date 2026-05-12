@@ -1,0 +1,272 @@
+"""Phase 77 (v1.24 REL-16/17/18) — quarantine + throttle + rate-of-decline tests.
+
+Verifies:
+- Quarantine TTL expiry (20 min default, 4h for repeat offenders)
+- `record_probe_failures` batch-records + escalates fail_count correctly
+- `get_quarantined_hosts` excludes expired entries
+- `VlessProxyManager.ensure_pool` throttles within REFRESH_MIN_INTERVAL_S
+- Rate-of-decline check triggers refresh when pool lost ≥3 in 5 min
+
+Test strategy:
+- Use ``SALEAPP_POOL_QUARANTINE_PATH`` env var to redirect deadlist to tmp_path
+- Monkeypatch time.time / time.monotonic for TTL tests
+- Monkeypatch ``VlessProxyManager.refresh_proxy_list`` to avoid real network
+"""
+from __future__ import annotations
+
+import json
+import time
+from pathlib import Path
+
+import pytest
+
+# Pytest's monkeypatch runs before module import, so set env var via fixture.
+
+
+@pytest.fixture
+def tmp_quarantine(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Redirect the quarantine file to a per-test tmp path."""
+    path = tmp_path / "pool_quarantine.json"
+    monkeypatch.setenv("SALEAPP_POOL_QUARANTINE_PATH", str(path))
+    # Reload module so QUARANTINE_PATH picks up the env override.
+    import importlib
+    from vless import quarantine
+    importlib.reload(quarantine)
+    monkeypatch.setattr(quarantine, "QUARANTINE_PATH", str(path))
+    yield path
+
+
+def test_record_probe_failure_persists_with_default_ttl(tmp_quarantine: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from vless import quarantine
+
+    monkeypatch.setattr(time, "time", lambda: 1000.0)
+    quarantine.record_probe_failure("1.2.3.4:443", reason="probe_timeout")
+
+    assert tmp_quarantine.exists()
+    data = json.loads(tmp_quarantine.read_text())
+    entry = data["quarantined"]["1.2.3.4:443"]
+    assert entry["reason"] == "probe_timeout"
+    assert entry["fail_count"] == 1
+    assert entry["first_failed_at"] == 1000.0
+    assert entry["last_failed_at"] == 1000.0
+    assert entry["expires_at"] == 1000.0 + quarantine.QUARANTINE_TTL_S
+
+
+def test_repeat_offender_gets_longer_ttl(tmp_quarantine: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from vless import quarantine
+
+    # Fail 3 times → should hit repeat-offender TTL on the 3rd failure.
+    timestamps = [1000.0, 1010.0, 1020.0]
+
+    for ts in timestamps:
+        monkeypatch.setattr(time, "time", lambda ts=ts: ts)
+        quarantine.record_probe_failure("5.6.7.8:443")
+
+    data = json.loads(tmp_quarantine.read_text())
+    entry = data["quarantined"]["5.6.7.8:443"]
+    assert entry["fail_count"] == 3
+    assert entry["first_failed_at"] == 1000.0  # preserved across re-records
+    assert entry["last_failed_at"] == 1020.0
+    # 3rd failure triggers 4h TTL
+    assert entry["expires_at"] == 1020.0 + quarantine.REPEAT_OFFENDER_TTL_S
+
+
+def test_get_quarantined_hosts_prunes_expired(tmp_quarantine: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from vless import quarantine
+
+    # Write an entry that expired in the past
+    tmp_quarantine.write_text(json.dumps({
+        "quarantined": {
+            "expired.host:443": {
+                "reason": "probe_timeout",
+                "first_failed_at": 1000.0,
+                "last_failed_at": 1000.0,
+                "fail_count": 1,
+                "expires_at": 1500.0,  # expired
+            },
+            "alive.host:443": {
+                "reason": "probe_timeout",
+                "first_failed_at": 2000.0,
+                "last_failed_at": 2000.0,
+                "fail_count": 1,
+                "expires_at": 9999999999.0,  # far future
+            },
+        }
+    }))
+
+    monkeypatch.setattr(time, "time", lambda: 3000.0)
+    hosts = quarantine.get_quarantined_hosts()
+    assert hosts == {"alive.host:443"}
+
+
+def test_record_probe_failures_batch(tmp_quarantine: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from vless import quarantine
+
+    monkeypatch.setattr(time, "time", lambda: 5000.0)
+    quarantine.record_probe_failures(
+        ["a.host:443", "b.host:443", "c.host:443"],
+        reason="probe_error"
+    )
+
+    data = json.loads(tmp_quarantine.read_text())
+    assert len(data["quarantined"]) == 3
+    for host in ["a.host:443", "b.host:443", "c.host:443"]:
+        assert data["quarantined"][host]["reason"] == "probe_error"
+        assert data["quarantined"][host]["fail_count"] == 1
+
+
+def test_release_removes_entry(tmp_quarantine: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from vless import quarantine
+
+    monkeypatch.setattr(time, "time", lambda: 1000.0)
+    quarantine.record_probe_failure("remove.me:443")
+    assert quarantine.is_quarantined("remove.me:443")
+
+    quarantine.release("remove.me:443")
+    assert not quarantine.is_quarantined("remove.me:443")
+
+
+def test_clear_all_wipes_quarantine(tmp_quarantine: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from vless import quarantine
+
+    monkeypatch.setattr(time, "time", lambda: 1000.0)
+    quarantine.record_probe_failures(["a:1", "b:2", "c:3"])
+    assert len(quarantine.get_quarantined_hosts()) == 3
+
+    quarantine.clear_all()
+    assert len(quarantine.get_quarantined_hosts()) == 0
+
+
+def test_snapshot_returns_count_and_hosts(tmp_quarantine: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from vless import quarantine
+
+    monkeypatch.setattr(time, "time", lambda: 1000.0)
+    quarantine.record_probe_failures(["host1:443", "host2:443"])
+
+    snap = quarantine.snapshot()
+    assert snap["count"] == 2
+    assert "host1:443" in snap["hosts"]
+    assert "host2:443" in snap["hosts"]
+    assert set(snap["entries"].keys()) == {"host1:443", "host2:443"}
+
+
+def test_io_errors_are_swallowed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Quarantine must never crash the caller on I/O errors."""
+    from vless import quarantine
+
+    # Point at a path that cannot be written (root of nonexistent drive)
+    bad_path = str(tmp_path / "nonexistent_dir" / "sub" / "quarantine.json")
+    monkeypatch.setattr(quarantine, "QUARANTINE_PATH", bad_path)
+
+    # This should work — we create parent dir
+    quarantine.record_probe_failure("test:443")
+
+    # Now simulate load error by writing garbage
+    bad_file = Path(bad_path)
+    bad_file.write_text("{garbage")
+
+    # Should return empty set, not crash
+    hosts = quarantine.get_quarantined_hosts()
+    assert hosts == set()
+
+
+# ── VlessProxyManager integration ─────────────────────────────────
+
+
+def test_ensure_pool_throttles_rapid_calls(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """REL-17: second ensure_pool() within REFRESH_MIN_INTERVAL_S is a no-op."""
+    from vless import manager as mgr_module
+    from vless.manager import VlessProxyManager
+
+    # Minimum mock surface — don't actually start xray, don't fetch VLESS list.
+    monkeypatch.setattr(VlessProxyManager, "_prune_expired_cooldowns", lambda self: None)
+
+    refresh_calls = []
+
+    def fake_refresh(self, exclude=None):
+        refresh_calls.append(time.monotonic())
+        return 0
+
+    monkeypatch.setattr(VlessProxyManager, "refresh_proxy_list", fake_refresh)
+    monkeypatch.setattr(VlessProxyManager, "_load_cooldowns", lambda self: {})
+    monkeypatch.setattr(VlessProxyManager, "pool_count", lambda self: 0)
+    monkeypatch.setattr(VlessProxyManager, "is_cache_stale", lambda self: False)
+
+    pm = VlessProxyManager(
+        log_func=lambda msg: None,
+        pool_path=tmp_path / "pool.json",
+        cooldowns_path=tmp_path / "cooldowns.json",
+        events_path=tmp_path / "events.jsonl",
+        xray_config_path=tmp_path / "xray.json",
+        xray_log_path=tmp_path / "xray.log",
+        register_atexit=False,
+    )
+
+    # Stub the monotonic clock to make the test deterministic.
+    fake_now = [100.0]
+    monkeypatch.setattr(VlessProxyManager, "_monotonic", staticmethod(lambda: fake_now[0]))
+
+    # Call 1 — pool is 0, should refresh.
+    pm.ensure_pool()
+    assert len(refresh_calls) == 1
+
+    # Call 2 at +10s — should be throttled (no new refresh).
+    fake_now[0] = 110.0
+    pm.ensure_pool()
+    assert len(refresh_calls) == 1, "Second call within 60s window must be throttled"
+
+    # Call 3 at +61s — should refresh.
+    fake_now[0] = 161.0
+    pm.ensure_pool()
+    assert len(refresh_calls) == 2
+
+
+def test_ensure_pool_rate_of_decline_triggers_refresh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """REL-18: pool losing ≥3 nodes in 5 min triggers refresh even if size > MIN_HEALTHY."""
+    from vless import manager as mgr_module
+    from vless.manager import VlessProxyManager
+
+    monkeypatch.setattr(VlessProxyManager, "_prune_expired_cooldowns", lambda self: None)
+    monkeypatch.setattr(VlessProxyManager, "_load_cooldowns", lambda self: {})
+    monkeypatch.setattr(VlessProxyManager, "is_cache_stale", lambda self: False)
+
+    refresh_calls = []
+    monkeypatch.setattr(
+        VlessProxyManager,
+        "refresh_proxy_list",
+        lambda self, exclude=None: refresh_calls.append(1) or 0,
+    )
+
+    # Pool size controlled by fake_count — change per call phase.
+    fake_count = {"v": 20}
+    monkeypatch.setattr(VlessProxyManager, "pool_count", lambda self: fake_count["v"])
+
+    pm = VlessProxyManager(
+        log_func=lambda msg: None,
+        pool_path=tmp_path / "pool.json",
+        cooldowns_path=tmp_path / "cooldowns.json",
+        events_path=tmp_path / "events.jsonl",
+        xray_config_path=tmp_path / "xray.json",
+        xray_log_path=tmp_path / "xray.log",
+        register_atexit=False,
+    )
+
+    # Control monotonic time across 3 ensure_pool() calls spanning 6 min.
+    fake_now = [0.0]
+    monkeypatch.setattr(VlessProxyManager, "_monotonic", staticmethod(lambda: fake_now[0]))
+
+    # t=0: pool 20, no refresh needed (above MIN_HEALTHY=10, no history yet)
+    pm.ensure_pool()
+    assert len(refresh_calls) == 0
+
+    # t=310 (5min10s later): pool still 20
+    fake_now[0] = 310.0
+    pm.ensure_pool()
+    assert len(refresh_calls) == 0
+
+    # t=370 (6min10s from start): pool now 17 — lost 3 over 6 min.
+    # Should trigger rate-of-decline refresh despite 17 >= MIN_HEALTHY=10.
+    fake_now[0] = 370.0
+    fake_count["v"] = 17
+    pm.ensure_pool()
+    assert len(refresh_calls) == 1, f"Pool decline of 3+ in 5 min must trigger refresh; history={list(pm._pool_size_history)}"
