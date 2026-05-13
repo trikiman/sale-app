@@ -3,6 +3,7 @@ import CartPanel from './CartPanel'
 import ProductDetail from './ProductDetail'
 import CartQuantityControl from './CartQuantityControl'
 import ProductCard from './ProductCard'
+import StaleBanner from './StaleBanner'
 const HistoryPage = lazy(() => import('./HistoryPage'))
 const HistoryDetail = lazy(() => import('./HistoryDetail'))
 import { buildCategoryRunView } from './categoryRunStatus'
@@ -1774,32 +1775,14 @@ function App() {
             v1.24 UX-STALE-02: when all 3 sources stale simultaneously
             (pool-outage scenario), show a prominent bordered card with
             per-source ages + recovery ETA instead of the thin yellow line.
-            Per style guide v2 "State Patterns > Stale". */}
-        {staleAll && (
-          <div
-            className="stale-banner-prominent anim-scale"
-            role="status"
-            aria-live="polite"
-          >
-            <span className="stale-banner-prominent-icon">⏳</span>
-            <div className="stale-banner-prominent-body">
-              <strong className="stale-banner-prominent-title">Данные устарели</strong>
-              <span className="stale-banner-prominent-sources">
-                Источники{staleColorLabels.length ? `: ${staleColorLabels.join(', ')}` : ''}
-              </span>
-              <span className="stale-banner-prominent-hint">
-                Показаны последние известные цены. Обновление через ~{Math.round((staleAll.estimatedRecoveryS || 180) / 60)} мин.
-              </span>
-            </div>
-          </div>
-        )}
-        {dataStale && !staleAll && (
-          <div
-            className="mt-2 px-4 py-2 rounded-xl bg-yellow-500/20 border border-yellow-500/50 text-yellow-300 text-center text-xs anim-scale"
-          >
-            ⚠️ Источники устарели{staleColorLabels.length ? `: ${staleColorLabels.join(', ')}` : ''} — товары и цены могут не совпадать с сайтом
-          </div>
-        )}
+            Per style guide v2 "State Patterns > Stale".
+            v1.26 Phase 83: markup extracted to <StaleBanner /> for
+            snapshot-test coverage. */}
+        <StaleBanner
+          dataStale={dataStale}
+          staleAll={staleAll}
+          staleColorLabels={staleColorLabels}
+        />
 
         {/* Green products missing warning */}
         {greenMissing && (
