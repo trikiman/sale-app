@@ -2,16 +2,16 @@
 gsd_state_version: 1.0
 milestone: v1.26
 milestone_name: Miniapp Test Harness + Style Guide Debt Cleanup
-status: ready_to_plan
-last_updated: "2026-05-13T00:00:00.000Z"
+status: in_progress
+last_updated: "2026-05-13T22:20:00.000Z"
 last_activity: 2026-05-13
 progress:
   total_phases: 3
-  completed_phases: 0
-  total_plans: 0
-  completed_plans: 0
-  percent: 0
-current_phase: 83
+  completed_phases: 1
+  total_plans: 3
+  completed_plans: 3
+  percent: 33
+current_phase: 84
 current_phase_status: not_started
 current_phase_resume_file: null
 ---
@@ -27,7 +27,7 @@ See: .planning/PROJECT.md (updated 2026-05-13)
 
 ## Current Position
 
-v1.25 shipped + tagged + archived + UAT-audited 2026-05-13 (16 commits `e76a78e..9d3d185`). v1.26 REQUIREMENTS.md drafted. Next: `/gsd-plan-phase 83` for Vitest/RTL foundation with 4 critical-invariant snapshot tests.
+v1.26 Phase 83 **shipped** 2026-05-13 — Vitest + RTL + jsdom installed, `test-miniapp` CI job added, 5 extracted modules (`cartStep`, `isTelegramRuntime`, `cardConstants`, `ProductCard`, `StaleBanner`), 70 passing tests (3 unit + 4 snapshot files), 5 locked inline snapshots. Live MCP-verified against production. 5 commits `85f1105..9bbd5e7`. Safety net in place for Phase 84 inline-style refactor. Next: `/gsd-plan-phase 84` for TOOL-05 (46 inline-style sites → 0 + promote `react/forbid-dom-props` WARN → ERROR).
 
 ## Milestone Goal (v1.26 — active)
 
@@ -51,8 +51,7 @@ v1.25 shipped + tagged + archived + UAT-audited 2026-05-13 (16 commits `e76a78e.
 
 ## Next Up
 
-- `/gsd-plan-phase 83` or direct plan for Vitest/RTL foundation + 4 critical snapshot tests + 3 unit tests.
-- Phase 84 (TOOL-05) — inline-style refactor using Phase 83 snapshots as safety net.
+- **`/gsd-plan-phase 84`** — inline-style refactor (TOOL-05). Target: 46 violations → 0 using Phase 83 snapshots as safety net. Promote `react/forbid-dom-props` WARN → ERROR.
 - Phase 85 (TOOL-07/08 + UX-EMPTY-01) — CSS spacing-scale refactor + promote rules to ERROR + empty-state copy fix.
 - After each phase: live MCP + CI green before advancing.
 - After Phase 85: `.planning/v1.26-MILESTONE-AUDIT.md` + tag `v1.26` + archive. **STOP before `/gsd-complete-milestone`**.
@@ -91,6 +90,7 @@ From `.planning/UAT-AUDIT-2026-05-13.md`:
 | v1.25 SHIPPED + ARCHIVED + TAGGED (Phase 80/81/82) | 2026-05-13 |
 | UAT audit produced (6 items, 1 P1 blocking) | 2026-05-13 |
 | v1.26 STARTED — Miniapp Test Harness + Style Guide Debt Cleanup, 3 phases 83-85, 8 reqs | 2026-05-13 |
+| v1.26 Phase 83 SHIPPED — vitest + 70 tests + 5 snapshots + extracted ProductCard/StaleBanner | 2026-05-13 |
 
 ---
-*Last updated: 2026-05-13 after v1.25 archived + tagged + UAT-audited. v1.26 scope driven by v1.25 Phase 82 TOOL-05 deferral + v1.24 verifier Vitest/RTL carry-forward. Snapshot safety net FIRST, then refactor. Next: `/gsd-plan-phase 83`.*
+*Last updated: 2026-05-13 after Phase 83 shipped (5 commits `85f1105..9bbd5e7`, 70 tests, 5 inline snapshots, live MCP-verified against production). ProductCard + StaleBanner extracted for Phase 84 refactor target. Next: `/gsd-plan-phase 84` inline-style refactor.*
