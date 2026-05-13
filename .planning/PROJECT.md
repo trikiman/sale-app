@@ -121,30 +121,50 @@ Family members see every VkusVill discount (green/red/yellow) the moment it appe
 - ✓ **UX-STALE-01/02**: v1.24 Stale-State UX — `/api/products` preserves last-good snapshot + emits `staleAll` block when all 3 sources stale; per-card `⏳` badge + prominent bordered banner per style guide v2. — v1.24
 - ✓ **TOOL-02/03**: v1.24 Style Guide v2 Enforcement — stylelint + eslint `react/forbid-dom-props` (WARN), 46 inline-style violations baselined in `docs/style-guide-debt.md` for v1.25 refactor. — v1.24
 - ✓ **OPS-21..23**: v1.24 `scripts/verify_v1.24.sh` chains v1.23 back through v1.19. Verifier audit resolved 4 MUST-CONFIRM-IN-CODE items. — v1.24
+- ✓ **OBS-08..10**: v1.25 Telegram admin alerts — raw Bot API `backend/admin_alerts.py` module emits DMs on pool-dead (10+ min), breaker state transitions, `xray_restart_failed`. Per-incident cooldowns prevent thrash. 19 unit tests green. — v1.25 (shipped 2026-05-13)
+- ✓ **OPS-24/25**: v1.25 Admin escape hatches — `POST /admin/vless/quarantine/clear`, `POST /admin/force-stale-all`, `POST /admin/force-stale-all/clear`, `POST /admin/test-alert`. Force-stale wired into `/api/products`. — v1.25
+- ✓ **QA-06..08**: v1.25 Integration coverage — `tests/test_collapse_replay.py` (5 tests, 2026-05-13 pattern), `tests/test_pool_state_io_race.py` (3 tests), `backend/test_stale_empty_edge.py` (2 tests). 10/10 green on EC2 Linux. — v1.25
+- ✓ **TOOL-04/06**: v1.25 CI wiring + spacing-scale rule — `.github/workflows/lint-and-test.yml` with `lint-miniapp` + `test-backend` jobs. Eslint baseline cleared 23 errors → 0. Stylelint `declaration-property-value-allowed-list` at WARN, 135-violation baseline with `--max-warnings=150` cap. — v1.25
+- ✓ **REL-19 (hotfix)**: v1.25 Production outage fix — 2026-05-13 00:04→01:13 pool-stuck outage resolved in commit `b65cde7`. `_run_scraper_set` now always calls `ensure_pool()` before skip-vs-run decision. Pinned by 2 regression tests. — v1.25 (hotfixed during milestone)
+- ✓ **OPS-26..28**: v1.25 continuity — v1.24 cross-version regression gate + per-phase rollback rehearsal + UAT audit (`.planning/UAT-AUDIT-2026-05-13.md`, 6 items surfaced). — v1.25
 
 ### Active
 
 <!-- Current scope. Building toward these. -->
 
-- v1.25 Operator Visibility + Test Coverage. Scope: close the "time-to-notice" gap from v1.24 (Telegram alerts on pool outages + breaker transitions + xray restart failures), add admin escape hatches (force-clear quarantine, force-stale testing helper), add the integration tests the v1.24 verifier flagged (2026-05-13 collapse replay, scheduler-manager race, staleAll-empty edge), wire CI for lint enforcement + refactor the 46 inline-style debt entries. 3 phases (80-82), 13 requirements.
+- v1.26 Miniapp Test Harness + Style Guide Debt Cleanup. Scope: close the long-standing Vitest/RTL gap (tech debt since v1.22) and use that safety net to refactor the 46 inline-style violations + 135 spacing-scale CSS debt entries baselined in v1.24 Phase 79 + v1.25 Phase 82. After refactor, promote both lint rules from WARN → ERROR so future regressions can't land. Bundle fresh-deploy empty-state UI copy fix (v1.25 QA-08 edge case). 3 phases (83-85), 8 requirements.
 
-## Current Milestone: v1.25 Operator Visibility + Test Coverage
+## Current Milestone: v1.26 Miniapp Test Harness + Style Guide Debt Cleanup
 
-**Goal:** Operator notified of pool outage within 10 min via Telegram. Escape hatches for false-positive quarantine + deterministic Phase 78 testing. Integration tests replay the 2026-05-13 pattern. CI blocks future regressions.
+**Goal:** Vitest/RTL safety net for component-level UX invariants + refactor 46 inline-style and 135 spacing-scale CSS debt entries to zero + promote both lint rules to ERROR with `--max-warnings=0` + fix fresh-deploy empty-state UI copy.
 
-**Target features** (finalized via `.planning/REQUIREMENTS.md` v1.25):
-- Telegram admin DM on pool size 0 for 10+ min (OBS-08), breaker state transitions (OBS-09), `xray_restart_failed` (OBS-10). Cooldowns prevent thrash. Dedupe via `data/admin_alerts.jsonl` ledger. (Phase 80)
-- `POST /admin/vless/quarantine/clear` (OPS-24) + `POST /admin/force-stale-all` (OPS-25). Requires `X-Admin-Token`. (Phase 80)
-- `tests/test_collapse_replay.py` — 20→0 in one cycle, 231 quarantined, recovery measured (QA-06). Race test for pool_state file reads (QA-07). `staleAll=true + products=[]` edge (QA-08). (Phase 81)
-- `.github/workflows/lint.yml` runs `npm run lint + lint:css`. Refactor 46 inline-style violations. Bump `react/forbid-dom-props` WARN→ERROR. Spacing-scale stylelint rule. (Phase 82)
-- `scripts/verify_v1.25.sh` chains v1.24 back through v1.19. (OPS-26/27/28)
+**Target features** (finalized via `.planning/REQUIREMENTS.md` v1.26):
+- Vitest + @testing-library/react + @testing-library/jest-dom + jsdom in `miniapp/`. `npm run test` runs the suite. CI `test-miniapp` job added. (Phase 83 TEST-01)
+- Snapshot tests for 4 critical UX invariants: ProductCard 36px-min-height lock (v1.23 UX-SHIFT-01), CartPanel trash button (v1.23 UX-CART-01), stale-banner variants, empty-vs-staleAll rendering. (Phase 83 TEST-02)
+- Unit tests for `normalizeUnit`, `getCartStep`, `isTelegramRuntime` (extract from `CartPanel.jsx::handleClearAll`). (Phase 83 TEST-03)
+- Refactor 46 inline-style violations — extract-to-utility-class, explicit-class-prop, or justified-disable. Promote `react/forbid-dom-props` WARN → ERROR. (Phase 84 TOOL-05)
+- Refactor 135 spacing-scale CSS violations to `var(--space-*)` tokens from style guide v2. Promote `declaration-property-value-allowed-list` WARN → ERROR. Drop `--max-warnings=N` caps to `0`. (Phase 85 TOOL-07/08)
+- Fresh-deploy empty-state copy fix — backend emits `emptyReason: "scheduler_not_yet_produced_data"` + frontend renders "Данные ещё не подгружены..." instead of misleading "В этой категории пока нет товаров". (Phase 85 UX-EMPTY-01)
 
 **Key context:**
-- **v1.24 verifier audit** (`.planning/milestones/v1.24-MILESTONE-VERIFICATION.md`) flagged OBS-08 deferral and missing 2026-05-13 collapse replay test as the highest-priority carry-forwards. v1.25 is the direct response.
-- **Operator lesson reinforced:** time-to-recover (v1.24) + time-to-notice (v1.25) together close the 60-min outage window that originally drove this work.
-- **Escape hatches** (OPS-24/25) are cheap (~20 LOC each) but high-value. Quarantine-clear saves manual EC2 intervention if the deadlist gets corrupted. Force-stale makes Phase 78 UX testable without waiting 15+ min for real staleness.
-- **CI wiring + refactor** pair naturally: CI is useless if baseline is dirty; baseline refactor is risky without CI. Phase 82 tackles both atomically.
-- **User directive 2026-05-13** — "audit first then continue" + "go next autonomus dont stop" — verifier audit PASSED, now proceeding autonomously.
+- **v1.25 Phase 82 deferral reason:** "rushing the 46-site refactor without snapshot infrastructure risks UX regressions — v1.23 Phase 75 layout-shift fix could be broken by a wrong style migration." v1.26 builds the safety net first, then does the refactor.
+- **v1.24 verifier carry-forward:** "Vitest/RTL full wiring" flagged in `.planning/milestones/v1.24-MILESTONE-VERIFICATION.md`. v1.26 closes it.
+- **Current CI posture:** `--max-warnings=60` (eslint) + `--max-warnings=150` (stylelint) baselines block new violations but let accumulated ones sit. v1.26 zeros both.
+- **Out of scope:** Playwright E2E tests (separate testing concern), backend refactor (miniapp-only milestone), admin panel redesign, new features. Pure debt cleanup + safety net.
+
+## Previous Shipped Milestone: v1.25 Operator Visibility + Test Coverage (2026-05-13)
+
+**Goal:** Close the "time-to-notice" gap — operator notified of pool outage within 10 min via Telegram. Escape hatches for false-positive quarantine + deterministic Phase 78 testing. Integration tests replay the 2026-05-13 pattern. CI blocks future regressions.
+
+**Shipped features:**
+- Phase 80 OBS-08/09/10 + OPS-24/25: `backend/admin_alerts.py` raw Telegram Bot API module (httpx, no PTB dep) emits admin DMs on pool-dead (10+ min, 30-min cooldown), breaker state transitions (5-min cooldown), `xray_restart_failed` (no cooldown). Wired into `scheduler_service.py` (pool-dead, breaker-transition) + `vless/manager.py` (xray-restart-failed). Admin endpoints `POST /admin/vless/quarantine/clear`, `POST /admin/force-stale-all` (time-limited override), `POST /admin/force-stale-all/clear`, `POST /admin/test-alert`. Force-stale wired into `/api/products`. 19 unit tests green.
+- Phase 81 QA-06/07/08: `tests/test_collapse_replay.py` (5 tests pinning the 2026-05-13 20→0 collapse pattern + 231-quarantined recovery), `tests/test_pool_state_io_race.py` (3 tests, 1 Windows-skipped), `backend/test_stale_empty_edge.py` (2 tests for fresh-deploy edge). 10/10 green on EC2 Linux. Closes the v1.24 verifier's top gap.
+- Phase 82 TOOL-04/06: `.github/workflows/lint-and-test.yml` with `lint-miniapp` + `test-backend` jobs. Cleared 23 eslint baseline errors via underscore-rename + `allowEmptyCatch`. Added `react-hooks/set-state-in-effect: 'warn'` + `eslint-plugin-react` `forbid-dom-props` rule. Added stylelint `declaration-property-value-allowed-list` spacing-scale rule at WARN, baselining 135 violations with `--max-warnings=150` cap. **TOOL-05 (46 inline-style refactor) deferred to v1.26** — too risky without snapshot infrastructure.
+- **REL-19 production hotfix** (`b65cde7` mid-milestone): 2026-05-13 00:04→01:13 (69 min) family-facing outage. Root cause: v1.24 Phase 77 REL-19 "graceful degrade" in `_run_scraper_set` skipped BOTH expensive Chrome startup AND the `ensure_pool()` recovery call. Pool stayed at 0 forever. Hotfix: `_run_scraper_set` always calls `ensure_pool()` before skip-vs-run decision; if pool recovers mid-cycle it falls through to normal scrape + resets counter + emits `scheduler_pool_recovered` event. Pinned by 2 regression tests.
+- UAT audit (`.planning/UAT-AUDIT-2026-05-13.md`): 6 items surfaced — 1 P1 (Telegram config on EC2 required to make OBS-08/09/10 live), 3 P2 (observable/self-serve), 2 P3 (defer-safe). No stale docs detected.
+- Milestone audit: 10/13 requirements shipped + REL-19 hotfix. 16 commits `e76a78e..9d3d185`. Tag `v1.25` pushed + archived.
+
+_Archive: `.planning/milestones/v1.25-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md`, `.planning/milestones/v1.25-phases/{80,81,82}-*/`. Tag: v1.25._
 
 ## Previous Shipped Milestone: v1.24 Pool Self-Heal Hardening + Outage UX (2026-05-13)
 
@@ -304,8 +324,9 @@ Search and polish improvements for the History page:
 
 ## Next Milestone Candidates
 
-- **v1.26 Style Guide Full Audit + Vitest Wiring**: systematic refactor of legacy CSS to CSS custom properties (spacing/shadow/motion scales); Vitest/RTL wiring for miniapp (v1.22+ tech debt); Playwright slow-path test (v1.20 NEEDS_OPERATOR-1); custom stylelint plugin for shorthand-value spacing-scale enforcement (if `declaration-property-value-allowed-list` approach in v1.25 TOOL-06 proves insufficient).
-- **v1.27 Detail-Path Deep Dive** (conditional on v1.23 PERF-10 data via v1.25 Phase 81 integration tests): Phase 64 HAR capture + `FAST_CART_ADD_URL` go/no-go decision (v1.20 deferred); background pre-warm of top-visible product details (v1.23 out-of-scope — "measure PERF-10 alone first"); SSE `/api/stream` graceful-shutdown short-circuit on SIGTERM.
+- **v1.27 Playwright E2E + React 19 Refactor**: Playwright slow-path cart-add test (v1.20 NEEDS_OPERATOR-1, carried through v1.25/v1.26); React 19 `set-state-in-effect` warning refactor (v1.25 Phase 82 baselined 5 warnings); Telegram alert action buttons (inline keyboards on admin DMs for one-tap quarantine-clear, force-stale, etc.); SSE `/api/stream` graceful-shutdown short-circuit on SIGTERM.
+- **v1.28 Detail-Path Deep Dive** (conditional on v1.23 PERF-10 data): Phase 64 HAR capture + `FAST_CART_ADD_URL` go/no-go decision (v1.20 deferred); background pre-warm of top-visible product details (v1.23 out-of-scope — "measure PERF-10 alone first"); multi-region scheduler failover.
+- **Custom stylelint plugin for shorthand-value spacing-scale enforcement** — if `declaration-property-value-allowed-list` approach proves insufficient after v1.26 Phase 85 cleanup.
 - Reverse-engineered/private API path for green data only if cadence + robustness work still cannot meet freshness targets
 - Larger-scale frontend data-path work such as server-driven pagination or virtualization if card performance still degrades as product volume grows
 
@@ -408,5 +429,5 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-13 after v1.24 (Pool Self-Heal Hardening + Outage UX) shipped, tagged, archived, and verified on EC2 (9/9 requirements + OBS-08 deferred, 3 phases 77-79, 11 commits). Verifier audit resolved 4 MUST-CONFIRM-IN-CODE items; final verdict PASS with honest scope framing. v1.25 (Operator Visibility + Test Coverage) initiated directly in response to verifier carry-forwards: OBS-08 Telegram alerts + 2026-05-13 collapse replay test + CI wiring. 3 phases (80-82), 13 requirements. User directive: "go autonomous" — minimal questions, iterative ship.*
+*Last updated: 2026-05-13 after v1.25 (Operator Visibility + Test Coverage) shipped, tagged, archived, and live-verified (10/13 requirements + REL-19 production hotfix + UAT audit, 3 phases 80-82, 16 commits `e76a78e..9d3d185`). REL-19 hotfix `b65cde7` resolved the mid-milestone 00:04→01:13 pool-stuck outage caused by v1.24 graceful-degrade skipping `ensure_pool()`. UAT audit surfaced 6 items (1 P1 Telegram config, 3 P2 observable, 2 P3 defer-safe). v1.26 (Miniapp Test Harness + Style Guide Debt Cleanup) initiated in direct response to v1.25 Phase 82 TOOL-05 deferral ("rushing 46-site refactor without snapshot infrastructure risks UX regressions") + v1.24 verifier's Vitest/RTL carry-forward. 3 phases (83-85), 8 requirements. Snapshot safety net first, then refactor. User directive: "go autonomous" — minimal questions, iterative ship.*
 

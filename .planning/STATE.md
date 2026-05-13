@@ -1,7 +1,7 @@
 ---
 gsd_state_version: 1.0
-milestone: v1.25
-milestone_name: Operator Visibility + Test Coverage
+milestone: v1.26
+milestone_name: Miniapp Test Harness + Style Guide Debt Cleanup
 status: ready_to_plan
 last_updated: "2026-05-13T00:00:00.000Z"
 last_activity: 2026-05-13
@@ -11,7 +11,7 @@ progress:
   total_plans: 0
   completed_plans: 0
   percent: 0
-current_phase: 80
+current_phase: 83
 current_phase_status: not_started
 current_phase_resume_file: null
 ---
@@ -23,95 +23,74 @@ current_phase_resume_file: null
 See: .planning/PROJECT.md (updated 2026-05-13)
 
 **Core value:** Family members see every VkusVill discount and can add to cart in one tap
-**Current focus:** v1.25 Operator Visibility + Test Coverage — close the "time-to-notice" gap from v1.24 (Telegram alerts on pool-dead / breaker / xray-fail), add ops escape hatches (force-clear quarantine, force-stale for testing), add the integration tests the v1.24 verifier flagged, wire CI for lint enforcement. 3 phases (80-82), 13 requirements (3 OBS, 2 OPS-escape, 3 QA, 3 TOOL, 3 OPS-continuity).
+**Current focus:** v1.26 Miniapp Test Harness + Style Guide Debt Cleanup — Vitest/RTL as safety net, refactor 46 inline-style violations + 135 spacing-scale CSS debt, promote lint rules to ERROR. 3 phases (83-85), 8 requirements.
 
 ## Current Position
 
-v1.24 shipped + tagged + archived + verified 2026-05-13 (11 commits `4eb637e..3ae45bd`). v1.25 REQUIREMENTS.md + ROADMAP.md drafted. Next: `/gsd-plan-phase 80` for Telegram Alerts + Admin Escape Hatches.
+v1.25 shipped + tagged + archived + UAT-audited 2026-05-13 (16 commits `e76a78e..9d3d185`). v1.26 REQUIREMENTS.md drafted. Next: `/gsd-plan-phase 83` for Vitest/RTL foundation with 4 critical-invariant snapshot tests.
 
-## Milestone Goal (v1.25 — active)
+## Milestone Goal (v1.26 — active)
 
-- Telegram admin DM on pool size 0 for 10+ min (OBS-08), breaker state transitions (OBS-09), xray_restart_failed (OBS-10). Cooldowns prevent thrash.
-- `POST /admin/vless/quarantine/clear` (OPS-24) and `POST /admin/force-stale-all` (OPS-25) for ops + deterministic testing.
-- Integration test replaying 2026-05-13 collapse pattern (QA-06), scheduler-manager race (QA-07), staleAll+empty edge case (QA-08).
-- CI wiring (`.github/workflows/lint.yml`) + refactor of 46 baselined inline-style violations + bump `react/forbid-dom-props` to ERROR (TOOL-04/05/06).
-- `scripts/verify_v1.25.sh` chains v1.24→v1.23→v1.22→v1.21→v1.20→v1.19 (OPS-26/27/28).
+- Vitest + React Testing Library in `miniapp/`. CI `test-miniapp` job runs snapshot + unit tests on every PR. (TEST-01)
+- Snapshot tests covering UX invariants: ProductCard 36px-min-height lock (v1.23 UX-SHIFT-01), CartPanel trash button (v1.23 UX-CART-01), stale-banner variants, empty-vs-staleAll rendering. (TEST-02)
+- Unit tests for `normalizeUnit`, `getCartStep`, `isTelegramRuntime`. (TEST-03)
+- Refactor 46 inline-style violations → utility classes + explicit class props + justified-disable markers. Bump `react/forbid-dom-props` WARN→ERROR. (TOOL-05)
+- Refactor 135 spacing-scale CSS violations → CSS custom properties from style guide v2. Bump `declaration-property-value-allowed-list` WARN→ERROR. (TOOL-07/08)
+- Fix fresh-deploy empty-state UI copy — add `emptyReason` diagnostic field + proper message. (UX-EMPTY-01)
 
-## Previous Milestone (v1.24 — shipped 2026-05-13, tag `v1.24`)
+## Previous Milestone (v1.25 — shipped 2026-05-13, tag `v1.25`)
 
-- Pool Self-Heal Hardening + Outage UX — 9/9 requirements + OBS-08 deferred to v1.25, 3 phases (77/78/79)
-- 11 commits `4eb637e..3ae45bd`, tag `v1.24` pushed to origin
-- Verifier audit resolved 4 MUST-CONFIRM-IN-CODE items; final verdict PASS
-- Persistent quarantine + refresh throttle + rate-of-decline + scheduler graceful degrade (Phase 77)
-- `/api/products` staleAll + per-card badge + prominent banner (Phase 78)
-- Stylelint + eslint forbid-dom-props + 46-entry inline-style debt baseline (Phase 79)
-- Live EC2 confirms MIN_HEALTHY=10 active
-- Archive: `.planning/milestones/v1.24-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT,MILESTONE-VERIFICATION}.md` + `.planning/milestones/v1.24-phases/{77,78,79}-*/`
+- Operator Visibility + Test Coverage — 10/13 requirements + REL-19 hotfix, 3 phases (80/81/82)
+- 16 commits `e76a78e..9d3d185`, tag `v1.25` pushed + archived
+- Phase 80: Telegram admin alerts (OBS-08/09/10) + admin escape endpoints (OPS-24/25)
+- Phase 81: 2026-05-13 collapse replay integration test + pool IO race + staleAll-empty edge
+- Phase 82: GitHub Actions CI + eslint baseline cleared (23 errors → 0) + spacing-scale stylelint rule (135-violation baseline)
+- REL-19 hotfix: production outage 00:04→01:13 fixed + pinned by regression tests
+- UAT audit: 6 items surfaced, 1 P1 blocking (Telegram config), 3 P2 observable, 2 P3 defer-safe
+- Archive: `.planning/milestones/v1.25-{ROADMAP,REQUIREMENTS,MILESTONE-AUDIT}.md` + `.planning/milestones/v1.25-phases/{80,81,82}-*/`
 
 ## Next Up
 
-- `/gsd-plan-phase 80` or direct plan for Telegram Alerts + Admin Escape Hatches (OBS-08/09/10 + OPS-24/25). Target files: `bot/notifier.py` (send_admin_alert helper + cooldown ledger), `backend/main.py` (admin endpoints), `scheduler_service.py` + `vless/manager.py` (hook points for state transitions).
-- Phase 81 integration tests — consume Phase 80 force-stale endpoint for deterministic QA-06/07/08.
-- Phase 82 CI wiring — after inline-style refactor (Phase 82 also includes the refactor as TOOL-05).
-- After each phase: live MCP or EC2 smoke verification.
-- Move consumed todos as each phase ships.
-- After Phase 82: `.planning/v1.25-MILESTONE-AUDIT.md` + tag `v1.25` + archive. **STOP before `/gsd-complete-milestone`**.
+- `/gsd-plan-phase 83` or direct plan for Vitest/RTL foundation + 4 critical snapshot tests + 3 unit tests.
+- Phase 84 (TOOL-05) — inline-style refactor using Phase 83 snapshots as safety net.
+- Phase 85 (TOOL-07/08 + UX-EMPTY-01) — CSS spacing-scale refactor + promote rules to ERROR + empty-state copy fix.
+- After each phase: live MCP + CI green before advancing.
+- After Phase 85: `.planning/v1.26-MILESTONE-AUDIT.md` + tag `v1.26` + archive. **STOP before `/gsd-complete-milestone`**.
+
+## Outstanding UAT
+
+From `.planning/UAT-AUDIT-2026-05-13.md`:
+- **P1: UAT-001** — configure `ADMIN_TELEGRAM_CHAT_IDS` on EC2 (2-min operator task, blocks v1.25 Phase 80 runtime value)
+- **P2: UAT-002/003/004** — observable or self-serve
+- **P3: UAT-005/006** — defer-safe
 
 ## Completed Milestones
 
 | Milestone | Phases | Shipped |
 |-----------|--------|---------|
-| v1.0 Bug Fix & Stability | 1-9 | 2026-03-31 |
-| v1.1 Testing & QA | 10-12 | 2026-03-31 |
-| v1.2 Price History | 13-18 | 2026-04-01 |
-| v1.3 Performance & Optimization | 19-20 | 2026-04-01 |
-| v1.4 Proxy Centralization | 21-23 | 2026-04-01 |
-| v1.5 History Search & Polish | 24-26 | 2026-04-01 |
-| v1.6 Green Scraper Robustness | 27-28 | 2026-04-02 |
-| v1.7 Categories & Subgroups | 29-33 | 2026-04-03 |
-| v1.8 History Search Completeness | 34-35 | 2026-04-04 |
-| v1.9 Catalog Coverage Expansion | 36-38 | 2026-04-04 |
-| v1.10 Scraper Freshness & Reliability | 39-42 | 2026-04-05 |
-| v1.11 Cart Responsiveness & Truth Recovery | 43-45 | 2026-04-06 |
-| v1.12 Add-to-Cart 5s Hard Cap | 46 | 2026-04-08 |
-| v1.13 Instant Cart & Reliability | 47-51 | 2026-04-16 |
-| v1.14 Cart Truth & History Semantics | 52-55 | 2026-04-21 |
-| v1.15 Proxy Infrastructure Migration | 56 | 2026-04-23 |
-| v1.17 VLESS Timeout Hardening | 57 | 2026-04-25 |
-| v1.18 Geo Resolver & Scraper Recovery | 58 | 2026-04-25 |
-| v1.19 Production Reliability & 24/7 Uptime | 59-61 | 2026-05-05 |
-| v1.20 Cart-Add Latency & User-Facing Responsiveness | 62-66 + 66.1/.2/.3 | 2026-05-12 |
-| v1.21 VLESS Pool Self-Healing & Reload Pipeline | 67-69 | 2026-05-12 |
-| v1.22 UX Debt Cleanup + Tooling Polish | 70-73 | 2026-05-13 |
-| v1.23 Detail-Path Performance + UX Polish | 74-76 | 2026-05-13 |
-| v1.24 Pool Self-Heal Hardening + Outage UX | 77-79 | 2026-05-13 |
-
-## Accumulated Context
-
-- v1.24 shipped: pool recovery hardening (REL-16/17/18/19) + stale-state UX (UX-STALE-01/02) + style guide v2 enforcement tooling (TOOL-02/03). Verifier audit confirms all 4 MUST-CONFIRM items resolved in code. OBS-08 Telegram alert deferred to v1.25 by design.
-- Style guide v2 (`docs/miniapp-ui-style-guide.md` `91a6e30`) — design tokens, spacing scale, state patterns, accessibility rules, 12-point review checklist.
-- **Known outage precedent:** 2026-05-13 ~60 min VLESS pool outage drove v1.24 scope. Operator learned via MiniApp; v1.25 Phase 80 closes this "time-to-notice" gap with Telegram alerts.
-
-### Pending Todos (see `.planning/todos/pending/`)
-
-- **[P4]** `2026-05-13-update-gsd-add-todo-skill.md` — tooling skill polish, deferred. No phase consumes this in v1.25.
+| v1.0-v1.15 | 1-56 | Mar-Apr 2026 |
+| v1.17-v1.19 | 57-61 | Apr-May 2026 |
+| v1.20 | 62-66 + 66.1/.2/.3 | 2026-05-12 |
+| v1.21 | 67-69 | 2026-05-12 |
+| v1.22 | 70-73 | 2026-05-13 |
+| v1.23 | 74-76 | 2026-05-13 |
+| v1.24 | 77-79 | 2026-05-13 |
+| v1.25 | 80-82 | 2026-05-13 |
 
 ## Known Bugs
 
-- (none open — v1.24 closed the pool-recovery + stale-grid issues; verifier flagged a few edge cases like empty-source-files + newly-created-file but none are regressions)
+- None active. v1.25 REL-19 hotfix closed the 2026-05-13 pool-stuck outage. UAT audit found zero stale documentation.
 
 ## Timeline
 
 | Event | Date |
 |-------|------|
-| v1.23 SHIPPED + ARCHIVED + TAGGED (25× cold-path improvement, layout shift fix, cart trash + clear-cart fallback) | 2026-05-13 |
-| ~60-min VLESS pool outage observed during v1.23 verification — drove v1.24 scope | 2026-05-13 |
-| v1.24 STARTED — Pool Self-Heal Hardening + Outage UX, 3 phases 77-79, 9 reqs | 2026-05-13 |
-| v1.24 Phase 77 (Pool Self-Heal) shipped + live-verified on EC2 (MIN_HEALTHY=10 active) | 2026-05-13 |
-| v1.24 Phase 78 (Stale-State UX) shipped | 2026-05-13 |
-| v1.24 Phase 79 (Style Guide v2 Enforcement) shipped | 2026-05-13 |
-| v1.24 SHIPPED + ARCHIVED + TAGGED (9 commits, verifier audit PASS) | 2026-05-13 |
-| v1.25 STARTED — Operator Visibility + Test Coverage, 3 phases 80-82, 13 reqs | 2026-05-13 |
+| v1.24 SHIPPED + ARCHIVED + TAGGED | 2026-05-13 |
+| 00:04→01:13 production outage (REL-19 graceful-degrade bug) | 2026-05-13 |
+| Hotfix `b65cde7` shipped + pool recovered 0→10 live | 2026-05-13 |
+| v1.25 SHIPPED + ARCHIVED + TAGGED (Phase 80/81/82) | 2026-05-13 |
+| UAT audit produced (6 items, 1 P1 blocking) | 2026-05-13 |
+| v1.26 STARTED — Miniapp Test Harness + Style Guide Debt Cleanup, 3 phases 83-85, 8 reqs | 2026-05-13 |
 
 ---
-*Last updated: 2026-05-13 after v1.24 archived + tagged + verified. v1.25 scope driven by v1.24 verifier carry-forwards (OBS-08 Telegram alert, 2026-05-13 collapse replay test, CI wiring). Next: `/gsd-plan-phase 80` for Telegram Alerts + Admin Escape Hatches.*
+*Last updated: 2026-05-13 after v1.25 archived + tagged + UAT-audited. v1.26 scope driven by v1.25 Phase 82 TOOL-05 deferral + v1.24 verifier Vitest/RTL carry-forward. Snapshot safety net FIRST, then refactor. Next: `/gsd-plan-phase 83`.*
