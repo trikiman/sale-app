@@ -45,6 +45,32 @@ jobs:
       - name: Stylelint
         run: npm run lint:css -- --max-warnings=150
 
+  # ── Miniapp unit + snapshot tests (Vitest + RTL) ─────────────────
+  test-miniapp:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: miniapp
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: miniapp/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      # v1.26 Phase 83 (TEST-01/02/03): Vitest + RTL harness for miniapp.
+      # Covers productMeta helpers + cartStep + isTelegramRuntime unit
+      # tests + ProductCard/CartPanel/StaleBanner snapshot tests pinning
+      # v1.23 UX invariants. Must stay green before Phase 84 inline-style
+      # refactor touches any DOM structure.
+      - name: Vitest
+        run: npm run test -- --run
+
   # ── Backend pytest ─────────────────────────────────────────────────
   test-backend:
     runs-on: ubuntu-latest
