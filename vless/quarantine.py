@@ -51,9 +51,36 @@ _logger = logging.getLogger(__name__)
 
 # Default quarantine TTL (seconds). Match the scheduler cycle cadence so
 # 60-min+ outages clear through the deadlist naturally.
-QUARANTINE_TTL_S = 20 * 60           # 20 minutes
-REPEAT_OFFENDER_TTL_S = 4 * 60 * 60  # 4 hours (matches VKUSVILL_COOLDOWN_S)
+#
+# v1.26 Phase 84.1: graduated TTL by failure reason + strike count.
+# Before: every probe failure = 20 min lockout. Effect: a single ipinfo.io
+# rate-limit or transient TCP blip put healthy nodes into a 20-min
+# deadlist, and on EC2 we observed 120/141 RU candidates quarantined
+# from a single bad cycle — the entire pool starved itself.
+#
+# After:
+#   - SOFT_TTL (60s)            — first-strike for transient reasons
+#                                  (probe_timeout, probe_error, xray_start_error,
+#                                  egress_unknown). Self-heals fast.
+#   - QUARANTINE_TTL_S (20 min) — second strike on transient reasons OR
+#                                  first strike on hard-block reasons
+#                                  (vpn_detected — VkusVill served the
+#                                  geo-block landing page).
+#   - REPEAT_OFFENDER_TTL_S (4h) — fail_count >= 3 within last hour.
+SOFT_TTL_S = 60                      # 1 minute — recover-fast tier
+QUARANTINE_TTL_S = 20 * 60           # 20 minutes — confirmed-bad tier
+REPEAT_OFFENDER_TTL_S = 4 * 60 * 60  # 4 hours — repeat offender
 REPEAT_OFFENDER_THRESHOLD = 3        # fail_count >= this → use longer TTL
+
+# Reasons that justify skipping the soft-tier and going straight to the
+# 20-min lockout. These represent "VkusVill explicitly rejected this exit"
+# rather than "we couldn't probe it cleanly." Anything not in this set
+# enters at SOFT_TTL on first strike.
+HARD_REASONS = frozenset({
+    "vpn_detected",          # VkusVill served /vpn-detected/ landing
+    "egress_country_non_ru", # confirmed non-RU egress
+    "tls_handshake_failed",  # cert mismatch on Reality SNI — server-side fault
+})
 
 _BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _DEFAULT_PATH = os.path.join(_BASE_DIR, "data", "pool_quarantine.json")
@@ -119,11 +146,35 @@ def is_quarantined(host_port: str) -> bool:
     return host_port in get_quarantined_hosts()
 
 
+def _compute_ttl(fail_count: int, reason: str) -> int:
+    """v1.26 Phase 84.1: graduated TTL by strike count + reason.
+
+    Logic:
+      - fail_count >= REPEAT_OFFENDER_THRESHOLD (3+) → 4h hard lockout.
+      - reason in HARD_REASONS → straight to 20 min on first strike.
+      - First-strike on a transient reason → 60s soft cooldown.
+      - Second-strike on a transient reason → 20 min lockout.
+
+    The soft-cooldown tier is the key fix: a single ipinfo.io rate-limit
+    or one TCP timeout no longer deadlists a healthy node for 20 min.
+    """
+    if fail_count >= REPEAT_OFFENDER_THRESHOLD:
+        return REPEAT_OFFENDER_TTL_S
+    if reason in HARD_REASONS:
+        return QUARANTINE_TTL_S
+    if fail_count <= 1:
+        return SOFT_TTL_S
+    return QUARANTINE_TTL_S
+
+
 def record_probe_failure(host_port: str, reason: str = "probe_error") -> None:
     """Record a probe failure for ``host_port``.
 
-    - First failure → 20-min TTL.
-    - ``fail_count >= REPEAT_OFFENDER_THRESHOLD`` → 4h TTL.
+    TTL ladder (see :func:`_compute_ttl`):
+      - 1 strike, transient reason: 60s
+      - 1 strike, hard reason: 20 min
+      - 2 strikes, transient reason: 20 min
+      - 3+ strikes: 4h
     """
     try:
         now = time.time()
@@ -138,13 +189,14 @@ def record_probe_failure(host_port: str, reason: str = "probe_error") -> None:
             fail_count = 1
             first_failed_at = now
 
-        ttl = REPEAT_OFFENDER_TTL_S if fail_count >= REPEAT_OFFENDER_THRESHOLD else QUARANTINE_TTL_S
+        ttl = _compute_ttl(fail_count, reason)
         entries[host_port] = {
             "reason": str(reason),
             "first_failed_at": first_failed_at,
             "last_failed_at": now,
             "fail_count": fail_count,
             "expires_at": now + ttl,
+            "ttl_s": ttl,  # surface in admin snapshots / debug logs
         }
         _save_raw(data)
     except Exception:  # noqa: BLE001
@@ -167,13 +219,14 @@ def record_probe_failures(host_ports: Iterable[str], reason: str = "probe_error"
                 fail_count = 1
                 first_failed_at = now
 
-            ttl = REPEAT_OFFENDER_TTL_S if fail_count >= REPEAT_OFFENDER_THRESHOLD else QUARANTINE_TTL_S
+            ttl = _compute_ttl(fail_count, reason)
             entries[host_port] = {
                 "reason": str(reason),
                 "first_failed_at": first_failed_at,
                 "last_failed_at": now,
                 "fail_count": fail_count,
                 "expires_at": now + ttl,
+                "ttl_s": ttl,
             }
         _save_raw(data)
     except Exception:  # noqa: BLE001
@@ -189,6 +242,45 @@ def release(host_port: str) -> None:
             _save_raw(data)
     except Exception:  # noqa: BLE001
         _logger.debug("quarantine release failed", exc_info=False)
+
+
+def release_soft_quarantined() -> set[str]:
+    """v1.26 Phase 84.1: release entries that are in the soft-cooldown tier.
+
+    Used by the candidate-exhaustion recovery path in
+    :meth:`VlessProxyManager.refresh_proxy_list`. Releases only entries
+    whose ``ttl_s`` is the SOFT_TTL_S tier (60s) — these are first-strike
+    transient failures that we want to retry immediately when the funnel
+    has nothing else. Hard-tier (20-min vpn_detected, geo-block) and
+    4h repeat-offender entries are NEVER released by this helper because
+    those represent confirmed-bad nodes.
+
+    Returns the set of released host:port strings (for logging).
+    """
+    try:
+        data = _load_raw()
+        entries = data.get("quarantined", {})
+        released: set[str] = set()
+        for host_port, entry in list(entries.items()):
+            if not isinstance(entry, dict):
+                continue
+            # Use ttl_s if present (new schema), fall back to inferring
+            # from expires_at - last_failed_at for legacy entries.
+            ttl_s = entry.get("ttl_s")
+            if ttl_s is None:
+                expires = float(entry.get("expires_at", 0))
+                last = float(entry.get("last_failed_at", 0))
+                ttl_s = max(0, expires - last)
+            if ttl_s <= SOFT_TTL_S:
+                del entries[host_port]
+                released.add(host_port)
+        if released:
+            data["quarantined"] = entries
+            _save_raw(data)
+        return released
+    except Exception:  # noqa: BLE001
+        _logger.debug("quarantine soft-release failed", exc_info=False)
+        return set()
 
 
 def clear_all() -> None:

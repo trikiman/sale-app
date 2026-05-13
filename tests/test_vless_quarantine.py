@@ -37,6 +37,13 @@ def tmp_quarantine(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 
 
 def test_record_probe_failure_persists_with_default_ttl(tmp_quarantine: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """v1.26 Phase 84.1: first-strike on transient reason -> SOFT_TTL (60s).
+
+    Before Phase 84.1 a single ipinfo.io rate-limit or transient TCP
+    timeout locked a healthy node out for 20 min. The graduated TTL
+    ladder gives transient first failures only a 60s soft cooldown so
+    the next refresh cycle (typically ~30s away) re-probes them.
+    """
     from vless import quarantine
 
     monkeypatch.setattr(time, "time", lambda: 1000.0)
@@ -49,7 +56,79 @@ def test_record_probe_failure_persists_with_default_ttl(tmp_quarantine: Path, mo
     assert entry["fail_count"] == 1
     assert entry["first_failed_at"] == 1000.0
     assert entry["last_failed_at"] == 1000.0
+    # Phase 84.1: first-strike transient = 60s soft cooldown
+    assert entry["expires_at"] == 1000.0 + quarantine.SOFT_TTL_S
+    assert entry["ttl_s"] == quarantine.SOFT_TTL_S
+
+
+def test_hard_reason_skips_soft_tier_on_first_strike(tmp_quarantine: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """v1.26 Phase 84.1: vpn_detected goes straight to 20 min, no soft tier.
+
+    A vkusvill /vpn-detected/ landing means the exit IP is structurally
+    blocked — no point retrying for 20 min. Same for confirmed-non-RU
+    egress and TLS handshake failures (server-side fault).
+    """
+    from vless import quarantine
+
+    monkeypatch.setattr(time, "time", lambda: 1000.0)
+    quarantine.record_probe_failure("blocked.exit:443", reason="vpn_detected")
+
+    data = json.loads(tmp_quarantine.read_text())
+    entry = data["quarantined"]["blocked.exit:443"]
+    assert entry["reason"] == "vpn_detected"
+    assert entry["fail_count"] == 1
+    # Hard reason on first strike = full 20-min lockout
+    assert entry["ttl_s"] == quarantine.QUARANTINE_TTL_S
     assert entry["expires_at"] == 1000.0 + quarantine.QUARANTINE_TTL_S
+
+
+def test_second_strike_transient_promotes_to_quarantine_tier(tmp_quarantine: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """v1.26 Phase 84.1: 2nd transient strike escalates from 60s -> 20 min."""
+    from vless import quarantine
+
+    # First strike at t=1000 -> 60s SOFT_TTL.
+    monkeypatch.setattr(time, "time", lambda: 1000.0)
+    quarantine.record_probe_failure("flaky.host:443", reason="probe_timeout")
+    data = json.loads(tmp_quarantine.read_text())
+    assert data["quarantined"]["flaky.host:443"]["ttl_s"] == quarantine.SOFT_TTL_S
+
+    # Second strike at t=1030 (still within first 60s) -> 20-min QUARANTINE_TTL.
+    monkeypatch.setattr(time, "time", lambda: 1030.0)
+    quarantine.record_probe_failure("flaky.host:443", reason="probe_timeout")
+    data = json.loads(tmp_quarantine.read_text())
+    entry = data["quarantined"]["flaky.host:443"]
+    assert entry["fail_count"] == 2
+    assert entry["ttl_s"] == quarantine.QUARANTINE_TTL_S
+    assert entry["expires_at"] == 1030.0 + quarantine.QUARANTINE_TTL_S
+
+
+def test_release_soft_quarantined_only_clears_soft_tier(tmp_quarantine: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """v1.26 Phase 84.1: soft-tier release for candidate-exhaustion recovery.
+
+    Pins that release_soft_quarantined() releases ONLY the 60s tier and
+    leaves 20-min hard entries + 4h repeat-offenders intact. Without
+    this contract the recovery path could re-admit known-bad nodes
+    (vpn-detected exits, etc.) and re-poison the pool.
+    """
+    from vless import quarantine
+
+    monkeypatch.setattr(time, "time", lambda: 1000.0)
+    # Soft-tier (60s) entry — should be released.
+    quarantine.record_probe_failure("transient.host:443", reason="probe_timeout")
+    # Hard-tier (20m) entry — should stay.
+    quarantine.record_probe_failure("blocked.exit:443", reason="vpn_detected")
+    # Repeat-offender (4h) entry — escalate via 3 strikes.
+    for ts in (1000.0, 1010.0, 1020.0):
+        monkeypatch.setattr(time, "time", lambda ts=ts: ts)
+        quarantine.record_probe_failure("dead.host:443", reason="probe_timeout")
+
+    released = quarantine.release_soft_quarantined()
+    assert released == {"transient.host:443"}
+
+    remaining = json.loads(tmp_quarantine.read_text())["quarantined"]
+    assert "transient.host:443" not in remaining
+    assert "blocked.exit:443" in remaining
+    assert "dead.host:443" in remaining
 
 
 def test_repeat_offender_gets_longer_ttl(tmp_quarantine: Path, monkeypatch: pytest.MonkeyPatch) -> None:

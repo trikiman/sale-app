@@ -5922,6 +5922,77 @@ def admin_vless_quarantine_clear(
     }
 
 
+# v1.26 Phase 84.1: read-only quarantine snapshot for operator visibility.
+# Lets the admin panel show "X hosts quarantined, Y soft-cooldown, Z hard"
+# alongside the pool size + history widgets, so operators can diagnose
+# "why is the pool empty" without SSHing into EC2.
+@app.get("/admin/vless/quarantine")
+def admin_vless_quarantine(
+    token: Optional[str] = Header(None, alias="X-Admin-Token"),
+):
+    """Return the current VLESS quarantine state, grouped by tier.
+
+    Output:
+      {
+        "count": int,                 # total quarantined
+        "by_tier": {
+          "soft": int,                #   60s tier (transient, recovers fast)
+          "hard": int,                #  20m tier (vpn_detected etc.)
+          "repeat_offender": int,     #   4h tier (3+ strikes)
+        },
+        "by_reason": {<reason>: int}, # distribution of failure reasons
+        "entries": [{                 # full per-host detail (limit 200)
+           "host_port": str, "reason": str, "fail_count": int,
+           "ttl_s": int, "expires_at": float,
+           "expires_in_s": float,
+        }, ...]
+      }
+    """
+    _require_token(token)
+    import time as _t
+    from vless import quarantine
+    snap = quarantine.snapshot()
+    now = _t.time()
+    by_tier = {"soft": 0, "hard": 0, "repeat_offender": 0}
+    by_reason: dict[str, int] = {}
+    entries_out: list[dict] = []
+    for host_port, entry in (snap.get("entries") or {}).items():
+        if not isinstance(entry, dict):
+            continue
+        ttl = int(entry.get("ttl_s") or 0)
+        if ttl == 0:
+            # Legacy entry (no ttl_s field) — infer from expires_at.
+            ttl = int(max(0, float(entry.get("expires_at", 0)) - float(entry.get("last_failed_at", 0))))
+        if ttl <= quarantine.SOFT_TTL_S:
+            tier = "soft"
+        elif ttl >= quarantine.REPEAT_OFFENDER_TTL_S:
+            tier = "repeat_offender"
+        else:
+            tier = "hard"
+        by_tier[tier] += 1
+
+        reason = str(entry.get("reason") or "unknown")
+        by_reason[reason] = by_reason.get(reason, 0) + 1
+
+        entries_out.append({
+            "host_port": host_port,
+            "reason": reason,
+            "fail_count": int(entry.get("fail_count") or 0),
+            "tier": tier,
+            "ttl_s": ttl,
+            "expires_at": float(entry.get("expires_at") or 0),
+            "expires_in_s": round(max(0.0, float(entry.get("expires_at") or 0) - now), 1),
+        })
+    # Sort by soonest-to-expire so the operator sees what's about to clear.
+    entries_out.sort(key=lambda e: e["expires_in_s"])
+    return {
+        "count": snap.get("count", 0),
+        "by_tier": by_tier,
+        "by_reason": by_reason,
+        "entries": entries_out[:200],
+    }
+
+
 # v1.25 OPS-25: force stale-all override for deterministic UX testing.
 # Sets a time-limited flag that causes /api/products to return the
 # staleAll response (products preserved + banner data) regardless of

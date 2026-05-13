@@ -29,7 +29,7 @@ try:
 except ImportError:  # pragma: no cover — CI installs httpx
     HAS_HTTPX = False
 
-from vless import installer, pool_state, sources
+from vless import installer, pool_state, quarantine, sources
 from vless.config_gen import XRAY_LISTEN_HOST, XRAY_LISTEN_PORT, build_xray_config
 from vless.parser import VlessNode
 from vless.xray import XrayProcess, XrayStartupError, _atomic_write_text
@@ -461,6 +461,29 @@ class VlessProxyManager:
             return 0
         self._log(f"Geo-filter: {len(ru_nodes)} RU / {len(rejected)} rejected")
 
+        # v1.26 Phase 84.1: pre-probe dedup. The igareck union ships the same
+        # `host:port` re-listed under multiple SNI/PBK/transport variants,
+        # so without this collapse the probe loop wastes ~95 of 141 slots
+        # probing identical endpoints. Deduplicates by (host, port) and
+        # prefers the first seen variant (matches admission-order semantics).
+        seen_host_port: set[tuple[str, int]] = set()
+        deduped_ru_nodes: list[VlessNode] = []
+        upstream_dup_drop = 0
+        for n in ru_nodes:
+            key = (n.host, n.port)
+            if key in seen_host_port:
+                upstream_dup_drop += 1
+                continue
+            seen_host_port.add(key)
+            deduped_ru_nodes.append(n)
+        if upstream_dup_drop:
+            self._log(
+                f"Pre-probe dedup: collapsed {len(ru_nodes)} RU URIs -> "
+                f"{len(deduped_ru_nodes)} unique host:port "
+                f"({upstream_dup_drop} duplicates suppressed)"
+            )
+        ru_nodes = deduped_ru_nodes
+
         # Drop cooldown / excluded hosts before probing.
         self._prune_expired_cooldowns()
         cooling = self.cooldown_addrs()
@@ -480,8 +503,7 @@ class VlessProxyManager:
         # refresh duration from ~30s to ~5-10s when deadlist is populated.
         # Quarantine stored at host:port granularity to match the
         # `{host}:{port}` keys in pool_quarantine.json.
-        from vless import quarantine as _quarantine
-        quarantined_host_ports = _quarantine.get_quarantined_hosts()
+        quarantined_host_ports = quarantine.get_quarantined_hosts()
         exclude = exclude or set()
         candidates: list[VlessNode] = []
         skipped_quarantine = 0
@@ -500,17 +522,66 @@ class VlessProxyManager:
             candidates.append(node)
 
         # Track the refresh start event so ops tooling sees we attempted.
+        # v1.26 Phase 84.1: include the unique host:port count post-dedup
+        # so the funnel is visible end-to-end. ru_filtered now reports the
+        # post-dedup count (matches what actually entered cooldown/quar
+        # filtering); upstream_dups is the new explicit suppression count.
         self._track_event(
             "vless_refresh_start",
             {
                 "fetched": len(parsed),
                 "parsed": len(parsed),
                 "ru_filtered": len(ru_nodes),
+                "upstream_dups_dropped": upstream_dup_drop,
                 "candidates": len(candidates),
                 "cooldown_skipped": len([n for n in ru_nodes if n.host in cooling]),
                 "quarantine_skipped": skipped_quarantine,
             },
         )
+
+        # v1.26 Phase 84.1: explicit funnel log line so the operator can
+        # see at-a-glance where candidate nodes die. Format chosen to be
+        # grep-friendly in journalctl: `funnel: <stage>=<count>`.
+        self._log(
+            f"funnel: parsed={len(parsed)} ru={len(ru_nodes) + upstream_dup_drop} "
+            f"-uniq={len(ru_nodes)} -cooldown={len([n for n in ru_nodes if n.host in cooling])} "
+            f"-quarantine={skipped_quarantine} = candidates={len(candidates)}"
+        )
+
+        # v1.26 Phase 84.1: candidate-exhaustion recovery. When the funnel
+        # produces zero candidates AND the live pool is below MIN_HEALTHY,
+        # the system would otherwise sit in a dead-loop until 60s+ TTLs
+        # expire. Auto-release SOFT-tier (60s) quarantine entries and
+        # retry once. Hard-tier (20-min vpn-detected) and 4h repeat-
+        # offender entries stay locked. Logs which hosts get released
+        # so the recovery is auditable.
+        if not candidates and self.pool_count() < MIN_HEALTHY:
+            released = quarantine.release_soft_quarantined()
+            if released:
+                self._log(
+                    f"funnel-recovery: pool={self.pool_count()}<{MIN_HEALTHY}, "
+                    f"released {len(released)} soft-quarantined hosts: "
+                    f"{sorted(released)[:5]}"
+                    f"{'...' if len(released) > 5 else ''}"
+                )
+                # Re-evaluate quarantine without re-fetching upstream.
+                quarantined_host_ports = quarantine.get_quarantined_hosts()
+                skipped_quarantine = 0
+                for node in ru_nodes:
+                    if node.host in cooling or node.host in dead_hosts:
+                        continue
+                    node_key = f"{node.host}:{node.port}"
+                    if node_key in quarantined_host_ports:
+                        skipped_quarantine += 1
+                        continue
+                    if node.host in (exclude or set()) and any(
+                        entry.get("host") == node.host for entry in self._pool.get("nodes", [])
+                    ):
+                        continue
+                    candidates.append(node)
+                self._log(
+                    f"funnel-recovery: candidates after release = {len(candidates)}"
+                )
 
         if not candidates:
             self._log("No candidate nodes after filtering — keeping existing pool")
@@ -520,15 +591,45 @@ class VlessProxyManager:
 
         # v1.24 REL-16: record probe failures in the persistent quarantine.
         # Candidates that didn't make it into admitted are treated as
-        # failed probes — get a 20-min TTL (4h on 3rd+ failure).
+        # failed probes — graduated TTL by reason (v1.26 Phase 84.1):
+        #   - vpn_detected (hard block)        → 20 min
+        #   - egress_country_non_ru (geo)      → 20 min
+        #   - probe_timeout / probe_error      → 60s soft cooldown
+        # The reason is stamped onto node.extra["rejected_reason"] inside
+        # the probe loop; here we read it back to produce per-host
+        # quarantine entries with the right TTL.
         admitted_keys = {f"{n.host}:{n.port}" for n in admitted}
-        failed_keys = [
-            f"{c.host}:{c.port}" for c in candidates
-            if f"{c.host}:{c.port}" not in admitted_keys
-        ]
-        if failed_keys:
-            _quarantine.record_probe_failures(failed_keys, reason="probe_failed")
-            self._log(f"Quarantined {len(failed_keys)} probe-failed nodes (TTL 20 min)")
+        failed_by_reason: dict[str, list[str]] = {}
+        for c in candidates:
+            key = f"{c.host}:{c.port}"
+            if key in admitted_keys:
+                continue
+            raw_reason = c.extra.get("rejected_reason", "probe_error")
+            # Map specific runtime strings to the canonical reasons that
+            # quarantine._compute_ttl expects.
+            if "vpn-detected" in raw_reason or "vpn_detected" in raw_reason:
+                bucket = "vpn_detected"
+            elif raw_reason.startswith("egress_country=") and not raw_reason.endswith("RU"):
+                bucket = "egress_country_non_ru"
+            elif "timeout" in raw_reason.lower():
+                bucket = "probe_timeout"
+            elif "tls" in raw_reason.lower():
+                bucket = "tls_handshake_failed"
+            else:
+                bucket = "probe_error"
+            failed_by_reason.setdefault(bucket, []).append(key)
+
+        if failed_by_reason:
+            total = 0
+            tier_summary: list[str] = []
+            for bucket, keys in failed_by_reason.items():
+                quarantine.record_probe_failures(keys, reason=bucket)
+                total += len(keys)
+                tier_summary.append(f"{bucket}={len(keys)}")
+            self._log(
+                f"Quarantined {total} probe-failed nodes (graduated TTL: "
+                f"{', '.join(tier_summary)})"
+            )
 
         if not admitted:
             self._log("Refresh produced no admitted nodes; pool unchanged")
@@ -1116,6 +1217,15 @@ class VlessProxyManager:
                     verify_ssl=False,
                 )
                 if not vkusvill_ok:
+                    # v1.26 Phase 84.1: stamp a reason so the quarantine
+                    # tier picker can choose 20-min (vpn-detected) vs 60s
+                    # (transient probe error). _probe_vkusvill returns
+                    # False for: TCP/HTTP error, non-200 status, body
+                    # contains 'vpn-detected', body too short. We can't
+                    # distinguish from outside, so default to the
+                    # transient bucket — false positives stay in
+                    # quarantine for 60s and recover on the next cycle.
+                    node.extra["rejected_reason"] = "probe_error"
                     return None
                 # Restore plan-56 D-05: verify the egress IP actually
                 # geolocates to RU. Phase-56 PR #7 dropped this check and

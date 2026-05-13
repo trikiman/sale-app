@@ -679,6 +679,154 @@ def test_events_emitted_on_refresh(stub_xray, paths, monkeypatch) -> None:
     assert event_types.count("vless_node_admitted") == 3
 
 
+def test_pre_probe_dedup_collapses_duplicate_host_port_entries(stub_xray, paths, monkeypatch) -> None:
+    """v1.26 Phase 84.1: pre-probe dedup by (host, port).
+
+    The igareck union ships the same `host:port` re-listed under
+    different SNI/PBK/transport variants. Without pre-probe dedup the
+    expensive `_probe_candidates_in_parallel` runs once per duplicate,
+    wasting probe slots and producing the "same IP triple" admin UI bug.
+
+    This test pins:
+      1. The probe loop receives ONE entry per (host, port).
+      2. The funnel log's vless_refresh_start event reports
+         upstream_dups_dropped > 0.
+    """
+    _make_pool(paths["pool"], n=0)
+    pm = _manager(paths)
+
+    # 5 URIs but only 2 unique (host, port) pairs:
+    #   185.1.2.20:443  x3  (different SNI / PBK variants)
+    #   185.1.2.21:443  x2
+    sample = [
+        VlessNode(uuid="u1", host="185.1.2.20", port=443, name="A1",
+                  reality_pbk="pbk-a", reality_sni="microsoft.com"),
+        VlessNode(uuid="u1", host="185.1.2.20", port=443, name="A2",
+                  reality_pbk="pbk-b", reality_sni="cloudflare.com"),
+        VlessNode(uuid="u1", host="185.1.2.20", port=443, name="A3",
+                  reality_pbk="pbk-c", reality_sni="yahoo.com"),
+        VlessNode(uuid="u2", host="185.1.2.21", port=443, name="B1",
+                  reality_pbk="pbk-d", reality_sni="microsoft.com"),
+        VlessNode(uuid="u2", host="185.1.2.21", port=443, name="B2",
+                  reality_pbk="pbk-e", reality_sni="yahoo.com"),
+    ]
+    monkeypatch.setattr(manager_mod.sources, "fetch_igareck_list", lambda: "_fake_")
+    monkeypatch.setattr(
+        manager_mod.sources, "parse_vless_list", lambda _t: (sample, [])
+    )
+    monkeypatch.setattr(
+        manager_mod.sources, "filter_ru_nodes", lambda ns: (list(ns), [])
+    )
+
+    probed_batches: list[list[VlessNode]] = []
+
+    def capturing_probe(self, candidates):
+        probed_batches.append(list(candidates))
+        for n in candidates:
+            n.extra["probe_speed_s"] = 0.5
+        return list(candidates)
+
+    monkeypatch.setattr(VlessProxyManager, "_probe_candidates_in_parallel", capturing_probe)
+
+    admitted = pm.refresh_proxy_list()
+
+    # Must have only ONE probe batch — the dedup collapses 5 URIs to 2.
+    assert len(probed_batches) == 1
+    probed = probed_batches[0]
+    probed_keys = {(n.host, n.port) for n in probed}
+    assert probed_keys == {("185.1.2.20", 443), ("185.1.2.21", 443)}, (
+        f"pre-probe dedup regressed; probe loop saw {len(probed)} entries "
+        f"with keys {probed_keys} instead of the 2 unique host:port pairs"
+    )
+    assert admitted == 2
+
+    # Funnel event must report the suppressed duplicate count.
+    events = _load_events(paths["events"])
+    refresh_events = [e for e in events if e["event"] == "vless_refresh_start"]
+    assert refresh_events
+    rfe = refresh_events[-1]
+    assert rfe.get("upstream_dups_dropped") == 3, (
+        f"expected 3 dropped dups (5 URIs - 2 unique), got "
+        f"{rfe.get('upstream_dups_dropped')}"
+    )
+    assert rfe.get("ru_filtered") == 2  # post-dedup count
+    assert rfe.get("candidates") == 2
+
+
+def test_funnel_recovery_releases_soft_quarantine_when_pool_below_min(
+    stub_xray, paths, monkeypatch
+) -> None:
+    """v1.26 Phase 84.1: candidate-exhaustion recovery.
+
+    When the funnel produces 0 candidates AND the pool is below
+    MIN_HEALTHY, soft-quarantined nodes (60s tier) are auto-released
+    and the cycle retries once. Hard-quarantined nodes (vpn_detected,
+    20-min tier) and 4h repeat-offenders stay locked.
+
+    Pins:
+      - Single soft-quarantined host gets released and re-enters the
+        candidate set on the same refresh cycle.
+      - Hard-quarantined host stays locked and does NOT enter candidates.
+    """
+    _make_pool(paths["pool"], n=0)
+    pm = _manager(paths)
+
+    # Quarantine paths to tmp.
+    tmp_q = paths["pool"].parent / "pool_quarantine.json"
+    monkeypatch.setattr(manager_mod.quarantine, "QUARANTINE_PATH", str(tmp_q))
+
+    # Pre-populate quarantine: one soft (60s) + one hard (20m).
+    import time as _t
+    monkeypatch.setattr(_t, "time", lambda: 1000.0)
+    manager_mod.quarantine.record_probe_failure(
+        "soft.host:443", reason="probe_timeout"  # -> 60s soft tier
+    )
+    manager_mod.quarantine.record_probe_failure(
+        "hard.exit:443", reason="vpn_detected"  # -> 20m hard tier
+    )
+
+    # Both nodes appear in the upstream list.
+    sample = [
+        VlessNode(uuid="u1", host="soft.host", port=443, name="soft",
+                  reality_pbk="pbk", reality_sni="microsoft.com"),
+        VlessNode(uuid="u2", host="hard.exit", port=443, name="hard",
+                  reality_pbk="pbk", reality_sni="microsoft.com"),
+    ]
+    monkeypatch.setattr(manager_mod.sources, "fetch_igareck_list", lambda: "_")
+    monkeypatch.setattr(
+        manager_mod.sources, "parse_vless_list", lambda _x: (sample, [])
+    )
+    monkeypatch.setattr(
+        manager_mod.sources, "filter_ru_nodes", lambda ns: (list(ns), [])
+    )
+
+    probed_batches: list[list[VlessNode]] = []
+
+    def capturing_probe(self, candidates):
+        probed_batches.append(list(candidates))
+        for n in candidates:
+            n.extra["probe_speed_s"] = 0.5
+        return list(candidates)
+
+    monkeypatch.setattr(VlessProxyManager, "_probe_candidates_in_parallel", capturing_probe)
+
+    admitted = pm.refresh_proxy_list()
+
+    # Pool was empty (n=0 < MIN_HEALTHY=10) → soft tier released.
+    # Soft host got admitted; hard host stayed locked.
+    assert admitted == 1
+    assert len(probed_batches) == 1
+    probed_hosts = {n.host for n in probed_batches[0]}
+    assert probed_hosts == {"soft.host"}, (
+        f"recovery released wrong nodes; probed {probed_hosts}"
+    )
+
+    # Hard quarantine entry must still exist after the cycle.
+    snap = manager_mod.quarantine.snapshot()
+    assert "hard.exit:443" in snap["hosts"]
+    assert "soft.host:443" not in snap["hosts"]
+
+
 def test_refresh_drops_cooldown_hosts_before_probe(stub_xray, paths, monkeypatch) -> None:
     _make_pool(paths["pool"], n=0)
     import time as _time

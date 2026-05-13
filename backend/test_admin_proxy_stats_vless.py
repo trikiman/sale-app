@@ -209,3 +209,63 @@ def test_proxy_stats_returns_empty_list_when_pool_missing(
     assert data["pool_size"] == 0
     assert data["proxies"] == []
     assert data["healthy"] is False
+
+
+# v1.26 Phase 84.1 — /admin/vless/quarantine read-only snapshot endpoint.
+
+def test_quarantine_get_groups_entries_by_tier(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """v1.26 Phase 84.1: GET /admin/vless/quarantine groups entries into
+    soft / hard / repeat_offender tiers and reports per-reason counts.
+    Pins the operator-visibility contract used by the admin panel.
+    """
+    monkeypatch.setenv("ADMIN_TOKEN", ADMIN_TOKEN_VALUE)
+    monkeypatch.setenv("SALEAPP_POOL_QUARANTINE_PATH", str(tmp_path / "q.json"))
+
+    import importlib
+    from vless import quarantine
+    importlib.reload(quarantine)
+
+    import time as _t
+    monkeypatch.setattr(_t, "time", lambda: 1000.0)
+    # Soft tier (60s, transient)
+    quarantine.record_probe_failure("soft.host:443", reason="probe_timeout")
+    # Hard tier (20m, vpn_detected)
+    quarantine.record_probe_failure("blocked.exit:443", reason="vpn_detected")
+    # Repeat offender (4h, after 3 strikes)
+    for ts in (1000.0, 1010.0, 1020.0):
+        monkeypatch.setattr(_t, "time", lambda ts=ts: ts)
+        quarantine.record_probe_failure("dead.host:443", reason="probe_error")
+
+    import backend.main as main
+    monkeypatch.setattr(main, "ADMIN_TOKEN", ADMIN_TOKEN_VALUE)
+    client = TestClient(main.app)
+
+    resp = client.get(
+        "/admin/vless/quarantine",
+        headers={"X-Admin-Token": ADMIN_TOKEN_VALUE},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+
+    assert data["count"] == 3
+    assert data["by_tier"]["soft"] == 1
+    assert data["by_tier"]["hard"] == 1
+    assert data["by_tier"]["repeat_offender"] == 1
+    assert data["by_reason"]["probe_timeout"] == 1
+    assert data["by_reason"]["vpn_detected"] == 1
+    assert data["by_reason"]["probe_error"] == 1
+
+    entry_keys = {e["host_port"] for e in data["entries"]}
+    assert entry_keys == {"soft.host:443", "blocked.exit:443", "dead.host:443"}
+    # Soft entry sorts first because it expires soonest.
+    assert data["entries"][0]["host_port"] == "soft.host:443"
+    assert data["entries"][0]["tier"] == "soft"
+
+
+def test_quarantine_get_requires_admin_token(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("ADMIN_TOKEN", ADMIN_TOKEN_VALUE)
+    import backend.main as main
+    monkeypatch.setattr(main, "ADMIN_TOKEN", ADMIN_TOKEN_VALUE)
+    client = TestClient(main.app)
+    resp = client.get("/admin/vless/quarantine")
+    assert resp.status_code in (401, 403)
