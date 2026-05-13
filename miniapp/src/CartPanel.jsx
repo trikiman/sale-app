@@ -168,7 +168,7 @@ export default function CartPanel({ isOpen, onClose, userId }) {
                 <div className="cart-panel-body">
                     {loading && items.length === 0 && (
                         <div className="cart-panel-loading">
-                            <span className="cart-btn-spinner" style={{ width: 24, height: 24 }} />
+                            <span className="cart-btn-spinner cart-btn-spinner--lg" />
                             <span>Загружаем…</span>
                         </div>
                     )}

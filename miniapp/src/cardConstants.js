@@ -39,9 +39,13 @@ export function getCategoryEmoji(category) {
 
 // Type badge config — defined once, not re-created per card render.
 // Must stay in sync with index.css .card-tint-* rules.
+// v1.26 Phase 84: priceColor removed from the config — colors now come
+// from CSS scoped to the tint class (.card-tint-{green,red,yellow}
+// .card-price) rather than an inline style prop. Kept TYPE_CONFIG as
+// a single source of truth for label/tint mapping.
 export const TYPE_CONFIG = {
-  green: { bg: 'bg-green-500/20', text: 'text-green-400', label: '🟢 Зелёная', border: 'border-green-500/30', priceColor: '#4ade80', tint: 'card-tint-green' },
-  red: { bg: 'bg-red-500/20', text: 'text-red-400', label: '🔴 Красная', border: 'border-red-500/30', priceColor: '#f87171', tint: 'card-tint-red' },
-  yellow: { bg: 'bg-yellow-500/20', text: 'text-yellow-400', label: '🟡 Жёлтая', border: 'border-yellow-500/30', priceColor: '#facc15', tint: 'card-tint-yellow' },
-  _default: { bg: 'bg-gray-500/20', text: 'text-gray-400', label: '📦 Другое', border: 'border-gray-500/30', priceColor: '#9ca3af', tint: '' },
+  green: { bg: 'bg-green-500/20', text: 'text-green-400', label: '🟢 Зелёная', border: 'border-green-500/30', tint: 'card-tint-green' },
+  red: { bg: 'bg-red-500/20', text: 'text-red-400', label: '🔴 Красная', border: 'border-red-500/30', tint: 'card-tint-red' },
+  yellow: { bg: 'bg-yellow-500/20', text: 'text-yellow-400', label: '🟡 Жёлтая', border: 'border-yellow-500/30', tint: 'card-tint-yellow' },
+  _default: { bg: 'bg-gray-500/20', text: 'text-gray-400', label: '📦 Другое', border: 'border-gray-500/30', tint: '' },
 }

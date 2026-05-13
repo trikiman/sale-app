@@ -5,8 +5,7 @@ exports[`ProductCard snapshot > renders in cart-button state (no cart item) 1`] 
   class="card-vertical card-tint-green"
 >
   <div
-    class="card-image-wrap"
-    style="cursor: pointer;"
+    class="card-image-wrap u-clickable"
   >
     <div
       class="card-hero-fallback"
@@ -51,7 +50,6 @@ exports[`ProductCard snapshot > renders in cart-button state (no cart item) 1`] 
       >
         <span
           class="card-price"
-          style="color: rgb(74, 222, 128);"
         >
           102
           ₽
@@ -107,8 +105,7 @@ exports[`ProductCard snapshot > renders in stepper state (cartItem with quantity
   class="card-vertical card-tint-green"
 >
   <div
-    class="card-image-wrap"
-    style="cursor: pointer;"
+    class="card-image-wrap u-clickable"
   >
     <div
       class="card-hero-fallback"
@@ -153,7 +150,6 @@ exports[`ProductCard snapshot > renders in stepper state (cartItem with quantity
       >
         <span
           class="card-price"
-          style="color: rgb(74, 222, 128);"
         >
           102
           ₽

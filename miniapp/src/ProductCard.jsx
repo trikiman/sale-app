@@ -35,7 +35,7 @@ const ProductCard = memo(function ProductCard({ product, index: _index, isFavori
       className={`card-vertical ${config.tint}`}
     >
       {/* Hero Image — clickable to open detail */}
-      <div className="card-image-wrap" onClick={() => onOpenDetail(product)} style={{ cursor: 'pointer' }}>
+      <div className="card-image-wrap u-clickable" onClick={() => onOpenDetail(product)}>
         {!imageLoaded && !imageError && product.image && <div className="absolute inset-0 skeleton" />}
 
         {product.image && !imageError ? (
@@ -101,7 +101,10 @@ const ProductCard = memo(function ProductCard({ product, index: _index, isFavori
 
         <div className="card-price-row">
           <div className="card-prices">
-            <span className="card-price" style={{ color: config.priceColor }}>{product.currentPrice}₽</span>
+            {/* v1.26 Phase 84 (TOOL-05): price color now comes from the
+                tint class (.card-tint-{green,red,yellow} .card-price),
+                not an inline style={{color: config.priceColor}} prop. */}
+            <span className="card-price">{product.currentPrice}₽</span>
             {hasDiscount && (
               <span className="card-old-price">{product.oldPrice}₽</span>
             )}

@@ -186,6 +186,35 @@ body {
   color: #ca8a04;
 }
 
+/* v1.26 Phase 84 (TOOL-05): dark-theme price colors scoped to the tint
+   class. Before v1.26 the price color was inline style={{color: ...}}
+   driven by config.priceColor; now it's static CSS per tint variant
+   so the inline style goes away. Hex values match the pre-refactor
+   TYPE_CONFIG.*.priceColor exactly. */
+.card-tint-green .card-price {
+  color: #4ade80;
+}
+
+.card-tint-red .card-price {
+  color: #f87171;
+}
+
+.card-tint-yellow .card-price {
+  color: #facc15;
+}
+
+/* v1.26 Phase 84 (TOOL-05): utility classes extracted from inline
+   style={} sites. Keep this block small — add new utilities only when
+   the pattern repeats across 3+ sites (per style guide v2). */
+.u-clickable {
+  cursor: pointer;
+}
+
+.cart-btn-spinner--lg {
+  width: 24px;
+  height: 24px;
+}
+
 /* Light theme — header pills */
 [data-theme="light"] .header-pill {
   color: #374151 !important;
