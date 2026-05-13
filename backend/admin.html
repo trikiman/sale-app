@@ -942,8 +942,12 @@
                 : '—';
 
               var proto = p.protocol || 'socks5';
-              var protoColor = proto === 'socks5' ? '#818cf8' : (proto === 'http' ? '#4ade80' : '#94a3b8');
-              var statusText = p.alive !== undefined ? (p.alive ? '✅' : '❌') : '—';
+              var protoColor = proto === 'vless' ? '#22d3ee' : (proto === 'socks5' ? '#818cf8' : (proto === 'http' ? '#4ade80' : '#94a3b8'));
+              // v1.26: VLESS pool exposes per-node success_rate. Show it
+              // in the status column when available — "✅ 98%" reads much
+              // cleaner than a bare ✅ when the admitted set is drifting.
+              var rate = (p.success_rate !== undefined && p.success_rate !== null) ? (' ' + p.success_rate + '%') : '';
+              var statusText = p.alive !== undefined ? (p.alive ? '✅' + rate : '❌') : '—';
               tr.innerHTML = '<td style="padding:5px 8px; color:#64748b">' + (i + 1) + '</td>'
                 + '<td style="padding:5px 8px; color:#e2e8f0">' + p.addr + '</td>'
                 + '<td style="padding:5px 8px; color:' + protoColor + '">' + proto.toUpperCase() + '</td>'
@@ -968,6 +972,7 @@
           var periods = data.periods || {};
           var labels = { today: '📅 Сегодня', week: '📆 Неделя', month: '🗓 Месяц' };
           var keys = ['today', 'week', 'month'];
+          var appended = 0;
           for (var i = 0; i < keys.length; i++) {
             var k = keys[i];
             var s = periods[k];
@@ -983,9 +988,21 @@
               + '<td style="padding:6px 8px; text-align:center; color:#818cf8">' + (s.refresh || 0) + '</td>'
               + '<td style="padding:6px 8px; text-align:center; color:' + rateColor + '; font-weight:600">' + rateText + '</td>';
             tbody.appendChild(tr);
+            appended++;
           }
-          if (keys.length === 0 || !periods.today) {
+          // v1.26: render the empty-state message only when truly empty.
+          // Prior code wrote the row summaries, then wiped them with a
+          // "Нет данных" message whenever periods.today was falsy — but
+          // periods.today is always a populated dict (with zeros when
+          // there are no events). Result: the widget never rendered real
+          // data even after EC2 collected 80k+ events.
+          if (appended === 0) {
             tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:12px; color:#475569">Нет данных — статистика начнёт собираться</td></tr>';
+          }
+          // Surface backend errors from /admin/proxy-history instead of
+          // silently showing the empty-state when something blew up.
+          if (data.error) {
+            tbody.innerHTML = '<tr><td colspan="6" style="text-align:center; padding:12px; color:#f87171">Ошибка: ' + data.error + '</td></tr>';
           }
         })
         .catch(function() {

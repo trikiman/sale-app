@@ -856,6 +856,14 @@ class VlessProxyManager:
         Preserves the exact shape returned by
         :meth:`proxy_manager.ProxyManager.get_event_stats` so admin endpoints
         continue to work unchanged.
+
+        v1.26: handles mixed naive/aware timestamps in proxy_events.jsonl —
+        events written by older code use naive (``datetime.now().isoformat()``)
+        while newer sites such as :mod:`scheduler_service` + the scraper
+        pause hooks emit aware UTC (``+00:00``). Without normalisation the
+        subtraction ``now - ts`` raised TypeError per-row, which swallowed
+        every count and left the admin dashboard perpetually at "Нет данных"
+        despite the file holding 80k+ events on EC2.
         """
         now = datetime.now()
         periods = {"today": 1, "week": 7, "month": 30}
@@ -885,6 +893,11 @@ class VlessProxyManager:
                         ts = datetime.fromisoformat(ts_str)
                     except (TypeError, ValueError):
                         continue
+                    # v1.26: normalise to naive (drop tzinfo). Mixed naive
+                    # + aware timestamps otherwise crash the subtraction
+                    # silently and all counters stay at 0.
+                    if ts.tzinfo is not None:
+                        ts = ts.replace(tzinfo=None)
                     age_days = (now - ts).total_seconds() / 86400
                     event = entry.get("event", "")
                     for period, max_days in periods.items():

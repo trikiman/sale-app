@@ -833,6 +833,58 @@ def test_get_event_stats_matches_legacy_shape(stub_xray, paths) -> None:
         assert set(period.keys()) >= {"found", "removed", "refresh", "success_rate"}
 
 
+def test_get_event_stats_handles_mixed_naive_and_aware_timestamps(stub_xray, paths) -> None:
+    """v1.26 regression: proxy_events.jsonl grew to mix two timestamp
+    formats on EC2 — legacy naive (``datetime.now().isoformat()`` from
+    _track_event) and aware UTC (``+00:00`` suffix emitted by
+    scheduler_service + scraper-pause hooks). Subtracting a naive
+    ``datetime.now()`` from an aware timestamp raised TypeError inside
+    the per-line try/except, silently swallowing every event on EC2.
+    Result: admin dashboard showed "Нет данных" even with 80k+ events.
+
+    Fix: normalise aware -> naive by dropping tzinfo before subtraction.
+    This test pins both formats getting counted. Intentionally timestamps
+    events in the very recent past so they land in the ``today`` bucket
+    regardless of when the test runs.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    paths["events"].parent.mkdir(parents=True, exist_ok=True)
+    recent_naive = (datetime.now() - timedelta(minutes=5)).isoformat()
+    recent_aware = (
+        datetime.now(timezone.utc) - timedelta(minutes=5)
+    ).isoformat()  # trailing '+00:00'
+
+    lines = [
+        {"ts": recent_naive, "event": "vless_node_admitted", "host": "1.1.1.1"},
+        {"ts": recent_naive, "event": "vless_refresh_start", "candidates": 5},
+        {"ts": recent_aware, "event": "vless_node_admitted", "host": "2.2.2.2"},
+        {"ts": recent_aware, "event": "vless_node_removed", "host": "1.1.1.1"},
+        {"ts": recent_aware, "event": "test_fail", "host": "3.3.3.3"},
+    ]
+    paths["events"].write_text(
+        "\n".join(json.dumps(e) for e in lines) + "\n", encoding="utf-8"
+    )
+
+    original = manager_mod.EVENTS_FILE
+    manager_mod.EVENTS_FILE = paths["events"]
+    try:
+        stats = VlessProxyManager.get_event_stats()
+    finally:
+        manager_mod.EVENTS_FILE = original
+
+    today = stats["periods"]["today"]
+    # Both naive+aware admissions must count, not just one.
+    assert today["found"] == 2, (
+        f"expected 2 admissions, got {today['found']} — tz-mix regressed"
+    )
+    assert today["removed"] == 1
+    assert today["refresh"] == 1
+    assert today["test_fail"] == 1
+    # success_rate = found / (found + test_fail) = 2 / 3 = 66.7
+    assert today["success_rate"] == 66.7
+
+
 # ── Live integration test ────────────────────────────────────
 
 

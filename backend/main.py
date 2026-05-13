@@ -5713,54 +5713,100 @@ def admin_get_logs(
 def admin_proxy_stats(
     token: Optional[str] = Header(None, alias="X-Admin-Token"),
 ):
-    """Return proxy pool statistics for the admin dashboard."""
+    """Return VLESS pool statistics for the admin dashboard.
+
+    v1.15 migrated the free SOCKS5 pool to VLESS+Reality behind a local
+    xray-core bridge. This endpoint was left reading the frozen
+    ``working_proxies.json`` cache until v1.26 — wiring it to the live
+    VLESS pool (via ``_proxy_manager.pool_snapshot()`` +
+    ``data/vless_pool.json``) closes that gap. See
+    ``.planning/phases/`` for the migration history.
+
+    Output shape is backward-compatible with ``backend/admin.html``:
+    ``pool_size``, ``min_healthy``, ``healthy``, ``cache_age_min``,
+    ``last_refresh``, ``proxies[]`` each with
+    ``{addr, speed, protocol, alive, tested_ago_min, tested_at}``.
+    """
     _require_token(token)
-    cache_file = os.path.join(BASE_PROJECT_DIR, "data", "working_proxies.json")
-    try:
-        with open(cache_file, "r") as f:
-            cache = json.load(f)
-    except Exception:
-        return {"pool_size": 0, "proxies": [], "cache_age": None, "healthy": False}
 
-    proxies_raw = cache.get("proxies", [])
-    last_refresh = cache.get("last_refresh")
+    # Live snapshot (counters only — thread-safe read, no I/O).
+    snap = _proxy_manager.pool_snapshot()
+    pool_size = snap.get("size", 0)
+    min_healthy = snap.get("min_healthy", 10)
+    last_refresh_iso = snap.get("last_refresh_at")
+    dead_count = snap.get("dead_by_success_rate_count", 0)
+    active_outbounds = snap.get("active_outbounds", 0)
 
-    # Calculate cache age
-    cache_age_min = None
-    if last_refresh:
+    # Cache age in minutes (table header "Обновлено ... мин./ч. назад").
+    cache_age_min: Optional[float] = None
+    if last_refresh_iso:
         try:
-            from datetime import datetime
-            lr = datetime.fromisoformat(last_refresh)
+            lr = datetime.fromisoformat(last_refresh_iso)
             cache_age_min = round((datetime.now() - lr).total_seconds() / 60, 1)
         except Exception:
             pass
 
-    # Build proxy list with stats
-    proxies_out = []
-    for p in proxies_raw:
-        tested_ago = None
-        if p.get("tested_at"):
+    # Per-row details come from the on-disk pool file (authoritative source).
+    # We read directly rather than exposing _pool to avoid lock contention
+    # with the scheduler refresh path.
+    from vless import pool_state as _pool_state
+    pool_data = _pool_state.load()
+    nodes: list[dict] = pool_data.get("nodes", []) if isinstance(pool_data, dict) else []
+
+    proxies_out: list[dict] = []
+    for entry in nodes:
+        host = str(entry.get("host") or "")
+        port = entry.get("port") or ""
+        addr = f"{host}:{port}" if host and port else (host or "?")
+
+        # Probe speed is captured at admission time in extra.probe_speed_s.
+        extra = entry.get("extra") or {}
+        try:
+            speed = round(float(extra.get("probe_speed_s") or 0.0), 2)
+        except (TypeError, ValueError):
+            speed = 0.0
+
+        # REL-15 per-node alive signal: dead iff success_rate is known-bad.
+        # Unknown rates (< 20 samples) are treated as alive — matches the
+        # conservative _is_node_dead() logic used by active_outbounds.
+        rate = _proxy_manager.success_rate(host) if host else None
+        is_dead = rate is not None and rate < 0.1
+
+        # "Tested ago" uses the pool's verified_at timestamp — stamped when
+        # the admission probe passed. This is the VLESS equivalent of the
+        # old SOCKS5 proxy's tested_at field.
+        verified_at = entry.get("verified_at")
+        tested_ago_min: Optional[float] = None
+        if verified_at:
             try:
-                from datetime import datetime
-                t = datetime.fromisoformat(p["tested_at"])
-                tested_ago = round((datetime.now() - t).total_seconds() / 60, 1)
+                t = datetime.fromisoformat(verified_at)
+                tested_ago_min = round((datetime.now() - t).total_seconds() / 60, 1)
             except Exception:
                 pass
+
         proxies_out.append({
-            "addr": p.get("addr", "?"),
-            "speed": round(p.get("speed", 0), 2),
-            "protocol": p.get("protocol", p.get("proto", "socks5")),
-            "alive": p.get("alive", True),
-            "tested_ago_min": tested_ago,
-            "tested_at": p.get("tested_at", "?"),
+            "addr": addr,
+            "speed": speed,
+            "protocol": "vless",
+            "alive": not is_dead,
+            "success_rate": round(rate * 100, 1) if rate is not None else None,
+            "tested_ago_min": tested_ago_min,
+            "tested_at": verified_at or "?",
+            "country": entry.get("verified_country") or "?",
         })
 
+    # Sort by speed asc (same UX as the old SOCKS5 table — fastest first).
+    proxies_out.sort(key=lambda p: (p["speed"] or 99.0))
+
     return {
-        "pool_size": len(proxies_raw),
-        "min_healthy": 7,
-        "healthy": len(proxies_raw) >= 7,
+        "pool_size": pool_size,
+        "min_healthy": min_healthy,
+        "healthy": pool_size >= min_healthy,
         "cache_age_min": cache_age_min,
-        "last_refresh": last_refresh,
+        "last_refresh": last_refresh_iso,
+        "active_outbounds": active_outbounds,
+        "dead_by_success_rate_count": dead_count,
+        "pool_source": "vless",
         "proxies": proxies_out,
     }
 
