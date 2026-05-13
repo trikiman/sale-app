@@ -1,0 +1,67 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`CartPanel snapshot > renders row with trash button when cart has items (v1.23 UX-CART-01) 1`] = `
+<div
+  class="cart-item "
+>
+  <div
+    class="cart-item-info"
+  >
+    <span
+      class="cart-item-name"
+    >
+      Milk 1L
+    </span>
+    <span
+      class="cart-item-price-row"
+    >
+      <span
+        class="cart-item-current-price"
+      >
+        102
+        ₽
+      </span>
+      <span
+        class="cart-item-old-price"
+      >
+        170
+        ₽
+      </span>
+    </span>
+    <span
+      class="cart-item-meta"
+    >
+      📦 
+      2
+       
+      шт
+    </span>
+  </div>
+  <div
+    class="cart-qty-controls"
+  >
+    <button
+      class="cart-qty-btn"
+    >
+      −
+    </button>
+    <span
+      class="cart-qty-value"
+    >
+      2
+    </span>
+    <button
+      class="cart-qty-btn"
+    >
+      +
+    </button>
+  </div>
+  <button
+    aria-label="Удалить из корзины"
+    class="cart-item-remove-btn"
+    title="Удалить из корзины"
+  >
+    🗑
+  </button>
+</div>
+`;

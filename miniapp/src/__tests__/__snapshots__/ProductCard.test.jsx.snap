@@ -1,0 +1,218 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`ProductCard snapshot > renders in cart-button state (no cart item) 1`] = `
+<div
+  class="card-vertical card-tint-green"
+>
+  <div
+    class="card-image-wrap"
+    style="cursor: pointer;"
+  >
+    <div
+      class="card-hero-fallback"
+    >
+      <span
+        class="text-4xl"
+      >
+        🥛
+      </span>
+    </div>
+    <span
+      class="card-discount"
+    >
+      -
+      40
+      %
+    </span>
+    <button
+      class="card-fav-btn tap-scale-xs  "
+    >
+      🤍
+    </button>
+    <span
+      class="card-type-badge bg-green-500/20 text-green-400"
+    >
+      🟢 Зелёная
+    </span>
+  </div>
+  <div
+    class="card-body"
+  >
+    <h3
+      class="card-title"
+    >
+      Test Product
+    </h3>
+    <div
+      class="card-price-row"
+    >
+      <div
+        class="card-prices"
+      >
+        <span
+          class="card-price"
+          style="color: rgb(74, 222, 128);"
+        >
+          102
+          ₽
+        </span>
+        <span
+          class="card-old-price"
+        >
+          170
+          ₽
+        </span>
+      </div>
+      <button
+        aria-label="Добавить в корзину"
+        class="cart-btn tap-scale-sm   "
+      >
+        <svg
+          fill="none"
+          height="18"
+          stroke="currentColor"
+          stroke-width="2"
+          viewBox="0 0 24 24"
+          width="18"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 100 4 2 2 0 000-4z"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+      </button>
+    </div>
+    <div
+      class="card-meta-row"
+    >
+      <span
+        class="card-stock"
+      >
+        📦 2 шт
+      </span>
+      <span
+        class="card-weight"
+      >
+        200 г
+      </span>
+    </div>
+  </div>
+</div>
+`;
+
+exports[`ProductCard snapshot > renders in stepper state (cartItem with quantity) 1`] = `
+<div
+  class="card-vertical card-tint-green"
+>
+  <div
+    class="card-image-wrap"
+    style="cursor: pointer;"
+  >
+    <div
+      class="card-hero-fallback"
+    >
+      <span
+        class="text-4xl"
+      >
+        🥛
+      </span>
+    </div>
+    <span
+      class="card-discount"
+    >
+      -
+      40
+      %
+    </span>
+    <button
+      class="card-fav-btn tap-scale-xs  "
+    >
+      🤍
+    </button>
+    <span
+      class="card-type-badge bg-green-500/20 text-green-400"
+    >
+      🟢 Зелёная
+    </span>
+  </div>
+  <div
+    class="card-body"
+  >
+    <h3
+      class="card-title"
+    >
+      Test Product
+    </h3>
+    <div
+      class="card-price-row"
+    >
+      <div
+        class="card-prices"
+      >
+        <span
+          class="card-price"
+          style="color: rgb(74, 222, 128);"
+        >
+          102
+          ₽
+        </span>
+        <span
+          class="card-old-price"
+        >
+          170
+          ₽
+        </span>
+      </div>
+      <div
+        class="cart-inline-qty compact"
+      >
+        <button
+          aria-label="Уменьшить количество"
+          class="cart-inline-qty-btn"
+          type="button"
+        >
+          −
+        </button>
+        <label
+          class="cart-inline-qty-center"
+        >
+          <input
+            aria-label="Количество (шт)"
+            class="cart-inline-qty-input"
+            inputmode="numeric"
+            value="2"
+          />
+          <span
+            class="cart-inline-qty-unit"
+          >
+            шт
+          </span>
+        </label>
+        <button
+          aria-label="Увеличить количество"
+          class="cart-inline-qty-btn"
+          type="button"
+        >
+          +
+        </button>
+      </div>
+    </div>
+    <div
+      class="card-meta-row"
+    >
+      <span
+        class="card-stock"
+      >
+        📦 2 шт
+      </span>
+      <span
+        class="card-weight"
+      >
+        200 г
+      </span>
+    </div>
+  </div>
+</div>
+`;

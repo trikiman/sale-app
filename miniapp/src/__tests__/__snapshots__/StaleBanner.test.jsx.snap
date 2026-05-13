@@ -1,0 +1,47 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`StaleBanner snapshot > renders prominent bordered card when staleAll is set (pool-outage case) 1`] = `
+<div
+  aria-live="polite"
+  class="stale-banner-prominent anim-scale"
+  role="status"
+>
+  <span
+    class="stale-banner-prominent-icon"
+  >
+    ⏳
+  </span>
+  <div
+    class="stale-banner-prominent-body"
+  >
+    <strong
+      class="stale-banner-prominent-title"
+    >
+      Данные устарели
+    </strong>
+    <span
+      class="stale-banner-prominent-sources"
+    >
+      Источники
+      : 🟢 12 мин, 🔴 11 мин, 🟡 10 мин
+    </span>
+    <span
+      class="stale-banner-prominent-hint"
+    >
+      Показаны последние известные цены. Обновление через ~
+      3
+       мин.
+    </span>
+  </div>
+</div>
+`;
+
+exports[`StaleBanner snapshot > renders thin yellow banner when dataStale && !staleAll (partial staleness) 1`] = `
+<div
+  class="mt-2 px-4 py-2 rounded-xl bg-yellow-500/20 border border-yellow-500/50 text-yellow-300 text-center text-xs anim-scale"
+>
+  ⚠️ Источники устарели
+  : 🟢 7 мин, 🔴 9 мин
+   — товары и цены могут не совпадать с сайтом
+</div>
+`;
