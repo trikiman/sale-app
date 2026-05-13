@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { getAuthHeaders } from './api'
+import { isTelegramRuntime } from './isTelegramRuntime'
 
 // VkusVill CDN images are public — load directly
 function proxyImg(url) {
@@ -117,11 +118,10 @@ export default function CartPanel({ isOpen, onClose, userId }) {
         // only fires inside Telegram WebView, so the Promise hangs forever
         // in desktop Chrome. Detect a real Telegram runtime via non-empty
         // `initData` (empty string when app is loaded directly in a browser).
-        const isTelegramRuntime = typeof window !== 'undefined'
-            && typeof window.Telegram?.WebApp?.initData === 'string'
-            && window.Telegram.WebApp.initData.length > 0
+        // v1.26 Phase 83: detection extracted to ./isTelegramRuntime.js and
+        // pinned by miniapp/src/__tests__/isTelegramRuntime.test.js.
 
-        if (isTelegramRuntime && window.Telegram.WebApp.showConfirm) {
+        if (isTelegramRuntime() && window.Telegram.WebApp.showConfirm) {
             const ok = await new Promise(r => window.Telegram.WebApp.showConfirm('Очистить всю корзину?', r))
             if (!ok) return
         } else if (typeof window.confirm === 'function') {

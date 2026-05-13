@@ -6,6 +6,7 @@ const HistoryPage = lazy(() => import('./HistoryPage'))
 const HistoryDetail = lazy(() => import('./HistoryDetail'))
 import { buildCategoryRunView } from './categoryRunStatus'
 import { getCardMetaBadges, isWeightedUnit, mergeResolvedWeights, normalizeUnit, shouldFetchMissingWeight } from './productMeta'
+import { getCartStep } from './cartStep'
 import { getAuthHeaders } from './api'
 import './index.css'
 
@@ -98,15 +99,6 @@ function buildCartItemMap(items = []) {
   }
 
   return { itemIds, itemsById }
-}
-
-function getCartStep(unit, cartItem) {
-  const derived = Number(cartItem?.step || cartItem?.koef || 0)
-  if (Number.isFinite(derived) && derived > 0) {
-    return derived
-  }
-
-  return isWeightedUnit(unit) ? 0.01 : 1
 }
 
 const ProductCard = memo(function ProductCard({ product, index: _index, isFavorite, onToggleFavorite, favoritesLoading, onAddToCart, onSetCartQuantity, viewMode: _viewMode, cartState, cartItem, isCartBusy, onOpenDetail, isStale }) {
