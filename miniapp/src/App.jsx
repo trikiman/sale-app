@@ -1,41 +1,16 @@
-import { useState, useEffect, useMemo, useRef, useCallback, memo, lazy, Suspense } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback, lazy, Suspense } from 'react'
 import CartPanel from './CartPanel'
 import ProductDetail from './ProductDetail'
 import CartQuantityControl from './CartQuantityControl'
+import ProductCard from './ProductCard'
 const HistoryPage = lazy(() => import('./HistoryPage'))
 const HistoryDetail = lazy(() => import('./HistoryDetail'))
 import { buildCategoryRunView } from './categoryRunStatus'
-import { getCardMetaBadges, isWeightedUnit, mergeResolvedWeights, normalizeUnit, shouldFetchMissingWeight } from './productMeta'
+import { isWeightedUnit, mergeResolvedWeights, normalizeUnit, shouldFetchMissingWeight } from './productMeta'
 import { getCartStep } from './cartStep'
+import { CATEGORY_EMOJIS, getCategoryEmoji, TYPE_CONFIG } from './cardConstants'
 import { getAuthHeaders } from './api'
 import './index.css'
-
-// VkusVill CDN images are public — load directly (no proxy needed).
-// referrerPolicy="no-referrer" on <img> tags prevents referer-based blocking.
-function proxyImg(url) {
-  return url || ''
-}
-
-// Emoji lookup for known categories
-const CATEGORY_EMOJIS = {
-  'Овощи': '🥬',
-  'Фрукты': '🍎',
-  'Мясо': '🥩',
-  'Заморозка': '❄️',
-  'Напитки': '🥤',
-  'Бакалея': '🛒',
-  'Молочка': '🥛',
-  'Рыба': '🐟',
-  'Косметика': '💄',
-  'Зоотовары': '🐾',
-  'Закуски': '🥨',
-  'Салаты': '🥗',
-  'Хлеб': '🥖',
-  'Готовая еда': '🍱',
-  'Сладости': '🍰',
-  'Другое': '📦',
-  'Новинки': '🆕',
-}
 
 import Login from './Login'
 import BugReportPanel from './BugReportPanel'
@@ -45,21 +20,6 @@ function normalizeCategory(cat) {
   return cat ? cat.replace(/\u00a0/g, ' ') : cat
 }
 
-function getCategoryEmoji(category) {
-  // Simple partial match for categories not in the exact map
-  if (CATEGORY_EMOJIS[category]) return CATEGORY_EMOJIS[category]
-  if (category.includes('Сладости')) return CATEGORY_EMOJIS['Сладости']
-  if (category.includes('Хлеб')) return CATEGORY_EMOJIS['Хлеб']
-  return '📦'
-}
-
-// Type badge config — defined once outside component (not re-created per card render)
-const TYPE_CONFIG = {
-  green: { bg: 'bg-green-500/20', text: 'text-green-400', label: '🟢 Зелёная', border: 'border-green-500/30', priceColor: '#4ade80', tint: 'card-tint-green' },
-  red: { bg: 'bg-red-500/20', text: 'text-red-400', label: '🔴 Красная', border: 'border-red-500/30', priceColor: '#f87171', tint: 'card-tint-red' },
-  yellow: { bg: 'bg-yellow-500/20', text: 'text-yellow-400', label: '🟡 Жёлтая', border: 'border-yellow-500/30', priceColor: '#facc15', tint: 'card-tint-yellow' },
-  _default: { bg: 'bg-gray-500/20', text: 'text-gray-400', label: '📦 Другое', border: 'border-gray-500/30', priceColor: '#9ca3af', tint: '' }
-}
 const CARDS_PER_PAGE = 24
 const PRODUCTS_CACHE_KEY = 'vv_products_cache_v1'
 const WEIGHT_CACHE_KEY = 'vv_weight_cache_v1'
@@ -100,178 +60,6 @@ function buildCartItemMap(items = []) {
 
   return { itemIds, itemsById }
 }
-
-const ProductCard = memo(function ProductCard({ product, index: _index, isFavorite, onToggleFavorite, favoritesLoading, onAddToCart, onSetCartQuantity, viewMode: _viewMode, cartState, cartItem, isCartBusy, onOpenDetail, isStale }) {
-  const [imageLoaded, setImageLoaded] = useState(false)
-  const [imageError, setImageError] = useState(false)
-  const metaBadges = getCardMetaBadges(product)
-
-  // Calculate real discount percentage
-  const oldPriceVal = parseFloat(product.oldPrice)
-  const currentPriceVal = parseFloat(product.currentPrice)
-  const hasDiscount = oldPriceVal > currentPriceVal && oldPriceVal > 0
-  const discount = hasDiscount
-    ? Math.round(((oldPriceVal - currentPriceVal) / oldPriceVal) * 100)
-    : 0
-
-  const config = TYPE_CONFIG[product.type] || TYPE_CONFIG._default
-  const normalizedUnit = normalizeUnit(cartItem?.unit || product.unit)
-  const showQuantityControl = cartState !== 'loading'
-    && cartState !== 'pending'
-    && cartState !== 'error'
-    && Number(cartItem?.quantity || 0) > 0
-  const step = getCartStep(normalizedUnit, cartItem)
-
-  return (
-    <div
-      className={`card-vertical ${config.tint}`}
-    >
-      {/* Hero Image — clickable to open detail */}
-      <div className="card-image-wrap" onClick={() => onOpenDetail(product)} style={{ cursor: 'pointer' }}>
-        {!imageLoaded && !imageError && product.image && <div className="absolute inset-0 skeleton" />}
-
-        {product.image && !imageError ? (
-          <img
-            src={proxyImg(product.image)}
-            alt={product.name}
-            referrerPolicy="no-referrer"
-            loading="lazy"
-            decoding="async"
-            className={`card-hero-img ${imageLoaded ? 'loaded' : ''}`}
-            onLoad={() => setImageLoaded(true)}
-            onError={() => setImageError(true)}
-          />
-        ) : (
-          <div className="card-hero-fallback">
-            <span className="text-4xl">{getCategoryEmoji(product.category)}</span>
-          </div>
-        )}
-
-        {/* Discount badge on image */}
-        {hasDiscount && (
-          <span className="card-discount">-{discount}%</span>
-        )}
-
-        {/* Favorite button on image */}
-        <button
-          className={`card-fav-btn tap-scale-xs ${isFavorite ? 'active' : ''} ${favoritesLoading ? 'loading' : ''}`}
-          onClick={(e) => {
-            e.stopPropagation()
-            if (!favoritesLoading) onToggleFavorite(product)
-          }}
-          disabled={favoritesLoading}
-        >
-          {favoritesLoading ? (
-            <div className="w-5 h-5 border-2 border-white/50 border-t-transparent rounded-full animate-spin" />
-          ) : (
-            isFavorite ? '❤️' : '🤍'
-          )}
-        </button>
-
-        {/* Type badge on image */}
-        <span className={`card-type-badge ${config.bg} ${config.text}`}>
-          {config.label}
-        </span>
-
-        {/* v1.24 UX-STALE-01: per-card stale badge when the source for
-            this card's type has gone stale. Visible alongside the favorite
-            heart; aria-label surfaces the reason for screen readers. */}
-        {isStale && (
-          <span
-            className="card-stale-badge"
-            title="Источник устарел — показаны последние известные цены"
-            aria-label="Данные устарели"
-          >
-            ⏳
-          </span>
-        )}
-      </div>
-
-      {/* Card Body */}
-      <div className="card-body">
-        <h3 className="card-title">{product.name}</h3>
-
-        <div className="card-price-row">
-          <div className="card-prices">
-            <span className="card-price" style={{ color: config.priceColor }}>{product.currentPrice}₽</span>
-            {hasDiscount && (
-              <span className="card-old-price">{product.oldPrice}₽</span>
-            )}
-          </div>
-          {showQuantityControl ? (
-            <CartQuantityControl
-              compact
-              quantity={cartItem.quantity}
-              unit={normalizedUnit}
-              disabled={isCartBusy}
-              canIncrement={!(Number(cartItem?.max_q || 0) > 0 && Number(cartItem.quantity || 0) >= Number(cartItem.max_q))}
-              onDecrement={() => onSetCartQuantity(product, Math.max(0, Number(cartItem.quantity || 0) - step))}
-              onIncrement={() => onSetCartQuantity(product, Number(cartItem.quantity || 0) + step)}
-              onCommitQuantity={(nextQuantity) => onSetCartQuantity(product, nextQuantity)}
-            />
-          ) : (
-            <button
-              className={`cart-btn tap-scale-sm ${cartState === 'success' ? 'cart-btn-success' : ''} ${cartState === 'error' || cartState === 'retry' ? 'cart-btn-error' : ''} ${cartState === 'pending' ? 'cart-btn-pending' : ''}`}
-              onClick={(e) => {
-                e.stopPropagation()
-                if (cartState !== 'loading' && cartState !== 'pending') onAddToCart(product)
-              }}
-              aria-label="Добавить в корзину"
-              disabled={cartState === 'loading' || cartState === 'pending'}
-            >
-              {cartState === 'loading' ? (
-                <span className="cart-btn-spinner" />
-              ) : cartState === 'pending' ? (
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.4">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6l4 2" />
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 21a9 9 0 100-18 9 9 0 000 18z" />
-                </svg>
-              ) : cartState === 'success' ? (
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                </svg>
-              ) : cartState === 'retry' ? (
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M1 4v6h6" />
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M3.51 15a9 9 0 105.64-11.36L1 10" />
-                </svg>
-              ) : cartState === 'error' ? (
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="3">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              ) : (
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 100 4 2 2 0 000-4z" />
-                </svg>
-              )}
-            </button>
-          )}
-        </div>
-
-        <div className="card-meta-row">
-          {metaBadges.map((badge) => (
-            <span
-              key={`${badge.kind}-${badge.text}`}
-              className={badge.kind === 'stock' ? 'card-stock' : badge.kind === 'stock-zero' ? 'card-stock-zero' : 'card-weight'}
-            >
-              {badge.text}
-            </span>
-          ))}
-        </div>
-      </div>
-    </div>
-  )
-}, (prev, next) => {
-  // Custom comparator: skip re-render if nothing card-relevant changed
-  return prev.product === next.product
-    && prev.isFavorite === next.isFavorite
-    && prev.cartState === next.cartState
-    && prev.cartItem === next.cartItem
-    && prev.isCartBusy === next.isCartBusy
-    && prev.favoritesLoading === next.favoritesLoading
-    && prev.viewMode === next.viewMode
-    && prev.isStale === next.isStale
-})
 
 function ScrollableChips({ selected, onSelect, items, className = '', favoritedIds, onToggleFavorite }) {
   const scrollRef = useRef(null)
