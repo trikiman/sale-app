@@ -3,17 +3,17 @@ gsd_state_version: 1.0
 milestone: v1.26
 milestone_name: Miniapp Test Harness + Style Guide Debt Cleanup
 status: in_progress
-last_updated: "2026-05-13T22:20:00.000Z"
-last_activity: 2026-05-13
+last_updated: "2026-05-14T15:15:00.000Z"
+last_activity: 2026-05-14
 progress:
   total_phases: 3
   completed_phases: 1
-  total_plans: 3
-  completed_plans: 3
-  percent: 33
+  total_plans: 7
+  completed_plans: 4
+  percent: 50
 current_phase: 84
-current_phase_status: not_started
-current_phase_resume_file: null
+current_phase_status: in_progress_with_blocker
+current_phase_resume_file: .planning/HANDOFF-2026-05-14.md
 ---
 
 # Project State
@@ -23,11 +23,17 @@ current_phase_resume_file: null
 See: .planning/PROJECT.md (updated 2026-05-13)
 
 **Core value:** Family members see every VkusVill discount and can add to cart in one tap
-**Current focus:** v1.26 Miniapp Test Harness + Style Guide Debt Cleanup — Vitest/RTL as safety net, refactor 46 inline-style violations + 135 spacing-scale CSS debt, promote lint rules to ERROR. 3 phases (83-85), 8 requirements.
+**Current focus:** v1.26 Phase 84 inline-style refactor — 3 of 46 sites done. **Pool currently sick on EC2 (0 candidates admitted, scrapers stale).** Phase 84.4 WIP stashed; recovery plan in `.planning/HANDOFF-2026-05-14.md`.
 
 ## Current Position
 
-v1.26 Phase 83 **shipped** 2026-05-13 — Vitest + RTL + jsdom installed, `test-miniapp` CI job added, 5 extracted modules (`cartStep`, `isTelegramRuntime`, `cardConstants`, `ProductCard`, `StaleBanner`), 70 passing tests (3 unit + 4 snapshot files), 5 locked inline snapshots. Live MCP-verified against production. 5 commits `85f1105..9bbd5e7`. Safety net in place for Phase 84 inline-style refactor. Next: `/gsd-plan-phase 84` for TOOL-05 (46 inline-style sites → 0 + promote `react/forbid-dom-props` WARN → ERROR).
+**🚨 RESUME HERE: read `.planning/HANDOFF-2026-05-14.md` end-to-end before doing anything.**
+
+Today (2026-05-14) shipped Phase 83 + Phase 84-01 + Phase 84.1/84.2/84.3 sidequests for pool reliability (8 commits, all on origin/main HEAD `a2db9f3`). Phase 84.4 attempted but broken-stashed because the WIP `_tcp_prefilter_candidates` helper was referenced before being written.
+
+Live state on EC2: pool 0/10, all 3 scrapers (green/red/yellow) intermittently failing because the candidate set after Phase 84.2's "unlabeled fallthrough" is mostly dead Azure IPs and non-RU egresses. Files going stale at 20-35 min ages.
+
+Next session: finish Phase 84.4 (sources.py revert + new TCP pre-filter), then resume Phase 84-02/03 inline-style refactor.
 
 ## Milestone Goal (v1.26 — active)
 
@@ -51,10 +57,13 @@ v1.26 Phase 83 **shipped** 2026-05-13 — Vitest + RTL + jsdom installed, `test-
 
 ## Next Up
 
-- **`/gsd-plan-phase 84`** — inline-style refactor (TOOL-05). Target: 46 violations → 0 using Phase 83 snapshots as safety net. Promote `react/forbid-dom-props` WARN → ERROR.
-- Phase 85 (TOOL-07/08 + UX-EMPTY-01) — CSS spacing-scale refactor + promote rules to ERROR + empty-state copy fix.
-- After each phase: live MCP + CI green before advancing.
-- After Phase 85: `.planning/v1.26-MILESTONE-AUDIT.md` + tag `v1.26` + archive. **STOP before `/gsd-complete-milestone`**.
+🚨 **READ `.planning/HANDOFF-2026-05-14.md` FIRST.**
+
+1. **Phase 84.4** (broken WIP in stash) — TCP pre-filter + revert label-filter to RU-only-explicit. ~30 min including test updates.
+2. **Phase 84-02** — App.jsx (10) + ProductDetail.jsx (9) inline-style refactor.
+3. **Phase 84-03** — HistoryPage (10) + HistoryDetail (14), then bump `react/forbid-dom-props` WARN→ERROR.
+4. **Phase 85** (TOOL-07/08 + UX-EMPTY-01) — CSS spacing-scale + final lint bump.
+5. **STOP before `/gsd-complete-milestone`** — manual approval required.
 
 ## Outstanding UAT
 
@@ -91,6 +100,12 @@ From `.planning/UAT-AUDIT-2026-05-13.md`:
 | UAT audit produced (6 items, 1 P1 blocking) | 2026-05-13 |
 | v1.26 STARTED — Miniapp Test Harness + Style Guide Debt Cleanup, 3 phases 83-85, 8 reqs | 2026-05-13 |
 | v1.26 Phase 83 SHIPPED — vitest + 70 tests + 5 snapshots + extracted ProductCard/StaleBanner | 2026-05-13 |
+| Phase 84-01 inline-style refactor (3 of 46 sites) | 2026-05-14 |
+| Phase 84.1 pool recovery hardening (dedup + graduated TTL + soft-tier release) | 2026-05-14 |
+| Phase 84.2 multi-source aggregation (igareck + kort0881 + SoliSpirit) | 2026-05-14 |
+| Phase 84.3 consensus voting in verify_egress (3-provider majority) | 2026-05-14 |
+| Phase 84.4 attempted, WIP-broken-stashed (TCP pre-filter incomplete) | 2026-05-14 |
+| Pool sick (0/10) at session end; HANDOFF-2026-05-14.md written | 2026-05-14 |
 
 ---
-*Last updated: 2026-05-13 after Phase 83 shipped (5 commits `85f1105..9bbd5e7`, 70 tests, 5 inline snapshots, live MCP-verified against production). ProductCard + StaleBanner extracted for Phase 84 refactor target. Next: `/gsd-plan-phase 84` inline-style refactor.*
+*Session ended 2026-05-14 ~15:15 MSK. v1.26 phase 84 in progress with blocker. Pool currently sick (0 admissions/cycle), Phase 84.4 fix WIP-stashed. Next session: read .planning/HANDOFF-2026-05-14.md, finish Phase 84.4, resume inline-style refactor.*
