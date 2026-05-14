@@ -149,13 +149,13 @@ export default function ProductDetail({ product, onClose, onAddToCart, onSetCart
 
           {/* Details */}
           {loading ? (
-            <div className="detail-loading" style={{ textAlign: 'center', padding: '24px 0' }}>
-              <div className="cart-btn-spinner" style={{ width: 24, height: 24, margin: '0 auto 8px' }} />
+            <div className="detail-loading detail-loading--vertical">
+              <div className="cart-btn-spinner cart-btn-spinner--detail" />
               Загружаем детали…
             </div>
           ) : details?._error ? (
-            <div style={{ textAlign: 'center', padding: '16px 0' }}>
-              <p style={{ opacity: 0.6, fontSize: '13px', margin: '0 0 12px' }}>
+            <div className="detail-error-state">
+              <p className="detail-error-msg">
                 📋 Подробная информация временно недоступна
               </p>
               {product.url && (
@@ -163,12 +163,7 @@ export default function ProductDetail({ product, onClose, onAddToCart, onSetCart
                   href={product.url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  style={{
-                    display: 'inline-flex', alignItems: 'center', gap: '6px',
-                    padding: '10px 20px', borderRadius: '12px',
-                    background: 'rgba(0,180,90,0.12)', color: '#00b45a',
-                    fontWeight: 600, fontSize: '14px', textDecoration: 'none',
-                  }}
+                  className="detail-vkusvill-link"
                 >
                   🔗 Открыть на VkusVill
                 </a>
@@ -208,27 +203,20 @@ export default function ProductDetail({ product, onClose, onAddToCart, onSetCart
               )}
               {/* If no detail sections are available, show info message */}
               {details?.source_unavailable && !details?.description && !details?.composition && (
-                <div className="detail-section" style={{ textAlign: 'center', opacity: 0.7 }}>
-                  <p style={{ fontSize: '13px', margin: '8px 0' }}>
+                <div className="detail-section detail-section--unavailable">
+                  <p className="detail-section-msg">
                     📋 Подробная информация временно недоступна
                   </p>
                 </div>
               )}
               {/* VkusVill link */}
               {product.url && (
-                <div className="detail-section" style={{ textAlign: 'center' }}>
+                <div className="detail-section detail-section--center">
                   <a
                     href={product.url}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="detail-vkusvill-link"
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', gap: '6px',
-                      padding: '10px 20px', borderRadius: '12px',
-                      background: 'rgba(0,180,90,0.12)', color: '#00b45a',
-                      fontWeight: 600, fontSize: '14px', textDecoration: 'none',
-                      transition: 'background 0.2s',
-                    }}
                   >
                     🔗 Открыть на VkusVill
                   </a>

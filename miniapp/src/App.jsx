@@ -1534,7 +1534,7 @@ function App() {
   if (currentPage === 'history-detail' && historyDetailId) {
     return (
       <div className="app-container" data-theme={theme}>
-        <Suspense fallback={<div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',opacity:0.5}}>Загружаем…</div>}>
+        <Suspense fallback={<div className="suspense-fallback">Загружаем…</div>}>
           <HistoryDetail
             productId={historyDetailId}
             onBack={() => {
@@ -1551,7 +1551,7 @@ function App() {
   if (currentPage === 'history') {
     return (
       <div className="app-container" data-theme={theme}>
-        <Suspense fallback={<div style={{minHeight:'100vh',display:'flex',alignItems:'center',justifyContent:'center',opacity:0.5}}>Загружаем…</div>}>
+        <Suspense fallback={<div className="suspense-fallback">Загружаем…</div>}>
           <HistoryPage
             onBack={() => setCurrentPage('main')}
             onOpenDetail={(productId) => {
@@ -1587,20 +1587,10 @@ function App() {
                 window.open(url, '_blank')
               }
             }}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '4px',
-              marginBottom: '6px',
-              fontSize: '11px',
-              color: '#2AABEE',
-              cursor: 'pointer',
-              opacity: 0.8,
-            }}
+            className="link-banner link-banner--browser"
           >
             <span>🌐</span>
-            <span style={{ textDecoration: 'underline', textUnderlineOffset: '2px' }}>
+            <span className="u-underline-2">
               Открыть сайт в браузере
             </span>
           </div>
@@ -1608,15 +1598,7 @@ function App() {
 
         {/* Small Telegram link for guest users */}
         {isGuest && linkUrl && !linkDismissed && (
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: '6px',
-            marginBottom: '8px',
-            fontSize: '12px',
-            color: 'var(--tg-theme-hint-color)',
-          }}>
+          <div className="link-banner">
             <span>🔔</span>
             <span
               onClick={(e) => {
@@ -1627,30 +1609,17 @@ function App() {
                 }
                 window.open(linkUrl, '_blank', 'noopener,noreferrer')
               }}
-              style={{
-                color: '#2AABEE',
-                cursor: 'pointer',
-                textDecoration: 'underline',
-                textUnderlineOffset: '2px',
-              }}
+              className="link-banner__action"
             >
               Привязать Telegram
             </span>
-            <span style={{ color: 'var(--tg-theme-hint-color)', opacity: 0.6 }}>для уведомлений</span>
+            <span className="link-banner__hint-soft">для уведомлений</span>
             <button
               onClick={() => {
                 setLinkDismissed(true)
                 localStorage.setItem('link_dismissed', '1')
               }}
-              style={{
-                background: 'none',
-                border: 'none',
-                color: 'var(--tg-theme-hint-color)',
-                fontSize: '14px',
-                cursor: 'pointer',
-                padding: '0 2px',
-                opacity: 0.5
-              }}
+              className="link-banner__dismiss"
               aria-label="Закрыть"
             >
               ✕
@@ -2082,15 +2051,14 @@ function App() {
 
           {/* Infinite scroll sentinel */}
           {visibleCount < filteredProducts.length && (
-            <div ref={loadMoreRef} style={{ gridColumn: '1/-1', textAlign: 'center', padding: '20px', opacity: 0.5, fontSize: '14px' }}>
+            <div ref={loadMoreRef} className="products-grid__load-more">
               Загружаем ещё {Math.min(CARDS_PER_PAGE, filteredProducts.length - visibleCount)} из {filteredProducts.length - visibleCount}…
             </div>
           )}
 
         {filteredProducts.length === 0 && !loading && !error && (
           <div
-            className="text-center py-8 opacity-60 anim-fade anim-delay-3"
-            style={{ gridColumn: '1 / -1' }}
+            className="text-center py-8 opacity-60 anim-fade anim-delay-3 u-grid-row-full"
           >
             В этой категории пока нет товаров. Попробуйте другой фильтр
           </div>

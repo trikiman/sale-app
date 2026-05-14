@@ -215,6 +215,94 @@ body {
   height: 24px;
 }
 
+/* v1.26 Phase 84-02: utilities — add new ones above this comment if they
+   repeat across 3+ sites. Domain-specific classes (.link-banner, etc.)
+   live in their own blocks further down so they read with the components
+   they style. */
+
+/* Generic 2px text-underline-offset — used on link-banner action span +
+   any other "Open in browser"-style link that needs more breathing room
+   under the underline. */
+.u-underline-2 {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* Generic full-row span inside .products-grid (CSS grid). Used by the
+   infinite-scroll sentinel + the empty-state filter copy so they don't
+   sit in a single column. */
+.u-grid-row-full {
+  grid-column: 1 / -1;
+}
+
+/* v1.26 Phase 84-02: full-viewport Suspense fallback. Duplicated as inline
+   style in App.jsx for both lazy-mounted pages (history + history-detail);
+   extracted here so any future lazy boundary can reuse the centered loader. */
+.suspense-fallback {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.5;
+}
+
+/* v1.26 Phase 84-02: header-region link banners (telegram + browser).
+   Two variants — Telegram link (default) and the smaller browser-link
+   shown to authenticated users — share the centered-flex layout but
+   diverge in spacing, color and font-size. Modifier class controls the
+   browser-only overrides. */
+.link-banner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: var(--tg-theme-hint-color);
+}
+
+.link-banner--browser {
+  gap: 4px;
+  margin-bottom: 6px;
+  font-size: 11px;
+  color: #2AABEE;
+  cursor: pointer;
+  opacity: 0.8;
+}
+
+.link-banner__action {
+  color: #2AABEE;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.link-banner__hint-soft {
+  color: var(--tg-theme-hint-color);
+  opacity: 0.6;
+}
+
+.link-banner__dismiss {
+  background: none;
+  border: none;
+  color: var(--tg-theme-hint-color);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0 2px;
+  opacity: 0.5;
+}
+
+/* v1.26 Phase 84-02: products-grid load-more sentinel + grid-spanning
+   empty-state copy. Both extend .u-grid-row-full but the sentinel adds
+   layout-specific padding / opacity / font-size. */
+.products-grid__load-more {
+  grid-column: 1 / -1;
+  text-align: center;
+  padding: 20px;
+  opacity: 0.5;
+  font-size: 14px;
+}
+
 /* Light theme — header pills */
 [data-theme="light"] .header-pill {
   color: #374151 !important;
@@ -2348,6 +2436,37 @@ body.cart-open {
   font-size: 14px;
 }
 
+/* v1.26 Phase 84-02: vertical-only padding variant. Used on the inline
+   "loading details" state inside the drawer where horizontal padding
+   already comes from the surrounding .detail-content. */
+.detail-loading--vertical {
+  padding: 24px 0;
+}
+
+/* v1.26 Phase 84-02: spinner sized for the detail loading row (not the
+   cart button). The base .cart-btn-spinner is 16x16 — this variant goes
+   to 24x24 and adds an auto-centered margin so it sits above the
+   "Загружаем детали…" copy. */
+.cart-btn-spinner--detail {
+  width: 24px;
+  height: 24px;
+  margin: 0 auto 8px;
+}
+
+/* v1.26 Phase 84-02: error-state container shown when the detail
+   endpoint fails. Same vertical rhythm as .detail-loading but with a
+   tighter padding because the error block carries its own copy + CTA. */
+.detail-error-state {
+  text-align: center;
+  padding: 16px 0;
+}
+
+.detail-error-msg {
+  opacity: 0.6;
+  font-size: 13px;
+  margin: 0 0 12px;
+}
+
 .detail-sections {
   display: flex;
   flex-direction: column;
@@ -2357,6 +2476,46 @@ body.cart-open {
 .detail-section {
   border-top: 1px solid rgba(255, 255, 255, 0.07);
   padding-top: 14px;
+}
+
+/* v1.26 Phase 84-02: detail-section variants — centered (used for the
+   "open on VkusVill" link block) and the soft "currently unavailable"
+   copy that's centered + dimmed. */
+.detail-section--center {
+  text-align: center;
+}
+
+.detail-section--unavailable {
+  text-align: center;
+  opacity: 0.7;
+}
+
+/* v1.26 Phase 84-02: short message shown inside .detail-section--unavailable
+   ("📋 Подробная информация временно недоступна"). Distinct from
+   .detail-section-body which is a longer-form paragraph rendered for
+   description / composition / storage sections. */
+.detail-section-msg {
+  font-size: 13px;
+  margin: 8px 0;
+}
+
+/* v1.26 Phase 84-02: "Open on VkusVill" call-to-action. Used in two
+   places — the error-state fallback (when details endpoint failed) and
+   the success-state footer link inside .detail-section--center. The
+   transition only matters on hover but is harmless when reused inside
+   the error state. */
+.detail-vkusvill-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 20px;
+  border-radius: 12px;
+  background: rgba(0, 180, 90, 0.12);
+  color: #00b45a;
+  font-weight: 600;
+  font-size: 14px;
+  text-decoration: none;
+  transition: background 0.2s;
 }
 
 [data-theme="light"] .detail-section {
