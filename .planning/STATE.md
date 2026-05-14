@@ -3,17 +3,17 @@ gsd_state_version: 1.0
 milestone: v1.26
 milestone_name: Miniapp Test Harness + Style Guide Debt Cleanup
 status: in_progress
-last_updated: "2026-05-14T15:15:00.000Z"
+last_updated: "2026-05-14T16:05:00.000Z"
 last_activity: 2026-05-14
 progress:
   total_phases: 3
   completed_phases: 1
   total_plans: 7
-  completed_plans: 4
-  percent: 50
+  completed_plans: 5
+  percent: 60
 current_phase: 84
-current_phase_status: in_progress_with_blocker
-current_phase_resume_file: .planning/HANDOFF-2026-05-14.md
+current_phase_status: in_progress
+current_phase_resume_file: null
 ---
 
 # Project State
@@ -23,17 +23,16 @@ current_phase_resume_file: .planning/HANDOFF-2026-05-14.md
 See: .planning/PROJECT.md (updated 2026-05-13)
 
 **Core value:** Family members see every VkusVill discount and can add to cart in one tap
-**Current focus:** v1.26 Phase 84 inline-style refactor — 3 of 46 sites done. **Pool currently sick on EC2 (0 candidates admitted, scrapers stale).** Phase 84.4 WIP stashed; recovery plan in `.planning/HANDOFF-2026-05-14.md`.
+**Current focus:** v1.26 Phase 84 inline-style refactor — 3 of 46 sites done. Pool fix shipped (Phase 84.4 `d469080`); EC2 verified data freshness <5 min over 3 cycles, pool degraded but stable on a single Sberbank CDN node.
 
 ## Current Position
 
-**🚨 RESUME HERE: read `.planning/HANDOFF-2026-05-14.md` end-to-end before doing anything.**
+Phase 84.4 closed the pool-starvation regression. Live verification at 19:04 MSK:
+- Backend `/admin/status` → green 2.3m, red 1.5m, yellow 0.7m, all `isStale: false`.
+- Miniapp `/api/products` → `Обновлено: 19:01 at 19:04` — 3 min stale, no banner.
+- Pool: 1/10 (degraded) on `yt-noads.sbrf-cdn342.ru:443` — single node sustains all 3 scrapers because TCP pre-filter saves ~150s/cycle of probe budget.
 
-Today (2026-05-14) shipped Phase 83 + Phase 84-01 + Phase 84.1/84.2/84.3 sidequests for pool reliability (8 commits, all on origin/main HEAD `a2db9f3`). Phase 84.4 attempted but broken-stashed because the WIP `_tcp_prefilter_candidates` helper was referenced before being written.
-
-Live state on EC2: pool 0/10, all 3 scrapers (green/red/yellow) intermittently failing because the candidate set after Phase 84.2's "unlabeled fallthrough" is mostly dead Azure IPs and non-RU egresses. Files going stale at 20-35 min ages.
-
-Next session: finish Phase 84.4 (sources.py revert + new TCP pre-filter), then resume Phase 84-02/03 inline-style refactor.
+Next session: continue Phase 84-02 (App.jsx 10 sites + ProductDetail.jsx 9 sites). Pool will continue refreshing in background; if it drops to 0 again, the soft-tier (60s) recovery + TCP pre-filter should auto-recover within 1-2 cycles.
 
 ## Milestone Goal (v1.26 — active)
 
@@ -57,13 +56,16 @@ Next session: finish Phase 84.4 (sources.py revert + new TCP pre-filter), then r
 
 ## Next Up
 
-🚨 **READ `.planning/HANDOFF-2026-05-14.md` FIRST.**
+1. **Phase 84-02** — App.jsx (10) + ProductDetail.jsx (9) inline-style refactor.
+2. **Phase 84-03** — HistoryPage (10) + HistoryDetail (14), then bump `react/forbid-dom-props` WARN→ERROR.
+3. **Phase 85** (TOOL-07/08 + UX-EMPTY-01) — CSS spacing-scale + final lint bump.
+4. **STOP before `/gsd-complete-milestone`** — manual approval required.
 
-1. **Phase 84.4** (broken WIP in stash) — TCP pre-filter + revert label-filter to RU-only-explicit. ~30 min including test updates.
-2. **Phase 84-02** — App.jsx (10) + ProductDetail.jsx (9) inline-style refactor.
-3. **Phase 84-03** — HistoryPage (10) + HistoryDetail (14), then bump `react/forbid-dom-props` WARN→ERROR.
-4. **Phase 85** (TOOL-07/08 + UX-EMPTY-01) — CSS spacing-scale + final lint bump.
-5. **STOP before `/gsd-complete-milestone`** — manual approval required.
+**Pool watch:** if pool drops back to 0 mid-session and data goes stale, run
+`scripts/debug_admission.py --limit 5` first to see which sources are dying.
+Phase 84.4 ships the corrective filter but the upstream aggregators churn —
+we may need to add another aggregator or revisit the "RU-only requirement"
+question (see Open Questions).
 
 ## Outstanding UAT
 
@@ -104,8 +106,7 @@ From `.planning/UAT-AUDIT-2026-05-13.md`:
 | Phase 84.1 pool recovery hardening (dedup + graduated TTL + soft-tier release) | 2026-05-14 |
 | Phase 84.2 multi-source aggregation (igareck + kort0881 + SoliSpirit) | 2026-05-14 |
 | Phase 84.3 consensus voting in verify_egress (3-provider majority) | 2026-05-14 |
-| Phase 84.4 attempted, WIP-broken-stashed (TCP pre-filter incomplete) | 2026-05-14 |
-| Pool sick (0/10) at session end; HANDOFF-2026-05-14.md written | 2026-05-14 |
+| Phase 84.4 TCP pre-filter + RU-only label gate (`d469080`) — pool fix shipped + EC2-verified data freshness <5 min | 2026-05-14 |
 
 ---
-*Session ended 2026-05-14 ~15:15 MSK. v1.26 phase 84 in progress with blocker. Pool currently sick (0 admissions/cycle), Phase 84.4 fix WIP-stashed. Next session: read .planning/HANDOFF-2026-05-14.md, finish Phase 84.4, resume inline-style refactor.*
+*Session checkpoint 2026-05-14 ~19:05 MSK. v1.26 Phase 84 in progress, blocker resolved. Pool degraded (1/10) but stable; data fresh <5 min. Next: Phase 84-02 inline-style refactor (App.jsx + ProductDetail.jsx, 19 sites).*
