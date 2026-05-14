@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.26
 milestone_name: Miniapp Test Harness + Style Guide Debt Cleanup
 status: in_progress
-last_updated: "2026-05-14T19:00:00.000Z"
+last_updated: "2026-05-14T20:45:00.000Z"
 last_activity: 2026-05-14
 progress:
   total_phases: 3
   completed_phases: 1
   total_plans: 7
-  completed_plans: 6
-  percent: 70
+  completed_plans: 7
+  percent: 80
 current_phase: 84
 current_phase_status: in_progress
 current_phase_resume_file: null
@@ -23,24 +23,20 @@ current_phase_resume_file: null
 See: .planning/PROJECT.md (updated 2026-05-13)
 
 **Core value:** Family members see every VkusVill discount and can add to cart in one tap
-**Current focus:** v1.26 Phase 84 inline-style refactor — 3 of 46 sites done. Pool fix (Phase 84.4 `d469080`) + scheduler robust-freshness fix (Phase 84.5 `2cf4f1c`) shipped and EC2-verified. User-visible "Обновлено: N мин" stays under 5 min steady state, no staleness banner.
+**Current focus:** v1.26 Phase 84 inline-style refactor — **22 of 46 sites done**. Phase 84-01 (3) + 84-02 (19) shipped + visually verified. Phase 84.4 (pool fix) + 84.5 (robust freshness scheduler) shipped + EC2-verified. Discovered pre-existing scrape_green.py modal-close bug during 84-02 verification — Phase 84.5 stall recovery makes it visible (not silent), separate Phase 84.6 fix queued next.
 
 ## Current Position
 
-Phase 84.5 closed the user-reported "Обновлено: 19 мин" intermittent staleness. Live verification at 21:56:35 MSK over 5 cycles:
+Phase 84-02 closed 19 inline-style sites in App.jsx + ProductDetail.jsx. Live verification at 23:39 MSK:
 
-| Save 1 → Save 2 | Gap |
-|---|---|
-| 21:43:27 → 21:46:39 | 3:12 |
-| 21:46:39 → 21:51:22 | 4:43 |
-| 21:51:22 → 21:55:48 | 4:26 |
+- vitest 70/70 (Phase 83 snapshot tests = no visual regression)
+- lint 48 → 29 warnings (exact 19-drop)
+- vite build 889ms 0 errors
+- Vercel deploy: miniapp renders correctly (Telegram banner, product cards, load-more sentinel)
 
-- Backend `/admin/status` → green 0.2m, red 2.7m, yellow 1.8m, all `isStale: false`.
-- Miniapp `/api/products` → "Обновлено: 21:55 at 21:56:35" — no banner, `stale_count=0`.
-- Stall recovery fired correctly on first iteration (forced "all" when green file was 311s old).
-- Pre-existing systemd `Requires=saleapp-xray.service` cascade bug also fixed; xray reload no longer kills scheduler.
+Discovered separate pre-existing bug in `scrape_green.py` `_close_delivery_modal`: `TypeError: btn.click is not a function` when matched element is an SVG (no `HTMLElement.click`). Phase 84.5 stall recovery firing every cycle to retry — safety net working, but underlying scrape can't complete. Phase 84.6 is the safe-click fix.
 
-Next session: Phase 84-02 (App.jsx 10 sites + ProductDetail.jsx 9 sites — the original inline-style refactor goal).
+Next session: ship Phase 84.6 (modal safe-click helper, ~10-line change), then Phase 84-03 (HistoryPage 10 + HistoryDetail 14 + bump `react/forbid-dom-props` WARN→ERROR).
 
 ## Milestone Goal (v1.26 — active)
 
@@ -116,6 +112,7 @@ From `.planning/UAT-AUDIT-2026-05-13.md`:
 | Phase 84.3 consensus voting in verify_egress (3-provider majority) | 2026-05-14 |
 | Phase 84.4 TCP pre-filter + RU-only label gate (`d469080`) — pool fix shipped + EC2-verified data freshness <5 min | 2026-05-14 |
 | Phase 84.5 robust-freshness scheduler (`2cf4f1c`) — overshoot tolerance + stall recovery + 5-min threshold + Wants= systemd fix; live-verified gaps 3:12/4:43/4:26 across 5 cycles | 2026-05-14 |
+| Phase 84-02 inline-style refactor (`4f7969b`) — App.jsx 10 sites + ProductDetail.jsx 9 sites (22 of 46 total); lint 48 → 29 warnings; visually verified on Vercel | 2026-05-14 |
 
 ---
-*Session checkpoint 2026-05-14 ~22:00 MSK. v1.26 Phase 84 in progress, blocker resolved + scheduler robust against pool/xray restart cascades. Pool degraded (1/10) but stable; data fresh <5 min steady state. Next: Phase 84-02 inline-style refactor (App.jsx + ProductDetail.jsx, 19 sites).*
+*Session checkpoint 2026-05-14 ~23:45 MSK. v1.26 Phase 84 main goal at 22/46 sites. Phase 84.6 (scrape_green.py modal-close safe-click helper) queued next — uncovered during 84-02 verification, blocks user-visible freshness goal until fixed. After 84.6 → Phase 84-03 (HistoryPage 10 + HistoryDetail 14 + lint bump WARN→ERROR).*
