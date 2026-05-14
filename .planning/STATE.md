@@ -23,20 +23,25 @@ current_phase_resume_file: null
 See: .planning/PROJECT.md (updated 2026-05-13)
 
 **Core value:** Family members see every VkusVill discount and can add to cart in one tap
-**Current focus:** v1.26 Phase 84 inline-style refactor — **22 of 46 sites done**. Phase 84-01 (3) + 84-02 (19) shipped + visually verified. Phase 84.4 (pool fix) + 84.5 (robust freshness scheduler) shipped + EC2-verified. Discovered pre-existing scrape_green.py modal-close bug during 84-02 verification — Phase 84.5 stall recovery makes it visible (not silent), separate Phase 84.6 fix queued next.
+**Current focus:** v1.26 Phase 84 inline-style refactor — **22 of 46 sites done**. Phase 84-01 (3) + 84-02 (19) shipped + visually verified. Pool fix (84.4) + robust freshness scheduler (84.5) + scraper modal-close + mtime-touch fixes (84.6) all shipped + EC2-verified. User-visible "Обновлено: N мин" target (<5 min) achieved end-to-end.
 
 ## Current Position
 
-Phase 84-02 closed 19 inline-style sites in App.jsx + ProductDetail.jsx. Live verification at 23:39 MSK:
+Phase 84.6 closed the user-reported "Обновлено: 31 мин" symptom uncovered during Phase 84-02 verification. Two-layer fix:
 
-- vitest 70/70 (Phase 83 snapshot tests = no visual regression)
-- lint 48 → 29 warnings (exact 19-drop)
-- vite build 889ms 0 errors
-- Vercel deploy: miniapp renders correctly (Telegram banner, product cards, load-more sentinel)
+1. **`2fc0048`** — safe-click helper in `_close_delivery_modal` / `_close_green_modal`. Eliminates `TypeError: btn.click is not a function` when selectors match SVG elements.
+2. **`4fb8af1`** — `_touch_existing_green_file()` helper called from suspicious-empty / suspicious-single / count-mismatch safety guards. Bumps mtime on intentional snapshot preservation so freshness reporting correctly says "verified, no change".
 
-Discovered separate pre-existing bug in `scrape_green.py` `_close_delivery_modal`: `TypeError: btn.click is not a function` when matched element is an SVG (no `HTMLElement.click`). Phase 84.5 stall recovery firing every cycle to retry — safety net working, but underlying scrape can't complete. Phase 84.6 is the safe-click fix.
+EC2 verification at 00:08 MSK 2026-05-15:
+- Green age 0.9m (was 31m), `isStale: false`
+- Miniapp `Обновлено: 00:07` at 00:08:31 — 1 min fresh
+- Stale banner cleared green (only red 6m transient remained)
+- 0 `btn.click` errors over 7-min window
+- New journal lines: "[GREEN] Touched existing snapshot mtime (1 items preserved)"
 
-Next session: ship Phase 84.6 (modal safe-click helper, ~10-line change), then Phase 84-03 (HistoryPage 10 + HistoryDetail 14 + bump `react/forbid-dom-props` WARN→ERROR).
+User goal — "Обновлено: never > 5 min" — **met** across the full robustness chain (84.4 → 84.5 → 84.6).
+
+Next session: Phase 84-03 (HistoryPage.jsx 10 sites + HistoryDetail.jsx 14 sites + bump `react/forbid-dom-props` WARN→ERROR + drop CI `--max-warnings=60`). Closes Phase 84 main goal at 46/46 sites.
 
 ## Milestone Goal (v1.26 — active)
 
@@ -113,6 +118,7 @@ From `.planning/UAT-AUDIT-2026-05-13.md`:
 | Phase 84.4 TCP pre-filter + RU-only label gate (`d469080`) — pool fix shipped + EC2-verified data freshness <5 min | 2026-05-14 |
 | Phase 84.5 robust-freshness scheduler (`2cf4f1c`) — overshoot tolerance + stall recovery + 5-min threshold + Wants= systemd fix; live-verified gaps 3:12/4:43/4:26 across 5 cycles | 2026-05-14 |
 | Phase 84-02 inline-style refactor (`4f7969b`) — App.jsx 10 sites + ProductDetail.jsx 9 sites (22 of 46 total); lint 48 → 29 warnings; visually verified on Vercel | 2026-05-14 |
+| Phase 84.6 robust scraper (`2fc0048` + `4fb8af1`) — safe-click for modal-close TypeError + mtime touch on suspicious-result safety guard; EC2-verified green age 0.9m, miniapp Обновлено: 00:07 at 00:08:31 (1m fresh), banner cleared | 2026-05-15 |
 
 ---
-*Session checkpoint 2026-05-14 ~23:45 MSK. v1.26 Phase 84 main goal at 22/46 sites. Phase 84.6 (scrape_green.py modal-close safe-click helper) queued next — uncovered during 84-02 verification, blocks user-visible freshness goal until fixed. After 84.6 → Phase 84-03 (HistoryPage 10 + HistoryDetail 14 + lint bump WARN→ERROR).*
+*Session checkpoint 2026-05-15 ~00:10 MSK. v1.26 Phase 84 main goal at 22/46 sites. Robustness chain (84.4 → 84.5 → 84.6) complete and EC2-verified. User goal "Обновлено: never > 5 min" met. Next: Phase 84-03 (HistoryPage 10 + HistoryDetail 14 + lint bump WARN→ERROR) to close the inline-style refactor at 46/46.*
