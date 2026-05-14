@@ -852,7 +852,48 @@ def client_log(request: Request, payload: dict = Body(default={})):
     return {"ok": True}
 
 
-def _build_source_freshness(stale_minutes: int = 5) -> tuple[dict, list[str], float]:
+# v1.26 Phase 84.7: per-color staleness thresholds.
+# Cycle cadence is ~5 min for red/yellow (one save per full-cycle plus a
+# merge-step touch ~2-3 min later). Setting all three to a uniform 5 min
+# put red right at the threshold edge — saves landed at, say, T+0 and
+# T+5:00, so a fetch at T+4:50 saw red age=4.9 (fine) but a fetch at
+# T+5:01 saw red age=5.0+ (stale flicker). Yellow had the same pattern.
+# Per-color thresholds let us raise yellow's bar without weakening green
+# or red. Operator can override per-call via the dict argument.
+DEFAULT_STALE_THRESHOLDS_MINUTES: dict[str, int] = {
+    "green": 5,
+    "red": 5,
+    "yellow": 10,
+}
+
+
+def _build_source_freshness(
+    stale_minutes: int | None = None,
+    stale_thresholds: dict[str, int] | None = None,
+) -> tuple[dict, list[str], float]:
+    """Compute per-source freshness from on-disk mtimes.
+
+    Args:
+        stale_minutes: legacy single threshold applied to all 3 colors.
+            When provided (not ``None``) it overrides every color, matching
+            pre-Phase-84.7 behavior. Kept for back-compat with ad-hoc
+            callers (admin scripts, future debug endpoints).
+        stale_thresholds: per-color override dict, e.g. ``{"green": 5,
+            "yellow": 10}``. Missing colors fall back to
+            ``DEFAULT_STALE_THRESHOLDS_MINUTES``. Takes precedence over
+            ``stale_minutes`` when both are set.
+
+    Returns: ``(source_freshness, stale_files, latest_mtime)``.
+    """
+    # Resolve per-color thresholds. Legacy single-int wins back-compat
+    # only if the new dict isn't provided.
+    if stale_thresholds is not None:
+        thresholds = {**DEFAULT_STALE_THRESHOLDS_MINUTES, **stale_thresholds}
+    elif stale_minutes is not None:
+        thresholds = {color: stale_minutes for color in DEFAULT_STALE_THRESHOLDS_MINUTES}
+    else:
+        thresholds = dict(DEFAULT_STALE_THRESHOLDS_MINUTES)
+
     source_freshness = {}
     stale_files = []
     latest_mtime = 0.0
@@ -863,13 +904,14 @@ def _build_source_freshness(stale_minutes: int = 5) -> tuple[dict, list[str], fl
         updated_at = None
         age_min = None
         is_stale = True
+        threshold = thresholds[color]
 
         if exists:
             mtime = os.path.getmtime(src)
             latest_mtime = max(latest_mtime, mtime)
             age_min = round((_time.time() - mtime) / 60, 1)
             updated_at = datetime.fromtimestamp(mtime).isoformat(timespec="seconds")
-            is_stale = age_min > stale_minutes
+            is_stale = age_min > threshold
             if is_stale:
                 stale_files.append(f"{color} ({age_min:.0f}m)")
         else:
@@ -881,6 +923,10 @@ def _build_source_freshness(stale_minutes: int = 5) -> tuple[dict, list[str], fl
             "ageMinutes": age_min,
             "isStale": is_stale,
             "status": "ok" if exists and not is_stale else ("missing" if not exists else "stale"),
+            # v1.26 Phase 84.7: surface the threshold used so admin tools
+            # / future UI can show "stale at N min" without re-reading
+            # the config.
+            "staleThresholdMinutes": threshold,
         }
 
     return source_freshness, stale_files, latest_mtime
@@ -1400,11 +1446,14 @@ def get_products():
                     time.sleep(0.5)  # Retry once after brief pause
                 else:
                     raise HTTPException(status_code=500, detail="Invalid JSON data")
-        # v1.26 Phase 84.5: stale_minutes lowered from 10 → 5 to match the
-        # robust-freshness target (Обновлено: never > 5 min). The scheduler
-        # now keeps green refreshed every 2-3 min in steady state, so a
-        # 5-min threshold only fires during real outages.
-        source_freshness, stale_files, latest_mtime = _build_source_freshness(stale_minutes=5)
+        # v1.26 Phase 84.7: use per-color defaults from
+        # DEFAULT_STALE_THRESHOLDS_MINUTES — green=5, red=5, yellow=10.
+        # Yellow gets the larger threshold because its scrape cadence
+        # plus merge-step touches put it right at the 5-min edge,
+        # producing transient stale flickers that aren't real freshness
+        # problems. Green and red stay at 5 to match the user's
+        # robustness target.
+        source_freshness, stale_files, latest_mtime = _build_source_freshness()
         data["sourceFreshness"] = source_freshness
         data["dataStale"] = len(stale_files) > 0
         data["staleInfo"] = stale_files if stale_files else None
@@ -5380,8 +5429,8 @@ def admin_get_status(token: Optional[str] = Header(None, alias="X-Admin-Token"))
     """Return current scraper status and product counts."""
     _require_token(token)
     counts = {"green": 0, "red": 0, "yellow": 0, "total": 0, "updatedAt": None, "greenLiveCount": 0}
-    # v1.26 Phase 84.5: keep this in sync with /api/products (stale_minutes=5).
-    source_freshness, _, _ = _build_source_freshness(stale_minutes=5)
+    # v1.26 Phase 84.7: use per-color defaults (green=5, red=5, yellow=10).
+    source_freshness, _, _ = _build_source_freshness()
     cycle_state = _load_cycle_state()
     if os.path.exists(PROPOSALS_PATH):
         try:

@@ -263,70 +263,127 @@ def _set_color_age(tmp_path: Path, color: str, age_minutes: float) -> None:
     os.utime(fp, (backdate, backdate))
 
 
-def test_build_source_freshness_default_threshold_is_5_minutes(
+def test_build_source_freshness_default_thresholds_are_per_color(
     backend_with_isolated_data_dir, tmp_path
 ) -> None:
-    """v1.26 Phase 84.5: default stale_minutes is 5 (was 10 in v1.24).
-
-    A file 6 min old must be reported isStale=True with the default
-    threshold. This pins the user-visible robustness target.
+    """v1.26 Phase 84.7: default thresholds are per-color (green=5, red=5,
+    yellow=10). The previous uniform 5-min threshold (Phase 84.5) put red
+    and yellow at the cycle-cadence edge — saves landing every ~5 min
+    meant the stale flag flickered on/off right around the threshold.
+    Yellow gets the larger 10-min budget; green and red stay tight at 5.
     """
     backend_main = backend_with_isolated_data_dir
+    # Each color exactly 6 min old.
     _set_color_age(tmp_path, "green", 6)
-    _set_color_age(tmp_path, "red", 1)
-    _set_color_age(tmp_path, "yellow", 2)
+    _set_color_age(tmp_path, "red", 6)
+    _set_color_age(tmp_path, "yellow", 6)
 
     freshness, stale_files, _latest = backend_main._build_source_freshness()
-    assert freshness["green"]["isStale"] is True, (
-        "6-min-old green file must be flagged stale at the new 5-min default"
+    assert freshness["green"]["isStale"] is True, "green > 5min must be stale"
+    assert freshness["red"]["isStale"] is True, "red > 5min must be stale"
+    assert freshness["yellow"]["isStale"] is False, (
+        "yellow ≤ 10min must NOT be stale (Phase 84.7 gives yellow 10-min headroom)"
     )
-    assert freshness["red"]["isStale"] is False
-    assert freshness["yellow"]["isStale"] is False
-    assert any("green" in s for s in stale_files), (
-        f"stale_files must include green — got {stale_files}"
-    )
+    assert freshness["yellow"]["staleThresholdMinutes"] == 10
+    assert freshness["green"]["staleThresholdMinutes"] == 5
+    assert freshness["red"]["staleThresholdMinutes"] == 5
+    # Only green + red surface in stale_files; yellow is fresh under 10.
+    assert sorted([s.split()[0] for s in stale_files]) == ["green", "red"]
 
 
-def test_build_source_freshness_marks_fresh_below_5_minutes(
+def test_build_source_freshness_yellow_stale_only_above_10(
     backend_with_isolated_data_dir, tmp_path
 ) -> None:
-    """Phase 84.5: file 4 min old is still fresh under the 5-min default."""
+    """Phase 84.7: yellow at 9.5 min is fresh, at 11 min is stale."""
+    backend_main = backend_with_isolated_data_dir
+    _set_color_age(tmp_path, "green", 1)
+    _set_color_age(tmp_path, "red", 1)
+    _set_color_age(tmp_path, "yellow", 9.5)
+
+    freshness, stale_files, _ = backend_main._build_source_freshness()
+    assert freshness["yellow"]["isStale"] is False
+    assert stale_files == []
+
+    _set_color_age(tmp_path, "yellow", 11)
+    freshness, stale_files, _ = backend_main._build_source_freshness()
+    assert freshness["yellow"]["isStale"] is True
+
+
+def test_build_source_freshness_marks_fresh_below_thresholds(
+    backend_with_isolated_data_dir, tmp_path
+) -> None:
+    """Phase 84.7: each color fresh when below its own threshold."""
     backend_main = backend_with_isolated_data_dir
     _set_color_age(tmp_path, "green", 4)
     _set_color_age(tmp_path, "red", 4)
-    _set_color_age(tmp_path, "yellow", 4)
+    _set_color_age(tmp_path, "yellow", 9)
 
     freshness, stale_files, _ = backend_main._build_source_freshness()
     assert all(not info["isStale"] for info in freshness.values())
     assert stale_files == []
 
 
-def test_build_source_freshness_explicit_threshold_still_works(
+def test_build_source_freshness_legacy_stale_minutes_kwarg_overrides_all_colors(
     backend_with_isolated_data_dir, tmp_path
 ) -> None:
-    """Phase 84.5: callers can still override stale_minutes (for tests
-    or future tuning). The default change must not break the parameter.
+    """Phase 84.7: ``stale_minutes`` kwarg (legacy) applies a single
+    threshold to all 3 colors — kept for ad-hoc admin scripts and back-compat.
+    ``stale_thresholds`` dict (new) takes precedence when both are given.
     """
     backend_main = backend_with_isolated_data_dir
     _set_color_age(tmp_path, "green", 7)
     _set_color_age(tmp_path, "red", 7)
     _set_color_age(tmp_path, "yellow", 7)
 
-    # With threshold=10 all three are still fresh (legacy behavior).
+    # Legacy single-int wins when only it is provided.
     freshness, _, _ = backend_main._build_source_freshness(stale_minutes=10)
-    assert all(not info["isStale"] for info in freshness.values())
+    assert all(not info["isStale"] for info in freshness.values()), (
+        "stale_minutes=10 must keep all 7-min files fresh"
+    )
 
-    # With threshold=5 (the new default) all three are stale.
     freshness, _, _ = backend_main._build_source_freshness(stale_minutes=5)
-    assert all(info["isStale"] for info in freshness.values())
+    assert all(info["isStale"] for info in freshness.values()), (
+        "stale_minutes=5 must flag all 7-min files stale"
+    )
+
+    # Per-color dict beats the legacy int when both are passed.
+    freshness, _, _ = backend_main._build_source_freshness(
+        stale_minutes=5,
+        stale_thresholds={"yellow": 30},
+    )
+    assert freshness["green"]["isStale"] is True, "green still uses default 5"
+    assert freshness["red"]["isStale"] is True, "red still uses default 5"
+    assert freshness["yellow"]["isStale"] is False, (
+        "yellow override to 30 must beat the stale_minutes=5 legacy kwarg"
+    )
+
+
+def test_build_source_freshness_partial_dict_falls_back_to_defaults(
+    backend_with_isolated_data_dir, tmp_path
+) -> None:
+    """Phase 84.7: partial dict only overrides the named colors; others
+    fall back to ``DEFAULT_STALE_THRESHOLDS_MINUTES``.
+    """
+    backend_main = backend_with_isolated_data_dir
+    _set_color_age(tmp_path, "green", 6)   # default 5 → stale
+    _set_color_age(tmp_path, "red", 6)     # default 5 → stale
+    _set_color_age(tmp_path, "yellow", 6)  # default 10 → fresh
+
+    # Override only green to 30 — red and yellow keep their defaults.
+    freshness, _, _ = backend_main._build_source_freshness(
+        stale_thresholds={"green": 30},
+    )
+    assert freshness["green"]["isStale"] is False, "green override 30 → fresh"
+    assert freshness["red"]["isStale"] is True, "red default 5 → stale at 6m"
+    assert freshness["yellow"]["isStale"] is False, "yellow default 10 → fresh at 6m"
 
 
 def test_build_source_freshness_handles_missing_files(
     backend_with_isolated_data_dir, tmp_path
 ) -> None:
-    """Phase 84.5: missing-file behavior unchanged — flagged with
+    """Phase 84.7: missing-file behavior unchanged — flagged with
     ``status='missing'`` and added to stale_files. Pin the contract since
-    the default threshold change touches the same function.
+    the per-color threshold change touches the same function.
     """
     backend_main = backend_with_isolated_data_dir
     # Don't create any files — all three are missing.
