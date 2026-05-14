@@ -731,13 +731,33 @@ async def _add_green_cards_to_cart(page, card_source: str, total_cards: int):
 
 
 async def _close_green_modal(page):
+    # v1.26 Phase 84.6: safe-click handles SVG / non-HTMLElement targets that
+    # don't have a direct .click() method. Falls back to a synthetic
+    # MouseEvent dispatch.
     await _js(page, """
         (() => {
+            const safeClick = (el) => {
+                if (!el) return false;
+                try {
+                    if (typeof el.click === 'function') {
+                        el.click();
+                        return true;
+                    }
+                } catch (e) { /* fall through to dispatchEvent */ }
+                try {
+                    el.dispatchEvent(new MouseEvent('click', {
+                        bubbles: true, cancelable: true, view: window
+                    }));
+                    return true;
+                } catch (e) {
+                    return false;
+                }
+            };
             const closeBtn = document.querySelector('.Modal__close, .js-modal-close');
-            if (closeBtn) closeBtn.click();
+            if (closeBtn) safeClick(closeBtn);
             else {
                 const overlay = document.querySelector('.Modal__overlay');
-                if (overlay) overlay.click();
+                if (overlay) safeClick(overlay);
             }
         })()
     """)
@@ -746,9 +766,34 @@ async def _close_green_modal(page):
 async def _close_delivery_modal(page):
     """Force-close the 'Ассортимент зависит от времени доставки' delivery modal.
     This modal auto-pops after every page reload and blocks the green items modal.
-    Must be called before any green section interaction."""
+    Must be called before any green section interaction.
+
+    v1.26 Phase 84.6: every .click() call goes through a safeClick(el) helper
+    that handles SVG / non-HTMLElement targets via dispatchEvent fallback.
+    Pre-fix, the [class*="close"] selector could match SVG elements where
+    `.click` is not directly callable, causing a TypeError that bubbled up
+    from CDP and exited scrape_green.py with code 1. Symptom: green file
+    stuck stale, Phase 84.5 stall-recovery firing every 5 min indefinitely.
+    """
     result = await _js(page, r"""
         (() => {
+            const safeClick = (el) => {
+                if (!el) return false;
+                try {
+                    if (typeof el.click === 'function') {
+                        el.click();
+                        return true;
+                    }
+                } catch (e) { /* fall through to dispatchEvent */ }
+                try {
+                    el.dispatchEvent(new MouseEvent('click', {
+                        bubbles: true, cancelable: true, view: window
+                    }));
+                    return true;
+                } catch (e) {
+                    return false;
+                }
+            };
             // Strategy 1: Find any visible modal with delivery text and close it
             const allModals = document.querySelectorAll('[class*="Modal"], [class*="modal"], .js-modal');
             for (const m of allModals) {
@@ -759,14 +804,12 @@ async def _close_delivery_modal(page):
                     // Found the delivery modal — try close buttons inside it
                     const closeBtns = m.querySelectorAll('[class*="close"], [class*="Close"], button[aria-label="close"], button[aria-label="Close"], .Modal__close');
                     for (const btn of closeBtns) {
-                        btn.click();
-                        return 'closed_button';
+                        if (safeClick(btn)) return 'closed_button';
                     }
                     // Try any SVG close icon inside
                     const svgClose = m.querySelector('svg');
                     if (svgClose && svgClose.closest('button, a, div[role="button"]')) {
-                        svgClose.closest('button, a, div[role="button"]').click();
-                        return 'closed_svg';
+                        if (safeClick(svgClose.closest('button, a, div[role="button"]'))) return 'closed_svg';
                     }
                 }
             }
@@ -776,8 +819,7 @@ async def _close_delivery_modal(page):
             for (const btn of closeButtons) {
                 const rect = btn.getBoundingClientRect();
                 if (rect.width > 0 && rect.height > 0) {
-                    btn.click();
-                    return 'closed_generic';
+                    if (safeClick(btn)) return 'closed_generic';
                 }
             }
 
@@ -786,8 +828,7 @@ async def _close_delivery_modal(page):
             for (const ov of overlays) {
                 const rect = ov.getBoundingClientRect();
                 if (rect.width > 0 && rect.height > 0) {
-                    ov.click();
-                    return 'closed_overlay';
+                    if (safeClick(ov)) return 'closed_overlay';
                 }
             }
 
