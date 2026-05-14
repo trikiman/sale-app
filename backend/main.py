@@ -852,7 +852,7 @@ def client_log(request: Request, payload: dict = Body(default={})):
     return {"ok": True}
 
 
-def _build_source_freshness(stale_minutes: int = 10) -> tuple[dict, list[str], float]:
+def _build_source_freshness(stale_minutes: int = 5) -> tuple[dict, list[str], float]:
     source_freshness = {}
     stale_files = []
     latest_mtime = 0.0
@@ -1400,7 +1400,11 @@ def get_products():
                     time.sleep(0.5)  # Retry once after brief pause
                 else:
                     raise HTTPException(status_code=500, detail="Invalid JSON data")
-        source_freshness, stale_files, latest_mtime = _build_source_freshness(stale_minutes=10)
+        # v1.26 Phase 84.5: stale_minutes lowered from 10 → 5 to match the
+        # robust-freshness target (Обновлено: never > 5 min). The scheduler
+        # now keeps green refreshed every 2-3 min in steady state, so a
+        # 5-min threshold only fires during real outages.
+        source_freshness, stale_files, latest_mtime = _build_source_freshness(stale_minutes=5)
         data["sourceFreshness"] = source_freshness
         data["dataStale"] = len(stale_files) > 0
         data["staleInfo"] = stale_files if stale_files else None
@@ -5376,7 +5380,8 @@ def admin_get_status(token: Optional[str] = Header(None, alias="X-Admin-Token"))
     """Return current scraper status and product counts."""
     _require_token(token)
     counts = {"green": 0, "red": 0, "yellow": 0, "total": 0, "updatedAt": None, "greenLiveCount": 0}
-    source_freshness, _, _ = _build_source_freshness(stale_minutes=10)
+    # v1.26 Phase 84.5: keep this in sync with /api/products (stale_minutes=5).
+    source_freshness, _, _ = _build_source_freshness(stale_minutes=5)
     cycle_state = _load_cycle_state()
     if os.path.exists(PROPOSALS_PATH):
         try:

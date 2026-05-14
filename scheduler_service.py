@@ -30,6 +30,32 @@ FULL_CYCLE_INTERVAL_SECONDS = 300
 GREEN_TARGET_INTERVAL_SECONDS = 60
 DEFAULT_GREEN_RUNTIME_SECONDS = 60
 SCRAPER_TIMEOUT = 300  # 5 minutes max per scraper
+
+# v1.26 Phase 84.5 — robust freshness controls (target: green refresh < 5 min always)
+#
+# Background: full cycles run RED → YELLOW → GREEN → merge sequentially and
+# take ~3-4 min. The previous skip_green guard (`now + runtime >= next_all`)
+# combined with `next_green_due = cycle_started + 60` meant green-only
+# intermediate runs *never* fit between full cycles — the 60s window after a
+# full cycle was always smaller than the ~110s green runtime. Result:
+# green file mtime gaps of 5-7 min steady state, 18-20 min during silent
+# scrape stalls. User-visible "Обновлено: N мин" exceeded the 5-min limit.
+#
+# Phase 84.5 fixes:
+#   1. GREEN_OVERSHOOT_TOLERANCE_SECONDS — let green-only push the next
+#      full cycle by up to this many seconds. Trades exact 5-min full-cycle
+#      cadence for green-only fitting reliably between cycles.
+#   2. After full cycle: schedule next_green_due = cycle_finished + GREEN_TARGET
+#      instead of cycle_started + GREEN_TARGET. This way green-only is
+#      eligible ~60s after the full cycle ends, not retroactively from when
+#      it started.
+#   3. GREEN_STALL_THRESHOLD_SECONDS — if green file mtime exceeds this,
+#      `choose_due_job` overrides the normal schedule and forces a
+#      green-only run (or "all" if that's also due). Belt-and-suspenders
+#      for silent scrape failures that don't write the file at all.
+GREEN_OVERSHOOT_TOLERANCE_SECONDS = 60
+GREEN_STALL_THRESHOLD_SECONDS = 240  # 4 min — fires recovery before user sees the 5-min banner
+GREEN_PRODUCTS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "green_products.json")
 # Watchdog: if the main loop hasn't ticked for this long, assume we're hung
 # (e.g. stuck in a C-level syscall that Python timeouts can't interrupt) and
 # hard-exit so systemd restarts us. Must comfortably exceed the slowest
@@ -549,11 +575,58 @@ def _write_cycle_state(state: dict):
         json.dump(state, f, ensure_ascii=False, indent=2)
 
 
-def choose_due_job(now_monotonic: float, next_all_due_at: float, next_green_due_at: float, estimated_green_runtime: float) -> str | None:
+def _green_file_age_seconds() -> float | None:
+    """v1.26 Phase 84.5: return age (in seconds) of green_products.json.
+
+    Returns ``None`` if the file is missing — callers must treat that as
+    "no information available" rather than "infinitely stale" because a
+    missing file is the fresh-deploy scenario, not a refresh failure.
+    """
+    try:
+        return time.time() - os.path.getmtime(GREEN_PRODUCTS_PATH)
+    except OSError:
+        return None
+
+
+def choose_due_job(
+    now_monotonic: float,
+    next_all_due_at: float,
+    next_green_due_at: float,
+    estimated_green_runtime: float,
+    *,
+    green_age_seconds: float | None = None,
+) -> str | None:
+    """Pick the next scheduler job. Returns ``"all"``, ``"green"``, ``"skip_green"``, or ``None``.
+
+    v1.26 Phase 84.5 changes:
+      - New ``green_age_seconds`` kwarg: when set and exceeding
+        ``GREEN_STALL_THRESHOLD_SECONDS``, the function forces a green
+        refresh (or ``"all"`` if that's also due). Belt-and-suspenders
+        for silent scrape failures.
+      - Loosened ``skip_green`` guard: green-only is allowed to run if
+        its estimated runtime would push ``next_all_due_at`` by no more
+        than ``GREEN_OVERSHOOT_TOLERANCE_SECONDS``. The previous strict
+        check (``>= next_all_due_at``) prevented green-only from ever
+        fitting between full cycles, which caused the user-reported
+        5-19 min staleness gap on EC2.
+    """
+    # Stall recovery: green file is way past the user-visible
+    # staleness threshold. Force a fresh green write regardless of the
+    # normal schedule. If a full cycle is also due we prefer that
+    # because it includes green AND refreshes red/yellow.
+    if green_age_seconds is not None and green_age_seconds > GREEN_STALL_THRESHOLD_SECONDS:
+        if now_monotonic >= next_all_due_at:
+            return "all"
+        return "green"
+
     if now_monotonic >= next_all_due_at:
         return "all"
     if now_monotonic >= next_green_due_at:
-        if now_monotonic + estimated_green_runtime >= next_all_due_at:
+        # Phase 84.5: allow green-only to push next_all by up to
+        # GREEN_OVERSHOOT_TOLERANCE_SECONDS. The strict bound caused
+        # skip_green to fire on every cycle; full cycle drift of ≤60s
+        # is acceptable in exchange for keeping green refresh tight.
+        if now_monotonic + estimated_green_runtime > next_all_due_at + GREEN_OVERSHOOT_TOLERANCE_SECONDS:
             return "skip_green"
         return "green"
     return None
@@ -1030,7 +1103,27 @@ def main():
                 time.sleep(3)  # Give Chrome a moment to settle
 
             now_monotonic = time.monotonic()
-            job = choose_due_job(now_monotonic, next_all_due_at, next_green_due_at, estimated_green_runtime)
+            green_age = _green_file_age_seconds()
+            job = choose_due_job(
+                now_monotonic,
+                next_all_due_at,
+                next_green_due_at,
+                estimated_green_runtime,
+                green_age_seconds=green_age,
+            )
+
+            # v1.26 Phase 84.5: surface stall-recovery activations in the
+            # journal so operators can spot when something silently broke
+            # the normal cadence (vs. a planned green-only run).
+            if (
+                green_age is not None
+                and green_age > GREEN_STALL_THRESHOLD_SECONDS
+                and job in ("all", "green")
+            ):
+                log(
+                    f"Green-stall recovery: green_products.json is {green_age:.0f}s old "
+                    f"(threshold {GREEN_STALL_THRESHOLD_SECONDS}s) — forcing job={job}"
+                )
 
             if job is None:
                 sleep_for = max(0.5, min(next_all_due_at, next_green_due_at) - now_monotonic)
@@ -1110,8 +1203,15 @@ def main():
                     next_all_due_at = time.monotonic() + breaker.cooldown_s
                     next_green_due_at = next_all_due_at + GREEN_TARGET_INTERVAL_SECONDS
                 else:
+                    # v1.26 Phase 84.5: schedule next green-only based on
+                    # cycle_finished, not cycle_started. Otherwise, the
+                    # full cycle ends at ~T+240s and `cycle_started + 60s`
+                    # is already 180s overdue — the skip_green guard fires
+                    # immediately and green-only never gets a turn until
+                    # the next full cycle.
+                    cycle_finished_monotonic = time.monotonic()
                     next_all_due_at = cycle_started + FULL_CYCLE_INTERVAL_SECONDS
-                    next_green_due_at = cycle_started + GREEN_TARGET_INTERVAL_SECONDS
+                    next_green_due_at = cycle_finished_monotonic + GREEN_TARGET_INTERVAL_SECONDS
                 continue
 
             green_started = time.monotonic()
