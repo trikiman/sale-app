@@ -208,6 +208,13 @@ def parse_vless_list(text: str) -> tuple[list[VlessNode], list[tuple[int, str, s
         line = raw_line.strip()
         if not line or line.startswith("#"):
             continue
+        # v1.26 Phase 84.2: some aggregators (notably SoliSpirit) export
+        # VLESS URIs with HTML-entity-encoded `&amp;` separators instead
+        # of `&`. Decode before parsing so urllib.parse.urlparse correctly
+        # splits the query string. Cheap, idempotent — `&amp;` isn't a
+        # valid char in a real query string anyway.
+        if "&amp;" in line:
+            line = line.replace("&amp;", "&")
         try:
             nodes.append(parse_vless_url(line))
         except VlessParseError as exc:

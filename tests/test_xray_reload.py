@@ -231,6 +231,9 @@ def test_refresh_skips_reload_when_admitted_set_unchanged(pm, monkeypatch):
         "vless.manager.sources.fetch_igareck_list", lambda: "irrelevant"
     )
     monkeypatch.setattr(
+        "vless.manager.sources.fetch_all_sources", lambda **_kw: "_fake_"
+    )
+    monkeypatch.setattr(
         "vless.manager.sources.parse_vless_list", lambda t: ([fake], [])
     )
     monkeypatch.setattr(
@@ -275,6 +278,9 @@ def test_refresh_triggers_reload_when_admitted_set_differs(pm, monkeypatch):
         "vless.manager.sources.fetch_igareck_list", lambda: "irrelevant"
     )
     monkeypatch.setattr(
+        "vless.manager.sources.fetch_all_sources", lambda **_kw: "_fake_"
+    )
+    monkeypatch.setattr(
         "vless.manager.sources.parse_vless_list", lambda t: ([fake], [])
     )
     monkeypatch.setattr(
@@ -313,6 +319,9 @@ def test_refresh_emits_xray_restart_failed_event_on_systemctl_failure(pm, monkey
     )
     monkeypatch.setattr(
         "vless.manager.sources.fetch_igareck_list", lambda: "irrelevant"
+    )
+    monkeypatch.setattr(
+        "vless.manager.sources.fetch_all_sources", lambda **_kw: "_fake_"
     )
     monkeypatch.setattr(
         "vless.manager.sources.parse_vless_list", lambda t: ([fake], [])
@@ -370,6 +379,9 @@ def test_pool_refresh_complete_includes_success_rate_drops(pm, monkeypatch):
     monkeypatch.setattr(pm, "_reload_xray_systemd", lambda: ("ok", 1, None))
     monkeypatch.setattr(
         "vless.manager.sources.fetch_igareck_list", lambda: "x"
+    )
+    monkeypatch.setattr(
+        "vless.manager.sources.fetch_all_sources", lambda **_kw: "x"
     )
     monkeypatch.setattr(
         "vless.manager.sources.parse_vless_list",

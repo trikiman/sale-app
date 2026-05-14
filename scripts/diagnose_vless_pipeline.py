@@ -4,17 +4,11 @@
 Usage: python3 scripts/diagnose_vless_pipeline.py
 
 Reports:
-  1. Total fetched + parse errors
-  2. After RU filter (by 🇷🇺 fragment label)
+  1. Total fetched + parse errors (now via fetch_all_sources)
+  2. After RU filter (label OR unlabeled-fallthrough)
   3. Unique by (host, port)
-  4. Unique by host only (collapse port variants)
-  5. Cooldown-skipped count
-  6. Quarantine-skipped count
-  7. Already-in-pool count
-
-This shows the operator EXACTLY how the 30+ entries in the upstream list
-collapse to whatever ends up in the candidate set passed to
-_probe_candidates_in_parallel.
+  4. Cooldown / quarantine drops
+  5. Per-source breakdown when --by-source is passed
 """
 from __future__ import annotations
 
@@ -29,13 +23,37 @@ from vless import quarantine as _quarantine  # noqa: E402
 
 
 def main() -> int:
-    print("[diagnose] fetching upstream list...")
-    text = sources.fetch_igareck_list()
+    by_source = "--by-source" in sys.argv
+
+    print("[diagnose] fetching upstream lists (igareck + extras)...")
+    if by_source:
+        # Per-source breakdown.
+        print("\n--- per-source counts ---")
+        # igareck
+        try:
+            iga_text = sources.fetch_igareck_list()
+            iga_nodes, iga_err = sources.parse_vless_list(iga_text)
+            iga_ru, iga_rej = sources.filter_ru_nodes(iga_nodes)
+            print(f"  igareck:    {len(iga_nodes):4d} parsed, {len(iga_ru):4d} RU/unlabeled, {len(iga_rej):4d} rejected")
+        except Exception as e:
+            print(f"  igareck failed: {e}")
+        for url in sources.EXTRA_VLESS_SOURCES:
+            try:
+                body = sources._fetch_one(url, timeout=20.0)
+                ns, errs = sources.parse_vless_list(body)
+                ru, rej = sources.filter_ru_nodes(ns)
+                tag = url.rsplit("/", 1)[-1]
+                print(f"  {tag:30s}: {len(ns):4d} parsed, {len(ru):4d} RU/unlabeled, {len(rej):4d} rejected")
+            except Exception as e:
+                print(f"  {url} failed: {e}")
+        print()
+
+    text = sources.fetch_all_sources()
     parsed, parse_errors = sources.parse_vless_list(text)
     print(f"  parsed: {len(parsed)} nodes ({len(parse_errors)} parse errors)")
 
     ru_nodes, rejected = sources.filter_ru_nodes(parsed)
-    print(f"  RU-flagged: {len(ru_nodes)} (rejected non-RU: {len(rejected)})")
+    print(f"  RU/unlabeled: {len(ru_nodes)} (rejected explicit non-RU: {len(rejected)})")
 
     # Unique by (host, port).
     by_host_port: Counter = Counter()
@@ -45,17 +63,10 @@ def main() -> int:
     dup_hp = sum(c - 1 for c in by_host_port.values() if c > 1)
     print(f"  unique by host:port: {unique_hp} ({dup_hp} duplicates suppressed)")
 
-    # Unique by host only.
-    by_host: Counter = Counter()
-    for n in ru_nodes:
-        by_host[n.host] += 1
-    unique_h = len(by_host)
-    print(f"  unique by host only: {unique_h}")
-
     # Hostname vs IP literal.
     is_hostname = lambda h: not all(p.isdigit() and 0 <= int(p) <= 255 for p in h.split("."))  # noqa: E731
-    hostnames = [h for h in by_host if is_hostname(h)]
-    print(f"  hostnames (need DNS lookup): {len(hostnames)} -> {hostnames[:5]}{'...' if len(hostnames) > 5 else ''}")
+    hostnames = [h for h in {n.host for n in ru_nodes} if is_hostname(h)]
+    print(f"  hostnames (need DNS lookup): {len(hostnames)}")
 
     # Build manager + replicate filter logic.
     pm = manager_mod.VlessProxyManager(register_atexit=False)
@@ -67,14 +78,14 @@ def main() -> int:
         if n.get("host") and pm._is_node_dead(n)
     }
     quarantined = _quarantine.get_quarantined_hosts()
-    in_pool = {n["host"] for n in pm._pool.get("nodes", []) if n.get("host")}
     print(f"  current pool size: {len(pm._pool.get('nodes', []))}")
-    print(f"  cooldown hosts: {len(cooling)} -> {sorted(cooling)[:5]}")
+    print(f"  cooldown hosts: {len(cooling)}")
     print(f"  dead hosts (REL-15): {len(dead_hosts)}")
-    print(f"  quarantined host:port: {len(quarantined)} -> {sorted(quarantined)[:8]}")
+    print(f"  quarantined host:port: {len(quarantined)}")
 
-    candidates: list[tuple[str, int, str]] = []
-    skip_cool = skip_dead = skip_quar = skip_in_pool = 0
+    candidates = []
+    skip_cool = skip_dead = skip_quar = 0
+    seen = set()
     for n in ru_nodes:
         if n.host in cooling:
             skip_cool += 1
@@ -85,38 +96,20 @@ def main() -> int:
         if f"{n.host}:{n.port}" in quarantined:
             skip_quar += 1
             continue
-        # NOTE: refresh_proxy_list also has an `exclude` set check, but this
-        # is keyed on candidates the caller passes. By default empty.
-        candidates.append((n.host, n.port, n.name[:40]))
-
-    # Dedup by (host, port) — what the probe loop actually receives.
-    seen = set()
-    unique_candidates = []
-    for c in candidates:
-        key = (c[0], c[1])
+        key = (n.host, n.port)
         if key in seen:
             continue
         seen.add(key)
-        unique_candidates.append(c)
+        candidates.append(n)
 
     print()
     print("[diagnose] FUNNEL:")
     print(f"  upstream parsed:           {len(parsed):>4d}")
-    print(f"  RU-flagged:                {len(ru_nodes):>4d}")
+    print(f"  RU + unlabeled:            {len(ru_nodes):>4d}")
     print(f"  - cooldown:                {-skip_cool:>4d}")
     print(f"  - REL-15 dead:             {-skip_dead:>4d}")
     print(f"  - quarantined (probe-fail):{-skip_quar:>4d}")
-    print(f"  candidates (with dups):    {len(candidates):>4d}")
-    print(f"  candidates (deduped):      {len(unique_candidates):>4d}")
-    print()
-    print("[diagnose] dedup waste — same host:port appearing multiple times in candidates:")
-    cand_hp_counter = Counter((c[0], c[1]) for c in candidates)
-    dups = [(k, v) for k, v in cand_hp_counter.most_common() if v > 1]
-    for (host, port), count in dups[:15]:
-        print(f"  {count}x {host}:{port}")
-    if len(dups) > 15:
-        print(f"  ...and {len(dups) - 15} more duplicate keys")
-    print(f"  total wasted probe slots: {sum(v - 1 for v in cand_hp_counter.values())}")
+    print(f"  candidates (deduped):      {len(candidates):>4d}")
 
     return 0
 

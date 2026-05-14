@@ -442,9 +442,9 @@ class VlessProxyManager:
         ("how many new proxies did we find this cycle?"). Existing nodes that
         remain in the pool don't inflate the count.
         """
-        self._log("Fetching VLESS list from igareck union...")
+        self._log("Fetching VLESS list from upstream sources (igareck + extras)...")
         try:
-            text = sources.fetch_igareck_list()
+            text = sources.fetch_all_sources()
         except Exception as exc:  # noqa: BLE001 — surface to operator
             self._log(f"Failed to fetch VLESS list: {exc}")
             return 0

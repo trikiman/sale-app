@@ -149,7 +149,7 @@ def stub_xray(monkeypatch: pytest.MonkeyPatch):
 
     def _network_tripwire(*_a, **_kw):
         raise AssertionError(
-            "fetch_igareck_list called from a unit test — monkeypatch it explicitly"
+            "fetch_all_sources called from a unit test — monkeypatch it explicitly"
         )
 
     def _geo_tripwire(*_a, **_kw):
@@ -158,6 +158,7 @@ def stub_xray(monkeypatch: pytest.MonkeyPatch):
         )
 
     monkeypatch.setattr(manager_mod.sources, "fetch_igareck_list", _network_tripwire)
+    monkeypatch.setattr(manager_mod.sources, "fetch_all_sources", _network_tripwire)
     monkeypatch.setattr(manager_mod.sources, "filter_ru_nodes", _geo_tripwire)
     yield FakeXrayProcess
     FakeXrayProcess.instances.clear()
@@ -649,6 +650,7 @@ def test_events_emitted_on_refresh(stub_xray, paths, monkeypatch) -> None:
         for i in range(3)
     ]
     monkeypatch.setattr(manager_mod.sources, "fetch_igareck_list", lambda: "_fake_")
+    monkeypatch.setattr(manager_mod.sources, "fetch_all_sources", lambda **_kw: "_fake_aggregator_")
     monkeypatch.setattr(
         manager_mod.sources,
         "parse_vless_list",
@@ -711,6 +713,7 @@ def test_pre_probe_dedup_collapses_duplicate_host_port_entries(stub_xray, paths,
                   reality_pbk="pbk-e", reality_sni="yahoo.com"),
     ]
     monkeypatch.setattr(manager_mod.sources, "fetch_igareck_list", lambda: "_fake_")
+    monkeypatch.setattr(manager_mod.sources, "fetch_all_sources", lambda **_kw: "_fake_aggregator_")
     monkeypatch.setattr(
         manager_mod.sources, "parse_vless_list", lambda _t: (sample, [])
     )
@@ -793,6 +796,7 @@ def test_funnel_recovery_releases_soft_quarantine_when_pool_below_min(
                   reality_pbk="pbk", reality_sni="microsoft.com"),
     ]
     monkeypatch.setattr(manager_mod.sources, "fetch_igareck_list", lambda: "_")
+    monkeypatch.setattr(manager_mod.sources, "fetch_all_sources", lambda **_kw: "_fake_aggregator_")
     monkeypatch.setattr(
         manager_mod.sources, "parse_vless_list", lambda _x: (sample, [])
     )
@@ -857,6 +861,7 @@ def test_refresh_drops_cooldown_hosts_before_probe(stub_xray, paths, monkeypatch
         ),
     ]
     monkeypatch.setattr(manager_mod.sources, "fetch_igareck_list", lambda: "_")
+    monkeypatch.setattr(manager_mod.sources, "fetch_all_sources", lambda **_kw: "_fake_aggregator_")
     monkeypatch.setattr(
         manager_mod.sources, "parse_vless_list", lambda _t: (sample, [])
     )
@@ -1147,3 +1152,111 @@ def test_pool_state_roundtrip_preserves_tls_fields(tmp_path) -> None:
 
 # Silence Iterable "unused" in non-type-check runs.
 _ = Iterable
+
+
+def test_filter_ru_nodes_admits_unlabeled_lines_to_be_probed_for_egress(monkeypatch: pytest.MonkeyPatch) -> None:
+    """v1.26 Phase 84.2: lines with no country flag fall through to the
+    egress probe instead of being label-rejected.
+
+    Pre-Phase 84.2: ``filter_ru_nodes`` rejected anything without a 🇷🇺
+    flag in the URL fragment. Aggregators like kort0881/sevcator that
+    label by handle (#Join+Telegram:@Farah_VPN) instead of country had
+    100% rejection rate even though many of their nodes were RU IPs.
+
+    Post-Phase 84.2: only EXPLICIT non-RU markers (other flags, [FI]/[DE]
+    text) reject. Unlabeled lines pass through the label gate so the
+    expensive but accurate egress probe can decide.
+    """
+    # Direct call to vless.sources — no stub_xray fixture so the tripwire
+    # doesn't intercept this assertion.
+    from vless import sources as _sources
+    nodes = [
+        VlessNode(uuid="u1", host="1.1.1.1", port=443, name="🇷🇺 Russia [*CIDR]",
+                  reality_pbk="pbk", reality_sni="x.com"),
+        VlessNode(uuid="u2", host="2.2.2.2", port=443, name="🇫🇮 Finland",
+                  reality_pbk="pbk", reality_sni="x.com"),
+        VlessNode(uuid="u3", host="3.3.3.3", port=443, name="🇩🇪 [DE] premium",
+                  reality_pbk="pbk", reality_sni="x.com"),
+        VlessNode(uuid="u4", host="4.4.4.4", port=443, name="Join+Telegram:@Farah_VPN",
+                  reality_pbk="pbk", reality_sni="x.com"),
+        VlessNode(uuid="u5", host="5.5.5.5", port=443, name="",
+                  reality_pbk="pbk", reality_sni="x.com"),
+    ]
+    accepted, rejected = _sources.filter_ru_nodes(nodes)
+    accepted_hosts = {n.host for n in accepted}
+    rejected_hosts = {n.host for n in rejected}
+    # Explicit RU + unlabeled both pass to the egress probe.
+    assert accepted_hosts == {"1.1.1.1", "4.4.4.4", "5.5.5.5"}
+    # Explicit non-RU drops at the label gate.
+    assert rejected_hosts == {"2.2.2.2", "3.3.3.3"}
+
+
+def test_parse_vless_list_decodes_html_entity_ampersands(stub_xray, paths) -> None:
+    """v1.26 Phase 84.2: SoliSpirit and similar exporters use `&amp;` as
+    query separators. Pin that the parser decodes them so the URI's
+    query params are correctly split.
+    """
+    encoded = (
+        "vless://4371ad14-b981-4699-bedf-83fb79bde3e6"
+        "@176.108.242.76:443"
+        "?security=reality&amp;encryption=none"
+        "&amp;pbk=FkmYFobwxLMLEktYXywmjthuEYCZggITsxwPNasTKUg"
+        "&amp;flow=xtls-rprx-vision&amp;sni=www.vkvideo.ru"
+        "&amp;sid=6354585c37827955"
+        "#🇷🇺 Russia"
+    )
+    from vless import parser
+    nodes, errors = parser.parse_vless_list(encoded)
+    assert errors == [], f"unexpected parse errors: {errors}"
+    assert len(nodes) == 1
+    n = nodes[0]
+    assert n.host == "176.108.242.76"
+    assert n.port == 443
+    assert n.security == "reality"
+    assert n.reality_pbk == "FkmYFobwxLMLEktYXywmjthuEYCZggITsxwPNasTKUg"
+    assert n.reality_sni == "www.vkvideo.ru"
+    assert n.flow == "xtls-rprx-vision"
+
+
+def test_fetch_all_sources_unions_igareck_and_extras(monkeypatch: pytest.MonkeyPatch) -> None:
+    """v1.26 Phase 84.2: fetch_all_sources concatenates igareck + extras.
+
+    Verifies the contract:
+      1. igareck output included.
+      2. Each extra source URL fetched independently.
+      3. Per-source failure tolerated; remaining sources still contribute.
+      4. ALL sources failing re-raises.
+    """
+    from vless import sources
+
+    monkeypatch.setattr(sources, "fetch_igareck_list", lambda **_: "IGARECK_BLOCK")
+
+    fetched_urls: list[str] = []
+    def _fake_one(url, *, timeout):
+        fetched_urls.append(url)
+        if "soli" in url.lower():
+            raise OSError("simulated 404 on SoliSpirit")
+        # Use the basename so the assertion matcher is precise.
+        basename = url.rsplit("/", 1)[-1]
+        return f"BODY_{basename}"
+
+    monkeypatch.setattr(sources, "_fetch_one", _fake_one)
+
+    blob = sources.fetch_all_sources(
+        extra_urls=(
+            "https://example.com/list-a.txt",
+            "https://example.com/SoliSpirit/Russia.txt",
+            "https://example.com/list-b.txt",
+        ),
+        timeout=1.0,
+    )
+
+    # igareck block is in.
+    assert "IGARECK_BLOCK" in blob
+    # Two non-failing extras are in.
+    assert "BODY_list-a.txt" in blob
+    assert "BODY_list-b.txt" in blob
+    # Failing extra dropped silently, didn't break the union.
+    assert "BODY_Russia.txt" not in blob
+    # All three extra URLs were attempted.
+    assert len(fetched_urls) == 3

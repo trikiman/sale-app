@@ -49,6 +49,25 @@ IGARECK_VLESS_FILES: tuple[str, ...] = (
 # fetcher (:func:`fetch_igareck_list`) unions every file in IGARECK_VLESS_FILES.
 IGARECK_VLESS_URL = IGARECK_BASE_URL + IGARECK_VLESS_FILES[0]
 
+# v1.26 Phase 84.2: extra aggregator URLs for richer RU-exit coverage.
+# Discovered via .planning audit 2026-05-14: igareck alone returned ~140
+# RU-flagged URIs collapsing to ~48 unique host:port; adding these brings
+# the candidate set to ~700+ unique URIs, ~250+ unique RU host:ports.
+#
+# Each entry is a single raw URL pointing at a newline-delimited VLESS list.
+# These sources are scraped and unioned with the igareck files inside
+# :func:`fetch_all_sources`. Failures are tolerated per-source — a 404 on
+# any one URL does not break the refresh.
+EXTRA_VLESS_SOURCES: tuple[str, ...] = (
+    # kort0881/vpn-vless-configs-russia — SNI-filtered for RU usage.
+    # Sample 2026-05-14: 1001 lines, 595 with 🇷🇺 emoji label.
+    "https://raw.githubusercontent.com/kort0881/vpn-vless-configs-russia/main/subscriptions/sni_filtered.txt",
+    # SoliSpirit/v2ray-configs — per-country RU file, refreshed every 15 min.
+    # Sample 2026-05-14: 84 lines, 59 vless://. Some lines use HTML-entity
+    # `&amp;` separators which we decode in :func:`parse_vless_list`.
+    "https://raw.githubusercontent.com/SoliSpirit/v2ray-configs/main/Countries/Russia.txt",
+)
+
 _USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/145.0.0.0 Safari/537.36"
@@ -106,6 +125,47 @@ def fetch_igareck_list(
     return "\n".join(parts)
 
 
+def fetch_all_sources(
+    *,
+    timeout: float = 20.0,
+    extra_urls: tuple[str, ...] = EXTRA_VLESS_SOURCES,
+) -> str:
+    """v1.26 Phase 84.2: union the igareck list with all extra aggregators.
+
+    Returns a single concatenated text blob suitable for
+    :func:`parse_vless_list`. Each fetch is tolerated independently — if
+    any individual source 404s, times out, or otherwise fails, that
+    source is silently skipped (logged to stderr) and the others still
+    contribute. Only when EVERY source fails do we re-raise.
+
+    Lines are deduplicated downstream by the
+    :class:`vless.manager.VlessProxyManager` pre-probe dedup (Phase 84.1)
+    so it's safe to have overlapping content between sources.
+    """
+    parts: list[str] = []
+    last_exc: Exception | None = None
+
+    # 1. igareck (multi-file union)
+    try:
+        parts.append(fetch_igareck_list(timeout=timeout))
+    except (urllib.error.URLError, socket.timeout, OSError) as exc:
+        last_exc = exc
+        print(f"[vless] skipped igareck union: {exc}", file=sys.stderr)
+
+    # 2. extra single-URL sources
+    for url in extra_urls:
+        try:
+            body = _fetch_one(url, timeout=timeout)
+            parts.append(body)
+        except (urllib.error.URLError, socket.timeout, OSError) as exc:
+            last_exc = exc
+            print(f"[vless] skipped extra source {url}: {exc}", file=sys.stderr)
+
+    if not parts and last_exc is not None:
+        raise last_exc
+    return "\n\n".join(parts)
+
+
 def _resolve_host_ip(host: str) -> str | None:
     """Resolve a VLESS node's host to an IPv4 string.
 
@@ -154,6 +214,55 @@ _RU_FLAG = "\U0001f1f7\U0001f1fa"
 _RU_FLAG_LEADER = "\U0001f1f7"  # regional indicator "R"
 _RU_TEXT_MARKERS = ("russia", "россия", "рф", "ru ", "[ru]", "(ru)")
 
+# v1.26 Phase 84.2: explicit non-RU country markers we DO want to reject
+# label-side. Used in conjunction with "trust egress probe for unlabeled"
+# so we don't admit a node labeled `#FI` or `#🇩🇪` just because the
+# egress probe has a false positive.
+#
+# This regional-indicator set is the dual of _RU_FLAG_LEADER: every flag
+# emoji we've seen on aggregator labels EXCEPT 🇷🇺. Each character is the
+# first regional indicator of a non-RU flag. (`\U0001f1f7` would be RU's R.)
+_NON_RU_FLAG_LEADERS = frozenset({
+    "\U0001f1e6",  # 🇦  — A* (e.g. AE, AT, AU)
+    "\U0001f1e7",  # 🇧  — B* (BE, BR, ...)
+    "\U0001f1e8",  # 🇨  — C* (CA, CH, CN, ...)
+    "\U0001f1e9",  # 🇩  — D* (DE, DK, ...)
+    "\U0001f1ea",  # 🇪  — E* (ES, EE, ...)
+    "\U0001f1eb",  # 🇫  — F* (FI, FR, ...)
+    "\U0001f1ec",  # 🇬  — G* (GB, GR, ...)
+    "\U0001f1ed",  # 🇭  — H* (HK, ...)
+    "\U0001f1ee",  # 🇮  — I* (IT, IN, IR, IL, ID, IE, IS, ...)
+    "\U0001f1ef",  # 🇯  — J* (JP, ...)
+    "\U0001f1f0",  # 🇰  — K* (KR, KZ, ...)
+    "\U0001f1f1",  # 🇱  — L* (LU, ...)
+    "\U0001f1f2",  # 🇲  — M* (MX, ...)
+    "\U0001f1f3",  # 🇳  — N* (NL, NO, ...)
+    "\U0001f1f4",  # 🇴  — O*
+    "\U0001f1f5",  # 🇵  — P* (PL, PT, ...)
+    "\U0001f1f6",  # 🇶
+    # 🇷 (\U0001f1f7) — RU is intentionally excluded.
+    "\U0001f1f8",  # 🇸  — S* (SE, SG, SK, ...)
+    "\U0001f1f9",  # 🇹  — T* (TR, TW, ...)
+    "\U0001f1fa",  # 🇺  — U* (UA, US, UK alone is GB but UA leads with this)
+    "\U0001f1fb",  # 🇻  — V* (VN, ...)
+    "\U0001f1fc",  # 🇼
+    "\U0001f1fd",  # 🇽
+    "\U0001f1fe",  # 🇾
+    "\U0001f1ff",  # 🇿  — Z* (ZA, ...)
+})
+
+# Country codes appearing as bracketed/parenthesized labels in fragment
+# strings (e.g., `#[FI]`, `#NL_premium`). Used as a secondary reject signal
+# when the line lacks any flag emoji.
+_NON_RU_TEXT_MARKERS = (
+    "[fi]", "[de]", "[nl]", "[us]", "[uk]", "[fr]", "[pl]", "[se]",
+    "[tr]", "[hk]", "[jp]", "[kr]", "[ca]", "[au]", "[sg]", "[in]",
+    "(fi)", "(de)", "(nl)", "(us)", "(uk)", "(fr)",
+    "germany", "germany", "netherlands", "finland", "france",
+    "poland", "ukraine", "kazakhstan", "korea", "japan", "singapore",
+    "united states", "great britain", "україна",
+)
+
 
 def _has_ru_marker(name: str) -> bool:
     """Return True when ``name`` contains an RU flag or textual marker.
@@ -172,22 +281,45 @@ def _has_ru_marker(name: str) -> bool:
     return any(marker in lowered for marker in _RU_TEXT_MARKERS)
 
 
+def _has_explicit_non_ru_marker(name: str) -> bool:
+    """v1.26 Phase 84.2: return True for confirmed non-RU labels.
+
+    Used as a fast pre-reject before falling through to the egress
+    probe. Distinguishes "explicitly non-RU" (drop early) from "no flag
+    at all" (let the probe decide).
+    """
+    if not name:
+        return False
+    for ch in name:
+        if ch in _NON_RU_FLAG_LEADERS:
+            return True
+    lowered = name.lower()
+    return any(marker in lowered for marker in _NON_RU_TEXT_MARKERS)
+
+
 def filter_ru_nodes(
     nodes: list[VlessNode],
     *,
     geo_resolver=None,  # noqa: ARG001 — kept for signature compatibility
     min_agree: int = 2,  # noqa: ARG001 — kept for signature compatibility
 ) -> tuple[list[VlessNode], list[VlessNode]]:
-    """Split ``nodes`` into ``(ru_nodes, rejected_nodes)`` by fragment label.
+    """Split ``nodes`` into ``(ru_nodes, rejected_nodes)``.
 
-    Prior to v1.16 we ran every host through a multi-provider consensus geo
-    resolver, but the igareck lists already label every entry with a country
-    flag emoji in the URL fragment (the part after ``#``). Trusting that
-    label is both faster (no DNS, no third-party API) and more accurate for
-    our use case: the label reflects the *exit* country the operator cares
-    about, whereas a geo-DB lookup on ``host`` returns the frontend IP —
-    which is often a Cloudflare / OVH edge that doesn't map to the real
-    egress.
+    Three-tier classification:
+      1. Explicit RU marker (🇷🇺 emoji or "russia" text)         → admit.
+      2. Explicit non-RU marker (other flag or [FI]/[DE]/etc. text) → reject.
+      3. No marker at all (e.g., kort0881 lines labeled `#FI` is a
+         FALSE non-RU, but `#Join+Telegram:@Farah_VPN` has no flag) →
+         admit and let :meth:`XrayProcess.verify_egress` decide. The
+         egress probe is the source-of-truth check anyway, so trusting
+         it for unlabeled lines costs at most a few extra probes per
+         cycle but unlocks aggregators that don't bother with country
+         labels (sevcator, kort0881, etc.).
+
+    Prior to v1.16 we ran every host through a multi-provider consensus
+    geo resolver, but the igareck lists already label every entry with a
+    country flag emoji in the URL fragment. v1.26 Phase 84.2 broadens
+    the contract to handle additional aggregators that DON'T label.
     """
     if not nodes:
         return [], []
@@ -197,8 +329,12 @@ def filter_ru_nodes(
     for node in nodes:
         if _has_ru_marker(node.name):
             ru_nodes.append(node)
-        else:
+        elif _has_explicit_non_ru_marker(node.name):
             rejected_nodes.append(node)
+        else:
+            # Unlabeled — defer to the egress probe in
+            # _probe_candidates_in_parallel.
+            ru_nodes.append(node)
 
     return ru_nodes, rejected_nodes
 
