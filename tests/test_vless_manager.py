@@ -496,6 +496,7 @@ def test_probe_candidates_admits_ru_egress(stub_xray, paths, monkeypatch) -> Non
     """Phase 57-03: candidates with verified RU egress are admitted and
     annotated with ``extra["egress_country"] = "RU"`` for diagnostics."""
     pm = _manager(paths)
+    monkeypatch.setattr(pm, "_tcp_prefilter_candidates", lambda c: list(c))
     monkeypatch.setattr(pm, "_probe_vkusvill", lambda **_kw: True)
     FakeXrayProcess.verify_egress_result = (True, "RU")
     admitted = pm._probe_candidates_in_parallel(_ru_candidates(2))
@@ -515,6 +516,7 @@ def test_probe_candidates_rejects_non_ru_egress(stub_xray, paths, monkeypatch) -
     plan decision D-05.
     """
     pm = _manager(paths)
+    monkeypatch.setattr(pm, "_tcp_prefilter_candidates", lambda c: list(c))
     monkeypatch.setattr(pm, "_probe_vkusvill", lambda **_kw: True)
     FakeXrayProcess.verify_egress_result = (False, "DE")
     admitted = pm._probe_candidates_in_parallel(_ru_candidates(3))
@@ -527,6 +529,7 @@ def test_probe_candidates_skips_egress_when_vkusvill_probe_fails(
     """If the cheap VkusVill probe rejects the candidate, the more expensive
     egress probe must NOT run — saves ~1-2s per dead node during refresh."""
     pm = _manager(paths)
+    monkeypatch.setattr(pm, "_tcp_prefilter_candidates", lambda c: list(c))
     monkeypatch.setattr(pm, "_probe_vkusvill", lambda **_kw: False)
     admitted = pm._probe_candidates_in_parallel(_ru_candidates(2))
     assert admitted == []
@@ -544,10 +547,99 @@ def test_probe_candidates_propagates_egress_error_message(
     network errors. The rejected_reason must capture the error so operators
     can diagnose pool-shrink (rate-limited ipinfo.io vs. real non-RU exit)."""
     pm = _manager(paths)
+    monkeypatch.setattr(pm, "_tcp_prefilter_candidates", lambda c: list(c))
     monkeypatch.setattr(pm, "_probe_vkusvill", lambda **_kw: True)
     FakeXrayProcess.verify_egress_result = (False, "ConnectError: probe timed out")
     admitted = pm._probe_candidates_in_parallel(_ru_candidates(1))
     assert admitted == []
+
+
+def test_tcp_prefilter_drops_unreachable_candidates(stub_xray, paths, monkeypatch) -> None:
+    """v1.26 Phase 84.4: ``_tcp_prefilter_candidates`` rejects nodes
+    whose ``host:port`` doesn't open in 2s. Live evidence on EC2
+    (2026-05-14) showed 4 of 5 sampled candidates were dead Azure exits
+    timing out at the TCP layer; pre-filtering them saves ~6s of xray
+    probe time per dead node.
+
+    Rejected nodes are stamped with ``extra["rejected_reason"] =
+    "tcp_unreachable"`` so the existing classifier in
+    ``refresh_proxy_list`` quarantines them at the soft tier (60s).
+    """
+    import socket as _socket
+
+    class _FakeSock:
+        def __enter__(self): return self
+        def __exit__(self, *exc): return False
+
+    def _fake_create_connection(addr, timeout=None):
+        host, _port = addr
+        # Only 10.0.0.10 (the first synthetic host) is reachable; every
+        # other synthetic candidate gets a TCP-layer rejection.
+        if host == "10.0.0.10":
+            return _FakeSock()
+        raise _socket.timeout("simulated TCP timeout")
+
+    monkeypatch.setattr(manager_mod.socket, "create_connection", _fake_create_connection)
+
+    pm = _manager(paths)
+    candidates = _ru_candidates(4)  # hosts 10.0.0.10 through 10.0.0.13
+    survivors = pm._tcp_prefilter_candidates(candidates)
+
+    survivor_hosts = {n.host for n in survivors}
+    assert survivor_hosts == {"10.0.0.10"}, (
+        f"only the reachable host should survive — got {survivor_hosts}"
+    )
+    # Rejected nodes get the canonical reason stamp so refresh_proxy_list's
+    # classifier can route them to the soft-tier (60s) quarantine.
+    rejected = [n for n in candidates if n.host != "10.0.0.10"]
+    assert {n.extra.get("rejected_reason") for n in rejected} == {"tcp_unreachable"}, (
+        "TCP-dead nodes must be stamped with rejected_reason='tcp_unreachable'"
+    )
+
+
+def test_tcp_prefilter_runs_before_xray_in_full_probe_pipeline(
+    stub_xray, paths, monkeypatch
+) -> None:
+    """v1.26 Phase 84.4: when every candidate is TCP-dead,
+    ``_probe_candidates_in_parallel`` must short-circuit and never spin
+    up an xray subprocess.
+
+    Regression guard: budget math only works if dead-on-TCP nodes don't
+    pay the ~6s xray setup + probe cost. If a future refactor reorders
+    the stages, this test fails.
+    """
+    import socket as _socket
+
+    def _all_tcp_dead(addr, timeout=None):  # noqa: ARG001
+        raise _socket.timeout("simulated — every candidate is dead at TCP")
+
+    monkeypatch.setattr(manager_mod.socket, "create_connection", _all_tcp_dead)
+
+    pm = _manager(paths)
+    # If TCP filter ran AFTER xray, _probe_vkusvill would be called; we
+    # patch it as a tripwire so the test fails loudly if that happens.
+    def _probe_tripwire(**_kw):  # pragma: no cover — must NOT be called
+        raise AssertionError(
+            "TCP pre-filter did not short-circuit — xray probe ran on "
+            "TCP-dead candidate (Phase 84.4 ordering invariant violated)"
+        )
+    monkeypatch.setattr(pm, "_probe_vkusvill", _probe_tripwire)
+
+    candidates = _ru_candidates(3)
+    # Snapshot xray instance count before — Phase 84.4 invariant says it
+    # MUST stay flat when TCP filter rejects everything.
+    before = len(stub_xray.instances)
+    admitted = pm._probe_candidates_in_parallel(candidates)
+    after = len(stub_xray.instances)
+
+    assert admitted == [], "all candidates were TCP-dead; admitted must be empty"
+    assert after == before, (
+        f"xray subprocess was started for TCP-dead candidate "
+        f"(before={before}, after={after}) — Phase 84.4 short-circuit failed"
+    )
+    # All candidates carry the TCP-unreachable reason so the caller's
+    # quarantine classifier puts them in the soft-tier bucket.
+    assert all(n.extra.get("rejected_reason") == "tcp_unreachable" for n in candidates)
 
 
 def test_probe_vkusvill_builds_socks5h_proxy_url(stub_xray, paths, monkeypatch) -> None:
@@ -1154,21 +1246,26 @@ def test_pool_state_roundtrip_preserves_tls_fields(tmp_path) -> None:
 _ = Iterable
 
 
-def test_filter_ru_nodes_admits_unlabeled_lines_to_be_probed_for_egress(monkeypatch: pytest.MonkeyPatch) -> None:
-    """v1.26 Phase 84.2: lines with no country flag fall through to the
-    egress probe instead of being label-rejected.
+def test_filter_ru_nodes_rejects_anything_without_explicit_ru_marker(monkeypatch: pytest.MonkeyPatch) -> None:
+    """v1.26 Phase 84.4: require an EXPLICIT 🇷🇺 / "russia" marker.
 
-    Pre-Phase 84.2: ``filter_ru_nodes`` rejected anything without a 🇷🇺
-    flag in the URL fragment. Aggregators like kort0881/sevcator that
-    label by handle (#Join+Telegram:@Farah_VPN) instead of country had
-    100% rejection rate even though many of their nodes were RU IPs.
+    Phase 84.2 (the predecessor to this test) admitted unlabeled lines
+    via "let the egress probe decide." Live evidence on EC2 (2026-05-14)
+    showed the kort0881 / SoliSpirit aggregators ship hundreds of nodes
+    with handle-style labels (#Join+Telegram:@Farah_VPN) or no flag at
+    all, of which the vast majority are dead Azure exits or non-RU
+    egresses. Probing ~180 candidates per cycle resulted in 0 admissions
+    because the budget got eaten by garbage. Phase 84.4 reverts to
+    explicit-RU-only — the egress probe is still the source of truth
+    but we no longer waste xray-startup budget on label-evidence-free
+    candidates.
 
-    Post-Phase 84.2: only EXPLICIT non-RU markers (other flags, [FI]/[DE]
-    text) reject. Unlabeled lines pass through the label gate so the
-    expensive but accurate egress probe can decide.
+    Net trade-off: ~140 unlabeled candidates dropped per cycle, of which
+    some were genuinely RU. We can re-enable the fallthrough behind a
+    feature flag if the pool starves; the helper
+    ``_has_explicit_non_ru_marker`` and the related constants are
+    intentionally retained in ``vless.sources`` for that path.
     """
-    # Direct call to vless.sources — no stub_xray fixture so the tripwire
-    # doesn't intercept this assertion.
     from vless import sources as _sources
     nodes = [
         VlessNode(uuid="u1", host="1.1.1.1", port=443, name="🇷🇺 Russia [*CIDR]",
@@ -1181,14 +1278,16 @@ def test_filter_ru_nodes_admits_unlabeled_lines_to_be_probed_for_egress(monkeypa
                   reality_pbk="pbk", reality_sni="x.com"),
         VlessNode(uuid="u5", host="5.5.5.5", port=443, name="",
                   reality_pbk="pbk", reality_sni="x.com"),
+        VlessNode(uuid="u6", host="6.6.6.6", port=443, name="russia premium",
+                  reality_pbk="pbk", reality_sni="x.com"),
     ]
     accepted, rejected = _sources.filter_ru_nodes(nodes)
     accepted_hosts = {n.host for n in accepted}
     rejected_hosts = {n.host for n in rejected}
-    # Explicit RU + unlabeled both pass to the egress probe.
-    assert accepted_hosts == {"1.1.1.1", "4.4.4.4", "5.5.5.5"}
-    # Explicit non-RU drops at the label gate.
-    assert rejected_hosts == {"2.2.2.2", "3.3.3.3"}
+    # ONLY explicit-RU markers (emoji or "russia" text) admit.
+    assert accepted_hosts == {"1.1.1.1", "6.6.6.6"}
+    # Explicit non-RU AND unlabeled both drop at the label gate.
+    assert rejected_hosts == {"2.2.2.2", "3.3.3.3", "4.4.4.4", "5.5.5.5"}
 
 
 def test_parse_vless_list_decodes_html_entity_ampersands(stub_xray, paths) -> None:

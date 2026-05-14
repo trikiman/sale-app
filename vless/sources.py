@@ -303,23 +303,36 @@ def filter_ru_nodes(
     geo_resolver=None,  # noqa: ARG001 — kept for signature compatibility
     min_agree: int = 2,  # noqa: ARG001 — kept for signature compatibility
 ) -> tuple[list[VlessNode], list[VlessNode]]:
-    """Split ``nodes`` into ``(ru_nodes, rejected_nodes)``.
+    """Split ``nodes`` into ``(ru_nodes, rejected_nodes)`` by fragment label.
 
-    Three-tier classification:
-      1. Explicit RU marker (🇷🇺 emoji or "russia" text)         → admit.
-      2. Explicit non-RU marker (other flag or [FI]/[DE]/etc. text) → reject.
-      3. No marker at all (e.g., kort0881 lines labeled `#FI` is a
-         FALSE non-RU, but `#Join+Telegram:@Farah_VPN` has no flag) →
-         admit and let :meth:`XrayProcess.verify_egress` decide. The
-         egress probe is the source-of-truth check anyway, so trusting
-         it for unlabeled lines costs at most a few extra probes per
-         cycle but unlocks aggregators that don't bother with country
-         labels (sevcator, kort0881, etc.).
+    v1.26 Phase 84.4 (corrective): require an EXPLICIT RU marker.
 
-    Prior to v1.16 we ran every host through a multi-provider consensus
-    geo resolver, but the igareck lists already label every entry with a
-    country flag emoji in the URL fragment. v1.26 Phase 84.2 broadens
-    the contract to handle additional aggregators that DON'T label.
+    Phase 84.2 admitted unlabeled lines via "let the egress probe decide,"
+    which sounded reasonable but in practice flooded the candidate set
+    with dead/non-RU/misconfigured nodes from kort0881 and similar
+    aggregators (Azure 20.x.x.x exits labeled `#FI`, KR egresses, broken
+    Reality SNIs). 180+ candidates per cycle resulted in 0 admissions
+    because the budget got eaten by garbage. Live evidence (2026-05-14
+    EC2): of 5 sampled "unlabeled" candidates, 4 were dead at the TCP
+    layer and 1 was a Korean egress. Pool starved for hours.
+
+    Two-tier classification (was three in Phase 84.2):
+      1. Explicit RU marker (🇷🇺 emoji or "russia" text)  → admit.
+      2. Anything else (other flag, [FI]/[DE]/etc., or no label at all)
+                                                            → reject.
+
+    The egress probe (:meth:`XrayProcess.verify_egress`) remains the
+    source-of-truth check at admission time, but we no longer pay the
+    per-node xray-startup cost for nodes with no label evidence. Net
+    effect on EC2: candidate count drops from ~180 to ~50 (the
+    explicitly-labeled subset), but admission rate rises dramatically
+    because we're not wasting budget on Azure dead nodes.
+
+    Trade-off: we lose ~140 unlabeled candidates per cycle, some of
+    which were genuinely RU. If the pool starves we can re-enable
+    unlabeled-fallthrough behind a feature flag — :func:`_has_explicit_non_ru_marker`
+    and the related constants are intentionally retained for that path.
+    Recover-fast > perfect.
     """
     if not nodes:
         return [], []
@@ -329,12 +342,8 @@ def filter_ru_nodes(
     for node in nodes:
         if _has_ru_marker(node.name):
             ru_nodes.append(node)
-        elif _has_explicit_non_ru_marker(node.name):
-            rejected_nodes.append(node)
         else:
-            # Unlabeled — defer to the egress probe in
-            # _probe_candidates_in_parallel.
-            ru_nodes.append(node)
+            rejected_nodes.append(node)
 
     return ru_nodes, rejected_nodes
 

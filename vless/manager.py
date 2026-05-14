@@ -611,6 +611,13 @@ class VlessProxyManager:
                 bucket = "vpn_detected"
             elif raw_reason.startswith("egress_country=") and not raw_reason.endswith("RU"):
                 bucket = "egress_country_non_ru"
+            elif raw_reason == "tcp_unreachable":
+                # v1.26 Phase 84.4: cheap TCP-layer reject from
+                # _tcp_prefilter_candidates. Soft tier (60s) — same
+                # behavior as probe_timeout but a distinct bucket so
+                # admin diagnostics can see how many candidates die at
+                # the TCP layer vs. xray-probe layer.
+                bucket = "tcp_unreachable"
             elif "timeout" in raw_reason.lower():
                 bucket = "probe_timeout"
             elif "tls" in raw_reason.lower():
@@ -1159,11 +1166,77 @@ class VlessProxyManager:
         except Exception:  # noqa: BLE001 — probe is best-effort
             return False
 
+    def _tcp_prefilter_candidates(self, candidates: list[VlessNode]) -> list[VlessNode]:
+        """v1.26 Phase 84.4: cheap TCP open() check before xray subprocess setup.
+
+        Most candidate VLESS nodes admitted by the label gate are dead at
+        the TCP layer — Azure exits whose ports closed when the operator
+        decommissioned them, decommissioned bridges, host:port typos in
+        aggregator output. Live evidence (2026-05-14 EC2 ``debug_admission.py``):
+        4 of 5 sampled candidates timed out at ``socket.create_connection``.
+
+        Each xray probe costs ~1-2s of subprocess setup + 4s health-check
+        timeout *before* we even attempt ``_probe_vkusvill``. Filtering
+        TCP-dead nodes upfront reclaims that budget for nodes that have a
+        chance of working. Budget math (50 candidates, 2s timeout, 16
+        worker threads):
+
+            worst case TCP filter:   50 / 16 * 2s ≈  6.5s
+            saved xray attempts:     ~40 dead × ~6s each = ~240s
+
+        Rejected nodes get stamped with ``extra["rejected_reason"] =
+        "tcp_unreachable"`` so the existing classifier in
+        :meth:`refresh_proxy_list` quarantines them at the soft tier (60s
+        TTL). They re-enter the candidate pool on the next refresh —
+        important because some failures are transient (operator restart,
+        network blip) and we want to recover fast, not lock them out
+        for 20 min.
+
+        Thread-safety: each thread mutates only its own node's
+        ``extra`` dict. The list is built from the pool of returned
+        results, not appended to from threads.
+        """
+        if not candidates:
+            return []
+
+        timeout_s = 2.0
+        max_workers = min(16, len(candidates))
+
+        def _check(node: VlessNode) -> VlessNode | None:
+            try:
+                with socket.create_connection((node.host, node.port), timeout=timeout_s):
+                    return node
+            except (OSError, socket.timeout):
+                # Stamp the reason for the downstream classifier; keep
+                # the existing rejected_reason if a probe stage already
+                # set one (defensive — _tcp_prefilter is the first stage
+                # so this shouldn't happen, but it makes the helper safe
+                # to call out-of-order during refactors).
+                node.extra.setdefault("rejected_reason", "tcp_unreachable")
+                return None
+
+        survivors: list[VlessNode] = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as pool:
+            for result in pool.map(_check, candidates):
+                if result is not None:
+                    survivors.append(result)
+
+        rejected = len(candidates) - len(survivors)
+        if rejected:
+            self._log(
+                f"TCP pre-filter: {len(survivors)}/{len(candidates)} reachable "
+                f"({rejected} dead at TCP layer, ~{rejected * 6}s of xray probes saved)"
+            )
+        return survivors
+
     def _probe_candidates_in_parallel(self, candidates: list[VlessNode]) -> list[VlessNode]:
         """Stand up a single-node xray per candidate on unique ports, probe, keep survivors.
 
-        The probe is two-stage:
+        The probe is now three-stage as of v1.26 Phase 84.4:
 
+        0. ``_tcp_prefilter_candidates`` (cheap, NEW): drops nodes whose
+           ``host:port`` doesn't open in 2s — Azure dead exits, bad host
+           strings, etc. Saves ~6s per dead node by skipping xray setup.
         1. ``_probe_vkusvill`` confirms the candidate can reach the real
            VkusVill catalog (rejects /vpn-detected/ and DNS failures).
         2. ``XrayProcess.verify_egress`` confirms the egress IP geolocates
@@ -1172,10 +1245,26 @@ class VlessProxyManager:
            ``.planning/phases/56-vless-proxy-migration/INSPECTION-2026-04-23.md``
            section S5.
 
-        Both stages run through the same per-candidate xray subprocess and
-        share its lifetime — the subprocess is started once and stopped once
-        per candidate.
+        Stages 1 + 2 run through the same per-candidate xray subprocess
+        and share its lifetime — the subprocess is started once and
+        stopped once per candidate. Stage 0 runs without xray entirely.
+
+        Note: this method's input contract did NOT change. Callers still
+        pass the full label-filtered candidate set; TCP-dead nodes will
+        appear neither in the returned ``admitted`` list nor in
+        ``candidates`` after the pre-filter step. The caller still
+        iterates the *original* ``candidates`` reference (kept in scope
+        before the call) to quarantine non-admitted hosts, so dropped
+        nodes are still recorded in the soft-tier quarantine.
         """
+        if not candidates:
+            return []
+        # v1.26 Phase 84.4: cheap TCP pre-filter ahead of expensive xray
+        # probes. Survivors enter the xray stage; dead nodes stay in the
+        # caller's `candidates` view via their `extra["rejected_reason"]`
+        # stamp so the quarantine classifier in refresh_proxy_list still
+        # sees them.
+        candidates = self._tcp_prefilter_candidates(candidates)
         if not candidates:
             return []
         binary = self._resolve_xray_binary()
