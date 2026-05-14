@@ -179,6 +179,40 @@ def _load_existing_green_product_count() -> int:
     return len(products) if isinstance(products, list) else 0
 
 
+def _touch_existing_green_file() -> bool:
+    """v1.26 Phase 84.6: bump green_products.json mtime to "now" without
+    rewriting its content.
+
+    Used by the suspicious-empty / suspicious-single-result safety guards.
+    These guards INTENTIONALLY preserve the existing snapshot when a fresh
+    scrape comes back with 0 or 1 items but the previous snapshot had more
+    — the assumption is a transient page/cart issue, not a real change.
+
+    Side-effect on file content: NONE. The bytes on disk are unchanged.
+    Side-effect on mtime: updated to current wall-clock time.
+
+    Why we want the mtime bump: ``_build_source_freshness`` (in
+    ``backend/main.py``) reads ``os.path.getmtime`` to compute
+    ``ageMinutes`` and the user-facing "Обновлено: N мин" banner. Without
+    this touch, the user sees a stale banner even though the system just
+    actively verified the data is still current. With this touch, the
+    banner correctly reflects "checked at this time, no change needed".
+
+    Returns True on success, False if the file is missing or unwriteable
+    (caller can fall back to logging — the scrape exit code is unchanged
+    so cycle-state reporting still surfaces the suspicious-result case).
+    """
+    path = os.path.join(DATA_DIR, "green_products.json")
+    if not os.path.exists(path):
+        return False
+    try:
+        now = time.time()
+        os.utime(path, (now, now))
+        return True
+    except OSError:
+        return False
+
+
 def is_suspicious_empty_green_result(section_found: bool, live_count: int, product_count: int, existing_product_count: int = 0) -> bool:
     """Detect empty results that are more likely scraper failure than true zero green items."""
     return product_count == 0 and ((not section_found) or live_count > 0 or existing_product_count > 0)
@@ -2508,9 +2542,16 @@ async def scrape_green_prices_async():
         existing_count = _load_existing_green_product_count()
         if is_suspicious_empty_green_result(section_found, live_count, len(raw_products), existing_count):
             print("⚠️ [GREEN] Empty result suspicious — preserving existing snapshot.")
+            # v1.26 Phase 84.6: bump mtime so freshness banner reflects
+            # "checked at this time, no new data" rather than a stale gap.
+            if _touch_existing_green_file():
+                print(f"  [GREEN] Touched existing snapshot mtime ({existing_count} items preserved)")
             return [], False
         if is_suspicious_single_green_result(live_count, len(raw_products), existing_count):
             print("⚠️ [GREEN] Single-item result suspicious — preserving existing snapshot.")
+            # v1.26 Phase 84.6: same as above — verified, no change needed.
+            if _touch_existing_green_file():
+                print(f"  [GREEN] Touched existing snapshot mtime ({existing_count} items preserved)")
             return [], False
 
         # Load stock cache as fallback for when basket_recalc fails
@@ -2604,6 +2645,11 @@ async def scrape_green_prices_async():
                     if existing_count > scraped_count:
                         print(f"⚠️ [GREEN] Existing snapshot has {existing_count} items — preserving it")
                         scrape_success = False  # Don't overwrite with worse data
+                        # v1.26 Phase 84.6: bump mtime so the freshness banner
+                        # reflects "checked, no upgrade available" rather than
+                        # a stale gap.
+                        if _touch_existing_green_file():
+                            print(f"  [GREEN] Touched existing snapshot mtime ({existing_count} items preserved)")
                     else:
                         print(f"⚠️ [GREEN] Existing snapshot has {existing_count} items — saving new (still better)")
                 else:
