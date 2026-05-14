@@ -29,13 +29,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # v1.25 TOOL-04: eslint must stay at 0 errors. Warnings are the
-      # 46-entry inline-style baseline from docs/style-guide-debt.md + 5
-      # react-hooks advisory warnings — refactored in v1.26 per Phase 82
-      # scope decision. --max-warnings pins the baseline count so
-      # regressions surface immediately.
-      - name: ESLint (strict errors, pinned warnings)
-        run: npm run lint -- --max-warnings=60
+      # v1.26 Phase 84-03: react/forbid-dom-props bumped from warn → error.
+      # The 46-site inline-style baseline is now zero or annotated with
+      # TODO(v1.27) disables. Remaining warnings are 5 pre-existing
+      # react-hooks advisories that are scope of v1.27 — kept at warn
+      # because the refactor (useReducer / useMemo conversion) is bigger
+      # than the inline-style cleanup. Budget is 10 to give a small
+      # safety margin if a new advisory pops up; should drop to 0 once
+      # the v1.27 react-hooks pass lands.
+      - name: ESLint (zero errors, warn budget for react-hooks debt)
+        run: npm run lint -- --max-warnings=10
 
       # v1.25 TOOL-06: stylelint catches spacing-scale violations + CSS
       # hygiene regressions. Current baseline: 135 spacing-scale warnings

@@ -44,6 +44,7 @@ function MiniTimeline({ dayPattern, saleType }) {
               <div className="hcard-timeline-day">{day}</div>
               <div
                 className={`hcard-timeline-bar ${hasData ? '' : 'empty'}`}
+                // eslint-disable-next-line react/forbid-dom-props -- TODO(v1.27): timeline bar background + opacity are data-driven (color.dot + prob); refactor via CSS custom properties (--bar-color, --bar-alpha)
                 style={hasData ? { background: color.dot, opacity: 0.3 + prob * 0.7 } : {}}
               />
             </div>
@@ -61,7 +62,10 @@ function ConfidenceDots({ level }) {
       ['#ef4444', 'rgba(255,255,255,0.15)', 'rgba(255,255,255,0.15)']
   return (
     <span className="hcard-dots">
-      {colors.map((c, i) => <span key={i} className="hcard-dot" style={{ background: c }} />)}
+      {colors.map((c, i) => (
+        // eslint-disable-next-line react/forbid-dom-props -- TODO(v1.27): per-instance sparkline dot color is dynamic; refactor via CSS custom properties (--hcard-dot-color)
+        <span key={i} className="hcard-dot" style={{ background: c }} />
+      ))}
     </span>
   )
 }
@@ -87,6 +91,7 @@ const HistoryCard = memo(function HistoryCard({ product, onClick, isFavorite, on
     <div
       className={`hcard ${isGhost ? 'hcard-ghost' : ''} anim-fade`}
       onClick={() => onClick(product)}
+      // eslint-disable-next-line react/forbid-dom-props -- TODO(v1.27): per-card theme tint is dynamic from TYPE_COLORS; refactor via CSS custom properties driven by data-attr (data-type) on the card
       style={{ cursor: 'pointer', transition: 'transform 0.2s, box-shadow 0.2s', ...(hasSales ? { background: tc.bg, borderColor: tc.border } : {}) }}
     >
       {/* Image section */}
@@ -105,6 +110,7 @@ const HistoryCard = memo(function HistoryCard({ product, onClick, isFavorite, on
 
         {/* Type badge — top left */}
         {hasSales && product.avg_discount_pct > 0 && (
+          // eslint-disable-next-line react/forbid-dom-props -- TODO(v1.27): badge color is dynamic per-type from TYPE_COLORS; refactor via data-type attr + CSS custom property
           <span className="hcard-type-badge" style={{ background: tc.badge }}>
             {type === 'green' ? 'Green' : type === 'red' ? 'Red' : 'Yellow'} {Math.round(product.avg_discount_pct)}%
           </span>
@@ -121,6 +127,7 @@ const HistoryCard = memo(function HistoryCard({ product, onClick, isFavorite, on
 
         {/* Live indicator */}
         {product.is_currently_on_sale && (
+          // eslint-disable-next-line react/forbid-dom-props -- TODO(v1.27): live-dot top offset shifts to clear the favorite heart when active; refactor via state class (.hcard-live-dot--with-fav)
           <span className="hcard-live-dot" style={isFavorite ? { top: 36 } : {}}>●</span>
         )}
       </div>
@@ -141,6 +148,7 @@ const HistoryCard = memo(function HistoryCard({ product, onClick, isFavorite, on
           <>
             {/* Price row */}
             <div className="hcard-price-row">
+              {/* eslint-disable-next-line react/forbid-dom-props -- TODO(v1.27): price text color is dynamic per-type from TYPE_COLORS; refactor via data-type attr + CSS custom property */}
               <span className="hcard-price" style={{ color: tc.text }}>
                 {product.last_known_price > 0 ? `${product.last_known_price} ₽` : ''}
               </span>
@@ -170,7 +178,7 @@ const HistoryCard = memo(function HistoryCard({ product, onClick, isFavorite, on
           </>
         ) : (
           <div className="hcard-no-data">
-            <span style={{ opacity: 0.5 }}>
+            <span className="u-opacity-50">
               {searchState?.kind === 'catalog' ? '📦 Скидок пока не было' : '📊 Нет данных'}
             </span>
           </div>
@@ -438,6 +446,7 @@ export default function HistoryPage({ onBack, onOpenDetail, favorites = new Set(
                   key={f.id}
                   className={`history-chip ${active ? 'active' : ''}`}
                   onClick={() => handleFilterClick(f.id)}
+                  // eslint-disable-next-line react/forbid-dom-props -- TODO(v1.27): active-filter chip theme tint is dynamic from f.color; refactor via data-color attr + CSS custom properties (--chip-bg, --chip-border, --chip-text)
                   style={active && f.color ? {
                     background: f.color + '33',
                     borderColor: f.color + '66',
@@ -509,7 +518,7 @@ export default function HistoryPage({ onBack, onOpenDetail, favorites = new Set(
           </div>
         ) : displayProducts.length === 0 ? (
           <div className="history-empty">
-            <div style={{ fontSize: 48, marginBottom: 12 }}>
+            <div className="history-empty__icon">
               {specialFilter === 'favorites' ? '⭐' : '🔍'}
             </div>
             <div>
@@ -519,9 +528,8 @@ export default function HistoryPage({ onBack, onOpenDetail, favorites = new Set(
             </div>
             {(searchInput || hasActiveFilter) && (
               <button
-                className="history-chip active"
+                className="history-chip active u-mt-3"
                 onClick={() => { clearSearch(); setActiveTypes(new Set()); setSpecialFilter(null) }}
-                style={{ marginTop: 12 }}
               >
                 Сбросить фильтры
               </button>

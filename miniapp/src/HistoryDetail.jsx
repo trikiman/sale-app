@@ -33,7 +33,7 @@ function ConfidenceGauge({ pct, label }) {
           strokeDasharray={circ} strokeDashoffset={offset}
           strokeLinecap="round"
           transform="rotate(-90 50 50)"
-          style={{ transition: 'stroke-dashoffset 0.8s ease' }}
+          className="hd-stroke-anim"
         />
         <text x="50" y="46" textAnchor="middle" fill="currentColor" fontSize="18" fontWeight="700">
           {pct}%
@@ -61,6 +61,7 @@ function DayPattern({ pattern }) {
               <div className="hd-day-bar-bg">
                 <div
                   className="hd-day-bar-fill"
+                  // eslint-disable-next-line react/forbid-dom-props -- TODO(v1.27): chart bar height/color/transition-delay are all data-driven; refactor via CSS custom properties (--bar-pct, --bar-color, --bar-delay)
                   style={{ height: `${Math.max(pct, 2)}%`, background: pct > 50 ? '#4ade80' : pct > 20 ? '#facc15' : 'rgba(255,255,255,0.15)', transition: `height 0.4s ease ${i * 0.05}s` }}
                 />
               </div>
@@ -129,10 +130,12 @@ function CalendarHeatmap({ calendar, sessions: _sessions }) {
         })}
       </div>
       <div className="hd-cal-legend">
+        {/* eslint-disable react/forbid-dom-props -- TODO(v1.27): legend dots take TYPE_COLORS values; refactor via static class per type (e.g. .hd-legend-dot--green) */}
         <span><i style={{ background: TYPE_COLORS.green }} /> Green</span>
         <span><i style={{ background: TYPE_COLORS.red }} /> Red</span>
         <span><i style={{ background: TYPE_COLORS.yellow }} /> Yellow</span>
         <span><i style={{ background: 'rgba(255,255,255,0.06)' }} /> Нет скидки</span>
+        {/* eslint-enable react/forbid-dom-props */}
       </div>
     </div>
   )
@@ -155,6 +158,7 @@ function HourChart({ distribution }) {
               <div className="hd-hour-bar-bg">
                 <div
                   className="hd-hour-bar-fill"
+                  // eslint-disable-next-line react/forbid-dom-props -- TODO(v1.27): hour-chart bar height/transition-delay are data-driven; refactor via CSS custom properties
                   style={{ height: `${Math.max(pct, count > 0 ? 8 : 0)}%`, transition: `height 0.3s ease ${h * 0.02}s` }}
                 />
               </div>
@@ -176,11 +180,13 @@ function SaleLog({ sessions }) {
       <div className="hd-log-list">
         {sessions.map((s, i) => (
           <div key={i} className={`hd-log-item ${s.is_active ? 'hd-log-active' : ''}`}>
+            {/* eslint-disable-next-line react/forbid-dom-props -- TODO(v1.27): log-dot color is per-session-type; refactor via data-type attr + CSS custom property */}
             <span className="hd-log-dot" style={{ background: TYPE_COLORS[s.type] || '#666' }} />
             <div className="hd-log-date">{s.date}</div>
             <div className="hd-log-time">{s.time}</div>
             <span
               className="hd-log-type"
+              // eslint-disable-next-line react/forbid-dom-props -- TODO(v1.27): log-type pill bg/text are per-session-type; refactor via data-type attr + CSS custom properties
               style={{ background: (TYPE_COLORS[s.type] || '#666') + '33', color: TYPE_COLORS[s.type] || '#999' }}
             >
               -{s.discount}%
@@ -226,7 +232,7 @@ export default function HistoryDetail({ productId, onBack }) {
           <h2 className="hd-title">Загрузка...</h2>
         </div>
         <div className="hd-loading">
-          {[...Array(4)].map((_, i) => <div key={i} className="hcard-skeleton" style={{ height: 120 }} />)}
+          {[...Array(4)].map((_, i) => <div key={i} className="hcard-skeleton hcard-skeleton--md" />)}
         </div>
       </div>
     )
@@ -239,7 +245,7 @@ export default function HistoryDetail({ productId, onBack }) {
           <button className="history-back-btn" onClick={onBack}>← Назад</button>
         </div>
         <div className="history-empty">
-          <div style={{ fontSize: 48 }}>😕</div>
+          <div className="history-empty__icon">😕</div>
           <div>{error || 'Данные не найдены'}</div>
         </div>
       </div>
@@ -271,6 +277,7 @@ export default function HistoryDetail({ productId, onBack }) {
           <div className="hd-hero-cat">{product?.category || ''}</div>
           <div className="hd-hero-prices">
             {product?.last_known_price > 0 && (
+              // eslint-disable-next-line react/forbid-dom-props -- TODO(v1.27): hero price color is dynamic per-type; refactor via data-type attr + CSS custom property
               <span className="hd-hero-price" style={{ color: typeColor }}>
                 {product.last_known_price} ₽
               </span>
@@ -279,6 +286,7 @@ export default function HistoryDetail({ productId, onBack }) {
               <span className="hd-hero-old">{product.last_old_price} ₽</span>
             )}
             {prediction?.max_discount > 0 && (
+              // eslint-disable-next-line react/forbid-dom-props -- TODO(v1.27): hero discount-pct bg/text are dynamic per-type; refactor via data-type attr + CSS custom properties
               <span className="hd-hero-pct" style={{ background: typeColor + '22', color: typeColor }}>
                 -{prediction.max_discount}%
               </span>
@@ -287,6 +295,7 @@ export default function HistoryDetail({ productId, onBack }) {
         </div>
         <div className="hd-hero-right">
           {product?.last_sale_type && (
+            // eslint-disable-next-line react/forbid-dom-props -- TODO(v1.27): type pill bg/text are dynamic per-type; refactor via data-type attr + CSS custom properties
             <span className="hd-type-pill" style={{ background: typeColor + '22', color: typeColor }}>
               {typeName} {prediction?.max_discount || ''}%
             </span>

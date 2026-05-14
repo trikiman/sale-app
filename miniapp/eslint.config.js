@@ -49,15 +49,17 @@ export default defineConfig([
       'react-hooks/set-state-in-effect': 'warn',
       // v1.24 TOOL-03: inline `style={}` forbidden per miniapp style guide v2.
       // Use CSS classes; if an exception is genuinely needed, add
-      // `// eslint-disable-next-line react/forbid-dom-props -- TODO(v1.26): reason`
+      // `// eslint-disable-next-line react/forbid-dom-props -- TODO(v1.27): reason`
       // and link to docs/style-guide-debt.md.
-      // Level is `warn` during v1.24/v1.25 to baseline existing debt without
-      // blocking CI; v1.26 polish phase should bump to `error` after debt
-      // refactor is complete.
-      'react/forbid-dom-props': ['warn', {
+      // v1.26 Phase 84-03: bumped from 'warn' → 'error'. The 46-site inline-style
+      // baseline is now zero or annotated with TODO(v1.27) disables that point
+      // at concrete refactor paths (mostly chart/theme dynamics that should
+      // become CSS custom properties driven by data-attrs). New violations
+      // should fail CI rather than accumulate as silent warnings.
+      'react/forbid-dom-props': ['error', {
         forbid: [{
           propName: 'style',
-          message: 'Use a CSS class. See docs/miniapp-ui-style-guide.md. If exception needed, disable with TODO(v1.26) comment.',
+          message: 'Use a CSS class. See docs/miniapp-ui-style-guide.md. If exception needed, disable with TODO(v1.27) comment.',
         }],
       }],
     },

@@ -303,6 +303,42 @@ body {
   font-size: 14px;
 }
 
+/* v1.26 Phase 84-03: utilities + history-page extracts. Closes the
+   inline-style refactor at 46/46 sites. */
+
+/* Generic 50% opacity — used on history "no data" hint copy. Three+
+   call sites across the app justify a single utility. */
+.u-opacity-50 {
+  opacity: 0.5;
+}
+
+/* Generic top-margin token = 12px = 3 × 4px spacing scale. Used on the
+   history "сбросить фильтры" CTA inside the empty state. */
+.u-mt-3 {
+  margin-top: 12px;
+}
+
+/* Empty-state icon shared by HistoryPage (search-empty) and
+   HistoryDetail (load-error 😕). Sized large enough to dominate the
+   empty card. */
+.history-empty__icon {
+  font-size: 48px;
+  margin-bottom: 12px;
+}
+
+/* HistoryDetail: SVG circle stroke-dashoffset animation used by the
+   prediction-probability ring. Static CSS replaces the inline
+   transition string. */
+.hd-stroke-anim {
+  transition: stroke-dashoffset 0.8s ease;
+}
+
+/* HistoryDetail: medium-height skeleton card variant for the hero
+   loader (4 stacked cards while the detail endpoint resolves). */
+.hcard-skeleton--md {
+  height: 120px;
+}
+
 /* Light theme — header pills */
 [data-theme="light"] .header-pill {
   color: #374151 !important;
