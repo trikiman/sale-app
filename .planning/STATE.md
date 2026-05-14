@@ -3,8 +3,8 @@ gsd_state_version: 1.0
 milestone: v1.26
 milestone_name: Miniapp Test Harness + Style Guide Debt Cleanup
 status: in_progress
-last_updated: "2026-05-14T20:45:00.000Z"
-last_activity: 2026-05-14
+last_updated: "2026-05-14T23:38:00.000Z"
+last_activity: 2026-05-15
 progress:
   total_phases: 3
   completed_phases: 1
@@ -23,23 +23,19 @@ current_phase_resume_file: null
 See: .planning/PROJECT.md (updated 2026-05-13)
 
 **Core value:** Family members see every VkusVill discount and can add to cart in one tap
-**Current focus:** v1.26 Phase 84 inline-style refactor — **22 of 46 sites done**. Phase 84-01 (3) + 84-02 (19) shipped + visually verified. Pool fix (84.4) + robust freshness scheduler (84.5) + scraper modal-close + mtime-touch fixes (84.6) all shipped + EC2-verified. User-visible "Обновлено: N мин" target (<5 min) achieved end-to-end.
+**Current focus:** v1.26 Phase 84 inline-style refactor — **22 of 46 sites done**. Phase 84-01 (3) + 84-02 (19) shipped + visually verified. Pool fix (84.4) + robust freshness scheduler (84.5) + scraper robust (84.6) + per-color staleness thresholds (84.7, green=5/red=5/yellow=10) all shipped + EC2-verified. User-tunable per-color SLOs in place; banner respects intended thresholds.
 
 ## Current Position
 
-Phase 84.6 closed the user-reported "Обновлено: 31 мин" symptom uncovered during Phase 84-02 verification. Two-layer fix:
+Phase 84.7 set per-color staleness thresholds per user instruction. EC2 verification at 02:37 MSK 2026-05-15:
 
-1. **`2fc0048`** — safe-click helper in `_close_delivery_modal` / `_close_green_modal`. Eliminates `TypeError: btn.click is not a function` when selectors match SVG elements.
-2. **`4fb8af1`** — `_touch_existing_green_file()` helper called from suspicious-empty / suspicious-single / count-mismatch safety guards. Bumps mtime on intentional snapshot preservation so freshness reporting correctly says "verified, no change".
+| Source | Age | Stale | Threshold |
+|---|---|---|---|
+| green | 1.5m | false | 5m |
+| red | 4.6m | false | 5m (would have edge-flickered under uniform 5m before) |
+| yellow | 3.8m | false | 10m |
 
-EC2 verification at 00:08 MSK 2026-05-15:
-- Green age 0.9m (was 31m), `isStale: false`
-- Miniapp `Обновлено: 00:07` at 00:08:31 — 1 min fresh
-- Stale banner cleared green (only red 6m transient remained)
-- 0 `btn.click` errors over 7-min window
-- New journal lines: "[GREEN] Touched existing snapshot mtime (1 items preserved)"
-
-User goal — "Обновлено: never > 5 min" — **met** across the full robustness chain (84.4 → 84.5 → 84.6).
+Miniapp UI: `Обновлено: 02:36` at 02:37:39 (1 min fresh), no staleness banner, `staleThresholdMinutes` field surfaced per color. `_build_source_freshness` accepts both legacy `stale_minutes` int and new `stale_thresholds` dict for ad-hoc overrides.
 
 Next session: Phase 84-03 (HistoryPage.jsx 10 sites + HistoryDetail.jsx 14 sites + bump `react/forbid-dom-props` WARN→ERROR + drop CI `--max-warnings=60`). Closes Phase 84 main goal at 46/46 sites.
 
@@ -119,6 +115,7 @@ From `.planning/UAT-AUDIT-2026-05-13.md`:
 | Phase 84.5 robust-freshness scheduler (`2cf4f1c`) — overshoot tolerance + stall recovery + 5-min threshold + Wants= systemd fix; live-verified gaps 3:12/4:43/4:26 across 5 cycles | 2026-05-14 |
 | Phase 84-02 inline-style refactor (`4f7969b`) — App.jsx 10 sites + ProductDetail.jsx 9 sites (22 of 46 total); lint 48 → 29 warnings; visually verified on Vercel | 2026-05-14 |
 | Phase 84.6 robust scraper (`2fc0048` + `4fb8af1`) — safe-click for modal-close TypeError + mtime touch on suspicious-result safety guard; EC2-verified green age 0.9m, miniapp Обновлено: 00:07 at 00:08:31 (1m fresh), banner cleared | 2026-05-15 |
+| Phase 84.7 per-color staleness thresholds (`5919ef8`) — green=5, red=5, yellow=10 (was uniform 5); resolves cycle-cadence-vs-threshold edge flicker on red and yellow; staleThresholdMinutes surfaced per color in API; live-verified red age 4.6m fresh under 5m, yellow with 10m headroom | 2026-05-15 |
 
 ---
-*Session checkpoint 2026-05-15 ~00:10 MSK. v1.26 Phase 84 main goal at 22/46 sites. Robustness chain (84.4 → 84.5 → 84.6) complete and EC2-verified. User goal "Обновлено: never > 5 min" met. Next: Phase 84-03 (HistoryPage 10 + HistoryDetail 14 + lint bump WARN→ERROR) to close the inline-style refactor at 46/46.*
+*Session checkpoint 2026-05-15 ~02:40 MSK. v1.26 Phase 84 main goal at 22/46 sites. Robustness chain (84.4 pool → 84.5 scheduler → 84.6 scraper → 84.7 per-color thresholds) complete and EC2-verified. User-tunable per-color SLOs in place. Next: Phase 84-03 (HistoryPage 10 + HistoryDetail 14 + lint bump WARN→ERROR) closes the inline-style refactor at 46/46.*
