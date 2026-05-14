@@ -349,34 +349,22 @@ def _patch_geo_client(monkeypatch, fake: _FakeGeoClient) -> None:
 
 
 def test_verify_egress_returns_first_provider_success(monkeypatch, xray_paths) -> None:
-    """Phase 58-01: ipinfo.io alone keeps the legacy fast path."""
-    _make_stub_config(xray_paths["config"])
-    fake = _FakeGeoClient([_FakeGeoResponse(200, {"country": "RU"})])
-    _patch_geo_client(monkeypatch, fake)
-    proc = XrayProcess(
-        binary=xray_paths["binary"],
-        config_path=xray_paths["config"],
-        log_path=xray_paths["log"],
-    )
-    ok, country = proc.verify_egress(expected_country="RU", timeout=1.0)
-    assert (ok, country) == (True, "RU")
-    assert fake.calls == ["https://ipinfo.io/json"]
+    """v1.26 Phase 84.3: consensus voting.
 
+    With a single RU response (other 2 providers absent), the result is
+    still admit + 'RU' — the consensus tie-break favors expected_country.
 
-def test_verify_egress_falls_back_when_first_provider_429s(
-    monkeypatch, xray_paths
-) -> None:
-    """Phase 58-01: when ipinfo.io rate-limits, ipapi.co takes over.
-
-    Without the fallback chain, ~70% of refresh probes failed during the
-    v1.17 rollout because ipinfo.io's free tier rate-limits at ~50/day per
-    IP. The chain tries each provider until one returns 200.
+    Pre-Phase 84.3 (legacy first-success-wins): 1 response was enough.
+    Post-Phase 84.3 (consensus): all 3 providers are queried, but a
+    single RU vote with no other votes is still a majority.
     """
     _make_stub_config(xray_paths["config"])
+    # Empty responses for the other 2 providers (they 'fail' silently).
     fake = _FakeGeoClient(
         [
+            _FakeGeoResponse(200, {"country": "RU"}),
             _FakeGeoResponse(429, {}),
-            _FakeGeoResponse(200, {"country_code": "RU"}),
+            _FakeGeoResponse(503, {}),
         ]
     )
     _patch_geo_client(monkeypatch, fake)
@@ -387,16 +375,51 @@ def test_verify_egress_falls_back_when_first_provider_429s(
     )
     ok, country = proc.verify_egress(expected_country="RU", timeout=1.0)
     assert (ok, country) == (True, "RU")
+    # All 3 providers attempted for consensus.
     assert fake.calls == [
         "https://ipinfo.io/json",
         "https://ipapi.co/json",
+        "http://ip-api.com/json",
+    ]
+
+
+def test_verify_egress_falls_back_when_first_provider_429s(
+    monkeypatch, xray_paths
+) -> None:
+    """v1.26 Phase 84.3: when ipinfo.io rate-limits, the remaining
+    providers' votes still produce an RU consensus.
+    """
+    _make_stub_config(xray_paths["config"])
+    fake = _FakeGeoClient(
+        [
+            _FakeGeoResponse(429, {}),
+            _FakeGeoResponse(200, {"country_code": "RU"}),
+            _FakeGeoResponse(200, {"countryCode": "RU"}),
+        ]
+    )
+    _patch_geo_client(monkeypatch, fake)
+    proc = XrayProcess(
+        binary=xray_paths["binary"],
+        config_path=xray_paths["config"],
+        log_path=xray_paths["log"],
+    )
+    ok, country = proc.verify_egress(expected_country="RU", timeout=1.0)
+    assert (ok, country) == (True, "RU")
+    # All 3 providers consulted (consensus mode).
+    assert fake.calls == [
+        "https://ipinfo.io/json",
+        "https://ipapi.co/json",
+        "http://ip-api.com/json",
     ]
 
 
 def test_verify_egress_uses_third_provider_when_first_two_fail(
     monkeypatch, xray_paths
 ) -> None:
-    """All providers in the chain should be tried before giving up."""
+    """v1.26 Phase 84.3: when 2 of 3 providers fail and the lone vote is
+    non-RU, reject with a vote-tagged country string for diagnostic
+    accuracy.
+    """
     _make_stub_config(xray_paths["config"])
     fake = _FakeGeoClient(
         [
@@ -412,12 +435,95 @@ def test_verify_egress_uses_third_provider_when_first_two_fail(
         log_path=xray_paths["log"],
     )
     ok, country = proc.verify_egress(expected_country="RU", timeout=1.0)
-    assert (ok, country) == (False, "DE")
+    # Vote tally format makes the partial-consensus visible.
+    assert (ok, country) == (False, "DE (1/1)")
     assert fake.calls == [
         "https://ipinfo.io/json",
         "https://ipapi.co/json",
         "http://ip-api.com/json",
     ]
+
+
+def test_verify_egress_consensus_admits_when_majority_says_ru(
+    monkeypatch, xray_paths
+) -> None:
+    """v1.26 Phase 84.3: 2 RU votes vs 1 DE vote -> admit.
+
+    Pin the live-production scenario that triggered Phase 84.3:
+    Citytelecom RU IPs got a false DE result from ip-api.com but
+    correct RU from ipinfo.io and ipapi.co. Pre-Phase 84.3 the
+    first-success-wins logic could pick the wrong provider and
+    quarantine healthy nodes for 20 min.
+    """
+    _make_stub_config(xray_paths["config"])
+    fake = _FakeGeoClient(
+        [
+            _FakeGeoResponse(200, {"country": "RU"}),
+            _FakeGeoResponse(200, {"country_code": "RU"}),
+            _FakeGeoResponse(200, {"countryCode": "DE"}),  # ip-api.com false-DE
+        ]
+    )
+    _patch_geo_client(monkeypatch, fake)
+    proc = XrayProcess(
+        binary=xray_paths["binary"],
+        config_path=xray_paths["config"],
+        log_path=xray_paths["log"],
+    )
+    ok, country = proc.verify_egress(expected_country="RU", timeout=1.0)
+    assert (ok, country) == (True, "RU"), (
+        "consensus regressed: 2/3 RU votes should admit"
+    )
+
+
+def test_verify_egress_consensus_rejects_when_majority_says_non_ru(
+    monkeypatch, xray_paths
+) -> None:
+    """v1.26 Phase 84.3: 2 DE votes vs 1 RU vote -> reject."""
+    _make_stub_config(xray_paths["config"])
+    fake = _FakeGeoClient(
+        [
+            _FakeGeoResponse(200, {"country": "DE"}),
+            _FakeGeoResponse(200, {"country_code": "DE"}),
+            _FakeGeoResponse(200, {"countryCode": "RU"}),
+        ]
+    )
+    _patch_geo_client(monkeypatch, fake)
+    proc = XrayProcess(
+        binary=xray_paths["binary"],
+        config_path=xray_paths["config"],
+        log_path=xray_paths["log"],
+    )
+    ok, country = proc.verify_egress(expected_country="RU", timeout=1.0)
+    assert ok is False
+    assert "DE" in country  # reason includes the majority country
+
+
+def test_verify_egress_consensus_tie_breaks_in_favor_of_expected_country(
+    monkeypatch, xray_paths
+) -> None:
+    """v1.26 Phase 84.3: 1 RU vote, 1 DE vote, 1 provider down -> admit.
+
+    Ties resolve toward expected_country to avoid quarantining a healthy
+    node based on a single misclassifying provider's word.
+    """
+    _make_stub_config(xray_paths["config"])
+    fake = _FakeGeoClient(
+        [
+            _FakeGeoResponse(200, {"country": "RU"}),
+            _FakeGeoResponse(429, {}),  # provider 2 down
+            _FakeGeoResponse(200, {"countryCode": "DE"}),
+        ]
+    )
+    _patch_geo_client(monkeypatch, fake)
+    proc = XrayProcess(
+        binary=xray_paths["binary"],
+        config_path=xray_paths["config"],
+        log_path=xray_paths["log"],
+    )
+    ok, country = proc.verify_egress(expected_country="RU", timeout=1.0)
+    assert (ok, country) == (True, "RU"), (
+        "tie regressed: 1 RU vs 1 DE should admit (favor expected)"
+    )
 
 
 def test_verify_egress_returns_last_error_when_all_providers_fail(

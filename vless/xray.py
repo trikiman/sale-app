@@ -258,11 +258,18 @@ class XrayProcess:
     ) -> tuple[bool, str]:
         """Issue an HTTPS probe through the local SOCKS5 listener.
 
-        Returns ``(ok, detected_country_or_error)``. Tries multiple geo
-        providers in order to survive ipinfo.io rate-limiting (phase 58-01);
-        the legacy ``url`` keyword pins the first provider for backward
-        compatibility with callers that need a deterministic single-provider
-        probe (e.g. live integration tests).
+        Returns ``(ok, detected_country_or_error)``. v1.26 Phase 84.3:
+        consensus voting across the 3 geo providers. Pre-Phase 84.3 the
+        first successful provider's answer was final, so a single
+        misclassifying provider (ip-api.com famously returns DE for some
+        Russian Citytelecom prefixes) silently quarantined healthy RU
+        nodes for 20 min. Now requires majority agreement on the country
+        code; ties go to the expected country (avoid false rejection
+        when 2 providers disagree).
+
+        The legacy ``url`` keyword pins a single provider for
+        deterministic single-provider probing (e.g. live integration
+        tests + back-compat with phase-56 callers).
         """
         try:
             import httpx  # local import keeps installer stdlib-only
@@ -270,27 +277,62 @@ class XrayProcess:
             return False, "httpx not available in environment"
 
         if url is not None:
+            # Single-provider mode preserved for tests + back-compat.
             providers: tuple[tuple[str, str], ...] = ((url, "country"),)
-        else:
-            providers = self._GEO_PROVIDERS
+            proxy = f"socks5h://127.0.0.1:{self.inbound_port}"
+            with httpx.Client(proxy=proxy, timeout=timeout) as client:
+                try:
+                    resp = client.get(url)
+                    resp.raise_for_status()
+                    country = str(resp.json().get("country", "")).upper()
+                    if not country:
+                        return False, f"{url}: empty country field"
+                    return country == expected_country.upper(), country
+                except Exception as exc:  # noqa: BLE001
+                    return False, f"{type(exc).__name__}: {exc}"
 
+        # Multi-provider consensus mode.
         proxy = f"socks5h://127.0.0.1:{self.inbound_port}"
-        last_error = "no_provider_attempted"
+        votes: list[str] = []
+        errors: list[str] = []
         with httpx.Client(proxy=proxy, timeout=timeout) as client:
-            for probe_url, country_field in providers:
+            for probe_url, country_field in self._GEO_PROVIDERS:
                 try:
                     response = client.get(probe_url)
                     response.raise_for_status()
                     data = response.json()
                     country = str(data.get(country_field, "")).upper()
                     if not country:
-                        last_error = f"{probe_url}: empty country field"
+                        errors.append(f"{probe_url}: empty country field")
                         continue
-                    return country == expected_country.upper(), country
+                    votes.append(country)
                 except Exception as exc:  # noqa: BLE001 — diagnostic path
-                    last_error = f"{type(exc).__name__}: {exc}"
+                    errors.append(f"{type(exc).__name__}: {exc}")
                     continue
-        return False, last_error
+
+        if not votes:
+            return False, errors[-1] if errors else "no_provider_responded"
+
+        expected = expected_country.upper()
+        from collections import Counter
+        tally = Counter(votes)
+        # Majority vote: a country is admitted if it has strictly more
+        # votes than any other AND > 0 votes for `expected_country`. Ties
+        # (e.g. 1 RU vs 1 DE with 1 provider down) resolve in favor of
+        # `expected_country` — pre-Phase 84.3 the same situation rejected
+        # a healthy node because the WRONG provider answered first.
+        ru_votes = tally.get(expected, 0)
+        top_country, top_votes = tally.most_common(1)[0]
+
+        if ru_votes >= top_votes and ru_votes > 0:
+            # RU wins outright OR ties — admit. The honest detected_country
+            # we return is still the consensus to keep the diagnostic accurate
+            # if RU lost on count: that case can't happen here given the
+            # >= guard, so we always return expected_country when admitted.
+            return True, expected
+        # Reject — return the majority vote so quarantine.reason is
+        # accurate.  Format: 'top_country (votes/total)'  e.g. 'DE (2/3)'.
+        return False, f"{top_country} ({top_votes}/{len(votes)})"
 
     @property
     def inbound_port(self) -> int:
