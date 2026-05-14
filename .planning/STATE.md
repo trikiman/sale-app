@@ -3,14 +3,14 @@ gsd_state_version: 1.0
 milestone: v1.26
 milestone_name: Miniapp Test Harness + Style Guide Debt Cleanup
 status: in_progress
-last_updated: "2026-05-14T16:05:00.000Z"
+last_updated: "2026-05-14T19:00:00.000Z"
 last_activity: 2026-05-14
 progress:
   total_phases: 3
   completed_phases: 1
   total_plans: 7
-  completed_plans: 5
-  percent: 60
+  completed_plans: 6
+  percent: 70
 current_phase: 84
 current_phase_status: in_progress
 current_phase_resume_file: null
@@ -23,16 +23,24 @@ current_phase_resume_file: null
 See: .planning/PROJECT.md (updated 2026-05-13)
 
 **Core value:** Family members see every VkusVill discount and can add to cart in one tap
-**Current focus:** v1.26 Phase 84 inline-style refactor — 3 of 46 sites done. Pool fix shipped (Phase 84.4 `d469080`); EC2 verified data freshness <5 min over 3 cycles, pool degraded but stable on a single Sberbank CDN node.
+**Current focus:** v1.26 Phase 84 inline-style refactor — 3 of 46 sites done. Pool fix (Phase 84.4 `d469080`) + scheduler robust-freshness fix (Phase 84.5 `2cf4f1c`) shipped and EC2-verified. User-visible "Обновлено: N мин" stays under 5 min steady state, no staleness banner.
 
 ## Current Position
 
-Phase 84.4 closed the pool-starvation regression. Live verification at 19:04 MSK:
-- Backend `/admin/status` → green 2.3m, red 1.5m, yellow 0.7m, all `isStale: false`.
-- Miniapp `/api/products` → `Обновлено: 19:01 at 19:04` — 3 min stale, no banner.
-- Pool: 1/10 (degraded) on `yt-noads.sbrf-cdn342.ru:443` — single node sustains all 3 scrapers because TCP pre-filter saves ~150s/cycle of probe budget.
+Phase 84.5 closed the user-reported "Обновлено: 19 мин" intermittent staleness. Live verification at 21:56:35 MSK over 5 cycles:
 
-Next session: continue Phase 84-02 (App.jsx 10 sites + ProductDetail.jsx 9 sites). Pool will continue refreshing in background; if it drops to 0 again, the soft-tier (60s) recovery + TCP pre-filter should auto-recover within 1-2 cycles.
+| Save 1 → Save 2 | Gap |
+|---|---|
+| 21:43:27 → 21:46:39 | 3:12 |
+| 21:46:39 → 21:51:22 | 4:43 |
+| 21:51:22 → 21:55:48 | 4:26 |
+
+- Backend `/admin/status` → green 0.2m, red 2.7m, yellow 1.8m, all `isStale: false`.
+- Miniapp `/api/products` → "Обновлено: 21:55 at 21:56:35" — no banner, `stale_count=0`.
+- Stall recovery fired correctly on first iteration (forced "all" when green file was 311s old).
+- Pre-existing systemd `Requires=saleapp-xray.service` cascade bug also fixed; xray reload no longer kills scheduler.
+
+Next session: Phase 84-02 (App.jsx 10 sites + ProductDetail.jsx 9 sites — the original inline-style refactor goal).
 
 ## Milestone Goal (v1.26 — active)
 
@@ -107,6 +115,7 @@ From `.planning/UAT-AUDIT-2026-05-13.md`:
 | Phase 84.2 multi-source aggregation (igareck + kort0881 + SoliSpirit) | 2026-05-14 |
 | Phase 84.3 consensus voting in verify_egress (3-provider majority) | 2026-05-14 |
 | Phase 84.4 TCP pre-filter + RU-only label gate (`d469080`) — pool fix shipped + EC2-verified data freshness <5 min | 2026-05-14 |
+| Phase 84.5 robust-freshness scheduler (`2cf4f1c`) — overshoot tolerance + stall recovery + 5-min threshold + Wants= systemd fix; live-verified gaps 3:12/4:43/4:26 across 5 cycles | 2026-05-14 |
 
 ---
-*Session checkpoint 2026-05-14 ~19:05 MSK. v1.26 Phase 84 in progress, blocker resolved. Pool degraded (1/10) but stable; data fresh <5 min. Next: Phase 84-02 inline-style refactor (App.jsx + ProductDetail.jsx, 19 sites).*
+*Session checkpoint 2026-05-14 ~22:00 MSK. v1.26 Phase 84 in progress, blocker resolved + scheduler robust against pool/xray restart cascades. Pool degraded (1/10) but stable; data fresh <5 min steady state. Next: Phase 84-02 inline-style refactor (App.jsx + ProductDetail.jsx, 19 sites).*
