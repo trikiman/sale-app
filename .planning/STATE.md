@@ -3,15 +3,15 @@ gsd_state_version: 1.0
 milestone: v1.26
 milestone_name: Miniapp Test Harness + Style Guide Debt Cleanup
 status: in_progress
-last_updated: "2026-05-15T00:09:00.000Z"
+last_updated: "2026-05-15T00:35:00.000Z"
 last_activity: 2026-05-15
 progress:
   total_phases: 3
-  completed_phases: 2
+  completed_phases: 3
   total_plans: 7
   completed_plans: 7
-  percent: 95
-current_phase: 84
+  percent: 100
+current_phase: 85
 current_phase_status: complete
 current_phase_resume_file: null
 ---
@@ -23,18 +23,18 @@ current_phase_resume_file: null
 See: .planning/PROJECT.md (updated 2026-05-13)
 
 **Core value:** Family members see every VkusVill discount and can add to cart in one tap
-**Current focus:** v1.26 Phase 84 inline-style refactor — **CLOSED at 46/46 sites**. Phase 84-01 (3) + 84-02 (19) + 84-03 (24) all shipped + visually verified. `react/forbid-dom-props` bumped WARN→ERROR; CI `--max-warnings` dropped from 60 → 10. Plus 7 robustness sidequests (84.1-84.7) all shipped + EC2-verified. Pool stable, scheduler robust, scraper safe-click + mtime-touch, per-color staleness thresholds (green=5, red=5, yellow=10).
+**Current focus:** v1.26 milestone scope **CLOSED**. All 3 phases shipped: 83 (Vitest/RTL foundation), 84 (inline-style refactor 46/46 + 7 robustness sidequests), 85 (spacing-scale tokens + UX-EMPTY-01 + lint promotion). All 8 v1.26 requirements landed and live-verified. **Pending manual approval before `/gsd-complete-milestone`** per standing instruction.
 
 ## Current Position
 
-Phase 84 main goal closed. End-to-end verification at 03:09 MSK 2026-05-15:
+Phase 85 closed v1.26 scope. End-to-end verification at 03:34 MSK 2026-05-15:
 
-- **Lint**: 48 → 5 warnings, 0 errors. Remaining 5 are pre-existing react-hooks advisories (set-state-in-effect, exhaustive-deps) scoped to v1.27.
-- **Tests**: vitest 70/70 (Phase 83 snapshot tests = no visual regression).
-- **Build**: vite 777ms 0 errors.
-- **Vercel deploy**: HistoryPage (1866 products, filter chips, timeline columns, prediction times) + HistoryDetail (hero price/pct/type-pill, SVG ring animation, 7 day-bars + 24 hour-bars + 4 legend dots + 5 log dots) — all rendering correctly.
+- **Spacing-scale**: 7 `--space-*` tokens loaded (xs=4, sm=8, md=12, lg=16, xl=24, 2xl=32, 3xl=48), `.product-grid` gap resolved to 16px from `var(--space-lg)`, 357 cards rendering, no layout breakage. Stylelint 0 warnings (was 135 baseline), rule promoted WARN→ERROR.
+- **UX-EMPTY-01**: backend `_compute_empty_reason()` classifies into fresh_deploy / all_stale / genuinely_empty; ProductsResponse model adds `emptyReason: Optional[str]`; frontend renders 3 differentiated copy variants. /api/products returns 200 with `emptyReason="fresh_deploy"` when proposals.json missing (was HTTPException 404).
+- **Tests**: 4 new pytest cases for `_compute_empty_reason`. Full suite 314 passed (was 310, +4), 3 Windows-baseline failures, no regressions.
+- **Build/lint**: vitest 70/70, lint 5 warnings (pre-existing react-hooks advisories), lint:css 0, vite build 676ms.
 
-Next: **Phase 85** (the last v1.26 phase) — 135 spacing-scale CSS violations → CSS custom properties from style guide v2, bump `declaration-property-value-allowed-list` WARN→ERROR, fix fresh-deploy empty-state UI copy (UX-EMPTY-01). Then milestone v1.26 closeout (manual approval required per standing instructions).
+Pending: operator UAT, then explicit `/gsd-complete-milestone` invocation. **Do NOT auto-tag v1.26.**
 
 Next session: Phase 84-03 (HistoryPage.jsx 10 sites + HistoryDetail.jsx 14 sites + bump `react/forbid-dom-props` WARN→ERROR + drop CI `--max-warnings=60`). Closes Phase 84 main goal at 46/46 sites.
 
@@ -60,8 +60,8 @@ Next session: Phase 84-03 (HistoryPage.jsx 10 sites + HistoryDetail.jsx 14 sites
 
 ## Next Up
 
-1. **Phase 85** (TOOL-07/08 + UX-EMPTY-01) — CSS spacing-scale + final lint bump.
-2. **STOP before `/gsd-complete-milestone`** — manual approval required.
+1. **Operator UAT** — verify miniapp end-to-end (history pages, cart, freshness banner, fresh-deploy empty-state copy if you wipe data dir).
+2. **`/gsd-complete-milestone`** — manual invocation required. Tags v1.26, archives ROADMAP/REQUIREMENTS/phase summaries, prepares for next milestone cycle.
 
 ## Outstanding UAT
 
@@ -108,6 +108,7 @@ From `.planning/UAT-AUDIT-2026-05-13.md`:
 | Phase 84.6 robust scraper (`2fc0048` + `4fb8af1`) — safe-click for modal-close TypeError + mtime touch on suspicious-result safety guard; EC2-verified green age 0.9m, miniapp Обновлено: 00:07 at 00:08:31 (1m fresh), banner cleared | 2026-05-15 |
 | Phase 84.7 per-color staleness thresholds (`5919ef8`) — green=5, red=5, yellow=10 (was uniform 5); resolves cycle-cadence-vs-threshold edge flicker on red and yellow; staleThresholdMinutes surfaced per color in API; live-verified red age 4.6m fresh under 5m, yellow with 10m headroom | 2026-05-15 |
 | Phase 84-03 final inline-style refactor (`bc537cf`) — HistoryPage 10 + HistoryDetail 14 sites; lint 48 → 5 warnings; react/forbid-dom-props WARN→ERROR; CI --max-warnings 60 → 10; visually verified on Vercel (1866 products, hero+chart+log all rendering). Phase 84 main goal CLOSED at 46/46. | 2026-05-15 |
+| Phase 85 (`3faaac5`) — spacing-scale tokens (135 → 0 violations) + UX-EMPTY-01 (emptyReason field + differentiated copy) + stylelint WARN→ERROR + dropped CI --max-warnings=150. **v1.26 milestone scope CLOSED.** Pending manual approval for `/gsd-complete-milestone`. | 2026-05-15 |
 
 ---
-*Session checkpoint 2026-05-15 ~03:10 MSK. v1.26 Phase 84 main goal closed at 46/46 sites. Robustness chain (84.4 pool → 84.5 scheduler → 84.6 scraper → 84.7 per-color thresholds) complete and EC2-verified. Phase 85 remains for v1.26 closeout: 135 spacing-scale CSS violations → CSS custom properties + UX-EMPTY-01 + lint bump WARN→ERROR.*
+*Session checkpoint 2026-05-15 ~03:35 MSK. **v1.26 milestone scope COMPLETE.** All 3 phases (83/84/85) shipped + live-verified. 7 robustness sidequests (84.1-84.7) shipped during Phase 84. STOP before `/gsd-complete-milestone` per standing instruction — operator UAT required first.*
