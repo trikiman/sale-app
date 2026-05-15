@@ -394,3 +394,70 @@ def test_build_source_freshness_handles_missing_files(
         assert freshness[color]["isStale"] is True
     assert latest_mtime == 0.0
     assert sorted(stale_files) == ["green (missing)", "red (missing)", "yellow (missing)"]
+
+
+# ── backend.main._compute_empty_reason ─────────────────────────────────
+
+
+def test_compute_empty_reason_fresh_deploy_when_all_files_missing(
+    backend_with_isolated_data_dir, tmp_path
+) -> None:
+    """v1.26 Phase 85 UX-EMPTY-01: when no source file exists, the empty
+    products list signals a fresh deploy — scrapers haven't run yet.
+    Frontend renders 'Сборщик данных запускается' copy.
+    """
+    backend_main = backend_with_isolated_data_dir
+    freshness, _, _ = backend_main._build_source_freshness()
+    # All colors `exists: false` (tmp_path is empty).
+    assert backend_main._compute_empty_reason(freshness) == "fresh_deploy"
+
+
+def test_compute_empty_reason_all_stale_when_every_file_past_threshold(
+    backend_with_isolated_data_dir, tmp_path
+) -> None:
+    """Phase 85: when every source file exists but every isStale=true,
+    return 'all_stale'. Frontend renders 'Идёт восстановление' copy.
+    """
+    backend_main = backend_with_isolated_data_dir
+    # Give all 3 colors files that are well past their thresholds.
+    _set_color_age(tmp_path, "green", 30)   # 30m > 5m threshold
+    _set_color_age(tmp_path, "red", 30)     # 30m > 5m threshold
+    _set_color_age(tmp_path, "yellow", 30)  # 30m > 10m threshold
+
+    freshness, _, _ = backend_main._build_source_freshness()
+    for c in ("green", "red", "yellow"):
+        assert freshness[c]["isStale"] is True
+    assert backend_main._compute_empty_reason(freshness) == "all_stale"
+
+
+def test_compute_empty_reason_genuinely_empty_when_files_fresh(
+    backend_with_isolated_data_dir, tmp_path
+) -> None:
+    """Phase 85: when files are fresh but the merged products list is
+    empty, that's a real 'VkusVill has no active sales' case. Frontend
+    renders 'Сейчас нет активных акций' copy.
+    """
+    backend_main = backend_with_isolated_data_dir
+    _set_color_age(tmp_path, "green", 1)
+    _set_color_age(tmp_path, "red", 1)
+    _set_color_age(tmp_path, "yellow", 1)
+
+    freshness, _, _ = backend_main._build_source_freshness()
+    assert all(not freshness[c]["isStale"] for c in ("green", "red", "yellow"))
+    assert backend_main._compute_empty_reason(freshness) == "genuinely_empty"
+
+
+def test_compute_empty_reason_partial_freshness_is_genuinely_empty(
+    backend_with_isolated_data_dir, tmp_path
+) -> None:
+    """Phase 85: if at least one source is fresh, the empty list is NOT
+    a fresh-deploy or all-stale case — fall through to genuinely_empty.
+    Some scrapes succeeded, they just returned no products.
+    """
+    backend_main = backend_with_isolated_data_dir
+    _set_color_age(tmp_path, "green", 30)   # stale
+    _set_color_age(tmp_path, "red", 1)      # fresh
+    _set_color_age(tmp_path, "yellow", 30)  # stale (10m threshold)
+
+    freshness, _, _ = backend_main._build_source_freshness()
+    assert backend_main._compute_empty_reason(freshness) == "genuinely_empty"

@@ -40,13 +40,11 @@ jobs:
       - name: ESLint (zero errors, warn budget for react-hooks debt)
         run: npm run lint -- --max-warnings=10
 
-      # v1.25 TOOL-06: stylelint catches spacing-scale violations + CSS
-      # hygiene regressions. Current baseline: 135 spacing-scale warnings
-      # (real debt — raw pixel values that should be from scale). Refactor
-      # scheduled for v1.26. WARN severity means CI passes on 135; bumps
-      # to ERROR when the debt is cleared.
-      - name: Stylelint
-        run: npm run lint:css -- --max-warnings=150
+      # v1.26 Phase 85: declaration-property-value-allowed-list bumped from
+      # warning → error. The 135-violation spacing-scale baseline is now
+      # zero (var(--space-*) tokens). New off-scale spacing values fail CI.
+      - name: Stylelint (zero errors, spacing scale enforced)
+        run: npm run lint:css
 
   # ── Miniapp unit + snapshot tests (Vitest + RTL) ─────────────────
   test-miniapp:

@@ -442,7 +442,26 @@ function App() {
           setGreenMissing(!!data.greenMissing)
           setSourceFreshness(data.sourceFreshness || null)
           setStaleAll(data.staleAll || null)
-          setError(null)
+          // v1.26 Phase 85 UX-EMPTY-01: render differentiated copy when
+          // the products list is empty. emptyReason from the backend
+          // distinguishes fresh-deploy (scrapers haven't run yet) from
+          // all-stale (cycle degraded) from genuinely-empty (VkusVill
+          // has no active sales). Pre-fix all three rendered the same
+          // "Товары не найдены" message.
+          if (normalizedProducts.length === 0) {
+            const reason = data.emptyReason
+            if (reason === 'fresh_deploy') {
+              setError('🚀 Сборщик данных запускается. Подождите 3–5 минут — обычно скидки появляются к этому времени.')
+            } else if (reason === 'all_stale') {
+              setError('⚠️ Не удалось получить свежие данные. Идёт восстановление — попробуйте через минуту.')
+            } else if (reason === 'genuinely_empty') {
+              setError('📦 Сейчас нет активных акций. Загляните позже.')
+            } else {
+              setError('Товары не найдены')
+            }
+          } else {
+            setError(null)
+          }
           writeCachedJson(PRODUCTS_CACHE_KEY, {
             products: normalizedProducts,
             updatedAt: data.updatedAt,

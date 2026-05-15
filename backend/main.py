@@ -437,6 +437,15 @@ class ProductsResponse(BaseModel):
     # renders a prominent banner + per-card stale badges instead of
     # empty grid.
     staleAll: Optional[Dict[str, Any]] = None
+    # v1.26 Phase 85 UX-EMPTY-01: distinguishes fresh-deploy "scrapers
+    # haven't run yet" from "scrapers ran but VkusVill has no sales"
+    # from "all sources stale, scrapers degraded". Frontend renders
+    # differentiated copy. One of:
+    #   "fresh_deploy"     — no source files exist yet (just deployed)
+    #   "all_stale"        — all source files exist but every isStale=true
+    #   "genuinely_empty"  — files fresh, scrapes succeeded, no active sales
+    # Only set when products list is empty; null otherwise.
+    emptyReason: Optional[str] = None
     products: List[Product]
 
 
@@ -930,6 +939,31 @@ def _build_source_freshness(
         }
 
     return source_freshness, stale_files, latest_mtime
+
+
+def _compute_empty_reason(source_freshness: dict) -> str:
+    """v1.26 Phase 85 UX-EMPTY-01: classify why the products list is empty.
+
+    Returns one of:
+      "fresh_deploy"     — every source file is missing. Scrapers haven't
+                           run yet (just deployed, or data dir wiped).
+                           Frontend shows "Сборщик данных запускается…".
+      "all_stale"        — every source file exists but is stale beyond
+                           its threshold. Scrapers degraded; staleAll
+                           banner already covers most of this case but
+                           the empty-list path needs its own copy.
+      "genuinely_empty"  — files fresh, scrapes ran cleanly, but
+                           VkusVill has no active sales. Rare but real.
+
+    Only meaningful when products list is empty. Caller decides when to
+    invoke.
+    """
+    colors = ("green", "red", "yellow")
+    if all(not source_freshness.get(c, {}).get("exists", False) for c in colors):
+        return "fresh_deploy"
+    if all(source_freshness.get(c, {}).get("isStale", True) for c in colors):
+        return "all_stale"
+    return "genuinely_empty"
 
 
 def _load_cycle_state() -> dict:
@@ -1433,7 +1467,28 @@ def get_products():
     """Get all products from proposals.json, with live staleness check."""
     try:
         if not os.path.exists(PROPOSALS_PATH):
-            raise HTTPException(status_code=404, detail="Products data not found")
+            # v1.26 Phase 85 UX-EMPTY-01: fresh-deploy path. Pre-fix this
+            # raised HTTPException(404), which the frontend surfaced as a
+            # generic "network error" toast — users didn't know whether
+            # to wait for scrapes or report a bug. Now we return a
+            # well-formed empty response with emptyReason="fresh_deploy"
+            # so the client can render explicit "Сборщик данных
+            # запускается…" copy.
+            from datetime import datetime, timezone, timedelta
+            _msk = timezone(timedelta(hours=3))
+            source_freshness, _, _ = _build_source_freshness()
+            return {
+                "updatedAt": datetime.now(tz=_msk).strftime("%Y-%m-%d %H:%M:%S"),
+                "greenLiveCount": 0,
+                "greenMissing": True,
+                "dataStale": True,
+                "staleInfo": ["green (missing)", "red (missing)", "yellow (missing)"],
+                "sourceFreshness": source_freshness,
+                "cycleState": _load_cycle_state(),
+                "staleAll": None,
+                "emptyReason": "fresh_deploy",
+                "products": [],
+            }
         # R2-38: Catch partial reads from concurrent writes
         for attempt in range(2):
             try:
@@ -1541,6 +1596,13 @@ def get_products():
                 p for p in data["products"]
                 if p.get("type") not in stale_types
             ]
+        # v1.26 Phase 85 UX-EMPTY-01: when the final products list is
+        # empty (after staleness stripping or because the merge wrote
+        # an empty payload), classify why. Frontend uses this to render
+        # differentiated empty-state copy instead of a generic "items
+        # not found" message.
+        if isinstance(data.get("products"), list) and len(data["products"]) == 0:
+            data["emptyReason"] = _compute_empty_reason(source_freshness)
         return data
     except json.JSONDecodeError:
         raise HTTPException(status_code=500, detail="Invalid JSON data")
