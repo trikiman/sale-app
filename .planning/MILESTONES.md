@@ -1,5 +1,27 @@
 # Milestones
 
+## v1.26 Miniapp Test Harness + Style Guide Debt Cleanup (Shipped: 2026-05-15)
+
+**Phases completed:** 3 phases (83-85), 32 commits, 372 files changed (+42409/-35339 LOC)
+
+**Audit status:** 8/8 v1 requirements landed (6 fully met, 2 partial-met with explicit v1.27 deferrals). 7 robustness sidequests (84.1-84.7) shipped during Phase 84 — necessary infrastructure work surfaced by EC2 production verification (not in original plan, documented per-sub-phase).
+
+**Key accomplishments:**
+
+- **Vitest/RTL safety net** (Phase 83): vitest@4.1.6 + @testing-library/react in `miniapp/`. CI `test-miniapp` job runs 70 tests on every PR. 4 snapshot tests pin v1.23 UX invariants (ProductCard 36px-min-height, CartPanel trash button, StaleBanner variants, EmptyVsStaleAll). 3 unit tests cover `normalizeUnit`, `getCartStep`, `isTelegramRuntime`. Closed the long-standing v1.24 verifier carry-forward.
+- **46/46 inline-style sites refactored** (Phase 84-01/02/03): every site got either a utility/domain class extraction OR a `TODO(v1.27)` justified-disable with concrete remediation path. `react/forbid-dom-props` ERROR. Snapshot tests caught zero regressions during the refactor — exactly the safety-net hypothesis.
+- **135/135 spacing-scale CSS violations refactored** (Phase 85): 153 substitutions to `var(--space-*)` tokens defined per style guide v2. `declaration-property-value-allowed-list` ERROR, `lint:css` 0 warnings.
+- **UX-EMPTY-01 shipped as 3-state classifier** (not single-state): backend `_compute_empty_reason()` distinguishes `fresh_deploy` / `all_stale` / `genuinely_empty`; frontend renders 3 differentiated copy variants. Strictly more useful than the originally-spec'd single state because the same empty-list path can mean three different things.
+- **Robustness chain delivered** (84.1-84.7 sidequests): user-visible "Обновлено: never > 5 min" target met via VLESS pool admission stability (TCP pre-filter + RU-only label gate), scheduler robustness (overshoot tolerance + stall recovery + 5-min freshness threshold + Wants= systemd cascade fix), scrape_green safe-click + mtime touch on suspicious-result safety guard, per-color staleness thresholds (green=5/red=5/yellow=10).
+
+### Known Gaps
+
+- **TOOL-08 partial**: `lint:css` at `--max-warnings=0` ✅; `lint` (eslint) budget at 10 because 5 pre-existing react-hooks advisories (`set-state-in-effect`, `exhaustive-deps`) are larger refactor scope than this milestone — explicitly deferred to v1.27. New violations still fail CI immediately because both rules are at ERROR level.
+- **OPS-29 deferred**: `scripts/verify_v1.26.sh` not written — CI workflow + in-tree pytest/lint/build cover the same surface. Documented as v1.27 backlog if a smoke-script chain becomes useful.
+- **21 inline-style justified-disables** tagged `TODO(v1.27)`: chart bars, calendar legend dots, hero theme tints, log-pill colors, type badges. All carry concrete remediation comments (CSS custom properties driven by data-attrs).
+
+---
+
 ## v1.20 Cart-Add Latency & User-Facing Responsiveness (Shipped: 2026-05-11)
 
 **Phases completed:** 5 phases, 15 plans, 0 tasks

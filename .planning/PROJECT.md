@@ -127,30 +127,36 @@ Family members see every VkusVill discount (green/red/yellow) the moment it appe
 - ✓ **TOOL-04/06**: v1.25 CI wiring + spacing-scale rule — `.github/workflows/lint-and-test.yml` with `lint-miniapp` + `test-backend` jobs. Eslint baseline cleared 23 errors → 0. Stylelint `declaration-property-value-allowed-list` at WARN, 135-violation baseline with `--max-warnings=150` cap. — v1.25
 - ✓ **REL-19 (hotfix)**: v1.25 Production outage fix — 2026-05-13 00:04→01:13 pool-stuck outage resolved in commit `b65cde7`. `_run_scraper_set` now always calls `ensure_pool()` before skip-vs-run decision. Pinned by 2 regression tests. — v1.25 (hotfixed during milestone)
 - ✓ **OPS-26..28**: v1.25 continuity — v1.24 cross-version regression gate + per-phase rollback rehearsal + UAT audit (`.planning/UAT-AUDIT-2026-05-13.md`, 6 items surfaced). — v1.25
+- ✓ **TEST-01/02/03**: v1.26 Vitest/RTL foundation — vitest@4.1.6 + @testing-library/react + jsdom in `miniapp/`. CI `test-miniapp` job runs 70 tests on every PR. 4 snapshot tests pin v1.23 UX invariants (ProductCard 36px-min-height, CartPanel trash button, StaleBanner variants, EmptyVsStaleAll). 3 unit tests cover `normalizeUnit`, `getCartStep`, `isTelegramRuntime`. — v1.26
+- ✓ **TOOL-05**: v1.26 Inline-style refactor — 46 sites refactored across ProductCard/CartPanel/App/ProductDetail/HistoryPage/HistoryDetail. New utility classes (`.u-clickable`, `.u-opacity-50`, `.u-grid-row-full`, `.u-underline-2`, `.u-mt-3`, `.suspense-fallback`, `.link-banner*`, `.products-grid__load-more`, `.history-empty__icon`, `.hd-stroke-anim`, `.hcard-skeleton--md`, `.detail-loading--vertical`, `.detail-error-state`, `.detail-section--center/--unavailable`, `.detail-vkusvill-link`). 21 dynamic-style sites tagged with `// eslint-disable-next-line react/forbid-dom-props -- TODO(v1.27): ...` justified-disables. `react/forbid-dom-props` bumped WARN → ERROR. — v1.26
+- ✓ **TOOL-07**: v1.26 Spacing-scale refactor — 153 substitutions of off-scale literal values (1/2/3/5/6/7/10/14/20/30/36 px and rem variants) to `var(--space-xs/sm/md/lg/xl/2xl/3xl)` tokens defined per style guide v2. Stylelint `declaration-property-value-allowed-list` regex extended to allow mixed shorthand (`4px var(--space-md)`). Bumped WARN → ERROR. `lint:css` 0 warnings (was 135 baseline). — v1.26
+- ⚠ **TOOL-08**: v1.26 partially met — `lint:css` `--max-warnings=0` ✅; `lint` (eslint) at `--max-warnings=10` because 5 pre-existing react-hooks advisories (`set-state-in-effect`, `exhaustive-deps`) are bigger refactor scope than this milestone — explicitly deferred to v1.27. New inline-style or off-scale-spacing violations still fail CI immediately because both rules are at ERROR. — v1.26
+- ✓ **UX-EMPTY-01**: v1.26 fresh-deploy empty-state copy — implemented as 3-state classifier (`fresh_deploy` / `all_stale` / `genuinely_empty`) in backend `_compute_empty_reason()`. ProductsResponse model adds `emptyReason: Optional[str]`. `/api/products` returns 200 with `emptyReason="fresh_deploy"` when proposals.json missing (was HTTPException 404). Frontend renders 3 differentiated copy variants. 4 new pytest cases pin the semantics. — v1.26
+- ✓ **84.1-84.7 (sidequests)**: v1.26 robustness chain — pool admission (TCP pre-filter + RU-only label gate), scheduler robustness (overshoot tolerance + stall recovery + 5-min freshness threshold + Wants= systemd cascade fix), scrape_green safe-click for SVG modal-close + mtime-touch on suspicious-result safety guard, per-color staleness thresholds (green=5/red=5/yellow=10). User-visible "Обновлено: never > 5 min" target met across the chain. Not in original v1.26 plan but documented in `.planning/phases/84-inline-style-refactor/84-{04,05,06,07}-SUMMARY.md`. — v1.26
 
 ### Active
 
-<!-- Current scope. Building toward these. -->
+<!-- Between milestones. Awaiting v1.27 planning via /gsd-new-milestone. -->
 
-- v1.26 Miniapp Test Harness + Style Guide Debt Cleanup. Scope: close the long-standing Vitest/RTL gap (tech debt since v1.22) and use that safety net to refactor the 46 inline-style violations + 135 spacing-scale CSS debt entries baselined in v1.24 Phase 79 + v1.25 Phase 82. After refactor, promote both lint rules from WARN → ERROR so future regressions can't land. Bundle fresh-deploy empty-state UI copy fix (v1.25 QA-08 edge case). 3 phases (83-85), 8 requirements.
+- (none — v1.26 just shipped 2026-05-15, tag `v1.26`)
 
-## Current Milestone: v1.26 Miniapp Test Harness + Style Guide Debt Cleanup
+## Last Shipped Milestone: v1.26 Miniapp Test Harness + Style Guide Debt Cleanup (2026-05-15)
 
-**Goal:** Vitest/RTL safety net for component-level UX invariants + refactor 46 inline-style and 135 spacing-scale CSS debt entries to zero + promote both lint rules to ERROR with `--max-warnings=0` + fix fresh-deploy empty-state UI copy.
+**Shipped:** 2026-05-15, tag `v1.26`. 32 commits across 3 phases (83-85) + 7 robustness sidequests (84.1-84.7). 372 files changed (+42409/-35339 LOC).
 
-**Target features** (finalized via `.planning/REQUIREMENTS.md` v1.26):
-- Vitest + @testing-library/react + @testing-library/jest-dom + jsdom in `miniapp/`. `npm run test` runs the suite. CI `test-miniapp` job added. (Phase 83 TEST-01)
-- Snapshot tests for 4 critical UX invariants: ProductCard 36px-min-height lock (v1.23 UX-SHIFT-01), CartPanel trash button (v1.23 UX-CART-01), stale-banner variants, empty-vs-staleAll rendering. (Phase 83 TEST-02)
-- Unit tests for `normalizeUnit`, `getCartStep`, `isTelegramRuntime` (extract from `CartPanel.jsx::handleClearAll`). (Phase 83 TEST-03)
-- Refactor 46 inline-style violations — extract-to-utility-class, explicit-class-prop, or justified-disable. Promote `react/forbid-dom-props` WARN → ERROR. (Phase 84 TOOL-05)
-- Refactor 135 spacing-scale CSS violations to `var(--space-*)` tokens from style guide v2. Promote `declaration-property-value-allowed-list` WARN → ERROR. Drop `--max-warnings=N` caps to `0`. (Phase 85 TOOL-07/08)
-- Fresh-deploy empty-state copy fix — backend emits `emptyReason: "scheduler_not_yet_produced_data"` + frontend renders "Данные ещё не подгружены..." instead of misleading "В этой категории пока нет товаров". (Phase 85 UX-EMPTY-01)
+**Key accomplishments:**
+- **Vitest/RTL safety net** (Phase 83): 70 tests, 4 snapshots pinning v1.23 UX invariants. CI `test-miniapp` job added. Closed the v1.24-flagged carry-forward.
+- **46/46 inline-style sites refactored** (Phase 84-01/02/03): `react/forbid-dom-props` ERROR, lint 48 → 5 warnings (only pre-existing react-hooks advisories remain). Snapshot tests caught zero regressions during the refactor — exactly the safety-net hypothesis we were testing.
+- **135/135 spacing-scale violations refactored** (Phase 85): 153 substitutions to `var(--space-*)` tokens defined per style guide v2. `declaration-property-value-allowed-list` ERROR, `lint:css` 0 warnings.
+- **UX-EMPTY-01 shipped as 3-state classifier**: backend `_compute_empty_reason()` distinguishes fresh-deploy / all-stale / genuinely-empty cases, frontend renders differentiated copy. Strictly more useful than the originally-spec'd single-state approach.
+- **7 robustness sidequests during Phase 84** (84.1-84.7): VLESS pool admission, scheduler stall-recovery, scraper safe-click + mtime-touch, per-color staleness thresholds. The user-visible "Обновлено: never > 5 min" target was achieved through this chain, not through the inline-style refactor itself.
 
-**Key context:**
-- **v1.25 Phase 82 deferral reason:** "rushing the 46-site refactor without snapshot infrastructure risks UX regressions — v1.23 Phase 75 layout-shift fix could be broken by a wrong style migration." v1.26 builds the safety net first, then does the refactor.
-- **v1.24 verifier carry-forward:** "Vitest/RTL full wiring" flagged in `.planning/milestones/v1.24-MILESTONE-VERIFICATION.md`. v1.26 closes it.
-- **Current CI posture:** `--max-warnings=60` (eslint) + `--max-warnings=150` (stylelint) baselines block new violations but let accumulated ones sit. v1.26 zeros both.
-- **Out of scope:** Playwright E2E tests (separate testing concern), backend refactor (miniapp-only milestone), admin panel redesign, new features. Pure debt cleanup + safety net.
+**Known gaps carried to v1.27:**
+- 5 pre-existing react-hooks advisories (`set-state-in-effect`, `exhaustive-deps`) — TOOL-08 partially met. Lint budget at 10, both lint rules at ERROR so new violations still fail CI immediately.
+- 21 inline-style justified-disables tagged `TODO(v1.27)` — concrete remediation paths documented (CSS custom properties driven by data-attrs for chart/theme colors).
+- `scripts/verify_v1.26.sh` deferred — CI workflow + in-tree pytest/lint/build cover the same surface area.
+
+**Archive:** `.planning/milestones/v1.26-{ROADMAP,REQUIREMENTS}.md` + `.planning/phases/{83-vitest-rtl-foundation, 84-inline-style-refactor, 85-css-spacing-and-empty-state}/*-SUMMARY.md`.
 
 ## Previous Shipped Milestone: v1.25 Operator Visibility + Test Coverage (2026-05-13)
 

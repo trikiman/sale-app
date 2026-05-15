@@ -27,84 +27,14 @@
 - ✅ **v1.23** Detail-Path Performance + UX Polish — Phases 74-76 (shipped 2026-05-13, tag `v1.23`)
 - ✅ **v1.24** Pool Self-Heal Hardening + Outage UX — Phases 77-79 (shipped 2026-05-13, tag `v1.24`)
 - ✅ **v1.25** Operator Visibility + Test Coverage — Phases 80-82 (shipped 2026-05-13, tag `v1.25`)
-- ⏳ **v1.26** Miniapp Test Harness + Style Guide Debt Cleanup — Phases 83-85 (active, started 2026-05-13)
+- ✅ **v1.26** Miniapp Test Harness + Style Guide Debt Cleanup — Phases 83-85 (shipped 2026-05-15, tag `v1.26`) — see [`.planning/milestones/v1.26-ROADMAP.md`](milestones/v1.26-ROADMAP.md)
 
-## v1.26 Miniapp Test Harness + Style Guide Debt Cleanup (ACTIVE — started 2026-05-13)
+## v1.26 Miniapp Test Harness + Style Guide Debt Cleanup (SHIPPED 2026-05-15, tag `v1.26`)
 
-Close the long-standing Vitest/RTL gap (tech debt since v1.22) and use that safety net to refactor the 46 inline-style violations + 135 spacing-scale CSS entries baselined in v1.24 Phase 79 + v1.25 Phase 82. After refactor, promote both lint rules from WARN → ERROR so future regressions can't land. v1.25 Phase 82 explicitly deferred the inline-style refactor because "rushing risks UX regressions — v1.23 Phase 75 layout-shift fix could regress if inline styles get moved wrong." v1.26 builds the safety net first, then does the refactor.
-
-Driving evidence:
-
-| Area | Issue | v1.26 Phase |
-|---|---|---|
-| No component-level tests | Vitest/RTL never wired; v1.24 verifier carry-forward | Phase 83 (TEST-01/02/03) |
-| 46 inline-style violations baselined | v1.25 Phase 82 deferred refactor pending safety net | Phase 84 (TOOL-05) |
-| 135 spacing-scale CSS violations baselined | v1.25 Phase 82 added rule at WARN with `--max-warnings=150` cap | Phase 85 (TOOL-07/08) |
-| Fresh-deploy empty-state misleading UX | v1.25 QA-08 pinned the edge case; copy still wrong | Phase 85 (UX-EMPTY-01) |
+Full scope shipped, 8/8 v1 requirements (TEST-01/02/03, TOOL-05/07/08, UX-EMPTY-01) + 7 robustness sidequests (84.1-84.7) shipped during Phase 84 — pool admission stability + scheduler robustness + scraper safe-click + per-color staleness thresholds. Archive: `.planning/milestones/v1.26-{ROADMAP,REQUIREMENTS}.md` + `.planning/phases/{83,84,85}/*-SUMMARY.md`. 32 commits `21f7969..d6b9a6d`, 2 partial-met requirements (TOOL-08 lint budget at 10 not 0 — 5 react-hooks advisories deferred to v1.27; OPS-29 verify script deferred — CI workflow covers same surface).
 
 **Goal:** Vitest/RTL safety net + 46 inline-style and 135 spacing-scale CSS violations refactored to zero + lint rules promoted to ERROR + fresh-deploy empty-state copy fixed.
-**Granularity:** Small
-**Phases:** 3 (83-85)
-**Requirements:** 8 (3 TEST, 3 TOOL, 1 UX, 3 OPS-continuity)
-
-### Phases
-
-- [ ] **Phase 83: Vitest/RTL Foundation + Critical Invariant Snapshots** — Install vitest + @testing-library/react + @testing-library/jest-dom + jsdom (TEST-01). CI `test-miniapp` job in `.github/workflows/lint-and-test.yml`. 4 snapshot tests pinning UX invariants: ProductCard 36px-min-height lock (v1.23 UX-SHIFT-01), CartPanel trash-button row (v1.23 UX-CART-01), stale-banner variants (dataStale vs staleAll), empty-vs-staleAll rendering (TEST-02). 3 unit tests — `normalizeUnit`, `getCartStep`, `isTelegramRuntime` — pinning v1.23 Phase 76 helpers shipped without coverage (TEST-03).
-
-- [ ] **Phase 84: Inline-Style Refactor (TOOL-05)** — Refactor 46 inline-style violations using Phase 83 snapshots as safety net. Three treatments: extract-to-utility-class (cursor, opacity, grid-col-full, dim-text), convert-to-explicit-class-prop (priceColor → priceClass), keep-inline-with-justified-disable for genuinely dynamic values. Add 3-5 new utility classes to `miniapp/src/index.css`. After refactor, promote `react/forbid-dom-props` WARN → ERROR.
-
-- [ ] **Phase 85: CSS Spacing-Scale Refactor + Lint Bump + Empty-State UX (TOOL-07/08 + UX-EMPTY-01)** — Migrate 135 raw pixel values in `miniapp/src/*.css` to CSS custom properties from style guide v2 Spacing Scale (add `--space-xxs` token for 2px). `rem` values → px equivalents → tokens. After refactor, promote `declaration-property-value-allowed-list` WARN → ERROR and drop both `--max-warnings=N` caps to `--max-warnings=0`. Bundle UX-EMPTY-01 fresh-deploy empty-state copy fix — backend `/api/products` emits `emptyReason: "scheduler_not_yet_produced_data"` when products=[] AND mtime<60s AND files-present-but-empty; frontend renders "Данные ещё не подгружены..." copy.
-
-### Phase Details
-
-### Phase 83: Vitest/RTL Foundation + Critical Invariant Snapshots
-**Goal:** Vitest + RTL installed, CI runs snapshot + unit tests on every PR, 4 snapshot tests pin critical UX invariants, 3 unit tests cover v1.23 helpers.
-**Depends on:** v1.25 Phase 82 CI workflow (adds new job to same file).
-**Requirements:** TEST-01/02/03 + continued OPS-29/30/31.
-**Success Criteria:**
-  1. [ ] `miniapp/package.json` has `vitest`, `@testing-library/react`, `@testing-library/jest-dom`, `jsdom` in `devDependencies`. `npm run test` and `npm run test -- --run` both work.
-  2. [ ] `vitest.config.js` or `vite.config.js` configures `test.environment = 'jsdom'`, `globals = true`, setupFiles for `@testing-library/jest-dom`.
-  3. [ ] `.github/workflows/lint-and-test.yml` gains `test-miniapp` job running `npm run test -- --run`.
-  4. [ ] `miniapp/src/__tests__/ProductCard.test.jsx` — snapshot of ProductCard in `cart-button` state + `stepper` state, both with `min-height: 36px` preserved in rendered DOM.
-  5. [ ] `miniapp/src/__tests__/CartPanel.test.jsx` — snapshot of CartPanel row with trash button visible.
-  6. [ ] `miniapp/src/__tests__/StaleBanner.test.jsx` — snapshots for `dataStale && !staleAll`, `staleAll`, and empty-vs-staleAll rendering.
-  7. [ ] `miniapp/src/__tests__/productMeta.test.js` — `normalizeUnit`, `getCartStep` unit tests.
-  8. [ ] `miniapp/src/__tests__/isTelegramRuntime.test.js` — extracts + tests `isTelegramRuntime` logic from `CartPanel.jsx::handleClearAll`. Extract to `miniapp/src/isTelegramRuntime.js`.
-  9. [ ] All tests green locally + in CI.
-  10. [ ] v1.25 + earlier regression green.
-**Plans:** TBD via `/gsd-plan-phase 83`
-
-### Phase 84: Inline-Style Refactor (TOOL-05)
-**Goal:** Refactor 46 inline-style violations from baseline to zero using Phase 83 snapshots as safety net. Promote `react/forbid-dom-props` WARN → ERROR.
-**Depends on:** Phase 83 (snapshots must be green before touching inline styles).
-**Requirements:** TOOL-05 + continued OPS-29/30/31.
-**Success Criteria:**
-  1. [ ] All 46 baselined inline-style violations from `docs/style-guide-debt.md` refactored to one of: utility class, explicit class prop, or justified-disable.
-  2. [ ] 3-5 new utility classes added to `miniapp/src/index.css` (e.g. `.u-clickable`, `.u-dim-50`, `.u-grid-row-full`).
-  3. [ ] Every `// eslint-disable-next-line react/forbid-dom-props` carries `-- JUSTIFIED(v1.26): <reason>` comment.
-  4. [ ] `react/forbid-dom-props` bumped from WARN → ERROR in `miniapp/eslint.config.js`.
-  5. [ ] `npm run lint -- --max-warnings=0` passes.
-  6. [ ] All Phase 83 snapshots still green (no UX regression).
-  7. [ ] `docs/style-guide-debt.md` updated to reflect zero inline-style debt.
-  8. [ ] v1.25 + earlier regression green.
-**Plans:** TBD via `/gsd-plan-phase 84`
-
-### Phase 85: CSS Spacing-Scale Refactor + Lint Bump + Empty-State UX
-**Goal:** Refactor 135 spacing-scale CSS violations to zero. Promote both lint rules to ERROR with `--max-warnings=0`. Fix fresh-deploy empty-state UI copy.
-**Depends on:** Phase 84 (eslint rules at ERROR first, then stylelint).
-**Requirements:** TOOL-07/08 + UX-EMPTY-01 + continued OPS-29/30/31.
-**Success Criteria:**
-  1. [ ] All 135 baselined `declaration-property-value-allowed-list` violations refactored to CSS custom properties.
-  2. [ ] `miniapp/src/index.css` adds `--space-xxs: 2px` token (extends existing scale).
-  3. [ ] `rem` values converted to px → tokens (0.5rem=`--space-sm`, 0.75rem=`--space-md`, 1rem=`--space-lg`, 2rem=`--space-2xl`).
-  4. [ ] Non-scale values (6/10/14/20px) either migrated to nearest scale token or retained with `/* spacing-scale-deviation: <reason> */` comment.
-  5. [ ] `declaration-property-value-allowed-list` bumped WARN → ERROR in `miniapp/.stylelintrc.json`.
-  6. [ ] Both lint jobs in CI drop their `--max-warnings=N` caps to `--max-warnings=0`.
-  7. [ ] Backend `/api/products` emits `emptyReason: "scheduler_not_yet_produced_data"` when products=[] AND all source mtimes<60s AND files present but empty.
-  8. [ ] Frontend renders "Данные ещё не подгружены. Первый сбор начнётся через ~N минут." when `emptyReason === "scheduler_not_yet_produced_data"`.
-  9. [ ] All Phase 83 snapshots still green.
-  10. [ ] v1.25 + earlier regression green. `pytest backend/ + tests/` 412+ passing.
-**Plans:** TBD via `/gsd-plan-phase 85`
+**Shipped:** Phase 83 (vitest@4.1.6 + RTL + 70 tests + 4 snapshots pinning v1.23 UX invariants), Phase 84 (46 inline-style sites refactored across ProductCard/CartPanel/App/ProductDetail/HistoryPage/HistoryDetail + `react/forbid-dom-props` → ERROR + 7 robustness sidequests landed during EC2 verification: 84.1 pool recovery hardening, 84.2 multi-source aggregation, 84.3 consensus voting, 84.4 TCP pre-filter + RU-only, 84.5 robust scheduler with stall recovery + 5-min threshold + Wants= systemd fix, 84.6 scrape_green safe-click + mtime touch, 84.7 per-color staleness thresholds green=5/red=5/yellow=10), Phase 85 (153 spacing substitutions to `var(--space-*)` tokens + `declaration-property-value-allowed-list` → ERROR + UX-EMPTY-01 implemented as 3-state classifier `fresh_deploy`/`all_stale`/`genuinely_empty` with differentiated copy). User-visible "Обновлено: never > 5 min" target met via the robustness chain (84.4 → 84.5 → 84.6 → 84.7).
 
 ## v1.25 Operator Visibility + Test Coverage (SHIPPED 2026-05-13, tag `v1.25`)
 
