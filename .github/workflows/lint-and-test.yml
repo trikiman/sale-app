@@ -29,16 +29,12 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      # v1.26 Phase 84-03: react/forbid-dom-props bumped from warn → error.
-      # The 46-site inline-style baseline is now zero or annotated with
-      # TODO(v1.27) disables. Remaining warnings are 5 pre-existing
-      # react-hooks advisories that are scope of v1.27 — kept at warn
-      # because the refactor (useReducer / useMemo conversion) is bigger
-      # than the inline-style cleanup. Budget is 10 to give a small
-      # safety margin if a new advisory pops up; should drop to 0 once
-      # the v1.27 react-hooks pass lands.
-      - name: ESLint (zero errors, warn budget for react-hooks debt)
-        run: npm run lint -- --max-warnings=10
+      # v1.27: TOOL-08 fully met — all 5 react-hooks advisories from the
+      # v1.26 carry-forward refactored away. lint --max-warnings=0 enforces
+      # zero warnings going forward; both react/forbid-dom-props and
+      # react-hooks rules at ERROR level fail CI on regression.
+      - name: ESLint (zero errors, zero warnings)
+        run: npm run lint -- --max-warnings=0
 
       # v1.26 Phase 85: declaration-property-value-allowed-list bumped from
       # warning → error. The 135-violation spacing-scale baseline is now

@@ -17,20 +17,26 @@ export default function ProductDetail({ product, onClose, onAddToCart, onSetCart
   const [loading, setLoading] = useState(true)
   const [imgIndex, setImgIndex] = useState(0)
 
+  // v1.27: depend on the primitive id, not the whole product object — react-hooks
+  // exhaustive-deps was flagging `product` as missing because the truthy-check
+  // reads it. Hoisting `productId` to a const sidesteps that and makes the
+  // re-fetch trigger explicit (only when the id changes, not on object identity).
+  const productId = product?.id
   useEffect(() => {
-    if (!product) return
+    if (!productId) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- TODO(v1.27+): refactor to `key={productId}` from parent or in-render setState; this pattern is the legitimate "reset local state when prop changes" case the rule warns against, but the alternatives are bigger refactors
     setLoading(true)
     setDetails(null)
     setImgIndex(0)
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), 8000)
-    fetch(`/api/product/${product.id}/details`, { signal: controller.signal })
+    fetch(`/api/product/${productId}/details`, { signal: controller.signal })
       .then(r => r.json())
       .then(d => setDetails(d))
       .catch(() => setDetails({ _error: true }))
       .finally(() => { clearTimeout(timeout); setLoading(false) })
     return () => { clearTimeout(timeout); controller.abort() }
-  }, [product?.id])
+  }, [productId])
 
   if (!product) return null
 

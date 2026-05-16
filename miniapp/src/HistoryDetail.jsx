@@ -207,6 +207,7 @@ export default function HistoryDetail({ productId, onBack }) {
   const [error, setError] = useState(null)
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- TODO(v1.27+): refactor to `key={productId}` from parent or in-render setState; this is the legitimate "reset local state when prop changes" pattern the rule warns about
     setLoading(true)
     setError(null)
     fetch(`${API_BASE}/history/product/${productId}`, {

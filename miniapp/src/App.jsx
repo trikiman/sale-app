@@ -360,7 +360,6 @@ function App() {
     setFavBusy(s => { const n = new Set(s); n.add(product.id); return n })
     // Store original state for potential rollback
     const wasInFavorites = favorites.has(product.id)
-
     // Optimistic update using functional state to avoid race conditions
     setFavorites(prev => {
       const next = new Set(prev)
@@ -410,7 +409,7 @@ function App() {
     } finally {
       setFavBusy(s => { const n = new Set(s); n.delete(product.id); return n })
     }
-  })
+  }, [favBusy, favorites, userId])
 
   // Reusable product loader (used for initial load + auto-refresh)
   const loadProducts = (isAutoRefresh = false) => {
@@ -1314,16 +1313,22 @@ function App() {
   }, [filteredProducts.length])
 
   useEffect(() => {
+    // v1.27: capture ref.current to a local so the cleanup closure uses the
+    // same Set instance — without this, react-hooks/exhaustive-deps flags
+    // pendingWeightIdsRef.current in the cleanup as "may have changed by
+    // the time this cleanup runs". The Set is mutated in place, so the
+    // local alias preserves identity across the effect's lifetime.
+    const pendingIds = pendingWeightIdsRef.current
     const productsNeedingWeight = filteredProducts
       .filter(shouldFetchMissingWeight)
-      .filter(product => !resolvedWeights[product.id] && !pendingWeightIdsRef.current.has(product.id))
+      .filter(product => !resolvedWeights[product.id] && !pendingIds.has(product.id))
       .slice(0, 8)
 
     if (productsNeedingWeight.length === 0) return
 
     let cancelled = false
     for (const product of productsNeedingWeight) {
-      pendingWeightIdsRef.current.add(product.id)
+      pendingIds.add(product.id)
     }
 
     const timer = window.setTimeout(() => {
@@ -1348,7 +1353,7 @@ function App() {
           } catch {
             // Best-effort enrichment only.
           } finally {
-            pendingWeightIdsRef.current.delete(product.id)
+            pendingIds.delete(product.id)
           }
         }
       }
@@ -1377,7 +1382,7 @@ function App() {
       cancelled = true
       window.clearTimeout(timer)
       for (const product of productsNeedingWeight) {
-        pendingWeightIdsRef.current.delete(product.id)
+        pendingIds.delete(product.id)
       }
     }
   }, [filteredProducts, resolvedWeights])
