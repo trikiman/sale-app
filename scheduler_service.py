@@ -53,8 +53,16 @@ SCRAPER_TIMEOUT = 300  # 5 minutes max per scraper
 #      `choose_due_job` overrides the normal schedule and forces a
 #      green-only run (or "all" if that's also due). Belt-and-suspenders
 #      for silent scrape failures that don't write the file at all.
+#
+# v1.27 follow-up: STALL_RECOVERY_COOLDOWN_S — when stall recovery fires
+# but the recovered green-only can't actually save the file (e.g. pool=0,
+# scrape exits immediately), the file mtime stays old and the next loop
+# iteration would force another stall recovery in <20s. The cooldown
+# suppresses re-fires until ≥N seconds elapsed, giving each recovery
+# cycle time to either succeed or hand back to the normal schedule.
 GREEN_OVERSHOOT_TOLERANCE_SECONDS = 60
 GREEN_STALL_THRESHOLD_SECONDS = 240  # 4 min — fires recovery before user sees the 5-min banner
+STALL_RECOVERY_COOLDOWN_S = 60       # min seconds between consecutive stall-recovery overrides
 GREEN_PRODUCTS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "green_products.json")
 # Watchdog: if the main loop hasn't ticked for this long, assume we're hung
 # (e.g. stuck in a C-level syscall that Python timeouts can't interrupt) and
@@ -1089,6 +1097,9 @@ def main():
     next_all_due_at = time.monotonic()
     next_green_due_at = next_all_due_at + GREEN_TARGET_INTERVAL_SECONDS
     estimated_green_runtime = DEFAULT_GREEN_RUNTIME_SECONDS
+    # v1.27: monotonic timestamp of the last stall-recovery override. Init
+    # to negative infinity so the first stall recovery isn't suppressed.
+    last_stall_recovery_monotonic = float("-inf")
 
     while True:
         try:
@@ -1104,26 +1115,33 @@ def main():
 
             now_monotonic = time.monotonic()
             green_age = _green_file_age_seconds()
+            # v1.27: suppress stall recovery for STALL_RECOVERY_COOLDOWN_S after
+            # the last forced override so we don't spin every 20s when pool=0
+            # (recovery fires green → green can't save because no proxy →
+            # mtime stays old → recovery fires again). Cooldown gives each
+            # attempt time to either succeed or hand back to the normal schedule.
+            stall_active = (
+                green_age is not None
+                and green_age > GREEN_STALL_THRESHOLD_SECONDS
+                and (now_monotonic - last_stall_recovery_monotonic) > STALL_RECOVERY_COOLDOWN_S
+            )
             job = choose_due_job(
                 now_monotonic,
                 next_all_due_at,
                 next_green_due_at,
                 estimated_green_runtime,
-                green_age_seconds=green_age,
+                green_age_seconds=green_age if stall_active else None,
             )
 
             # v1.26 Phase 84.5: surface stall-recovery activations in the
             # journal so operators can spot when something silently broke
             # the normal cadence (vs. a planned green-only run).
-            if (
-                green_age is not None
-                and green_age > GREEN_STALL_THRESHOLD_SECONDS
-                and job in ("all", "green")
-            ):
+            if stall_active and job in ("all", "green"):
                 log(
                     f"Green-stall recovery: green_products.json is {green_age:.0f}s old "
                     f"(threshold {GREEN_STALL_THRESHOLD_SECONDS}s) — forcing job={job}"
                 )
+                last_stall_recovery_monotonic = now_monotonic
 
             if job is None:
                 sleep_for = max(0.5, min(next_all_due_at, next_green_due_at) - now_monotonic)

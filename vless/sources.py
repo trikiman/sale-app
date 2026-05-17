@@ -20,6 +20,7 @@ up.
 from __future__ import annotations
 
 import argparse
+import os
 import socket
 import sys
 import urllib.error
@@ -333,14 +334,34 @@ def filter_ru_nodes(
     unlabeled-fallthrough behind a feature flag — :func:`_has_explicit_non_ru_marker`
     and the related constants are intentionally retained for that path.
     Recover-fast > perfect.
+
+    v1.27 emergency fallback: when the env var
+    ``SALEAPP_VLESS_ALLOW_UNLABELED`` is set to "1"/"true"/"yes",
+    the function reverts to Phase-84.2 behavior — admit lines without
+    an explicit non-RU marker (i.e. unlabeled lines fall through to
+    the egress probe). Use this when ``/admin/proxy-stats`` shows
+    pool=0 sustained for >10 min and the explicitly-labeled subset
+    can't fill the pool. The egress probe in ``XrayProcess.verify_egress``
+    is still the source-of-truth check, so non-RU exits still get
+    rejected — we just expand the candidate set to include unlabeled
+    lines that *might* be RU.
     """
     if not nodes:
         return [], []
+
+    # v1.27: opt-in fallback for pool-starved emergencies. Read env var on
+    # every call so flipping it via systemd `set-environment` takes effect
+    # on the next refresh cycle without a service restart.
+    allow_unlabeled = os.environ.get("SALEAPP_VLESS_ALLOW_UNLABELED", "").strip().lower() in ("1", "true", "yes")
 
     ru_nodes: list[VlessNode] = []
     rejected_nodes: list[VlessNode] = []
     for node in nodes:
         if _has_ru_marker(node.name):
+            ru_nodes.append(node)
+        elif allow_unlabeled and not _has_explicit_non_ru_marker(node.name):
+            # Phase 84.2 fallthrough: no flag at all, let the egress
+            # probe decide. Re-enabled here as opt-in env-flag fallback.
             ru_nodes.append(node)
         else:
             rejected_nodes.append(node)
