@@ -71,6 +71,8 @@ See: .planning/PROJECT.md (updated 2026-05-15)
 | Phase 84.6 + 84.7 + Phase 84-03 (24/46) — Phase 84 closed at 46/46 sites | 2026-05-15 |
 | Phase 85 SHIPPED — spacing-scale tokens + UX-EMPTY-01 + lint promotions | 2026-05-15 |
 | **v1.26 SHIPPED + ARCHIVED + TAGGED** | 2026-05-15 |
+| v1.26 carry-forward TOOL-08 closed (`f4de18c`) — 5 react-hooks advisories → 0, lint --max-warnings=0 | 2026-05-16 |
+| Pool-starvation outage hotfix (`7323325`) — SALEAPP_VLESS_ALLOW_UNLABELED env-flag fallback + STALL_RECOVERY_COOLDOWN_S=60s; pool 0 → 2, freshness recovered, 0 stall-fires/30min | 2026-05-17 |
 
 ---
 *Session checkpoint 2026-05-15 ~03:50 MSK. **v1.26 milestone closeout COMPLETE.** Awaiting operator UAT + `/gsd-new-milestone` for v1.27 cycle.*
