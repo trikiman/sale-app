@@ -213,8 +213,18 @@ def _touch_existing_green_file() -> bool:
         return False
 
 
-def is_suspicious_empty_green_result(section_found: bool, live_count: int, product_count: int, existing_product_count: int = 0) -> bool:
-    """Detect empty results that are more likely scraper failure than true zero green items."""
+def is_suspicious_empty_green_result(section_found: bool, live_count: int, product_count: int, existing_product_count: int = 0, empty_explicit: bool = False) -> bool:
+    """Detect empty results that are more likely scraper failure than true zero green items.
+
+    v1.27: when ``empty_explicit`` is True (VkusVill itself shows the
+    "Зелёных ценников сейчас нет" banner), trust that signal and treat
+    the empty result as authoritative — caller should wipe the stale
+    snapshot instead of preserving it. Without this override, the guard
+    would always preserve when ``existing_product_count > 0`` and the
+    user would see stale items long after VkusVill removed them.
+    """
+    if empty_explicit:
+        return False
     return product_count == 0 and ((not section_found) or live_count > 0 or existing_product_count > 0)
 
 
@@ -450,7 +460,7 @@ async def _js(page, script):
     return raw
 
 
-async def _inspect_green_section(page) -> tuple[bool, bool, int]:
+async def _inspect_green_section(page) -> tuple[bool, bool, int, bool]:
     state = await _js(page, r"""
         (() => {
             const normalize = (text) => (text || '')
@@ -465,6 +475,20 @@ async def _inspect_green_section(page) -> tuple[bool, bool, int]:
 
             const bodyText = normalize(document.body.innerText || '');
             const bodyHasGreenText = bodyText.includes('Зелёные ценники') || bodyText.includes('Зеленые ценники');
+
+            // v1.27: detect VkusVill's explicit "no green tags right now" banner
+            // ("Зелёных ценников сейчас нет" / "Товаров со скидкой 40% не осталось").
+            // When VkusVill itself shows this, it's authoritative — we should wipe
+            // the existing snapshot instead of preserving stale items via the
+            // suspicious-empty safety guard. Without this signal we can't tell
+            // "transient scraper glitch" (preserve) from "VkusVill genuinely has
+            // 0 green items right now" (wipe). User-facing bug: app showed 2
+            // stale green items while VkusVill UI said 0.
+            const emptyExplicit = (
+                bodyText.includes('Зелёных ценников сейчас нет') ||
+                bodyText.includes('Зеленых ценников сейчас нет') ||
+                bodyText.includes('со скидкой 40% не осталось')
+            );
 
             const greenButton = document.querySelector('[data-action="GreenLabels"]');
             const buttonVisible = isVisible(greenButton);
@@ -516,12 +540,12 @@ async def _inspect_green_section(page) -> tuple[bool, bool, int]:
                 }
             }
 
-            return [bodyHasGreenText, buttonVisible, liveCount];
+            return [bodyHasGreenText, buttonVisible, liveCount, emptyExplicit];
         })()
-    """) or [False, False, 0]
+    """) or [False, False, 0, False]
 
-    if not isinstance(state, list) or len(state) != 3:
-        return False, False, 0
+    if not isinstance(state, list) or len(state) < 3:
+        return False, False, 0, False
 
     body_has_green_text = bool(state[0])
     button_visible = bool(state[1])
@@ -529,7 +553,9 @@ async def _inspect_green_section(page) -> tuple[bool, bool, int]:
         live_count = int(state[2] or 0)
     except (TypeError, ValueError):
         live_count = 0
-    return body_has_green_text, button_visible, live_count
+    # v1.27: 4th element = explicit "no green tags right now" banner detection
+    empty_explicit = bool(state[3]) if len(state) >= 4 else False
+    return body_has_green_text, button_visible, live_count, empty_explicit
 
 
 def _green_inline_scope_expr() -> str:
@@ -1722,8 +1748,12 @@ async def scrape_green_prices_async():
         await asyncio.sleep(4)  # Wait 4s for lazy-loaded cards to render
 
         # BUG 7 fix: get actual live_count from page inspection
-        _, _, live_count = await _inspect_green_section(page)
-        print(f"  [GREEN] Inspected: live_count={live_count}")
+        # v1.27: also capture empty_explicit — VkusVill's "Зелёных ценников
+        # сейчас нет" banner. When set, the suspicious-empty safety guard
+        # below treats this as authoritative empty (wipe stale snapshot)
+        # rather than a transient scraper glitch.
+        _, _, live_count, empty_explicit = await _inspect_green_section(page)
+        print(f"  [GREEN] Inspected: live_count={live_count} empty_explicit={empty_explicit}")
 
         await _step_screenshot(page, "page_loaded_green_section")
 
@@ -2540,14 +2570,24 @@ async def scrape_green_prices_async():
 
         # Suspicious result checks
         existing_count = _load_existing_green_product_count()
-        if is_suspicious_empty_green_result(section_found, live_count, len(raw_products), existing_count):
+
+        # v1.27: when VkusVill explicitly shows "Зелёных ценников сейчас нет"
+        # banner, that's authoritative — wipe any stale snapshot. Without
+        # this short-circuit the suspicious-empty guard below would preserve
+        # the stale items because existing_count > 0, and the user would see
+        # phantom green items long after VkusVill removed them.
+        if empty_explicit and len(raw_products) == 0:
+            print(f"⚠️ [GREEN] VkusVill explicit empty banner detected — wiping stale snapshot ({existing_count} → 0).")
+            # Fall through to the save path below; raw_products is already []
+            # so save_products_safe will write an empty list. Don't return early.
+        elif is_suspicious_empty_green_result(section_found, live_count, len(raw_products), existing_count, empty_explicit=empty_explicit):
             print("⚠️ [GREEN] Empty result suspicious — preserving existing snapshot.")
             # v1.26 Phase 84.6: bump mtime so freshness banner reflects
             # "checked at this time, no new data" rather than a stale gap.
             if _touch_existing_green_file():
                 print(f"  [GREEN] Touched existing snapshot mtime ({existing_count} items preserved)")
             return [], False
-        if is_suspicious_single_green_result(live_count, len(raw_products), existing_count):
+        elif is_suspicious_single_green_result(live_count, len(raw_products), existing_count):
             print("⚠️ [GREEN] Single-item result suspicious — preserving existing snapshot.")
             # v1.26 Phase 84.6: same as above — verified, no change needed.
             if _touch_existing_green_file():
