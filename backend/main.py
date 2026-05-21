@@ -39,6 +39,7 @@ import time as _time
 from collections import deque
 from datetime import datetime
 import json
+import math
 import os
 import secrets
 import sys
@@ -922,7 +923,11 @@ def _build_source_freshness(
             updated_at = datetime.fromtimestamp(mtime).isoformat(timespec="seconds")
             is_stale = age_min > threshold
             if is_stale:
-                stale_files.append(f"{color} ({age_min:.0f}m)")
+                # v1.27: ceil instead of round so the displayed integer
+                # matches the strict-`>` threshold semantic. age_min=5.4
+                # at threshold 5 should display as "6m" (past the limit),
+                # not "5m" (which contradicts the stale flag).
+                stale_files.append(f"{color} ({math.ceil(age_min):.0f}m)")
         else:
             stale_files.append(f"{color} (missing)")
 

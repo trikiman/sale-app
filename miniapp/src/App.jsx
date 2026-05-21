@@ -1460,7 +1460,14 @@ function App() {
           return `${base} (нет файла)`
         }
         if (typeof info?.ageMinutes === 'number') {
-          return `${base} (${Math.round(info.ageMinutes)} мин.)`
+          // v1.27: use Math.ceil instead of Math.round so the displayed
+          // integer always matches the threshold semantic. Backend's
+          // is_stale check is strict (age > threshold), so e.g. 5.4 min
+          // is stale at threshold 5 but Math.round(5.4) = 5 — user
+          // sees "5 мин" with the banner active and (rightly) thinks
+          // "5 min should be fine, why am I seeing this?". Math.ceil(5.4)
+          // = 6, which honestly reflects "this is past the 5-min limit".
+          return `${base} (${Math.ceil(info.ageMinutes)} мин.)`
         }
         return base
       })
