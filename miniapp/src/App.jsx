@@ -1277,19 +1277,74 @@ function App() {
       return categoryMatch && subgroupMatch && typeMatch && favMatch
     })
 
-    // Sort yellow products by discount % (highest first) when yellow-only is active
-    const onlyYellow = activeTypes.length === 1 && activeTypes[0] === 'yellow'
-    if (onlyYellow) {
-      filtered.sort((a, b) => {
-        const oldA = parseInt(a.oldPrice) || 0
-        const curA = parseInt(a.currentPrice) || 0
-        const oldB = parseInt(b.oldPrice) || 0
-        const curB = parseInt(b.currentPrice) || 0
-        const discA = oldA > 0 ? ((oldA - curA) / oldA) : 0
-        const discB = oldB > 0 ? ((oldB - curB) / oldB) : 0
-        return discB - discA
-      })
+    // v1.27: cluster products by group → subgroup so similar items appear
+    // together (all cakes together, all meat together, etc.) instead of
+    // mixed in raw insertion order. Group order matches the category-chip
+    // order (most-populous group first), so the visual order on screen
+    // mirrors the chip strip above. Within each cluster: keep G/R/Y type
+    // priority + sort by discount % descending so the best deal of each
+    // category is at the top of its cluster.
+    const getGroupKey = (p) => p.group || p.category || ''
+    // Build group rank from the FULL filtered set (not just current type
+    // filter) so the order is stable when toggling types.
+    const groupCounts = {}
+    for (const p of filtered) {
+      const g = getGroupKey(p)
+      if (g) groupCounts[g] = (groupCounts[g] || 0) + 1
     }
+    const groupRank = Object.fromEntries(
+      Object.entries(groupCounts)
+        .sort(([, a], [, b]) => b - a)
+        .map(([g], idx) => [g, idx])
+    )
+    // Subgroup rank, scoped per-group (cakes within "Sweets" cluster
+    // together, etc.).
+    const subgroupCounts = {}
+    for (const p of filtered) {
+      const g = getGroupKey(p)
+      const sg = p.subgroup || ''
+      const key = `${g}\u0000${sg}`
+      subgroupCounts[key] = (subgroupCounts[key] || 0) + 1
+    }
+    const subgroupRank = {}
+    // Build per-group subgroup rank
+    const groupedSubgroups = {}
+    for (const key of Object.keys(subgroupCounts)) {
+      const [g] = key.split('\u0000')
+      if (!groupedSubgroups[g]) groupedSubgroups[g] = []
+      groupedSubgroups[g].push([key, subgroupCounts[key]])
+    }
+    for (const g of Object.keys(groupedSubgroups)) {
+      groupedSubgroups[g]
+        .sort(([, a], [, b]) => b - a)
+        .forEach(([key], idx) => { subgroupRank[key] = idx })
+    }
+
+    const TYPE_PRIORITY = { green: 0, red: 1, yellow: 2 }
+    const discountPct = (p) => {
+      const oldP = parseInt(p.oldPrice) || 0
+      const curP = parseInt(p.currentPrice) || 0
+      return oldP > 0 ? (oldP - curP) / oldP : 0
+    }
+
+    filtered.sort((a, b) => {
+      const ag = getGroupKey(a)
+      const bg = getGroupKey(b)
+      // 1) Group rank — keeps cakes/meat/etc. clustered.
+      const ar = groupRank[ag] ?? 999
+      const br = groupRank[bg] ?? 999
+      if (ar !== br) return ar - br
+      // 2) Subgroup rank within group — finer clustering.
+      const asr = subgroupRank[`${ag}\u0000${a.subgroup || ''}`] ?? 999
+      const bsr = subgroupRank[`${bg}\u0000${b.subgroup || ''}`] ?? 999
+      if (asr !== bsr) return asr - bsr
+      // 3) Type priority within subgroup: green → red → yellow.
+      const at = TYPE_PRIORITY[a.type] ?? 3
+      const bt = TYPE_PRIORITY[b.type] ?? 3
+      if (at !== bt) return at - bt
+      // 4) Discount % desc within type — best deal on top.
+      return discountPct(b) - discountPct(a)
+    })
 
     return filtered
   }, [enrichedProducts, typeFilters, selectedCategory, selectedSubgroup, showFavoritesOnly, favorites, soldOutIds])
