@@ -93,10 +93,62 @@ body {
   gap: 16px;
 }
 
+/* v1.27: user-selectable column count via data-cols attribute. data-cols="auto"
+   (default) keeps the auto-fill behavior above. 3/4/5 force a fixed grid
+   regardless of viewport. CSS-only selector — zero JS overhead per render,
+   minimal CPU cost on iPad which is what the user asked for. */
+.product-grid[data-cols="3"] { grid-template-columns: repeat(3, 1fr); }
+.product-grid[data-cols="4"] { grid-template-columns: repeat(4, 1fr); }
+.product-grid[data-cols="5"] { grid-template-columns: repeat(5, 1fr); }
+
 @media (max-width: 480px) {
   .product-grid {
     grid-template-columns: repeat(2, 1fr);
     gap: var(--space-md);
+  }
+  /* On phones, override the user picker — 2 cols is forced to keep cards
+     readable. The picker itself is also hidden by .grid-cols-group below. */
+  .product-grid[data-cols="3"],
+  .product-grid[data-cols="4"],
+  .product-grid[data-cols="5"] {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+/* v1.27: column-count picker chips, sit next to the .view-toggle-group. */
+.grid-cols-group {
+  display: inline-flex;
+  gap: var(--space-xs);
+  margin-left: var(--space-sm);
+}
+
+.grid-cols-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: var(--radius-pill, var(--space-md));
+  border: 1px solid var(--card-border);
+  background: var(--card-bg);
+  color: var(--tg-theme-text-color);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.grid-cols-btn:hover {
+  border-color: var(--tg-theme-button-color);
+}
+
+.grid-cols-btn.active {
+  background: var(--tg-theme-button-color);
+  color: var(--tg-theme-button-text-color);
+  border-color: var(--tg-theme-button-color);
+}
+
+/* On phones the picker has no effect (2 cols forced) — hide it. */
+@media (max-width: 480px) {
+  .grid-cols-group {
+    display: none;
   }
 }
 

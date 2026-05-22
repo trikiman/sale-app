@@ -194,6 +194,13 @@ function App() {
   const [showTokenInput, setShowTokenInput] = useState(false)
   const [tokenInputValue, setTokenInputValue] = useState('')
   const [viewMode, setViewMode] = useState(() => localStorage.getItem('vv_view_mode') || 'grid')
+  // v1.27: user-selectable grid column count for tablet/desktop. 'auto' uses
+  // CSS auto-fill (default, fits N×220px columns based on viewport). 3/4/5
+  // forces a fixed count regardless of viewport — useful on iPad where
+  // auto-fill produced only 2 columns despite there being room for more.
+  // Persisted in localStorage. Hidden on phones (≤480px) where 2 cols is
+  // forced by media query anyway.
+  const [gridCols, setGridCols] = useState(() => localStorage.getItem('vv_grid_cols') || 'auto')
   const [theme, setTheme] = useState(() => localStorage.getItem('vv_theme') || 'dark')
   const [categorizingRunning, setCategorizingRunning] = useState(false)
   const [categorizingDone, setCategorizingDone] = useState(false)
@@ -225,6 +232,10 @@ function App() {
   useEffect(() => {
     localStorage.setItem('vv_view_mode', viewMode)
   }, [viewMode])
+
+  useEffect(() => {
+    localStorage.setItem('vv_grid_cols', gridCols)
+  }, [gridCols])
 
   useEffect(() => {
     writeCachedJson(WEIGHT_CACHE_KEY, resolvedWeights)
@@ -2022,6 +2033,24 @@ function App() {
             ⊞
           </button>
         </div>
+
+        {/* v1.27: column-count chips. Only relevant in grid mode; hidden
+            via CSS on phones where the 2-col layout is fixed by media query. */}
+        {viewMode === 'grid' && (
+          <div className="grid-cols-group">
+            {['auto', '3', '4', '5'].map(c => (
+              <button
+                key={c}
+                onClick={() => setGridCols(c)}
+                className={`grid-cols-btn ${gridCols === c ? 'active' : ''}`}
+                aria-label={c === 'auto' ? 'Авто колонки' : `${c} колонки`}
+                title={c === 'auto' ? 'Авто (заполняет ширину)' : `Сетка ${c}×`}
+              >
+                {c === 'auto' ? 'A' : c}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Category Filter (Groups) */}
@@ -2110,7 +2139,7 @@ function App() {
       )}
 
       {/* Product Grid */}
-      <div className={`product-grid ${viewMode === 'list' ? 'list-view' : ''}`}>
+      <div className={`product-grid ${viewMode === 'list' ? 'list-view' : ''}`} data-cols={viewMode === 'grid' ? gridCols : 'auto'}>
           {filteredProducts.slice(0, visibleCount).map((product, index) => (
             <ProductCard
               key={`${product.id}-${product.type}`}
