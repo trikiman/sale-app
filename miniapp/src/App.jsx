@@ -1277,14 +1277,29 @@ function App() {
       return categoryMatch && subgroupMatch && typeMatch && favMatch
     })
 
-    // v1.27: cluster products by group → subgroup so similar items appear
-    // together (all cakes together, all meat together, etc.) instead of
-    // mixed in raw insertion order. Group order matches the category-chip
-    // order (most-populous group first), so the visual order on screen
-    // mirrors the chip strip above. Within each cluster: keep G/R/Y type
-    // priority + sort by discount % descending so the best deal of each
-    // category is at the top of its cluster.
+    // v1.27: cluster products by group → name-first-word so similar items
+    // appear together (all cakes together, all shaurma together, etc.)
+    // instead of mixed in raw insertion order. Group order matches the
+    // category-chip order (most-populous group first), so the visual order
+    // on screen mirrors the chip strip above.
+    //
+    // Subgroup was the original 3rd-sort-dim but VkusVill's subgroup labels
+    // are inconsistent — "Новинки"/"Хиты" cut across food categories, so
+    // 3 shaurma items could end up in 2 different subgroups and split on
+    // screen. User reported this as "1 шаурма is at the end of screen
+    // away from the others". Switching to name-first-word groups by user
+    // intuition (kind of food) rather than VkusVill's bookkeeping label.
     const getGroupKey = (p) => p.group || p.category || ''
+    const getNameStem = (p) => {
+      // First word of the product name, lowercased, quotes/punctuation stripped.
+      // "Шаурма с курицей и соусом..." → "шаурма"
+      // "Торт «Карелия»..." → "торт"
+      // Items starting with the same stem cluster together regardless of
+      // VkusVill's subgroup classification.
+      const name = (p.name || '').toLowerCase().trim()
+      const firstWord = name.split(/\s+/)[0] || ''
+      return firstWord.replace(/[«»"',.()]/g, '')
+    }
     // Build group rank from the FULL filtered set (not just current type
     // filter) so the order is stable when toggling types.
     const groupCounts = {}
@@ -1297,28 +1312,6 @@ function App() {
         .sort(([, a], [, b]) => b - a)
         .map(([g], idx) => [g, idx])
     )
-    // Subgroup rank, scoped per-group (cakes within "Sweets" cluster
-    // together, etc.).
-    const subgroupCounts = {}
-    for (const p of filtered) {
-      const g = getGroupKey(p)
-      const sg = p.subgroup || ''
-      const key = `${g}\u0000${sg}`
-      subgroupCounts[key] = (subgroupCounts[key] || 0) + 1
-    }
-    const subgroupRank = {}
-    // Build per-group subgroup rank
-    const groupedSubgroups = {}
-    for (const key of Object.keys(subgroupCounts)) {
-      const [g] = key.split('\u0000')
-      if (!groupedSubgroups[g]) groupedSubgroups[g] = []
-      groupedSubgroups[g].push([key, subgroupCounts[key]])
-    }
-    for (const g of Object.keys(groupedSubgroups)) {
-      groupedSubgroups[g]
-        .sort(([, a], [, b]) => b - a)
-        .forEach(([key], idx) => { subgroupRank[key] = idx })
-    }
 
     const TYPE_PRIORITY = { green: 0, red: 1, yellow: 2 }
     const discountPct = (p) => {
@@ -1330,21 +1323,21 @@ function App() {
     filtered.sort((a, b) => {
       // 1) Type priority — green → red → yellow. Green items always
       //    appear first (all of them), then all reds, then all yellows.
-      //    User explicitly asked for this dominance over category.
       const at = TYPE_PRIORITY[a.type] ?? 3
       const bt = TYPE_PRIORITY[b.type] ?? 3
       if (at !== bt) return at - bt
-      const ag = getGroupKey(a)
-      const bg = getGroupKey(b)
-      // 2) Group rank within type — keeps cakes/meat/etc. clustered.
-      const ar = groupRank[ag] ?? 999
-      const br = groupRank[bg] ?? 999
+      // 2) Group rank within type — keeps Готовая еда / Сладости / etc.
+      //    clustered, in the same order as the category-chip strip above.
+      const ar = groupRank[getGroupKey(a)] ?? 999
+      const br = groupRank[getGroupKey(b)] ?? 999
       if (ar !== br) return ar - br
-      // 3) Subgroup rank within group — finer clustering.
-      const asr = subgroupRank[`${ag}\u0000${a.subgroup || ''}`] ?? 999
-      const bsr = subgroupRank[`${bg}\u0000${b.subgroup || ''}`] ?? 999
-      if (asr !== bsr) return asr - bsr
-      // 4) Discount % desc within subgroup — best deal on top.
+      // 3) Name first word (alphabetical) — clusters all "шаурма ..."
+      //    together, all "торт ..." together, etc. Sidesteps VkusVill's
+      //    inconsistent subgroup labels (Новинки/Хиты cross-cut).
+      const an = getNameStem(a)
+      const bn = getNameStem(b)
+      if (an !== bn) return an.localeCompare(bn, 'ru')
+      // 4) Discount % desc within stem — best deal of the cluster on top.
       return discountPct(b) - discountPct(a)
     })
 
