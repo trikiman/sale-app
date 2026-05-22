@@ -1328,21 +1328,23 @@ function App() {
     }
 
     filtered.sort((a, b) => {
-      const ag = getGroupKey(a)
-      const bg = getGroupKey(b)
-      // 1) Group rank — keeps cakes/meat/etc. clustered.
-      const ar = groupRank[ag] ?? 999
-      const br = groupRank[bg] ?? 999
-      if (ar !== br) return ar - br
-      // 2) Subgroup rank within group — finer clustering.
-      const asr = subgroupRank[`${ag}\u0000${a.subgroup || ''}`] ?? 999
-      const bsr = subgroupRank[`${bg}\u0000${b.subgroup || ''}`] ?? 999
-      if (asr !== bsr) return asr - bsr
-      // 3) Type priority within subgroup: green → red → yellow.
+      // 1) Type priority — green → red → yellow. Green items always
+      //    appear first (all of them), then all reds, then all yellows.
+      //    User explicitly asked for this dominance over category.
       const at = TYPE_PRIORITY[a.type] ?? 3
       const bt = TYPE_PRIORITY[b.type] ?? 3
       if (at !== bt) return at - bt
-      // 4) Discount % desc within type — best deal on top.
+      const ag = getGroupKey(a)
+      const bg = getGroupKey(b)
+      // 2) Group rank within type — keeps cakes/meat/etc. clustered.
+      const ar = groupRank[ag] ?? 999
+      const br = groupRank[bg] ?? 999
+      if (ar !== br) return ar - br
+      // 3) Subgroup rank within group — finer clustering.
+      const asr = subgroupRank[`${ag}\u0000${a.subgroup || ''}`] ?? 999
+      const bsr = subgroupRank[`${bg}\u0000${b.subgroup || ''}`] ?? 999
+      if (asr !== bsr) return asr - bsr
+      // 4) Discount % desc within subgroup — best deal on top.
       return discountPct(b) - discountPct(a)
     })
 
