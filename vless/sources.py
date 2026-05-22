@@ -20,6 +20,7 @@ up.
 from __future__ import annotations
 
 import argparse
+import base64
 import os
 import socket
 import sys
@@ -67,6 +68,11 @@ EXTRA_VLESS_SOURCES: tuple[str, ...] = (
     # Sample 2026-05-14: 84 lines, 59 vless://. Some lines use HTML-entity
     # `&amp;` separators which we decode in :func:`parse_vless_list`.
     "https://raw.githubusercontent.com/SoliSpirit/v2ray-configs/main/Countries/Russia.txt",
+    # v2nodes.com paid RU subscription (key supplied by operator 2026-05-22).
+    # Returns base64-encoded body — _fetch_one auto-decodes if the raw body
+    # contains no `vless://` literal but decodes cleanly. Sample 2026-05-22:
+    # 1928 bytes b64 → 6 vless+reality nodes after decode.
+    "https://www.v2nodes.com/subscriptions/country/ru/?key=B128098C26C74AF",
 )
 
 _USER_AGENT = (
@@ -80,11 +86,36 @@ _MIN_RU_NODES_FOR_OK = 5
 
 
 def _fetch_one(url: str, *, timeout: float) -> str:
-    """Fetch a single URL and return its decoded body."""
+    """Fetch a single URL and return its decoded body.
+
+    Subscription URLs (e.g. v2nodes.com) commonly base64-encode their
+    payload to keep client compatibility. If the raw body contains no
+    ``vless://`` literal but decodes cleanly as base64 to text that DOES
+    contain ``vless://``, return the decoded content. Plain-text
+    subscriptions (the common case for raw GitHub files) pass through
+    unchanged.
+    """
     req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         charset = resp.headers.get_content_charset() or "utf-8"
-        return resp.read().decode(charset, errors="replace")
+        raw = resp.read()
+        text = raw.decode(charset, errors="replace")
+    if "vless://" in text or "vmess://" in text:
+        return text
+    # Try base64 decode — strip whitespace first, tolerate URL-safe variants.
+    candidate = "".join(text.split())
+    if not candidate:
+        return text
+    try:
+        # Pad to a multiple of 4 if needed (some subscription endpoints omit padding).
+        pad = "=" * (-len(candidate) % 4)
+        decoded_bytes = base64.b64decode(candidate + pad, validate=False)
+        decoded = decoded_bytes.decode("utf-8", errors="replace")
+    except (ValueError, UnicodeDecodeError):
+        return text
+    if "vless://" in decoded or "vmess://" in decoded:
+        return decoded
+    return text
 
 
 def fetch_igareck_list(
