@@ -3826,13 +3826,13 @@ body.cart-open {
   }
 }
 
-/* === PERF-10: Tablet-optimized grid layout (2 columns) === */
-@media (min-width: 481px) and (max-width: 1024px), (pointer: coarse) and (min-width: 481px) {
-  .product-grid {
-    grid-template-columns: repeat(2, 1fr) !important;
-    gap: 12px !important;
-  }
-}
+/* PERF-10 (deprecated 2026-05-22): A previous phase forced 2 columns
+   on tablets/coarse-pointer devices via !important. User reported on
+   iPad Pro that 2 cols wastes horizontal space and they want 3/4/5.
+   The forced rule is removed. The default repeat(auto-fill, minmax(220px))
+   now correctly produces ~4 columns on a 1024px iPad viewport (after
+   the min-width:0 fix on grid children), and the new chip picker lets
+   the user override to 3/4/5 explicitly. */
 
 /* === PERF-11: Full-page product detail on tablets (no janky drawer) === */
 @media (max-width: 1024px), (pointer: coarse) {
