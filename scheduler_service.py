@@ -63,6 +63,19 @@ SCRAPER_TIMEOUT = 300  # 5 minutes max per scraper
 GREEN_OVERSHOOT_TOLERANCE_SECONDS = 60
 GREEN_STALL_THRESHOLD_SECONDS = 240  # 4 min — fires recovery before user sees the 5-min banner
 STALL_RECOVERY_COOLDOWN_S = 60       # min seconds between consecutive stall-recovery overrides
+
+# v1.27 follow-up: pool watchdog daemon. The cycle-level recovery in
+# _run_scraper_set only fires when a scrape cycle is entered (every
+# 60-300s). When the pool collapses MID-cycle (e.g. all admitted nodes
+# fail probes in succession), the pool can sit at 0 for the full
+# remainder of the cycle, causing 2-3 consecutive scrape attempts to
+# error out before the next refresh. The watchdog polls pool size on
+# its own clock and triggers refresh as soon as it observes pool=0 for
+# ≥ POOL_DEAD_GRACE_SECONDS. Internal REFRESH_MIN_INTERVAL_S=60 in
+# VlessProxyManager already throttles ensure_pool() so the watchdog
+# can poll aggressively without hammering.
+POOL_WATCHDOG_INTERVAL_S = 30        # poll cadence
+POOL_DEAD_GRACE_SECONDS = 60         # tolerate pool=0 for this long before forcing refresh
 GREEN_PRODUCTS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "green_products.json")
 # Watchdog: if the main loop hasn't ticked for this long, assume we're hung
 # (e.g. stuck in a C-level syscall that Python timeouts can't interrupt) and
@@ -707,6 +720,70 @@ def _is_pool_dead() -> bool:
         return True
 
 
+def _pool_watchdog_loop(stop_event: "threading.Event") -> None:
+    """v1.27 daemon thread that aggressively refreshes the VLESS pool
+    whenever it observes pool=0 for ≥ POOL_DEAD_GRACE_SECONDS.
+
+    Decoupled from scrape cycles so mid-cycle pool collapses (which
+    happen when all admitted nodes fail probes within seconds of each
+    other) get repaired before the next cycle even starts. The internal
+    REFRESH_MIN_INTERVAL_S=60s throttle in VlessProxyManager.ensure_pool
+    prevents this from hammering the upstream subscription source.
+
+    Runs forever until stop_event is set. Logs every state transition
+    and every refresh attempt so journal forensics stays clear.
+    """
+    pool_dead_since: float | None = None
+    last_refresh_attempt: float = 0.0
+    log("[pool-watchdog] Started — polling every "
+        f"{POOL_WATCHDOG_INTERVAL_S}s, refresh after "
+        f"{POOL_DEAD_GRACE_SECONDS}s dead.")
+    while not stop_event.is_set():
+        try:
+            now = time.monotonic()
+            if _is_pool_dead():
+                if pool_dead_since is None:
+                    pool_dead_since = now
+                    log("[pool-watchdog] Pool observed dead — starting grace timer")
+                dead_for = now - pool_dead_since
+                if (
+                    dead_for >= POOL_DEAD_GRACE_SECONDS
+                    and (now - last_refresh_attempt) >= POOL_DEAD_GRACE_SECONDS
+                ):
+                    log(
+                        f"[pool-watchdog] Pool dead for {dead_for:.0f}s — "
+                        "triggering ensure_pool()"
+                    )
+                    last_refresh_attempt = now
+                    try:
+                        from vless.manager import VlessProxyManager
+                        pm = VlessProxyManager(log_func=log, register_atexit=False)
+                        recovered = pm.ensure_pool()
+                        log(
+                            f"[pool-watchdog] ensure_pool() returned "
+                            f"{recovered} nodes"
+                        )
+                        if recovered > 0:
+                            pool_dead_since = None  # reset grace timer
+                    except Exception as exc:  # noqa: BLE001
+                        log(f"[pool-watchdog] ensure_pool() failed: {exc!r}")
+            else:
+                if pool_dead_since is not None:
+                    log(
+                        f"[pool-watchdog] Pool recovered after "
+                        f"{now - pool_dead_since:.0f}s dead"
+                    )
+                    pool_dead_since = None
+        except Exception as exc:  # noqa: BLE001 — never let watchdog die
+            log(f"[pool-watchdog] loop error: {exc!r}")
+        # Sleep in 1s slices so stop_event is responsive on shutdown.
+        for _ in range(POOL_WATCHDOG_INTERVAL_S):
+            if stop_event.is_set():
+                return
+            time.sleep(1)
+    log("[pool-watchdog] Stopped (stop_event set)")
+
+
 def _run_scraper_set(scrapers, proxy_state):
     # v1.24 REL-19 + v1.25 hotfix: graceful degrade — if the VLESS pool is
     # empty for 2+ consecutive cycles, skip the expensive Chrome startup
@@ -1078,6 +1155,19 @@ def main():
         daemon=True,
     )
     reprobe_thread.start()
+
+    # v1.27: aggressive pool-refresh watchdog. Decoupled from scrape
+    # cycles — fires when pool has been dead for POOL_DEAD_GRACE_SECONDS
+    # regardless of cycle phase. Same shutdown protocol as keepalive
+    # (stop_event + daemon=True).
+    _pool_watchdog_stop_event = threading.Event()
+    pool_watchdog_thread = threading.Thread(
+        target=_pool_watchdog_loop,
+        args=(_pool_watchdog_stop_event,),
+        name="scheduler-pool-watchdog",
+        daemon=True,
+    )
+    pool_watchdog_thread.start()
 
     breaker = _load_breaker_state()
     log(

@@ -461,3 +461,89 @@ def test_compute_empty_reason_partial_freshness_is_genuinely_empty(
 
     freshness, _, _ = backend_main._build_source_freshness()
     assert backend_main._compute_empty_reason(freshness) == "genuinely_empty"
+
+
+
+# ── scheduler_service._pool_watchdog_loop ────────────────────────────────
+
+
+def test_pool_watchdog_triggers_refresh_when_pool_dead_past_grace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """v1.27: watchdog calls ensure_pool() once observed pool=0 has
+    persisted for ≥ POOL_DEAD_GRACE_SECONDS. Internal throttle in
+    VlessProxyManager.ensure_pool() prevents hammering."""
+    import threading
+    import scheduler_service as ss
+
+    # Force tight grace + interval so the test runs in ~3s.
+    monkeypatch.setattr(ss, "POOL_WATCHDOG_INTERVAL_S", 1, raising=True)
+    monkeypatch.setattr(ss, "POOL_DEAD_GRACE_SECONDS", 1, raising=True)
+
+    # Pool always dead.
+    monkeypatch.setattr(ss, "_is_pool_dead", lambda: True, raising=True)
+
+    # Capture ensure_pool() calls.
+    refresh_calls: list[int] = []
+
+    class _StubManager:
+        def __init__(self, **kwargs) -> None:
+            pass
+
+        def ensure_pool(self) -> int:
+            refresh_calls.append(1)
+            return 5  # simulate recovery so the next iteration sees recovery
+
+    # Replace the import target lazily — the watchdog imports inline.
+    import vless.manager as vm_mod
+    monkeypatch.setattr(vm_mod, "VlessProxyManager", _StubManager, raising=True)
+
+    stop = threading.Event()
+    t = threading.Thread(target=ss._pool_watchdog_loop, args=(stop,), daemon=True)
+    t.start()
+    # Give the watchdog enough wall time to: tick 1 (grace start),
+    # tick 2 (grace satisfied → refresh).
+    time.sleep(3.5)
+    stop.set()
+    t.join(timeout=2.0)
+
+    assert refresh_calls, (
+        "watchdog should have called ensure_pool() at least once "
+        "after pool stayed dead past grace"
+    )
+
+
+def test_pool_watchdog_skips_refresh_when_pool_healthy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No refresh attempts while pool stays non-empty."""
+    import threading
+    import scheduler_service as ss
+
+    monkeypatch.setattr(ss, "POOL_WATCHDOG_INTERVAL_S", 1, raising=True)
+    monkeypatch.setattr(ss, "POOL_DEAD_GRACE_SECONDS", 1, raising=True)
+    monkeypatch.setattr(ss, "_is_pool_dead", lambda: False, raising=True)
+
+    refresh_calls: list[int] = []
+
+    class _StubManager:
+        def __init__(self, **kwargs) -> None:
+            pass
+
+        def ensure_pool(self) -> int:
+            refresh_calls.append(1)
+            return 5
+
+    import vless.manager as vm_mod
+    monkeypatch.setattr(vm_mod, "VlessProxyManager", _StubManager, raising=True)
+
+    stop = threading.Event()
+    t = threading.Thread(target=ss._pool_watchdog_loop, args=(stop,), daemon=True)
+    t.start()
+    time.sleep(3.0)
+    stop.set()
+    t.join(timeout=2.0)
+
+    assert not refresh_calls, (
+        f"watchdog should not refresh when pool healthy — got {len(refresh_calls)} calls"
+    )
