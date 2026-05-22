@@ -93,6 +93,14 @@ body {
   gap: 16px;
 }
 
+/* Grid children must allow themselves to shrink below their intrinsic
+   content size, otherwise minmax(220px, 1fr) can't tighten the tracks
+   (cards have wide intrinsic min-content from image+labels, ~484px,
+   which forces only 2 columns even on a wide iPad viewport). */
+.product-grid > * {
+  min-width: 0;
+}
+
 /* v1.27: user-selectable column count via data-cols attribute. data-cols="auto"
    (default) keeps the auto-fill behavior above. 3/4/5 force a fixed grid
    regardless of viewport. CSS-only selector — zero JS overhead per render,
