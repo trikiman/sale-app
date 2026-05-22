@@ -114,6 +114,48 @@ def merge_products():
             p['group'] = p.get('category', '') or 'Без категории'
             p['subgroup'] = None
 
+    # v1.27: NEW-product detection. Mark products in the current run that
+    # weren't in the immediately-prior run as `isNew`. The
+    # previous_run_ids.json snapshot is the source of truth for "what was
+    # on sale last time we merged" — independent of the live data because
+    # those records may have churned (price changes, etc.) but the IDs
+    # are stable. First-run case (no snapshot file) → mark nothing as new
+    # to avoid a huge initial false-positive flood.
+    prev_ids_path = os.path.join(DATA_DIR, "previous_run_ids.json")
+    previous_run_ids: set[str] = set()
+    previous_run_existed = False
+    if os.path.exists(prev_ids_path):
+        try:
+            with open(prev_ids_path, 'r', encoding='utf-8') as f:
+                snapshot = json.load(f)
+            previous_run_ids = set(snapshot.get('ids', []))
+            previous_run_existed = True
+        except Exception as e:  # noqa: BLE001 — corrupt snapshot → treat as first run
+            print(f"  ⚠️ Could not read previous_run_ids.json: {e}; treating as first run")
+
+    current_ids: set[str] = set()
+    new_count = 0
+    for p in all_products:
+        pid = str(p.get('id', ''))
+        if pid:
+            current_ids.add(pid)
+        # Only flag as new when we have a previous baseline AND the id is
+        # genuinely missing from it. Without baseline, isNew=False keeps
+        # the UX neutral.
+        is_new = bool(
+            previous_run_existed
+            and pid
+            and pid not in previous_run_ids
+        )
+        p['isNew'] = is_new
+        if is_new:
+            new_count += 1
+
+    if previous_run_existed:
+        print(f"  🆕 Marked {new_count} new products (vs previous run of {len(previous_run_ids)} ids)")
+    else:
+        print("  🆕 First run — skipping NEW marker (no baseline yet)")
+
     green_count = len([p for p in all_products if p['type'] == 'green'])
     red_count = len([p for p in all_products if p['type'] == 'red'])
     yellow_count = len([p for p in all_products if p['type'] == 'yellow'])
@@ -148,6 +190,19 @@ def merge_products():
     proposals_path = os.path.join(DATA_DIR, "proposals.json")
     with open(proposals_path, 'w', encoding='utf-8') as f:
         json.dump(output, f, ensure_ascii=False, indent=2)
+
+    # v1.27: persist current run's IDs as next merge's baseline. Done
+    # AFTER proposals.json is committed so a partial-write here doesn't
+    # corrupt the user-facing data file.
+    try:
+        with open(prev_ids_path, 'w', encoding='utf-8') as f:
+            json.dump({
+                'ids': sorted(current_ids),
+                'updatedAt': data_time,
+                'count': len(current_ids),
+            }, f, ensure_ascii=False, indent=2)
+    except Exception as e:  # noqa: BLE001
+        print(f"  ⚠️ Could not write previous_run_ids.json: {e}")
     
     # Copy to miniapp
     miniapp_path = os.path.join(BASE_DIR, "miniapp", "public", "data.json")

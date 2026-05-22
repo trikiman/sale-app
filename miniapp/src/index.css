@@ -4165,6 +4165,46 @@ body.cart-open {
   color: #1a1a2e;
 }
 
+/* === v1.27: NEW product marker — golden card + small NEW badge ===
+   Appears when product.isNew is true (set by scrape_merge.py). The card
+   gets a warm golden tint that's visible against both the green/red/
+   yellow type tints; the badge sits next to other corner badges. Both
+   live exactly one merge cycle — next run, isNew flips back to false. */
+.card-vertical.card-new {
+  border: 2px solid rgba(234, 179, 8, 0.55);
+  box-shadow: 0 0 0 1px rgba(234, 179, 8, 0.18), 0 4px 14px rgba(234, 179, 8, 0.12);
+}
+
+[data-theme="light"] .card-vertical.card-new {
+  border-color: rgba(234, 179, 8, 0.75);
+  box-shadow: 0 0 0 1px rgba(234, 179, 8, 0.25), 0 4px 14px rgba(234, 179, 8, 0.15);
+}
+
+.card-new-badge {
+  position: absolute;
+  top: 8px;
+  /* Sit to the LEFT of the discount badge so it never overlaps */
+  left: 8px;
+  padding: var(--space-xs) var(--space-sm);
+  border-radius: 9999px;
+  background: linear-gradient(135deg, #f59e0b, #fbbf24);
+  color: #1a1a2e;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  line-height: 1.4;
+  box-shadow: 0 2px 6px rgba(234, 179, 8, 0.45);
+  z-index: 3;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+/* When BOTH a discount badge and a NEW badge are present, push the
+   discount badge down so they stack instead of overlap. */
+.card-vertical.card-new .card-discount {
+  top: 36px;
+}
+
 /* === v1.24 UX-STALE-02: prominent stale banner (all 3 sources stale) === */
 .stale-banner-prominent {
   margin-top: 12px;

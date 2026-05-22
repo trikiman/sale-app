@@ -2,10 +2,12 @@
 
 exports[`ProductCard snapshot > renders in cart-button state (no cart item) 1`] = `
 <div
-  class="card-vertical card-tint-green"
+  class="card-vertical card-tint-green u-clickable"
+  role="button"
+  tabindex="0"
 >
   <div
-    class="card-image-wrap u-clickable"
+    class="card-image-wrap"
   >
     <div
       class="card-hero-fallback"
@@ -102,10 +104,12 @@ exports[`ProductCard snapshot > renders in cart-button state (no cart item) 1`] 
 
 exports[`ProductCard snapshot > renders in stepper state (cartItem with quantity) 1`] = `
 <div
-  class="card-vertical card-tint-green"
+  class="card-vertical card-tint-green u-clickable"
+  role="button"
+  tabindex="0"
 >
   <div
-    class="card-image-wrap u-clickable"
+    class="card-image-wrap"
   >
     <div
       class="card-hero-fallback"

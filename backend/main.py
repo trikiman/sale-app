@@ -423,6 +423,12 @@ class Product(BaseModel):
     type: str  # green, red, yellow
     group: Optional[str] = None
     subgroup: Optional[str] = None
+    # v1.27: True when this product appeared in the latest scrape but
+    # not in the immediately-prior one. Frontend renders a golden badge.
+    # Stays True only until the next merge cycle, after which the same
+    # product becomes "known" again. Defaults to False so older
+    # proposals.json files (no isNew field) deserialize cleanly.
+    isNew: Optional[bool] = False
 
 
 class ProductsResponse(BaseModel):

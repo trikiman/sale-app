@@ -32,10 +32,19 @@ const ProductCard = memo(function ProductCard({ product, index: _index, isFavori
 
   return (
     <div
-      className={`card-vertical ${config.tint}`}
+      className={`card-vertical ${config.tint} u-clickable${product.isNew ? ' card-new' : ''}`}
+      onClick={() => onOpenDetail(product)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onOpenDetail(product)
+        }
+      }}
     >
-      {/* Hero Image — clickable to open detail */}
-      <div className="card-image-wrap u-clickable" onClick={() => onOpenDetail(product)}>
+      {/* Hero Image — whole card is clickable; image wrapper kept for layout. */}
+      <div className="card-image-wrap">
         {!imageLoaded && !imageError && product.image && <div className="absolute inset-0 skeleton" />}
 
         {product.image && !imageError ? (
@@ -93,13 +102,25 @@ const ProductCard = memo(function ProductCard({ product, index: _index, isFavori
             ⏳
           </span>
         )}
+
+        {/* v1.27: NEW marker — product appeared in latest scrape but
+            wasn't in the previous run. Visible until next merge cycle. */}
+        {product.isNew && (
+          <span
+            className="card-new-badge"
+            title="Появилось в последнем обновлении"
+            aria-label="Новое предложение"
+          >
+            ✨ NEW
+          </span>
+        )}
       </div>
 
       {/* Card Body */}
       <div className="card-body">
         <h3 className="card-title">{product.name}</h3>
 
-        <div className="card-price-row">
+        <div className="card-price-row" onClick={(e) => e.stopPropagation()}>
           <div className="card-prices">
             {/* v1.26 Phase 84 (TOOL-05): price color now comes from the
                 tint class (.card-tint-{green,red,yellow} .card-price),
@@ -182,6 +203,7 @@ const ProductCard = memo(function ProductCard({ product, index: _index, isFavori
     && prev.favoritesLoading === next.favoritesLoading
     && prev.viewMode === next.viewMode
     && prev.isStale === next.isStale
+    && prev.product?.isNew === next.product?.isNew
 })
 
 export default ProductCard
