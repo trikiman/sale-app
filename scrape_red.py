@@ -189,7 +189,11 @@ async def scrape_red_prices_async():
 
                     if (titleEl) {
                         const url = titleEl.href || '';
-                        const idMatch = url.match(/(\d+)\.html/);
+                        // v1.27 hotfix 2026-05-23: VkusVill URLs are
+                        // /goods/slug-{ID}/ — never had .html suffix.
+                        // Falls back to the legacy .html match in case
+                        // any historical URL ever did use it.
+                        const idMatch = url.match(/-(\d+)\/?$/) || url.match(/(\d+)\.html/);
                         let imgSrc = '';
                         if (imgEl) imgSrc = imgEl.getAttribute('data-src') || imgEl.src || '';
                         if (!imgSrc || imgSrc.includes('data:image')) {

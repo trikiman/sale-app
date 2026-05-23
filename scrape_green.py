@@ -641,7 +641,7 @@ def _green_product_cards_script(card_source: str) -> str:
                 if (!linkEl) return;
 
                 const url = linkEl.href || '';
-                const idMatch = url.match(/(\\d+)\\.html/);
+                const idMatch = url.match(/-(\\d+)\\/?$/) || url.match(/(\\d+)\\.html/);
                 const id = idMatch ? idMatch[1] : '';
 
                 // Extract name: prefer nameEl text, fall back to card title or card text
@@ -916,7 +916,7 @@ async def _scrape_cart_stock_map(page) -> dict:
                 if (!nameEl) return;
 
                 const url = nameEl.href || '';
-                const idMatch = url.match(/(\\d+)\\.html/);
+                const idMatch = url.match(/-(\\d+)\\/?$/) || url.match(/(\\d+)\\.html/);
                 if (!idMatch) return;
 
                 const text = card.innerText;
@@ -996,7 +996,7 @@ async def _extract_green_cart_items(page) -> list:
                 if (!nameEl) return;
 
                 const url = nameEl.href || '';
-                const idMatch = url.match(/(\\d+)\\.html/);
+                const idMatch = url.match(/-(\\d+)\\/?$/) || url.match(/(\\d+)\\.html/);
                 const id = idMatch ? idMatch[1] : '';
                 const dedupeKey = id || url || (nameEl.innerText || '').trim();
                 if (seen.has(dedupeKey)) return;
