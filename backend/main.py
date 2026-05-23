@@ -5856,11 +5856,28 @@ def admin_proxy_stats(
     """
     _require_token(token)
 
-    # Live snapshot (counters only — thread-safe read, no I/O).
+    # v1.27 hotfix 2026-05-23: pool_size + last_refresh used to come from
+    # _proxy_manager.pool_snapshot() (in-memory state of THIS backend
+    # process). But the actual refreshing happens in a SEPARATE scheduler
+    # process — its VlessProxyManager keeps a different in-memory state.
+    # The backend singleton's snapshot was effectively frozen at startup,
+    # showing pool_size=0 / last_refresh from hours ago even when the
+    # on-disk pool had 2 fresh nodes. The fix: derive size+timestamp from
+    # data/vless_pool.json (single source of truth, written by whichever
+    # process refreshed the pool last) and only use _proxy_manager for
+    # success-rate / active-outbounds counters that are genuinely
+    # local-process state.
+    from vless import pool_state as _pool_state
+    from vless.manager import MIN_HEALTHY as _MIN_HEALTHY
+    pool_data = _pool_state.load()
+    nodes: list[dict] = pool_data.get("nodes", []) if isinstance(pool_data, dict) else []
+    pool_size = len(nodes)
+    min_healthy = _MIN_HEALTHY
+    last_refresh_iso = pool_data.get("updated_at") if isinstance(pool_data, dict) else None
+
+    # success_rate / active_outbounds remain in-process — they reflect the
+    # backend's own xray bridge usage, not the scheduler's.
     snap = _proxy_manager.pool_snapshot()
-    pool_size = snap.get("size", 0)
-    min_healthy = snap.get("min_healthy", 10)
-    last_refresh_iso = snap.get("last_refresh_at")
     dead_count = snap.get("dead_by_success_rate_count", 0)
     active_outbounds = snap.get("active_outbounds", 0)
 
@@ -5872,13 +5889,6 @@ def admin_proxy_stats(
             cache_age_min = round((datetime.now() - lr).total_seconds() / 60, 1)
         except Exception:
             pass
-
-    # Per-row details come from the on-disk pool file (authoritative source).
-    # We read directly rather than exposing _pool to avoid lock contention
-    # with the scheduler refresh path.
-    from vless import pool_state as _pool_state
-    pool_data = _pool_state.load()
-    nodes: list[dict] = pool_data.get("nodes", []) if isinstance(pool_data, dict) else []
 
     proxies_out: list[dict] = []
     for entry in nodes:
