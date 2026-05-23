@@ -43,9 +43,19 @@ function writeCachedJson(key, value) {
 }
 
 function normalizeProductsPayload(items) {
-  return Array.isArray(items)
-    ? items.map((p) => ({ ...p, category: normalizeCategory(p.category) }))
-    : []
+  if (!Array.isArray(items)) return []
+  // v1.27 hotfix 2026-05-23: skip products with empty/missing IDs.
+  // A historical cache snapshot wrote items with id="" — those break
+  // detail loading (/api/product//details → 404), favorite toggling,
+  // dedup keys, and crash the type-priority sort because they cluster
+  // by name-stem only. Filtering at normalize means both the initial
+  // localStorage hydration and live API responses are sanitized through
+  // a single point. If a future API response ever serializes blank
+  // IDs again, we silently drop those items rather than render broken
+  // cards.
+  return items
+    .filter((p) => p && String(p.id ?? '').trim() !== '')
+    .map((p) => ({ ...p, category: normalizeCategory(p.category) }))
 }
 
 function buildCartItemMap(items = []) {
@@ -134,7 +144,22 @@ function CategoryFilter({ selected, onSelect, categories, favoritedIds, onToggle
 function App() {
   const initialProductsCacheRef = useRef(undefined)
   if (initialProductsCacheRef.current === undefined) {
-    initialProductsCacheRef.current = readCachedJson(PRODUCTS_CACHE_KEY)
+    const cached = readCachedJson(PRODUCTS_CACHE_KEY)
+    // v1.27 hotfix 2026-05-23: detect corrupt cache (products with empty
+    // IDs OR missing greens entirely while the API has them). The
+    // historical bug wrote a snapshot containing only red+yellow items
+    // with id="" each. Force a clean slate so loadProducts() repopulates
+    // from the API instead of rendering broken cards.
+    const cachedProducts = Array.isArray(cached?.products) ? cached.products : []
+    const hasEmptyIds = cachedProducts.some(
+      (p) => !p || String(p?.id ?? '').trim() === ''
+    )
+    if (hasEmptyIds) {
+      try { localStorage.removeItem(PRODUCTS_CACHE_KEY) } catch { /* best effort */ }
+      initialProductsCacheRef.current = null
+    } else {
+      initialProductsCacheRef.current = cached
+    }
   }
   const initialProductsCache = initialProductsCacheRef.current
   const isTelegramMiniApp = Boolean(window.Telegram?.WebApp?.initData)
