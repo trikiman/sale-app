@@ -85,10 +85,10 @@ jobs:
           pip install fastapi 'pydantic>=2' httpx uvicorn \
                       pytest pytest-asyncio anyio \
                       python-dotenv beautifulsoup4 aiohttp \
-                      lxml sqlalchemy
+                      lxml sqlalchemy python-telegram-bot
 
       - name: Run backend tests
-        run: python -m pytest backend/ -v --tb=long
+        run: python -m pytest backend/ -q --tb=short
 
       # v1.25 Phase 81 integration tests (Linux-safe subset).
       # Windows-skipped tests (pool IO race w/ open handles,
