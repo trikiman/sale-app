@@ -114,47 +114,85 @@ def merge_products():
             p['group'] = p.get('category', '') or 'Без категории'
             p['subgroup'] = None
 
-    # v1.27: NEW-product detection. Mark products in the current run that
-    # weren't in the immediately-prior run as `isNew`. The
-    # previous_run_ids.json snapshot is the source of truth for "what was
-    # on sale last time we merged" — independent of the live data because
-    # those records may have churned (price changes, etc.) but the IDs
-    # are stable. First-run case (no snapshot file) → mark nothing as new
-    # to avoid a huge initial false-positive flood.
+    # v1.27.1: NEW-product detection with sliding 30-min window. Earlier
+    # version flagged isNew=true only for the *single* merge cycle right
+    # after appearance, then the flag flipped back to false on the next
+    # cycle (~5 min later). Users who didn't reload the app within that
+    # tiny window saw nothing — reported on 2026-05-25 09:27 ("on mobile
+    # NEW feature didnt work at all"). Mobile users typically open the
+    # app every few hours, not every 5 min.
+    #
+    # New behavior: snapshot stores `first_seen_at` per id (ISO timestamp).
+    # On each merge:
+    #   - new id          → first_seen_at = now, isNew=True
+    #   - existing id     → carry forward first_seen_at; isNew=True if
+    #                       (now - first_seen_at) ≤ NEW_DURATION_MIN
+    #   - id no longer present → drop from snapshot
+    #
+    # Backward-compat: old snapshots in `{"ids": [...]}` shape are loaded
+    # as if every id had first_seen_at = now (so they don't suddenly all
+    # appear as NEW after deploy — but they also won't be NEW at all,
+    # which matches user expectation that "newness" only marks fresh
+    # appearances after the upgrade).
+    NEW_DURATION_MIN = 30
     prev_ids_path = os.path.join(DATA_DIR, "previous_run_ids.json")
-    previous_run_ids: set[str] = set()
+    prev_first_seen: dict[str, str] = {}
     previous_run_existed = False
     if os.path.exists(prev_ids_path):
         try:
             with open(prev_ids_path, 'r', encoding='utf-8') as f:
                 snapshot = json.load(f)
-            previous_run_ids = set(snapshot.get('ids', []))
             previous_run_existed = True
+            stored = snapshot.get('first_seen', None)
+            if isinstance(stored, dict):
+                # New format: {pid: iso_timestamp}
+                prev_first_seen = {str(k): str(v) for k, v in stored.items()}
+            else:
+                # Legacy format: {"ids": [...]} — treat as already-known
+                # so they don't suddenly all appear as NEW after deploy.
+                # Use current time as their first_seen so they immediately
+                # graduate out of the window.
+                legacy_ids = snapshot.get('ids', []) or []
+                # Use a timestamp far enough in the past that they won't
+                # qualify as NEW under the new rule.
+                ancient = datetime(2000, 1, 1).isoformat()
+                prev_first_seen = {str(pid): ancient for pid in legacy_ids}
         except Exception as e:  # noqa: BLE001 — corrupt snapshot → treat as first run
             print(f"  ⚠️ Could not read previous_run_ids.json: {e}; treating as first run")
 
-    current_ids: set[str] = set()
+    now_dt = datetime.now()
+    now_iso = now_dt.isoformat(timespec='seconds')
+    current_first_seen: dict[str, str] = {}
     new_count = 0
     for p in all_products:
         pid = str(p.get('id', ''))
-        if pid:
-            current_ids.add(pid)
-        # Only flag as new when we have a previous baseline AND the id is
-        # genuinely missing from it. Without baseline, isNew=False keeps
-        # the UX neutral.
-        is_new = bool(
-            previous_run_existed
-            and pid
-            and pid not in previous_run_ids
-        )
+        if not pid:
+            p['isNew'] = False
+            continue
+        first_seen_iso = prev_first_seen.get(pid)
+        if first_seen_iso is None:
+            # Genuinely new id — appearing for the first time in our snapshot.
+            first_seen_iso = now_iso
+        current_first_seen[pid] = first_seen_iso
+        # Compute age. Skip the NEW flag entirely on the very first run
+        # (no previous_run_existed) to avoid the cold-start flood.
+        if not previous_run_existed:
+            p['isNew'] = False
+            continue
+        try:
+            first_seen_dt = datetime.fromisoformat(first_seen_iso)
+            age_min = (now_dt - first_seen_dt).total_seconds() / 60.0
+        except Exception:  # noqa: BLE001 — bad timestamp → treat as not new
+            age_min = NEW_DURATION_MIN + 1
+        is_new = age_min <= NEW_DURATION_MIN
         p['isNew'] = is_new
         if is_new:
             new_count += 1
 
     if previous_run_existed:
-        print(f"  🆕 Marked {new_count} new products (vs previous run of {len(previous_run_ids)} ids)")
+        print(f"  🆕 Marked {new_count} new products (within {NEW_DURATION_MIN}-min window; tracking {len(current_first_seen)} ids)")
     else:
-        print("  🆕 First run — skipping NEW marker (no baseline yet)")
+        print(f"  🆕 First run — initialized first_seen baseline for {len(current_first_seen)} ids; no NEW marker on first run")
 
     green_count = len([p for p in all_products if p['type'] == 'green'])
     red_count = len([p for p in all_products if p['type'] == 'red'])
@@ -191,15 +229,18 @@ def merge_products():
     with open(proposals_path, 'w', encoding='utf-8') as f:
         json.dump(output, f, ensure_ascii=False, indent=2)
 
-    # v1.27: persist current run's IDs as next merge's baseline. Done
-    # AFTER proposals.json is committed so a partial-write here doesn't
-    # corrupt the user-facing data file.
+    # v1.27.1: persist current run's first_seen map as next merge's
+    # baseline. Done AFTER proposals.json is committed so a partial-write
+    # here doesn't corrupt the user-facing data file. Old `ids:` key is
+    # also written for transient backward compat (older readers can
+    # still parse the legacy field), but new readers prefer `first_seen`.
     try:
         with open(prev_ids_path, 'w', encoding='utf-8') as f:
             json.dump({
-                'ids': sorted(current_ids),
+                'first_seen': current_first_seen,
                 'updatedAt': data_time,
-                'count': len(current_ids),
+                'count': len(current_first_seen),
+                'ids': sorted(current_first_seen.keys()),  # legacy compat
             }, f, ensure_ascii=False, indent=2)
     except Exception as e:  # noqa: BLE001
         print(f"  ⚠️ Could not write previous_run_ids.json: {e}")
