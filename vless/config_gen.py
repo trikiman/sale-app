@@ -102,19 +102,32 @@ def build_xray_config(
 ) -> dict:
     """Build a full xray-core config dict from a list of VLESS nodes.
 
-    Raises ``ValueError`` if ``nodes`` is empty — xray cannot start without at
-    least one outbound, so callers must surface pool exhaustion loudly rather
-    than producing an unusable config.
+    v1.27: also appends manual trojan seeds from
+    :mod:`vless.manual_seeds` so xray always has at least 6 reliable
+    outbounds even when ``nodes`` is empty. Tagged ``manual-N`` and
+    included in both the observatory subjectSelector and the balancer
+    selector — they're indistinguishable from dynamic VLESS nodes from
+    the routing layer's perspective.
+
+    Raises ``ValueError`` only when both ``nodes`` AND the manual seeds
+    are empty (impossible in normal operation since the seeds are
+    compiled-in).
     """
-    if not nodes:
-        raise ValueError("build_xray_config requires at least one VlessNode")
+    from vless.manual_seeds import build_manual_outbounds
 
     outbounds: list[dict] = []
-    node_tags: list[str] = []
-    for idx, node in enumerate(nodes):
+    selector_tags: list[str] = []
+    for idx, node in enumerate(nodes or []):
         tag = f"node-{idx}"
-        node_tags.append(tag)
+        selector_tags.append(tag)
         outbounds.append(_build_outbound(node, tag))
+
+    manual_outbounds, manual_tags = build_manual_outbounds()
+    outbounds.extend(manual_outbounds)
+    selector_tags.extend(manual_tags)
+
+    if not selector_tags:
+        raise ValueError("build_xray_config requires at least one outbound (no VLESS nodes and no manual seeds)")
 
     outbounds.append({"tag": "direct", "protocol": "freedom"})
     outbounds.append({"tag": "block", "protocol": "blackhole"})
@@ -150,7 +163,9 @@ def build_xray_config(
         },
         "outbounds": outbounds,
         "observatory": {
-            "subjectSelector": ["node-"],
+            # v1.27: probe both dynamic VLESS (`node-N`) and manual trojan
+            # seeds (`manual-N`) so leastPing ranks them on equal footing.
+            "subjectSelector": ["node-", "manual-"],
             # v1.19 REL-06: probe VkusVill (real traffic target) instead of
             # google.com so leastPing ranks outbounds by end-to-end
             # reachability. Matches vless/preflight.py target. 60s interval
@@ -163,7 +178,7 @@ def build_xray_config(
             "balancers": [
                 {
                     "tag": _BALANCER_TAG,
-                    "selector": list(node_tags),
+                    "selector": list(selector_tags),
                     "strategy": {"type": "leastPing"},
                 }
             ],
