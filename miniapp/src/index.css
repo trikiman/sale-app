@@ -4165,19 +4165,21 @@ body.cart-open {
   color: #1a1a2e;
 }
 
-/* === v1.27: NEW product marker — golden card + small NEW badge ===
-   Appears when product.isNew is true (set by scrape_merge.py). The card
-   gets a warm golden tint that's visible against both the green/red/
-   yellow type tints; the badge sits next to other corner badges. Both
+/* === v1.27: NEW product marker — golden bg + type-color border ===
+   Appears when product.isNew is true (set by scrape_merge.py). The
+   card's bg shifts to a warm golden gradient so it stands out against
+   the surrounding cards while the type-color border (.card-tint-{green,
+   red,yellow}) is preserved — so a NEW green item shows GREEN border +
+   GOLDEN bg, NEW red shows RED border + GOLDEN bg, etc. Both visuals
    live exactly one merge cycle — next run, isNew flips back to false. */
 .card-vertical.card-new {
-  border: 2px solid rgba(234, 179, 8, 0.55);
-  box-shadow: 0 0 0 1px rgba(234, 179, 8, 0.18), 0 4px 14px rgba(234, 179, 8, 0.12);
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.22), rgba(251, 191, 36, 0.14));
+  box-shadow: 0 0 0 1px rgba(234, 179, 8, 0.28), 0 4px 14px rgba(234, 179, 8, 0.18);
 }
 
 [data-theme="light"] .card-vertical.card-new {
-  border-color: rgba(234, 179, 8, 0.75);
-  box-shadow: 0 0 0 1px rgba(234, 179, 8, 0.25), 0 4px 14px rgba(234, 179, 8, 0.15);
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.25), rgba(251, 191, 36, 0.16));
+  box-shadow: 0 0 0 1px rgba(234, 179, 8, 0.35), 0 4px 14px rgba(234, 179, 8, 0.22);
 }
 
 .card-new-badge {
