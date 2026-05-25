@@ -23,7 +23,11 @@ def test_choose_due_job_runs_green_when_green_due_and_full_not_at_risk():
 
 
 def test_choose_due_job_skips_green_when_full_cycle_would_be_late():
-    assert scheduler_service.choose_due_job(250.0, 300.0, 240.0, 60.0) == "skip_green"
+    # v1.26 Phase 84.5: green-only is allowed up to GREEN_OVERSHOOT_TOLERANCE_SECONDS=60s
+    # of overshoot, so a small overshoot no longer skips. To exercise the skip path,
+    # use a green runtime that pushes the overshoot well past 60s:
+    # now=250 + runtime=200 = T+450 vs next_all=300 → overshoot=150s > tolerance=60s.
+    assert scheduler_service.choose_due_job(250.0, 300.0, 240.0, 200.0) == "skip_green"
 
 
 def test_products_route_exposes_source_freshness(monkeypatch, tmp_path):
