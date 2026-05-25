@@ -35,8 +35,8 @@ def test_single_socks_inbound_on_default_host_port():
 def test_outbound_shape_matches_nodes():
     nodes = _sample_nodes(2)
     config = build_xray_config(nodes)
-    # Two VLESS outbounds + direct + block fallbacks.
-    assert len(config["outbounds"]) == len(nodes) + 2
+    # 2 VLESS outbounds + 6 manual trojan seeds (v1.27) + direct + block.
+    assert len(config["outbounds"]) == len(nodes) + 6 + 2
 
     for idx, node in enumerate(nodes):
         outbound = config["outbounds"][idx]
@@ -56,6 +56,8 @@ def test_outbound_shape_matches_nodes():
 
 
 def test_balancer_references_every_node_tag():
+    """Balancer selector contains both dynamic (node-N) and manual (manual-N)
+    tags after v1.27. Manual seeds are always appended."""
     nodes = _sample_nodes(3)
     config = build_xray_config(nodes)
     balancers = config["routing"]["balancers"]
@@ -63,7 +65,8 @@ def test_balancer_references_every_node_tag():
     balancer = balancers[0]
     assert balancer["tag"] == "ru-balancer"
     assert balancer["strategy"] == {"type": "leastPing"}
-    assert balancer["selector"] == [f"node-{i}" for i in range(len(nodes))]
+    expected = [f"node-{i}" for i in range(len(nodes))] + [f"manual-{i}" for i in range(6)]
+    assert balancer["selector"] == expected
     # One routing rule that sends all inbound traffic to the balancer.
     rules = config["routing"]["rules"]
     assert len(rules) == 1
@@ -71,9 +74,16 @@ def test_balancer_references_every_node_tag():
     assert rules[0]["inboundTag"] == ["socks-in"]
 
 
-def test_empty_node_list_raises():
-    with pytest.raises(ValueError):
-        build_xray_config([])
+def test_empty_node_list_succeeds_via_manual_seeds():
+    """v1.27: empty dynamic nodes no longer raises — manual trojan seeds
+    keep the config valid as a safety floor for cycle continuity. Only
+    the degenerate case (both dynamic AND manual empty) raises."""
+    config = build_xray_config([])
+    outbounds = config["outbounds"]
+    # 0 dynamic + 6 manual + 2 system
+    assert len(outbounds) == 8
+    selector = config["routing"]["balancers"][0]["selector"]
+    assert selector == [f"manual-{i}" for i in range(6)]
 
 
 def test_config_is_json_serializable():
@@ -83,11 +93,8 @@ def test_config_is_json_serializable():
     serialized = json.dumps(config)
     # And the round-trip must preserve the shape.
     reparsed = json.loads(serialized)
-    assert reparsed["routing"]["balancers"][0]["selector"] == [
-        "node-0",
-        "node-1",
-        "node-2",
-    ]
+    expected = ["node-0", "node-1", "node-2"] + [f"manual-{i}" for i in range(6)]
+    assert reparsed["routing"]["balancers"][0]["selector"] == expected
 
 
 def test_custom_listen_host_port_is_honored():
@@ -113,12 +120,15 @@ def test_build_xray_config_has_observatory():
     config = build_xray_config(_sample_nodes(1))
     assert "observatory" in config
     obs = config["observatory"]
-    assert obs["subjectSelector"] == ["node-"]
-    assert obs["probeURL"] == "https://www.google.com/generate_204", (
+    # v1.27: subjectSelector also matches manual-N seeds.
+    assert obs["subjectSelector"] == ["node-", "manual-"]
+    # v1.19 REL-06: probe VkusVill (real traffic target) instead of google.com
+    # so leastPing ranks outbounds by end-to-end reachability.
+    assert obs["probeURL"] == "https://vkusvill.ru/favicon.ico", (
         "xray-core ObservatoryConfig.ProbeURL has json tag 'probeURL' (capital URL); "
         "using 'probeUrl' is silently ignored by Go JSON deserialization"
     )
-    assert obs["probeInterval"] == "5m"
+    assert obs["probeInterval"] == "60s"
 
 
 def test_build_xray_config_balancer_uses_least_ping():
@@ -126,7 +136,9 @@ def test_build_xray_config_balancer_uses_least_ping():
     config = build_xray_config(nodes)
     balancer = config["routing"]["balancers"][0]
     assert balancer["strategy"] == {"type": "leastPing"}
-    assert set(balancer["selector"]) == {"node-0", "node-1"}
+    # v1.27: selector includes both dynamic and manual seeds.
+    expected = {"node-0", "node-1"} | {f"manual-{i}" for i in range(6)}
+    assert set(balancer["selector"]) == expected
 
 
 def test_build_xray_config_is_json_serializable_with_new_sections():
@@ -134,7 +146,7 @@ def test_build_xray_config_is_json_serializable_with_new_sections():
     serialized = json.dumps(config, indent=2)
     roundtripped = json.loads(serialized)
     assert roundtripped["policy"]["levels"]["0"]["connIdle"] == 30
-    assert roundtripped["observatory"]["probeInterval"] == "5m"
+    assert roundtripped["observatory"]["probeInterval"] == "60s"
     assert roundtripped["routing"]["balancers"][0]["strategy"] == {"type": "leastPing"}
 
 

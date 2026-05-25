@@ -76,6 +76,7 @@ def test_multiple_nodes_share_single_observatory_probeURL():
     nodes = [_fake_node(), _fake_node()]
     cfg = build_xray_config(nodes)
     # The observatory dict has exactly one probeURL; ranking applies to
-    # all ``node-N`` subjects uniformly.
+    # all ``node-N`` and ``manual-N`` subjects uniformly. v1.27 added the
+    # ``manual-`` prefix so trojan seeds get probed alongside dynamic VLESS.
     assert isinstance(cfg["observatory"]["probeURL"], str)
-    assert cfg["observatory"]["subjectSelector"] == ["node-"]
+    assert cfg["observatory"]["subjectSelector"] == ["node-", "manual-"]
