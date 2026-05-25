@@ -1574,12 +1574,11 @@ class VlessProxyManager:
         additionally restarted to pick up the change immediately.
         """
         nodes = pool_state.nodes_from(self._pool)
-        if not nodes:
-            # Empty pool — stop any running xray so callers see get_working_proxy=None.
-            if self._xray is not None and self._xray.is_running():
-                self._xray.stop()
-                self._track_event("xray_stop", {"graceful": True, "reason": "empty pool"})
-            return
+        # v1.27: with manual_seeds always available, build_xray_config(nodes=[])
+        # still produces a valid config (manual trojan outbounds keep xray
+        # serving). Pre-v1.27 this branch stopped xray to make callers fail
+        # fast on empty pool — that's no longer the right behavior because
+        # manual seeds are a hard floor for cycle continuity.
         config = build_xray_config(nodes)
         # Persist config regardless of whether an in-process xray is tracked
         # — systemd-managed xray reads this file directly on restart.
