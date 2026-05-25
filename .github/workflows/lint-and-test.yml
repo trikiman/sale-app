@@ -85,7 +85,7 @@ jobs:
           # Project runtime deps (telegram bot, fastapi, etc).
           pip install -r requirements.txt
           # Test/dev deps not in requirements.txt.
-          pip install pytest pytest-asyncio anyio sqlalchemy aiohttp
+          pip install pytest pytest-asyncio anyio sqlalchemy aiohttp requests
           # Playwright is imported transitively via bot.auth → scraper.vkusvill;
           # we only need the Python package, not the browser binaries.
           pip install playwright
