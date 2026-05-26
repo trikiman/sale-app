@@ -38,7 +38,16 @@ async def _load_cookies(page):
         print("  [YELLOW] No cookies.json found. Run tech-login from admin panel.")
         return False
     with open(COOKIES_PATH, 'r', encoding='utf-8') as f:
-        cookies = json.load(f)
+        raw = json.load(f)
+    # v1.27 hotfix 2026-05-26: accept both legacy list format and per-phone
+    # dict format (see scrape_red.py for the same fix).
+    if isinstance(raw, dict) and isinstance(raw.get('cookies'), list):
+        cookies = raw['cookies']
+    elif isinstance(raw, list):
+        cookies = raw
+    else:
+        print(f"  [YELLOW] cookies.json has unexpected shape: {type(raw).__name__}")
+        return False
     from nodriver.cdp import network
     ss_map = {
         'Lax': network.CookieSameSite.LAX,
