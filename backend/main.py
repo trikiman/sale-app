@@ -1474,8 +1474,17 @@ def health_deep(request: Request):
 
 
 @app.get("/api/products", response_model=ProductsResponse)
-def get_products():
+def get_products(response: Response):
     """Get all products from proposals.json, with live staleness check."""
+    # v1.27 hotfix 2026-05-26: prevent edge/CDN/ISP caching. User reported
+    # iPad showing 96 greens while phone simultaneously showed 0 — different
+    # carriers/POPs were serving different cached snapshots because the
+    # default Vercel header was `Cache-Control: public, max-age=0,
+    # must-revalidate`. The `public` directive lets ANY shared cache
+    # store the response. We replace it with no-store so every request
+    # goes back to origin and gets a consistent fresh view.
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, private"
+    response.headers["Pragma"] = "no-cache"
     try:
         if not os.path.exists(PROPOSALS_PATH):
             # v1.26 Phase 85 UX-EMPTY-01: fresh-deploy path. Pre-fix this
