@@ -5,6 +5,7 @@ Run this after all scrapers complete
 import json
 import os
 import sys
+import tempfile
 from datetime import datetime
 from utils import deduplicate_products, normalize_category, extract_weight, normalize_stock_unit
 
@@ -26,6 +27,32 @@ def _sanitize_subgroup_label(value):
     if 'скидк' in folded:
         return None
     return label
+
+
+def _atomic_write_json(path: str, data: dict) -> None:
+    """Atomically write a JSON file: temp file in same dir, then os.replace.
+
+    v1.27 hotfix 2026-05-26: user reported greens count flickering 90→0→84
+    on mobile during a refresh. Root cause: open(path, 'w') truncates the
+    file to 0 bytes BEFORE writing new content. The /api/products endpoint
+    reading during that ~50ms window sees an empty/partial file (its 2-try
+    retry just hits the same partial state). Atomic write means readers
+    always see either the OLD complete file or the NEW complete file —
+    never an in-between empty state.
+    """
+    directory = os.path.dirname(path) or "."
+    fd, tmp_path = tempfile.mkstemp(prefix=".", suffix=".tmp", dir=directory)
+    try:
+        with os.fdopen(fd, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp_path, path)
+    except Exception:
+        # Best-effort cleanup if the temp file survived but rename failed.
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+        raise
 
 
 def merge_products():
@@ -224,10 +251,9 @@ def merge_products():
         "products": all_products
     }
     
-    # Save to data folder
+    # Save to data folder (atomic — see _atomic_write_json docstring).
     proposals_path = os.path.join(DATA_DIR, "proposals.json")
-    with open(proposals_path, 'w', encoding='utf-8') as f:
-        json.dump(output, f, ensure_ascii=False, indent=2)
+    _atomic_write_json(proposals_path, output)
 
     # v1.27.1: persist current run's first_seen map as next merge's
     # baseline. Done AFTER proposals.json is committed so a partial-write
@@ -235,21 +261,20 @@ def merge_products():
     # also written for transient backward compat (older readers can
     # still parse the legacy field), but new readers prefer `first_seen`.
     try:
-        with open(prev_ids_path, 'w', encoding='utf-8') as f:
-            json.dump({
-                'first_seen': current_first_seen,
-                'updatedAt': data_time,
-                'count': len(current_first_seen),
-                'ids': sorted(current_first_seen.keys()),  # legacy compat
-            }, f, ensure_ascii=False, indent=2)
+        _atomic_write_json(prev_ids_path, {
+            'first_seen': current_first_seen,
+            'updatedAt': data_time,
+            'count': len(current_first_seen),
+            'ids': sorted(current_first_seen.keys()),  # legacy compat
+        })
     except Exception as e:  # noqa: BLE001
         print(f"  ⚠️ Could not write previous_run_ids.json: {e}")
     
-    # Copy to miniapp
+    # Copy to miniapp (also atomic — same flicker bug would surface if
+    # something served data.json directly during a write).
     miniapp_path = os.path.join(BASE_DIR, "miniapp", "public", "data.json")
     if os.path.exists(os.path.dirname(miniapp_path)):
-        with open(miniapp_path, 'w', encoding='utf-8') as f:
-            json.dump(output, f, ensure_ascii=False, indent=2)
+        _atomic_write_json(miniapp_path, output)
         print("  ✅ Copied to miniapp")
     
     # Record sale history (never fail the merge if this errors)
