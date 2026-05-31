@@ -547,3 +547,144 @@ def test_pool_watchdog_skips_refresh_when_pool_healthy(
     assert not refresh_calls, (
         f"watchdog should not refresh when pool healthy — got {len(refresh_calls)} calls"
     )
+
+
+
+# ── v1.27 follow-up #2: quarantine auto-clear ───────────────────────────
+
+
+def test_pool_watchdog_clears_quarantine_when_bloated_during_outage(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When pool=0 AND quarantine size ≥ threshold sustained for the grace
+    window, watchdog must call quarantine.clear_all() to release hosts
+    back into the candidate pipeline. This is the 3-times-recurring
+    pool-starvation pattern (May 17 / 22 / 29) we couldn't fix with just
+    refresh-on-dead because quarantine kept hoarding candidates."""
+    import threading
+    import scheduler_service as ss
+
+    monkeypatch.setattr(ss, "POOL_WATCHDOG_INTERVAL_S", 1, raising=True)
+    monkeypatch.setattr(ss, "POOL_DEAD_GRACE_SECONDS", 1, raising=True)
+    monkeypatch.setattr(ss, "QUARANTINE_BURST_THRESHOLD", 5, raising=True)
+    monkeypatch.setattr(ss, "QUARANTINE_BURST_GRACE_SECONDS", 1, raising=True)
+    monkeypatch.setattr(ss, "QUARANTINE_CLEAR_COOLDOWN_S", 1, raising=True)
+    monkeypatch.setattr(ss, "_is_pool_dead", lambda: True, raising=True)
+
+    # Stub out ensure_pool to always return 0 so pool stays dead.
+    import vless.manager as vm_mod
+
+    class _StubManager:
+        def __init__(self, **kwargs) -> None:
+            pass
+
+        def ensure_pool(self) -> int:
+            return 0
+
+    monkeypatch.setattr(vm_mod, "VlessProxyManager", _StubManager, raising=True)
+
+    # Quarantine: 100 hosts (well above threshold of 5). Track clear() calls.
+    import vless.quarantine as q_mod
+
+    clear_calls: list[int] = []
+
+    monkeypatch.setattr(q_mod, "snapshot", lambda: {"count": 100}, raising=True)
+    monkeypatch.setattr(
+        q_mod, "clear_all", lambda: clear_calls.append(1), raising=True
+    )
+
+    stop = threading.Event()
+    t = threading.Thread(target=ss._pool_watchdog_loop, args=(stop,), daemon=True)
+    t.start()
+    # Wait long enough for: tick 1 detect bloat, tick 2 grace satisfied,
+    # clear fires. Give a generous 4s buffer.
+    time.sleep(4.0)
+    stop.set()
+    t.join(timeout=2.0)
+
+    assert clear_calls, (
+        "watchdog should have called quarantine.clear_all() at least once "
+        "after pool stayed dead with bloated quarantine past grace"
+    )
+
+
+def test_pool_watchdog_skips_quarantine_clear_when_pool_healthy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Quarantine bloat alone doesn't trigger clear — pool must also be dead.
+    A healthy pool with big quarantine is fine (good probes admitted, bad
+    ones quarantined — that's exactly the design)."""
+    import threading
+    import scheduler_service as ss
+
+    monkeypatch.setattr(ss, "POOL_WATCHDOG_INTERVAL_S", 1, raising=True)
+    monkeypatch.setattr(ss, "QUARANTINE_BURST_THRESHOLD", 5, raising=True)
+    monkeypatch.setattr(ss, "QUARANTINE_BURST_GRACE_SECONDS", 1, raising=True)
+    monkeypatch.setattr(ss, "_is_pool_dead", lambda: False, raising=True)  # HEALTHY
+
+    import vless.quarantine as q_mod
+
+    clear_calls: list[int] = []
+    monkeypatch.setattr(q_mod, "snapshot", lambda: {"count": 200}, raising=True)
+    monkeypatch.setattr(
+        q_mod, "clear_all", lambda: clear_calls.append(1), raising=True
+    )
+
+    stop = threading.Event()
+    t = threading.Thread(target=ss._pool_watchdog_loop, args=(stop,), daemon=True)
+    t.start()
+    time.sleep(3.5)
+    stop.set()
+    t.join(timeout=2.0)
+
+    assert not clear_calls, (
+        f"watchdog must NOT clear quarantine when pool is healthy; got {len(clear_calls)} clear calls"
+    )
+
+
+def test_pool_watchdog_quarantine_clear_respects_cooldown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """After firing once, watchdog must wait QUARANTINE_CLEAR_COOLDOWN_S
+    before firing again — even if pool stays dead and quarantine refills.
+    Prevents a tight loop when the network is genuinely down."""
+    import threading
+    import scheduler_service as ss
+
+    monkeypatch.setattr(ss, "POOL_WATCHDOG_INTERVAL_S", 1, raising=True)
+    monkeypatch.setattr(ss, "POOL_DEAD_GRACE_SECONDS", 1, raising=True)
+    monkeypatch.setattr(ss, "QUARANTINE_BURST_THRESHOLD", 5, raising=True)
+    monkeypatch.setattr(ss, "QUARANTINE_BURST_GRACE_SECONDS", 1, raising=True)
+    # Long cooldown so we expect EXACTLY one clear within the test window.
+    monkeypatch.setattr(ss, "QUARANTINE_CLEAR_COOLDOWN_S", 10000, raising=True)
+    monkeypatch.setattr(ss, "_is_pool_dead", lambda: True, raising=True)
+
+    import vless.manager as vm_mod
+
+    class _StubManager:
+        def __init__(self, **kwargs) -> None:
+            pass
+
+        def ensure_pool(self) -> int:
+            return 0
+
+    monkeypatch.setattr(vm_mod, "VlessProxyManager", _StubManager, raising=True)
+
+    import vless.quarantine as q_mod
+
+    clear_calls: list[int] = []
+    monkeypatch.setattr(q_mod, "snapshot", lambda: {"count": 100}, raising=True)
+    monkeypatch.setattr(
+        q_mod, "clear_all", lambda: clear_calls.append(1), raising=True
+    )
+
+    stop = threading.Event()
+    t = threading.Thread(target=ss._pool_watchdog_loop, args=(stop,), daemon=True)
+    t.start()
+    time.sleep(5.0)  # 5 watchdog ticks; without cooldown would fire ~3-5x
+    stop.set()
+    t.join(timeout=2.0)
+
+    assert len(clear_calls) == 1, (
+        f"cooldown must limit clears to exactly 1 within window; got {len(clear_calls)}"
+    )

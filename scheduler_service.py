@@ -76,6 +76,25 @@ STALL_RECOVERY_COOLDOWN_S = 60       # min seconds between consecutive stall-rec
 # can poll aggressively without hammering.
 POOL_WATCHDOG_INTERVAL_S = 30        # poll cadence
 POOL_DEAD_GRACE_SECONDS = 60         # tolerate pool=0 for this long before forcing refresh
+
+# v1.27 follow-up #2 (2026-05-31): chronic pool-starvation pattern. Even
+# with the refresh-on-dead watchdog, pools recurringly fall to zero
+# because the QUARANTINE list grows faster than fresh upstream candidates
+# can replenish it. After 2-4 hours of probe failures the funnel looks
+# like `parsed=1300 ru=960 -uniq=205 -quarantine=200 = candidates=3` and
+# none of those 3 survive — pool stuck at 0 until manual `clear_all()`.
+# Same pattern hit 2026-05-17, 2026-05-22, 2026-05-29.
+#
+# Auto-clear policy: when pool is dead AND quarantine has grown beyond
+# QUARANTINE_BURST_THRESHOLD AND has been that big for at least
+# QUARANTINE_BURST_GRACE_SECONDS, fire `quarantine.clear_all()` once and
+# defer the next clear by QUARANTINE_CLEAR_COOLDOWN_S so we don't flap.
+# The clear releases all hosts back into the candidate pool. They'll
+# re-quarantine quickly if the underlying VLESS network is genuinely
+# degraded, but at least one fresh probe round gets a chance first.
+QUARANTINE_BURST_THRESHOLD = 100      # min quarantine size that warrants action
+QUARANTINE_BURST_GRACE_SECONDS = 300  # 5 min: pool dead + quarantine bloated this long → clear
+QUARANTINE_CLEAR_COOLDOWN_S = 1800    # 30 min: don't clear more than once per window
 GREEN_PRODUCTS_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "green_products.json")
 # Watchdog: if the main loop hasn't ticked for this long, assume we're hung
 # (e.g. stuck in a C-level syscall that Python timeouts can't interrupt) and
@@ -735,6 +754,13 @@ def _pool_watchdog_loop(stop_event: "threading.Event") -> None:
     """
     pool_dead_since: float | None = None
     last_refresh_attempt: float = 0.0
+    # v1.27 follow-up #2: track when quarantine first crossed the burst
+    # threshold while pool was dead. Auto-clear fires when this state
+    # has persisted for QUARANTINE_BURST_GRACE_SECONDS. Cooldown prevents
+    # repeated clears in case the network is genuinely down (clearing won't
+    # help, just adds churn).
+    quarantine_bloated_since: float | None = None
+    last_quarantine_clear: float = 0.0
     log("[pool-watchdog] Started — polling every "
         f"{POOL_WATCHDOG_INTERVAL_S}s, refresh after "
         f"{POOL_DEAD_GRACE_SECONDS}s dead.")
@@ -767,6 +793,44 @@ def _pool_watchdog_loop(stop_event: "threading.Event") -> None:
                             pool_dead_since = None  # reset grace timer
                     except Exception as exc:  # noqa: BLE001
                         log(f"[pool-watchdog] ensure_pool() failed: {exc!r}")
+
+                # v1.27 follow-up #2: auto-clear quarantine if it's
+                # crowding out fresh candidates. Only when pool is also
+                # dead — a healthy pool with big quarantine is fine.
+                try:
+                    from vless import quarantine as _q
+                    q_count = _q.snapshot().get("count", 0)
+                    if q_count >= QUARANTINE_BURST_THRESHOLD:
+                        if quarantine_bloated_since is None:
+                            quarantine_bloated_since = now
+                            log(
+                                f"[pool-watchdog] Quarantine bloat detected "
+                                f"({q_count} hosts) — starting bloat timer"
+                            )
+                        bloated_for = now - quarantine_bloated_since
+                        cooldown_elapsed = now - last_quarantine_clear
+                        if (
+                            bloated_for >= QUARANTINE_BURST_GRACE_SECONDS
+                            and cooldown_elapsed >= QUARANTINE_CLEAR_COOLDOWN_S
+                        ):
+                            log(
+                                f"[pool-watchdog] Pool dead {dead_for:.0f}s + "
+                                f"quarantine={q_count} bloated {bloated_for:.0f}s "
+                                "— firing quarantine.clear_all()"
+                            )
+                            try:
+                                _q.clear_all()
+                                last_quarantine_clear = now
+                                quarantine_bloated_since = None
+                                log("[pool-watchdog] quarantine cleared OK")
+                            except Exception as exc:  # noqa: BLE001
+                                log(f"[pool-watchdog] quarantine.clear_all() failed: {exc!r}")
+                    else:
+                        # Quarantine shrank below threshold (ttl expiry or
+                        # external clear) — reset the bloat timer.
+                        quarantine_bloated_since = None
+                except Exception as exc:  # noqa: BLE001
+                    log(f"[pool-watchdog] quarantine check failed: {exc!r}")
             else:
                 if pool_dead_since is not None:
                     log(
@@ -774,6 +838,8 @@ def _pool_watchdog_loop(stop_event: "threading.Event") -> None:
                         f"{now - pool_dead_since:.0f}s dead"
                     )
                     pool_dead_since = None
+                # Pool healthy — quarantine bloat doesn't matter, reset timer.
+                quarantine_bloated_since = None
         except Exception as exc:  # noqa: BLE001 — never let watchdog die
             log(f"[pool-watchdog] loop error: {exc!r}")
         # Sleep in 1s slices so stop_event is responsive on shutdown.
