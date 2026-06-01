@@ -49,7 +49,17 @@ MAX_CACHED = 30
 # hitting zero. Observed 2026-05-13: pool collapsed from 20 → 0 in one cycle,
 # so even min_healthy=10 doesn't catch the collapse itself — but it does
 # trigger proactive refresh earlier and pairs with the rate-of-decline check.
-MIN_HEALTHY = 10
+#
+# v1.27.2 (2026-05-31): lowered 10 → 5. Root-cause research
+# (.planning/POOL-STARVATION-ROOTCAUSE.md) showed free public VLESS lists
+# run ~98% dead (tcp_unreachable + probe_error), so the pool realistically
+# sustains only 1-6 admitted nodes. MIN_HEALTHY=10 meant EVERY ensure_pool()
+# saw "pool low" and refreshed, churning the upstream lists constantly and
+# bloating quarantine. 5 matches observed steady-state and stops the
+# perpetual "Pool low (N/10) — refreshing" thrash. The manual-seed bridge
+# floor (vless/manual_seeds.py) carries scrapes regardless of dynamic count,
+# so a smaller dynamic target no longer risks scrape outages.
+MIN_HEALTHY = 5
 CACHE_TTL = 86400  # 24h
 DIRECT_CHECK_TTL = 60
 

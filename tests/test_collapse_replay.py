@@ -62,6 +62,11 @@ def stub_scheduler_data_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, iso
         str(isolated_data_dir / "scheduler_events.jsonl"),
     )
     monkeypatch.setattr(scheduler_service, "log", lambda msg: None)
+    # v1.27.2: collapse-replay tests reproduce genuine pool-death incidents.
+    # Disable the manual-seed floor so _is_pool_dead() reflects the dynamic
+    # pool state these scenarios are built around (otherwise it always
+    # returns False and the dead-cycle recovery path never runs).
+    monkeypatch.setattr(scheduler_service, "_has_manual_seeds", lambda: False)
     return scheduler_service
 
 

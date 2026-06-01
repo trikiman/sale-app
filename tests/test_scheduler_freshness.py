@@ -21,6 +21,7 @@ Pins three invariants that, together, keep the user-visible "Обновлено:
 from __future__ import annotations
 
 import importlib
+import json
 import os
 import sys
 import tempfile
@@ -480,8 +481,8 @@ def test_pool_watchdog_triggers_refresh_when_pool_dead_past_grace(
     monkeypatch.setattr(ss, "POOL_WATCHDOG_INTERVAL_S", 1, raising=True)
     monkeypatch.setattr(ss, "POOL_DEAD_GRACE_SECONDS", 1, raising=True)
 
-    # Pool always dead.
-    monkeypatch.setattr(ss, "_is_pool_dead", lambda: True, raising=True)
+    # Dynamic pool always empty (watchdog gates on _dynamic_pool_size now).
+    monkeypatch.setattr(ss, "_dynamic_pool_size", lambda: 0, raising=True)
 
     # Capture ensure_pool() calls.
     refresh_calls: list[int] = []
@@ -522,7 +523,7 @@ def test_pool_watchdog_skips_refresh_when_pool_healthy(
 
     monkeypatch.setattr(ss, "POOL_WATCHDOG_INTERVAL_S", 1, raising=True)
     monkeypatch.setattr(ss, "POOL_DEAD_GRACE_SECONDS", 1, raising=True)
-    monkeypatch.setattr(ss, "_is_pool_dead", lambda: False, raising=True)
+    monkeypatch.setattr(ss, "_dynamic_pool_size", lambda: 5, raising=True)
 
     refresh_calls: list[int] = []
 
@@ -569,7 +570,7 @@ def test_pool_watchdog_clears_quarantine_when_bloated_during_outage(
     monkeypatch.setattr(ss, "QUARANTINE_BURST_THRESHOLD", 5, raising=True)
     monkeypatch.setattr(ss, "QUARANTINE_BURST_GRACE_SECONDS", 1, raising=True)
     monkeypatch.setattr(ss, "QUARANTINE_CLEAR_COOLDOWN_S", 1, raising=True)
-    monkeypatch.setattr(ss, "_is_pool_dead", lambda: True, raising=True)
+    monkeypatch.setattr(ss, "_dynamic_pool_size", lambda: 0, raising=True)
 
     # Stub out ensure_pool to always return 0 so pool stays dead.
     import vless.manager as vm_mod
@@ -620,7 +621,7 @@ def test_pool_watchdog_skips_quarantine_clear_when_pool_healthy(
     monkeypatch.setattr(ss, "POOL_WATCHDOG_INTERVAL_S", 1, raising=True)
     monkeypatch.setattr(ss, "QUARANTINE_BURST_THRESHOLD", 5, raising=True)
     monkeypatch.setattr(ss, "QUARANTINE_BURST_GRACE_SECONDS", 1, raising=True)
-    monkeypatch.setattr(ss, "_is_pool_dead", lambda: False, raising=True)  # HEALTHY
+    monkeypatch.setattr(ss, "_dynamic_pool_size", lambda: 5, raising=True)  # HEALTHY
 
     import vless.quarantine as q_mod
 
@@ -657,7 +658,7 @@ def test_pool_watchdog_quarantine_clear_respects_cooldown(
     monkeypatch.setattr(ss, "QUARANTINE_BURST_GRACE_SECONDS", 1, raising=True)
     # Long cooldown so we expect EXACTLY one clear within the test window.
     monkeypatch.setattr(ss, "QUARANTINE_CLEAR_COOLDOWN_S", 10000, raising=True)
-    monkeypatch.setattr(ss, "_is_pool_dead", lambda: True, raising=True)
+    monkeypatch.setattr(ss, "_dynamic_pool_size", lambda: 0, raising=True)
 
     import vless.manager as vm_mod
 
@@ -688,3 +689,101 @@ def test_pool_watchdog_quarantine_clear_respects_cooldown(
     assert len(clear_calls) == 1, (
         f"cooldown must limit clears to exactly 1 within window; got {len(clear_calls)}"
     )
+
+
+# ── v1.27.2 root-cause fix: bridge-aware _is_pool_dead ──────────────────
+
+
+def test_is_pool_dead_false_when_dynamic_pool_has_nodes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Dynamic pool with ≥1 node → not dead (unchanged behavior)."""
+    import scheduler_service as ss
+
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    (data_dir / "vless_pool.json").write_text(
+        json.dumps({"nodes": [{"host": "1.2.3.4", "port": 443}]}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(ss, "DATA_DIR", str(data_dir), raising=True)
+    assert ss._is_pool_dead() is False
+
+
+def test_is_pool_dead_false_when_pool_empty_but_manual_seeds_exist(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """THE ROOT-CAUSE FIX: dynamic pool empty BUT manual seeds present →
+    NOT dead. Previously this returned True and caused scrapers to skip
+    even though the manual-seed bridge routes VkusVill traffic fine."""
+    import scheduler_service as ss
+
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    (data_dir / "vless_pool.json").write_text(
+        json.dumps({"nodes": []}), encoding="utf-8"
+    )
+    monkeypatch.setattr(ss, "DATA_DIR", str(data_dir), raising=True)
+    monkeypatch.setattr(ss, "_has_manual_seeds", lambda: True, raising=True)
+    assert ss._is_pool_dead() is False, (
+        "empty dynamic pool + manual seeds must NOT report dead — that was "
+        "the false-starvation bug"
+    )
+
+
+def test_is_pool_dead_true_only_when_pool_empty_and_no_manual_seeds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Genuine no-capacity: empty dynamic pool AND no manual seeds → dead."""
+    import scheduler_service as ss
+
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    (data_dir / "vless_pool.json").write_text(
+        json.dumps({"nodes": []}), encoding="utf-8"
+    )
+    monkeypatch.setattr(ss, "DATA_DIR", str(data_dir), raising=True)
+    monkeypatch.setattr(ss, "_has_manual_seeds", lambda: False, raising=True)
+    assert ss._is_pool_dead() is True
+
+
+def test_is_pool_dead_missing_file_falls_back_to_manual_seeds(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No pool file at all → still alive if manual seeds exist."""
+    import scheduler_service as ss
+
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()  # no vless_pool.json written
+    monkeypatch.setattr(ss, "DATA_DIR", str(data_dir), raising=True)
+    monkeypatch.setattr(ss, "_has_manual_seeds", lambda: True, raising=True)
+    assert ss._is_pool_dead() is False
+
+
+def test_dynamic_pool_size_counts_only_dynamic_nodes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_dynamic_pool_size reports the raw dynamic count, ignoring manual
+    seeds — the watchdog uses it to keep growing dynamic diversity."""
+    import scheduler_service as ss
+
+    data_dir = tmp_path / "data"
+    data_dir.mkdir()
+    (data_dir / "vless_pool.json").write_text(
+        json.dumps({"nodes": [{"host": "a"}, {"host": "b"}, {"host": "c"}]}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(ss, "DATA_DIR", str(data_dir), raising=True)
+    assert ss._dynamic_pool_size() == 3
+    # Manual seeds don't inflate the dynamic count.
+    monkeypatch.setattr(ss, "_has_manual_seeds", lambda: True, raising=True)
+    assert ss._dynamic_pool_size() == 3
+
+
+def test_has_manual_seeds_reflects_module_constant() -> None:
+    """_has_manual_seeds mirrors vless.manual_seeds.MANUAL_TROJAN_SEEDS."""
+    import scheduler_service as ss
+    from vless.manual_seeds import MANUAL_TROJAN_SEEDS
+
+    expected = len(MANUAL_TROJAN_SEEDS) > 0
+    assert ss._has_manual_seeds() is expected

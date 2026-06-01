@@ -721,22 +721,79 @@ def _emit_scheduler_event(event_type: str, **fields) -> None:
         pass
 
 
-def _is_pool_dead() -> bool:
-    """Cheap check — read the shared vless_pool.json directly.
+def _dynamic_pool_size() -> int:
+    """Raw count of dynamic VLESS nodes in data/vless_pool.json (0 on error).
 
-    Returns True if the VLESS pool has zero nodes. Using the raw file
-    read avoids spinning up a VlessProxyManager instance (which would
-    try to start xray), so this is safe to call before every scrape.
+    Distinct from _is_pool_dead(): reports ONLY the dynamic pool size,
+    ignoring manual seeds. The pool watchdog uses this to keep growing the
+    dynamic pool / clearing quarantine — we still want node diversity and
+    leastPing options even while the manual-seed floor carries scrapes.
     """
     try:
         pool_path = os.path.join(DATA_DIR, "vless_pool.json")
         if not os.path.exists(pool_path):
-            return True
+            return 0
         with open(pool_path, "r", encoding="utf-8") as fh:
             data = json.load(fh)
-        return len(data.get("nodes", [])) == 0
+        return len(data.get("nodes", []))
+    except Exception:  # noqa: BLE001
+        return 0
+
+
+def _has_manual_seeds() -> bool:
+    """True if vless.manual_seeds provides ≥1 always-on fallback outbound.
+
+    v1.27.2 (2026-05-31 root-cause fix): the 6 manual trojan seeds are
+    compiled into every xray config and route VkusVill traffic fine even
+    when the dynamic VLESS pool is empty. Treating them as baseline
+    capacity is the crux of fixing the recurring "pool dead → skip scrape"
+    false alarm. See .planning/POOL-STARVATION-ROOTCAUSE.md.
+    """
+    try:
+        from vless.manual_seeds import MANUAL_TROJAN_SEEDS
+        return len(MANUAL_TROJAN_SEEDS) > 0
+    except Exception:  # noqa: BLE001 — module missing → no seed floor
+        return False
+
+
+def _is_pool_dead() -> bool:
+    """Return True only when the scraper bridge has NO usable capacity.
+
+    v1.27.2 ROOT-CAUSE FIX: previously this returned True whenever the
+    *dynamic* VLESS pool (data/vless_pool.json) had zero nodes — ignoring
+    the 6 manual trojan seeds that are ALWAYS in the xray config and route
+    traffic fine. The journal repeatedly showed the bridge returning HTTP
+    200 while the scheduler declared "pool dead" and skipped scrapes
+    (REL-19 graceful degrade). The free public VLESS lists are ~98% dead,
+    so the dynamic pool legitimately sits at 0-2 most of the time; that is
+    NOT a reason to stop scraping when the manual-seed bridge works.
+
+    New logic: the bridge is considered ALIVE (pool NOT dead) when EITHER
+      (a) the dynamic pool has ≥1 node, OR
+      (b) manual seeds exist (they always provide a working floor).
+    Only when BOTH are absent do we report dead — that's a genuine
+    no-capacity state where skipping the expensive Chrome startup is right.
+
+    The actual end-to-end reachability is still gated downstream by the
+    per-scraper VkusVill pre-flight probe (vless/preflight.py), so a
+    manual seed that silently breaks won't cause us to scrape into a void —
+    the scraper's own probe handles that. This function only decides
+    "is it worth spinning up Chrome at all".
+    """
+    try:
+        pool_path = os.path.join(DATA_DIR, "vless_pool.json")
+        dynamic_nodes = 0
+        if os.path.exists(pool_path):
+            with open(pool_path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            dynamic_nodes = len(data.get("nodes", []))
+        if dynamic_nodes > 0:
+            return False  # dynamic pool has capacity
+        # Dynamic pool empty — fall back to the manual-seed floor.
+        return not _has_manual_seeds()
     except Exception:  # noqa: BLE001 — broken file → treat as dead
-        return True
+        # Even on a broken pool file, manual seeds may still carry us.
+        return not _has_manual_seeds()
 
 
 def _pool_watchdog_loop(stop_event: "threading.Event") -> None:
@@ -748,6 +805,14 @@ def _pool_watchdog_loop(stop_event: "threading.Event") -> None:
     other) get repaired before the next cycle even starts. The internal
     REFRESH_MIN_INTERVAL_S=60s throttle in VlessProxyManager.ensure_pool
     prevents this from hammering the upstream subscription source.
+
+    v1.27.2: the watchdog tracks the DYNAMIC pool size (_dynamic_pool_size)
+    directly, NOT the bridge-aware _is_pool_dead(). After the root-cause
+    fix, _is_pool_dead() returns False whenever manual seeds exist (almost
+    always) — so using it here would stop the watchdog from ever growing
+    the dynamic pool. We still want dynamic node diversity + leastPing
+    options, so the watchdog keeps refreshing whenever the *dynamic* pool
+    is empty, independent of the manual-seed scrape floor.
 
     Runs forever until stop_event is set. Logs every state transition
     and every refresh attempt so journal forensics stays clear.
@@ -767,17 +832,20 @@ def _pool_watchdog_loop(stop_event: "threading.Event") -> None:
     while not stop_event.is_set():
         try:
             now = time.monotonic()
-            if _is_pool_dead():
+            # v1.27.2: gate on DYNAMIC pool size, not _is_pool_dead() — see
+            # docstring. Manual seeds don't satisfy the watchdog's goal of
+            # growing dynamic node diversity.
+            if _dynamic_pool_size() == 0:
                 if pool_dead_since is None:
                     pool_dead_since = now
-                    log("[pool-watchdog] Pool observed dead — starting grace timer")
+                    log("[pool-watchdog] Dynamic pool empty — starting grace timer")
                 dead_for = now - pool_dead_since
                 if (
                     dead_for >= POOL_DEAD_GRACE_SECONDS
                     and (now - last_refresh_attempt) >= POOL_DEAD_GRACE_SECONDS
                 ):
                     log(
-                        f"[pool-watchdog] Pool dead for {dead_for:.0f}s — "
+                        f"[pool-watchdog] Dynamic pool empty for {dead_for:.0f}s — "
                         "triggering ensure_pool()"
                     )
                     last_refresh_attempt = now
@@ -834,11 +902,12 @@ def _pool_watchdog_loop(stop_event: "threading.Event") -> None:
             else:
                 if pool_dead_since is not None:
                     log(
-                        f"[pool-watchdog] Pool recovered after "
-                        f"{now - pool_dead_since:.0f}s dead"
+                        f"[pool-watchdog] Dynamic pool recovered after "
+                        f"{now - pool_dead_since:.0f}s empty"
                     )
                     pool_dead_since = None
-                # Pool healthy — quarantine bloat doesn't matter, reset timer.
+                # Dynamic pool has nodes — quarantine bloat doesn't matter,
+                # reset timer.
                 quarantine_bloated_since = None
         except Exception as exc:  # noqa: BLE001 — never let watchdog die
             log(f"[pool-watchdog] loop error: {exc!r}")

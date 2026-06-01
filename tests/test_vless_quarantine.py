@@ -355,13 +355,18 @@ def test_ensure_pool_rate_of_decline_triggers_refresh(tmp_path: Path, monkeypatc
 
 
 def test_is_pool_dead_returns_true_when_pool_empty(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """REL-19: `_is_pool_dead` helper returns True when vless_pool.json is empty."""
+    """v1.27.2: `_is_pool_dead` returns True when dynamic pool is empty AND
+    no manual-seed floor exists. (Bridge-aware: with manual seeds it would
+    return False — that's the root-cause fix, covered separately in
+    test_scheduler_freshness.py.)"""
     # Write an empty pool file
     pool_file = tmp_path / "vless_pool.json"
     pool_file.write_text(json.dumps({"nodes": []}))
 
     import scheduler_service
     monkeypatch.setattr(scheduler_service, "DATA_DIR", str(tmp_path))
+    # Force the genuine no-capacity case so the REL-19 degrade path is exercised.
+    monkeypatch.setattr(scheduler_service, "_has_manual_seeds", lambda: False)
 
     assert scheduler_service._is_pool_dead() is True
 
@@ -378,9 +383,10 @@ def test_is_pool_dead_returns_false_when_pool_has_nodes(tmp_path: Path, monkeypa
 
 
 def test_is_pool_dead_returns_true_when_file_missing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    """REL-19: missing pool file treated as dead (safer default)."""
+    """v1.27.2: missing pool file + no manual seeds → dead (safer default)."""
     import scheduler_service
     monkeypatch.setattr(scheduler_service, "DATA_DIR", str(tmp_path))
+    monkeypatch.setattr(scheduler_service, "_has_manual_seeds", lambda: False)
 
     assert scheduler_service._is_pool_dead() is True
 
@@ -394,6 +400,10 @@ def test_scheduler_skips_scrape_after_two_dead_cycles(tmp_path: Path, monkeypatc
     monkeypatch.setattr(scheduler_service, "DATA_DIR", str(tmp_path))
     monkeypatch.setattr(scheduler_service, "_SCHEDULER_EVENTS_PATH", str(tmp_path / "scheduler_events.jsonl"))
     monkeypatch.setattr(scheduler_service, "log", lambda msg: None)
+    # v1.27.2: force genuine no-capacity (no manual-seed floor) so the
+    # REL-19 graceful-degrade skip path is exercised. With manual seeds
+    # present, _is_pool_dead() returns False and scrapers never skip.
+    monkeypatch.setattr(scheduler_service, "_has_manual_seeds", lambda: False)
 
     scrapers = [
         ("scrape_green.py", "GREEN", "green_products.json"),
@@ -458,6 +468,7 @@ def test_scheduler_resets_counter_when_pool_recovers(tmp_path: Path, monkeypatch
     monkeypatch.setattr(scheduler_service, "DATA_DIR", str(tmp_path))
     monkeypatch.setattr(scheduler_service, "_SCHEDULER_EVENTS_PATH", str(tmp_path / "scheduler_events.jsonl"))
     monkeypatch.setattr(scheduler_service, "log", lambda msg: None)
+    monkeypatch.setattr(scheduler_service, "_has_manual_seeds", lambda: False)
     monkeypatch.setattr(
         scheduler_service,
         "_prepare_proxy_connectivity",
@@ -507,6 +518,8 @@ def test_pool_refresh_attempted_on_every_dead_cycle(tmp_path: Path, monkeypatch:
     monkeypatch.setattr(scheduler_service, "DATA_DIR", str(tmp_path))
     monkeypatch.setattr(scheduler_service, "_SCHEDULER_EVENTS_PATH", str(tmp_path / "scheduler_events.jsonl"))
     monkeypatch.setattr(scheduler_service, "log", lambda msg: None)
+    # v1.27.2: genuine no-capacity case so the dead-cycle refresh path runs.
+    monkeypatch.setattr(scheduler_service, "_has_manual_seeds", lambda: False)
 
     # Track ensure_pool calls
     ensure_pool_calls = []

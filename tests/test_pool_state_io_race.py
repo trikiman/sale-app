@@ -45,6 +45,11 @@ def race_pool_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
 
     import scheduler_service
     monkeypatch.setattr(scheduler_service, "DATA_DIR", str(data_dir))
+    # v1.27.2: these IO-race tests assert the no-capacity safety default
+    # (missing/corrupt file → dead). With the manual-seed floor present
+    # _is_pool_dead() would return False, so disable it here to isolate
+    # the file-handling behavior under test.
+    monkeypatch.setattr(scheduler_service, "_has_manual_seeds", lambda: False)
 
     return data_dir, scheduler_service
 
