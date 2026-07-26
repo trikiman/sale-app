@@ -10,7 +10,7 @@
 - Never continuously check status after spawning a swarm — wait for results
 - ALWAYS read a file before editing it
 - NEVER commit secrets, credentials, or .env files
-- **EC2 Rule**: ALWAYS use `ssh -i "e:\Projects\saleapp\scraper-ec2-new" ubuntu@13.53.115.26` for EC2 operations. NEVER use browser/Instance Connect — it's slower, wastes tokens, and risks logging out of AWS. If SSH times out, retry 2-3 times before considering alternatives.
+- **Server Rule**: Production backend runs on Oracle Cloud (`vless-x86`, 152.70.58.201). ALWAYS use `ssh vless` (configured alias, user ubuntu) for server operations. NEVER use browser consoles. If SSH times out, retry 2-3 times before considering alternatives. The old AWS EC2 (13.60.174.46) is gone — migrated 2026-07-27. API is proxied via nginx port 80 (not :8000 directly); the box also runs the personal VPN (xray.service on 443, nginx /stream) — do not disturb those.
 
 ## File Organization
 
