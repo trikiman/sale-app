@@ -354,7 +354,7 @@ def test_build_source_freshness_legacy_stale_minutes_kwarg_overrides_all_colors(
         stale_thresholds={"yellow": 30},
     )
     assert freshness["green"]["isStale"] is True, "green still uses default 5"
-    assert freshness["red"]["isStale"] is True, "red still uses default 5"
+    assert freshness["red"]["isStale"] is False, "red now uses default 30, not stale at 7m"
     assert freshness["yellow"]["isStale"] is False, (
         "yellow override to 30 must beat the stale_minutes=5 legacy kwarg"
     )
@@ -422,10 +422,11 @@ def test_compute_empty_reason_all_stale_when_every_file_past_threshold(
     return 'all_stale'. Frontend renders 'Идёт восстановление' copy.
     """
     backend_main = backend_with_isolated_data_dir
-    # Give all 3 colors files that are well past their thresholds.
-    _set_color_age(tmp_path, "green", 30)   # 30m > 5m threshold
-    _set_color_age(tmp_path, "red", 30)     # 30m > 5m threshold
-    _set_color_age(tmp_path, "yellow", 30)  # 30m > 10m threshold
+    # Give all 3 colors files that are well past their thresholds
+    # (green=5, red=30, yellow=30 as of 2026-07-27).
+    _set_color_age(tmp_path, "green", 45)   # 45m > 5m threshold
+    _set_color_age(tmp_path, "red", 45)     # 45m > 30m threshold
+    _set_color_age(tmp_path, "yellow", 45)  # 45m > 30m threshold
 
     freshness, _, _ = backend_main._build_source_freshness()
     for c in ("green", "red", "yellow"):
@@ -458,9 +459,9 @@ def test_compute_empty_reason_partial_freshness_is_genuinely_empty(
     Some scrapes succeeded, they just returned no products.
     """
     backend_main = backend_with_isolated_data_dir
-    _set_color_age(tmp_path, "green", 30)   # stale
+    _set_color_age(tmp_path, "green", 30)   # stale (5m threshold)
     _set_color_age(tmp_path, "red", 1)      # fresh
-    _set_color_age(tmp_path, "yellow", 30)  # stale (10m threshold)
+    _set_color_age(tmp_path, "yellow", 45)  # stale (30m threshold)
 
     freshness, _, _ = backend_main._build_source_freshness()
     assert backend_main._compute_empty_reason(freshness) == "genuinely_empty"
