@@ -279,8 +279,9 @@ def merge_products():
     
     # Record sale history (never fail the merge if this errors)
     try:
-        from database.sale_history import record_sale_appearances
+        from database.sale_history import record_sale_appearances, update_product_stats
         record_sale_appearances(all_products)
+        update_product_stats()
     except Exception as e:
         print(f"  ⚠️ Sale history recording failed: {e}")
     
