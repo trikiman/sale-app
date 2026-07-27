@@ -869,17 +869,19 @@ def client_log(request: Request, payload: dict = Body(default={})):
 
 
 # v1.26 Phase 84.7: per-color staleness thresholds.
-# Cycle cadence is ~5 min for red/yellow (one save per full-cycle plus a
-# merge-step touch ~2-3 min later). Setting all three to a uniform 5 min
-# put red right at the threshold edge — saves landed at, say, T+0 and
-# T+5:00, so a fetch at T+4:50 saw red age=4.9 (fine) but a fetch at
-# T+5:01 saw red age=5.0+ (stale flicker). Yellow had the same pattern.
-# Per-color thresholds let us raise yellow's bar without weakening green
-# or red. Operator can override per-call via the dict argument.
+# 2026-07-27: migrated backend to a 2 vCPU Oracle box where a full
+# red→yellow→green→merge cycle takes ~7 min (green's Chrome render alone
+# is 3-6 min under load). At the old 5/5/10 thresholds, red and yellow
+# were flagged stale on almost every cycle even though scraping was
+# healthy — the cycle itself was longer than the threshold. Raised red
+# and yellow to 30 min (well above one full cycle) so the banner reflects
+# genuine staleness (scraper actually stuck/dead) rather than normal
+# cycle latency on this hardware. Green stays at 5 since it's the last
+# step and least likely to lag behind its own threshold.
 DEFAULT_STALE_THRESHOLDS_MINUTES: dict[str, int] = {
     "green": 5,
-    "red": 5,
-    "yellow": 10,
+    "red": 30,
+    "yellow": 30,
 }
 
 
@@ -1521,13 +1523,11 @@ def get_products(response: Response):
                     time.sleep(0.5)  # Retry once after brief pause
                 else:
                     raise HTTPException(status_code=500, detail="Invalid JSON data")
-        # v1.26 Phase 84.7: use per-color defaults from
-        # DEFAULT_STALE_THRESHOLDS_MINUTES — green=5, red=5, yellow=10.
-        # Yellow gets the larger threshold because its scrape cadence
-        # plus merge-step touches put it right at the 5-min edge,
-        # producing transient stale flickers that aren't real freshness
-        # problems. Green and red stay at 5 to match the user's
-        # robustness target.
+        # v1.26 Phase 84.7 / 2026-07-27 update: use per-color defaults from
+        # DEFAULT_STALE_THRESHOLDS_MINUTES — green=5, red=30, yellow=30.
+        # Red/yellow raised to 30 to match the ~7 min full-cycle time on
+        # the current (2 vCPU) Oracle backend — see comment on the
+        # constant definition for details.
         source_freshness, stale_files, latest_mtime = _build_source_freshness()
         data["sourceFreshness"] = source_freshness
         data["dataStale"] = len(stale_files) > 0
