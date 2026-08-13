@@ -2706,9 +2706,31 @@ async def scrape_green_prices_async():
                         print(f"  [GREEN] Count OK: scraped={scraped_count}, live={live_count}, gap={gap_pct:.1f}% (within 10% tolerance)")
 
         if scrape_success:
+            # 2026-08-13: record WHY the list is empty so the API/frontend can
+            # tell "VkusVill has no green items right now" apart from "our tech
+            # account lost its session". Previously the backend inferred
+            # greenMissing purely from len(products)==0 and the UI always blamed
+            # authorization, which was wrong every night when VkusVill simply
+            # has nothing marked down.
+            #   "ok"            — items found
+            #   "source_empty"  — VkusVill itself showed the explicit
+            #                     "Зелёных ценников сейчас нет" banner
+            #   "unknown_empty" — empty without that banner; could be markup
+            #                     drift, a failed cart seed, or auth trouble
+            if products:
+                empty_reason = "ok"
+            elif empty_explicit:
+                empty_reason = "source_empty"
+            else:
+                empty_reason = "unknown_empty"
             output_data = {
                 "live_count": live_count,
                 "scraped_count": len(products),
+                "empty_reason": empty_reason,
+                # Always True here: the scraper returns early at STEP 1 when
+                # is_logged_in is False, so reaching the save path means the
+                # tech-account session was valid for this run.
+                "logged_in": bool(is_logged_in),
                 "products": products
             }
             try:

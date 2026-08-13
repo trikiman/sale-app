@@ -209,6 +209,9 @@ function App() {
   const [greenLiveCount, setGreenLiveCount] = useState(() => initialProductsCache?.greenLiveCount ?? null)
   const [dataStale, setDataStale] = useState(() => !!initialProductsCache?.dataStale)
   const [greenMissing, setGreenMissing] = useState(() => !!initialProductsCache?.greenMissing)
+  // 2026-08-13: why green is empty, so the banner can stop blaming
+  // authorization for what is usually just VkusVill having no уценка yet.
+  const [greenEmptyReason, setGreenEmptyReason] = useState(() => initialProductsCache?.greenEmptyReason ?? null)
   const [sourceFreshness, setSourceFreshness] = useState(() => initialProductsCache?.sourceFreshness || null)
   // v1.24 UX-STALE-01: all-3-sources-stale signal from /api/products.
   // When present, client renders prominent banner + per-card stale badges
@@ -465,7 +468,8 @@ function App() {
             data.updatedAt === updatedAtRef.current &&
             freshnessSignature === freshnessSignatureRef.current &&
             !!data.dataStale === dataStale &&
-            !!data.greenMissing === greenMissing
+            !!data.greenMissing === greenMissing &&
+            (data.greenEmptyReason ?? null) === greenEmptyReason
           ) return
 
           setProducts(normalizedProducts)
@@ -475,6 +479,7 @@ function App() {
           if (data.greenLiveCount !== undefined) setGreenLiveCount(data.greenLiveCount)
           setDataStale(!!data.dataStale)
           setGreenMissing(!!data.greenMissing)
+          setGreenEmptyReason(data.greenEmptyReason ?? null)
           setSourceFreshness(data.sourceFreshness || null)
           setStaleAll(data.staleAll || null)
           // v1.26 Phase 85 UX-EMPTY-01: render differentiated copy when
@@ -503,6 +508,7 @@ function App() {
             greenLiveCount: data.greenLiveCount,
             dataStale: !!data.dataStale,
             greenMissing: !!data.greenMissing,
+            greenEmptyReason: data.greenEmptyReason ?? null,
             sourceFreshness: data.sourceFreshness || null,
             staleAll: data.staleAll || null,
           })
@@ -1870,12 +1876,26 @@ function App() {
           staleColorLabels={staleColorLabels}
         />
 
-        {/* Green products missing warning */}
+        {/* Green products missing notice.
+
+            2026-08-13: this used to always read "требуется авторизация тех.
+            аккаунта", which was wrong nearly every night — green уценка
+            legitimately empties out (VkusVill shows its own "Зелёных ценников
+            сейчас нет" banner) while the tech account is fine. The backend now
+            sends greenEmptyReason, so word each case for what it actually is:
+            source_empty → normal, informational; anything else → a real
+            problem worth surfacing as a warning. */}
         {greenMissing && (
           <div
-            className="mt-2 px-4 py-2 rounded-xl bg-green-500/10 border border-green-500/30 text-green-400 text-center text-xs anim-scale"
+            className={
+              greenEmptyReason === 'source_empty'
+                ? 'mt-2 px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-gray-400 text-center text-xs anim-scale'
+                : 'mt-2 px-4 py-2 rounded-xl bg-green-500/10 border border-green-500/30 text-green-400 text-center text-xs anim-scale'
+            }
           >
-            🟢 Зелёные ценники недоступны — требуется авторизация тех. аккаунта
+            {greenEmptyReason === 'source_empty'
+              ? '🟢 Сейчас нет зелёных ценников — ВкусВилл ничего не уценил'
+              : '🟢 Зелёные ценники не загрузились — проверяем подключение'}
           </div>
         )}
 

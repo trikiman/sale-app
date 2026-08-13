@@ -267,30 +267,30 @@ def _set_color_age(tmp_path: Path, color: str, age_minutes: float) -> None:
 def test_build_source_freshness_default_thresholds_are_per_color(
     backend_with_isolated_data_dir, tmp_path
 ) -> None:
-    """v1.26 Phase 84.7, updated 2026-07-27: default thresholds are
-    per-color (green=5, red=30, yellow=30). Red/yellow were raised from
-    5/10 to 30 after migrating to a 2 vCPU Oracle backend where a full
-    scrape cycle takes ~7 min — the old thresholds flagged red/yellow
-    stale on almost every cycle even though scraping was healthy. Green
-    stays tight at 5 since it's the last step in the cycle.
+    """v1.26 Phase 84.7, updated 2026-08-13: default thresholds are
+    per-color (green=15, red=30, yellow=30). All three were raised above
+    their observed refresh intervals on the 2 vCPU Oracle backend, where a
+    full scrape cycle takes ~7 min and green re-runs every 5-11 min. The
+    old 5/5/10 values flagged sources stale on healthy cycles. Green stays
+    tighter than red/yellow because уценка stock churns fastest.
     """
     backend_main = backend_with_isolated_data_dir
-    # Each color exactly 6 min old.
+    # Each color exactly 6 min old — under every threshold now.
     _set_color_age(tmp_path, "green", 6)
     _set_color_age(tmp_path, "red", 6)
     _set_color_age(tmp_path, "yellow", 6)
 
     freshness, stale_files, _latest = backend_main._build_source_freshness()
-    assert freshness["green"]["isStale"] is True, "green > 5min must be stale"
+    assert freshness["green"]["isStale"] is False, "green ≤ 15min must NOT be stale"
     assert freshness["red"]["isStale"] is False, "red ≤ 30min must NOT be stale"
     assert freshness["yellow"]["isStale"] is False, (
         "yellow ≤ 30min must NOT be stale (2026-07-27 gives yellow 30-min headroom)"
     )
     assert freshness["yellow"]["staleThresholdMinutes"] == 30
-    assert freshness["green"]["staleThresholdMinutes"] == 5
+    assert freshness["green"]["staleThresholdMinutes"] == 15
     assert freshness["red"]["staleThresholdMinutes"] == 30
-    # Only green surfaces in stale_files; red/yellow are fresh under 30.
-    assert sorted([s.split()[0] for s in stale_files]) == ["green"]
+    # Nothing is stale at 6 min under the 15/30/30 thresholds.
+    assert stale_files == []
 
 
 def test_build_source_freshness_yellow_stale_only_above_30(
@@ -353,7 +353,7 @@ def test_build_source_freshness_legacy_stale_minutes_kwarg_overrides_all_colors(
         stale_minutes=5,
         stale_thresholds={"yellow": 30},
     )
-    assert freshness["green"]["isStale"] is True, "green still uses default 5"
+    assert freshness["green"]["isStale"] is False, "green now uses default 15, not stale at 7m"
     assert freshness["red"]["isStale"] is False, "red now uses default 30, not stale at 7m"
     assert freshness["yellow"]["isStale"] is False, (
         "yellow override to 30 must beat the stale_minutes=5 legacy kwarg"
@@ -363,22 +363,31 @@ def test_build_source_freshness_legacy_stale_minutes_kwarg_overrides_all_colors(
 def test_build_source_freshness_partial_dict_falls_back_to_defaults(
     backend_with_isolated_data_dir, tmp_path
 ) -> None:
-    """Phase 84.7, updated 2026-07-27: partial dict only overrides the
+    """Phase 84.7, updated 2026-08-13: partial dict only overrides the
     named colors; others fall back to ``DEFAULT_STALE_THRESHOLDS_MINUTES``
-    (green=5, red=30, yellow=30).
+    (green=15, red=30, yellow=30).
+
+    Ages are chosen so the override is actually observable: at 20 min
+    green's default (15) would flag stale, so a green→30 override flipping
+    it to fresh proves the dict is applied, while red/yellow staying fresh
+    proves the unnamed colors still fall back to their 30-min defaults.
     """
     backend_main = backend_with_isolated_data_dir
-    _set_color_age(tmp_path, "green", 6)   # default 5 → stale
-    _set_color_age(tmp_path, "red", 6)     # default 30 → fresh
-    _set_color_age(tmp_path, "yellow", 6)  # default 30 → fresh
+    _set_color_age(tmp_path, "green", 20)   # default 15 → stale, override 30 → fresh
+    _set_color_age(tmp_path, "red", 20)     # default 30 → fresh
+    _set_color_age(tmp_path, "yellow", 20)  # default 30 → fresh
+
+    # Sanity: with no override, green's 15-min default flags it stale at 20m.
+    baseline, _, _ = backend_main._build_source_freshness()
+    assert baseline["green"]["isStale"] is True, "green default 15 → stale at 20m"
 
     # Override only green to 30 — red and yellow keep their defaults.
     freshness, _, _ = backend_main._build_source_freshness(
         stale_thresholds={"green": 30},
     )
     assert freshness["green"]["isStale"] is False, "green override 30 → fresh"
-    assert freshness["red"]["isStale"] is False, "red default 30 → fresh at 6m"
-    assert freshness["yellow"]["isStale"] is False, "yellow default 30 → fresh at 6m"
+    assert freshness["red"]["isStale"] is False, "red default 30 → fresh at 20m"
+    assert freshness["yellow"]["isStale"] is False, "yellow default 30 → fresh at 20m"
 
 
 def test_build_source_freshness_handles_missing_files(
@@ -423,8 +432,8 @@ def test_compute_empty_reason_all_stale_when_every_file_past_threshold(
     """
     backend_main = backend_with_isolated_data_dir
     # Give all 3 colors files that are well past their thresholds
-    # (green=5, red=30, yellow=30 as of 2026-07-27).
-    _set_color_age(tmp_path, "green", 45)   # 45m > 5m threshold
+    # (green=15, red=30, yellow=30 as of 2026-08-13).
+    _set_color_age(tmp_path, "green", 45)   # 45m > 15m threshold
     _set_color_age(tmp_path, "red", 45)     # 45m > 30m threshold
     _set_color_age(tmp_path, "yellow", 45)  # 45m > 30m threshold
 
@@ -459,7 +468,7 @@ def test_compute_empty_reason_partial_freshness_is_genuinely_empty(
     Some scrapes succeeded, they just returned no products.
     """
     backend_main = backend_with_isolated_data_dir
-    _set_color_age(tmp_path, "green", 30)   # stale (5m threshold)
+    _set_color_age(tmp_path, "green", 30)   # stale (15m threshold)
     _set_color_age(tmp_path, "red", 1)      # fresh
     _set_color_age(tmp_path, "yellow", 45)  # stale (30m threshold)
 

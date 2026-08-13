@@ -435,6 +435,11 @@ class ProductsResponse(BaseModel):
     updatedAt: str
     greenLiveCount: Optional[int] = 0
     greenMissing: Optional[bool] = False
+    # 2026-08-13: why the green list is empty, when it is. One of
+    # "source_empty" (VkusVill shows no green items), "unknown_empty"
+    # (empty without that banner — markup drift / seed failure / auth),
+    # "missing" (no snapshot), or None when green has items.
+    greenEmptyReason: Optional[str] = None
     dataStale: Optional[bool] = False
     staleInfo: Optional[List[str]] = None
     sourceFreshness: Optional[Dict[str, Any]] = None
@@ -876,10 +881,20 @@ def client_log(request: Request, payload: dict = Body(default={})):
 # healthy — the cycle itself was longer than the threshold. Raised red
 # and yellow to 30 min (well above one full cycle) so the banner reflects
 # genuine staleness (scraper actually stuck/dead) rather than normal
-# cycle latency on this hardware. Green stays at 5 since it's the last
-# step and least likely to lag behind its own threshold.
+# cycle latency on this hardware.
+#
+# 2026-08-13: green raised 5 → 15 for the same reason. Measured green
+# scrape starts on this box: 23:47, 23:52, 00:01, 00:09, 00:14, 00:19,
+# 00:24, 00:29 — i.e. ~5 min when cycles run clean but 8-11 min whenever
+# one slips (green fails and retries, or the proxy pool stalls a cycle).
+# A 5-min threshold is at or below green's own best-case refresh interval,
+# so the "источники устарели" banner tripped on healthy cycles. 15 min
+# clears normal slippage while still flagging a genuine stall within ~2
+# missed refreshes. Green intentionally stays tighter than red/yellow
+# because уценка stock churns fastest and a stale green price misleads
+# most.
 DEFAULT_STALE_THRESHOLDS_MINUTES: dict[str, int] = {
-    "green": 5,
+    "green": 15,
     "red": 30,
     "yellow": 30,
 }
@@ -1503,6 +1518,7 @@ def get_products(response: Response):
                 "updatedAt": datetime.now(tz=_msk).strftime("%Y-%m-%d %H:%M:%S"),
                 "greenLiveCount": 0,
                 "greenMissing": True,
+                "greenEmptyReason": "missing",
                 "dataStale": True,
                 "staleInfo": ["green (missing)", "red (missing)", "yellow (missing)"],
                 "sourceFreshness": source_freshness,
@@ -1523,11 +1539,11 @@ def get_products(response: Response):
                     time.sleep(0.5)  # Retry once after brief pause
                 else:
                     raise HTTPException(status_code=500, detail="Invalid JSON data")
-        # v1.26 Phase 84.7 / 2026-07-27 update: use per-color defaults from
-        # DEFAULT_STALE_THRESHOLDS_MINUTES — green=5, red=30, yellow=30.
-        # Red/yellow raised to 30 to match the ~7 min full-cycle time on
-        # the current (2 vCPU) Oracle backend — see comment on the
-        # constant definition for details.
+        # v1.26 Phase 84.7 / 2026-08-13 update: use per-color defaults from
+        # DEFAULT_STALE_THRESHOLDS_MINUTES — green=15, red=30, yellow=30.
+        # All three sit above their observed refresh intervals on the
+        # current (2 vCPU) Oracle backend — see comment on the constant
+        # definition for details.
         source_freshness, stale_files, latest_mtime = _build_source_freshness()
         data["sourceFreshness"] = source_freshness
         data["dataStale"] = len(stale_files) > 0
@@ -1539,17 +1555,40 @@ def get_products(response: Response):
             _msk = timezone(timedelta(hours=3))  # Moscow timezone
             data["updatedAt"] = datetime.fromtimestamp(latest_mtime, tz=_msk).strftime("%Y-%m-%d %H:%M:%S")
         # Live greenMissing check (BUG-066: also check empty products, not just file existence)
+        #
+        # 2026-08-13: greenMissing used to be a bare `len(products) == 0`, and
+        # the frontend rendered "требуется авторизация тех. аккаунта" for it
+        # unconditionally. That message was wrong most of the time: green
+        # уценка legitimately empties out overnight (VkusVill shows its own
+        # "Зелёных ценников сейчас нет" banner), while the tech account was
+        # perfectly authorized. Now we surface the scraper's recorded reason as
+        # greenEmptyReason so the UI can word it honestly:
+        #   "source_empty"  — VkusVill has no green items right now (normal)
+        #   "unknown_empty" — empty with no such banner; worth investigating
+        #                     (markup drift / failed cart seed / auth trouble)
+        #   "missing"       — no snapshot file, or it failed to parse
         green_path = os.path.join(DATA_DIR, "green_products.json")
         if not os.path.exists(green_path):
             data["greenMissing"] = True
+            data["greenEmptyReason"] = "missing"
         else:
             try:
                 with open(green_path, "r", encoding="utf-8") as _gf:
                     _gdata = json.load(_gf)
                 _gprods = _gdata.get("products", _gdata) if isinstance(_gdata, dict) else _gdata
-                data["greenMissing"] = len(_gprods) == 0
+                _gempty = len(_gprods) == 0
+                data["greenMissing"] = _gempty
+                if not _gempty:
+                    data["greenEmptyReason"] = None
+                elif isinstance(_gdata, dict):
+                    # Older snapshots predate empty_reason; treat them as
+                    # unknown rather than inventing an auth failure.
+                    data["greenEmptyReason"] = _gdata.get("empty_reason") or "unknown_empty"
+                else:
+                    data["greenEmptyReason"] = "unknown_empty"
             except Exception:
                 data["greenMissing"] = True
+                data["greenEmptyReason"] = "missing"
         if isinstance(data.get("products"), list):
             for product in data["products"]:
                 product["subgroup"] = _sanitize_subgroup_label(product.get("subgroup"))
@@ -5511,7 +5550,8 @@ def admin_get_status(token: Optional[str] = Header(None, alias="X-Admin-Token"))
     """Return current scraper status and product counts."""
     _require_token(token)
     counts = {"green": 0, "red": 0, "yellow": 0, "total": 0, "updatedAt": None, "greenLiveCount": 0}
-    # v1.26 Phase 84.7: use per-color defaults (green=5, red=5, yellow=10).
+    # v1.26 Phase 84.7 / 2026-08-13: use per-color defaults
+    # (green=15, red=30, yellow=30) from DEFAULT_STALE_THRESHOLDS_MINUTES.
     source_freshness, _, _ = _build_source_freshness()
     cycle_state = _load_cycle_state()
     if os.path.exists(PROPOSALS_PATH):
