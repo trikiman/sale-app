@@ -242,10 +242,25 @@ def test_get_working_proxy_returns_local_xray_endpoint(stub_xray, paths) -> None
     assert inst._started == 1
 
 
-def test_get_working_proxy_returns_none_when_pool_empty(stub_xray, paths) -> None:
+def test_get_working_proxy_none_when_pool_empty_and_xray_unstartable(
+    stub_xray, paths
+) -> None:
     pm = _manager(paths)
     assert pm.get_working_proxy(allow_refresh=False) is None
     assert not stub_xray.instances  # xray must NOT have started
+
+
+def test_get_working_proxy_returns_bridge_when_pool_empty_but_xray_listening(
+    monkeypatch, stub_xray, paths
+) -> None:
+    # Prod topology: systemd saleapp-xray owns the bridge and always has the
+    # manual trojan seeds baked in, so an empty dynamic pool must still yield
+    # the bridge address (2026-10-19 tarpit outage: it didn't, and the
+    # scheduler had no proxy to switch Chrome to).
+    pm = _manager(paths)
+    monkeypatch.setattr(pm, "_external_xray_listening", lambda: True)
+    assert pm.get_working_proxy(allow_refresh=False) == "127.0.0.1:10808"
+    assert not stub_xray.instances  # external bridge is reused, never spawned
 
 
 def test_get_working_proxy_starts_xray_lazily(stub_xray, paths) -> None:

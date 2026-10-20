@@ -219,18 +219,26 @@ class VlessProxyManager:
         self._direct_check = {"checked_at": time.time(), "ok": bool(ok)}
 
     def get_working_proxy(self, allow_refresh: bool = True) -> str | None:
-        """Return ``"127.0.0.1:<xray-port>"`` when the pool is healthy.
+        """Return ``"127.0.0.1:<xray-port>"`` — the local xray bridge.
 
-        When the pool is empty and ``allow_refresh`` is True we call
-        :meth:`ensure_pool` exactly like the legacy SOCKS5 manager did.
-        The local xray subprocess is started lazily on the first hit.
+        The bridge always carries the manual trojan seed outbounds
+        (:mod:`vless.manual_seeds`), so it stays usable even when the
+        dynamic VLESS pool is empty — the class-level contract says this
+        method always returns the local xray endpoint. None is returned
+        only when xray is neither listening nor startable.
         """
         if allow_refresh:
             self.ensure_pool()
         with self._lock:
+            # 2026-10-20: during the 2026-10-19 VkusVill tarpit outage an
+            # early "empty pool → None" return here left the scheduler with
+            # no proxy to switch Chrome to, even though the systemd xray
+            # (with baked-in seeds) was reaching the site fine. An empty
+            # dynamic pool now falls through to the seed-floor bridge.
             if not self._pool.get("nodes"):
-                self._log("No VLESS nodes in pool — cannot produce a proxy")
-                return None
+                self._log(
+                    "Dynamic VLESS pool empty — relying on manual-seed bridge floor"
+                )
             try:
                 self._ensure_xray_running()
             except XrayStartupError as exc:
@@ -238,7 +246,10 @@ class VlessProxyManager:
                 return None
             inbound_port = self._xray.inbound_port if self._xray else XRAY_LISTEN_PORT
             addr = f"{XRAY_LISTEN_HOST}:{inbound_port}"
-            self._log(f"Using xray bridge {addr} ({self.pool_count()} nodes in pool)")
+            self._log(
+                f"Using xray bridge {addr} "
+                f"({self.pool_count()} dynamic nodes + manual seed floor)"
+            )
             return addr
 
     def get_proxy_for_chrome(self) -> str | None:
