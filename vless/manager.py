@@ -29,7 +29,7 @@ try:
 except ImportError:  # pragma: no cover — CI installs httpx
     HAS_HTTPX = False
 
-from vless import installer, pool_state, quarantine, sources
+from vless import asn_filter, installer, pool_state, quarantine, sources
 from vless.config_gen import XRAY_LISTEN_HOST, XRAY_LISTEN_PORT, build_xray_config
 from vless.parser import VlessNode
 from vless.xray import XrayProcess, XrayStartupError, _atomic_write_text
@@ -629,6 +629,11 @@ class VlessProxyManager:
             # Map specific runtime strings to the canonical reasons that
             # quarantine._compute_ttl expects.
             if "vpn-detected" in raw_reason or "vpn_detected" in raw_reason:
+                bucket = "vpn_detected"
+            elif raw_reason.startswith("asn_blocked="):
+                # v1.28: host sits in an ASN measured at 0% VkusVill
+                # reachability (see .planning/research/vkusvill-access-rkn-check.md).
+                # Hard tier — a retry cannot succeed until the feed changes.
                 bucket = "vpn_detected"
             elif raw_reason.startswith("egress_country=") and not raw_reason.endswith("RU"):
                 bucket = "egress_country_non_ru"
@@ -1279,6 +1284,16 @@ class VlessProxyManager:
         nodes are still recorded in the soft-tier quarantine.
         """
         if not candidates:
+            return []
+        # v1.28: cheap ASN pre-filter ahead of the TCP check. VkusVill drops
+        # traffic from measured-blocked ASNs (Yandex.Cloud 0/4 reachable,
+        # Timeweb 5/5) — see .planning/research/vkusvill-access-rkn-check.md.
+        # Costs one batched HTTP request per ~100 hosts instead of ~6s of
+        # xray probing per doomed node. Fails open: if the lookup is
+        # unavailable every candidate is returned untouched.
+        candidates = asn_filter.filter_blocked_asn(candidates, log_fn=self._log)
+        if not candidates:
+            self._log("ASN pre-filter removed every candidate; pool unchanged")
             return []
         # v1.26 Phase 84.4: cheap TCP pre-filter ahead of expensive xray
         # probes. Survivors enter the xray stage; dead nodes stay in the

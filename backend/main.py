@@ -6297,6 +6297,18 @@ async def github_webhook(request: Request):
         for f in changed_files
     )
 
+    # v1.28: the scheduler is a SEPARATE process that imports its own module
+    # set (vless/, database/, scrape_*). Restarting only saleapp-backend
+    # would leave it running stale code — e.g. a new vless/asn_filter.py
+    # would never be imported.
+    scheduler_changed = any(
+        f.startswith("vless/")
+        or f.startswith("database/")
+        or f.startswith("scrape_")
+        or f == "scheduler_service.py"
+        for f in changed_files
+    )
+
     if backend_changed:
         # Restart self after a short delay
         _subprocess.Popen(
@@ -6304,10 +6316,17 @@ async def github_webhook(request: Request):
             cwd="/home/ubuntu/saleapp"
         )
 
+    if scheduler_changed:
+        _subprocess.Popen(
+            ["sudo", "systemctl", "restart", "saleapp-scheduler"],
+            cwd="/home/ubuntu/saleapp"
+        )
+
     return {
         "status": "updated",
         "pull_output": result.stdout[:200],
         "backend_restart": backend_changed,
+        "scheduler_restart": scheduler_changed,
         "files_changed": len(changed_files)
     }
 
