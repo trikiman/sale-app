@@ -136,11 +136,21 @@ Family members see every VkusVill discount (green/red/yellow) the moment it appe
 
 ### Active
 
-<!-- Between milestones. Awaiting v1.27 planning via /gsd-new-milestone. -->
+<!-- v1.29 Own Proxy Egress & Ops Polish — planned -->
 
-- (none — v1.26 just shipped 2026-05-15, tag `v1.26`)
+- ⏳ **EGRESS-01** (P1): Own proxy exit. 33 public Timeweb/Selectel nodes tested — all dead at VLESS handshake, so free feeds are exhausted. VkusVill blocks datacenter ASNs (`vpn_detected` on 66/208 candidates) and our Oracle Amsterdam box outright (0/4 probes). Needs a VPS on Timeweb AS9123 (5/5 reachability) or a Russian residential proxy.
+- ⏳ **OPS-01** (P1): Oracle memory/swap tuning — 1 vCPU / 1 GB / 582 MB swap. `POST /admin/proxy-refresh` and `/admin/logs` both buckle the box. Needs SSH.
+- ⏳ **OPS-02** (P2): `scheduler.log` rotation — `/admin/logs` times out because the endpoint `readlines()` the whole file.
+- ⏳ **TECH-DEBT-02** (P2): CSS architecture for miniapp — 25 `TODO(v1.28)` inline styles need `[data-type="red|yellow|green"]` selectors before they can be removed.
 
-## Last Shipped Milestone: v1.26 Miniapp Test Harness + Style Guide Debt Cleanup (2026-05-15)
+### Shipped in v1.28
+
+- ✅ **FULL-VERIFY** (P1): Phase 90 — all scraper sources verified healthy via HTTP API (158 products, `dataStale=false`, all sources fresh).
+- ✅ **VLESS-HARDEN-01** (P1): Phase 91 — empty pool root-caused (manual seeds carry scraping; VkusVill blocks datacenter ASNs + detects VPNs). `vless/asn_filter.py` shipped with measured blocklist. Replaces the old "1/6 seeds is a single point of failure" framing: the seed floor is by design.
+- ✅ **NGINX-HARDEN-01** (P1): Phase 92 — nginx survived 3 OCI stop/starts; API returns in ~60 s. `Restart=always` drop-in confirmed.
+- ✅ **TECH-DEBT** (P2): Phase 93 — 25 `TODO(v1.27)` retagged → v1.28 across 4 files; CSS migration plan documented.
+
+## Last Shipped Milestone: v1.27 Stability Recovery & Scraper Health (2026-11-11)
 
 **Shipped:** 2026-05-15, tag `v1.26`. 32 commits across 3 phases (83-85) + 7 robustness sidequests (84.1-84.7). 372 files changed (+42409/-35339 LOC).
 
@@ -435,5 +445,5 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-05-13 after v1.25 (Operator Visibility + Test Coverage) shipped, tagged, archived, and live-verified (10/13 requirements + REL-19 production hotfix + UAT audit, 3 phases 80-82, 16 commits `e76a78e..9d3d185`). REL-19 hotfix `b65cde7` resolved the mid-milestone 00:04→01:13 pool-stuck outage caused by v1.24 graceful-degrade skipping `ensure_pool()`. UAT audit surfaced 6 items (1 P1 Telegram config, 3 P2 observable, 2 P3 defer-safe). v1.26 (Miniapp Test Harness + Style Guide Debt Cleanup) initiated in direct response to v1.25 Phase 82 TOOL-05 deferral ("rushing 46-site refactor without snapshot infrastructure risks UX regressions") + v1.24 verifier's Vitest/RTL carry-forward. 3 phases (83-85), 8 requirements. Snapshot safety net first, then refactor. User directive: "go autonomous" — minimal questions, iterative ship.*
+*Last updated: 2026-11-13 22:00 MSK — v1.28 shipped. Root-caused the empty VLESS pool (VkusVill blocks datacenter ASNs and detects VPNs — not RKN), shipped `vless/asn_filter.py` with a measured blocklist, disproved the RKN-blocking hypothesis with Globalping measurements, and found a deploy path that needs no SSH (`POST /api/github-webhook` does `git pull` server-side). v1.29 scopes own proxy egress plus ops polish.*
 

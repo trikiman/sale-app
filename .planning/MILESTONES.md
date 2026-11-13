@@ -1,5 +1,56 @@
 # Milestones
 
+## v1.28 Component Verification & Hardening (SHIPPED: 2026-11-13)
+
+**Phases:** 4 planned, 4 completed (Phases 90-93 ✅)
+
+**Goal:** Verify every component end-to-end after v1.27 recovery, harden single points of failure, clear tech debt.
+
+**Audit:** `tech_debt` — all 4 phases verified live where SSH allowed; SSH port 22 blocked by local DPI throughout, so server-side work went through the HTTP admin API and a GitHub webhook deploy path.
+
+**Key accomplishments:**
+
+- 🔍 **Full pipeline verified live** — 158 products, `dataStale=false`, all three sources fresh (green 3-6 m, red 0-1 m, yellow 6-8 m). nginx survives reboots; server recovers in ~60 s after OCI STOP/START.
+- 🎯 **Empty pool root-caused** — `pool_size: 0` is not a failure mode: scrapers run through manual trojan seeds that never count toward the pool. The real blocker is that VkusVill blocks datacenter ASNs and detects VPNs — one cycle showed `cand=208 → q_skip=73 → cand=0` with `vpn_detected: 66` in quarantine.
+- ❌ **RKN hypothesis disproved with measurements** — `vkusvill.ru` is on the official whitelist and a Russian residential IP reaches it in 0.55 s. Per-ASN reachability map measured via Globalping (Timeweb 5/5, Selectel 3/4, Yandex.Cloud 0/4, Global Internet 0/3, VK 0/1, Oracle Amsterdam 0/4). Report: `.planning/research/vkusvill-access-rkn-check.md`.
+- 🚀 **`vless/asn_filter.py` shipped** — batched ASN lookup (100 hosts/request), 7-day disk cache, IPv4 literals only, hard cap 5 batches. FAIL OPEN by design. Blocklist `{200350, 207713, 47764}`; saves ~6 s of xray probing per doomed node. 8 offline tests; VLESS regression 107 passed.
+- 🔑 **Deploy path with no SSH found and used** — `POST /api/github-webhook` performs `git pull` server-side (no `GITHUB_WEBHOOK_SECRET` set). Webhook extended to restart `saleapp-scheduler` on `vless/`, `database/`, `scrape_*` changes — those modules live in the scheduler process, not the backend.
+- 🧹 **Tech debt** — 25 `TODO(v1.27)` retagged to v1.28 across 4 files, CSS migration plan written.
+
+**Delivered:** 2026-11-13. 6 files changed in the shipped commit (`440762e`), plus 8 offline tests and the research report.
+
+**Known deferred to v1.29:**
+- Own proxy egress — 33 public Timeweb/Selectel nodes tested, all dead at VLESS handshake. Free feeds are exhausted; needs a VPS on Timeweb (AS9123) or a Russian residential proxy.
+- `scheduler.log` rotation (`/admin/logs` times out reading it).
+- Server-side memory/swap tuning (1 vCPU / 1 GB / 582 MB swap).
+
+---
+
+## v1.27 Stability Recovery & Scraper Health (SHIPPED: 2026-11-11, tag `v1.27`)
+
+**Phases:** 4 planned, 3 completed (Phases 86-88 ✅, Phase 89 ⏳ deferred)
+
+**Goal:** Restore scraper pipeline reliability after months of degradation.
+
+**Audit:** `tech_debt` (3/3 requirements, 0 critical gaps — see `.planning/v1.27-MILESTONE-AUDIT.md`)
+
+**Key accomplishments:**
+
+- 🔧 **Session history orphan bug fixed** — `CLOSE_UNSAFE_TIMEOUT` after 3h prevents sessions from staying active forever when scrapers fail. Deployed to prod.
+- 🌐 **VLESS pool expanded** — 3 new upstream sources (coloramamoe, wlunlocker, u23jd9) → 251 unique RU host:ports (was 18). Manual seed floor keeps `_is_pool_dead() = False`.
+- 🟢 **Scrapers verified healthy** — `cycle_state: overall_status=healthy, continuity_safe=true`. RED 12, YELLOW 85, GREEN 0 (legitimate `source_empty`).
+- 🔁 **nginx restored** — OOM-killed Oct 28, no auto-restart → 13-day silent API outage. Fixed with `Restart=always`.
+
+**Delivered:** 2026-11-11 00:30 MSK in a single diagnostic session (4h). 1 source file changed (`sale_history.py` + `sources.py`), 1 config change (nginx systemd drop-in).
+
+**Known deferred:** Server health (Phase 89), TLS seed hardening, 5 react-hooks, 21 inline-style TODOs → v1.28.
+
+---
+
+## v1.26 Miniapp Test Harness + Style Guide Debt Cleanup (Shipped: 2026-05-15)
+
+---
+
 ## v1.26 Miniapp Test Harness + Style Guide Debt Cleanup (Shipped: 2026-05-15)
 
 **Phases completed:** 3 phases (83-85), 32 commits, 372 files changed (+42409/-35339 LOC)

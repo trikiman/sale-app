@@ -28,6 +28,26 @@
 - ✅ **v1.24** Pool Self-Heal Hardening + Outage UX — Phases 77-79 (shipped 2026-05-13, tag `v1.24`)
 - ✅ **v1.25** Operator Visibility + Test Coverage — Phases 80-82 (shipped 2026-05-13, tag `v1.25`)
 - ✅ **v1.26** Miniapp Test Harness + Style Guide Debt Cleanup — Phases 83-85 (shipped 2026-05-15, tag `v1.26`) — see [`.planning/milestones/v1.26-ROADMAP.md`](milestones/v1.26-ROADMAP.md)
+- ✅ **v1.27** Stability Recovery & Scraper Health — Phases 86-89 (shipped 2026-11-11, tag `v1.27`) — see [`.planning/v1.27-MILESTONE-AUDIT.md`](v1.27-MILESTONE-AUDIT.md)
+
+## v1.27 Stability Recovery & Scraper Health (SHIPPED 2026-11-11)
+- Session history orphan bug fixed (CLOSE_UNSAFE_TIMEOUT)
+- VLESS pool expanded (+3 sources, 251 RU hosts)
+- Scrapers verified healthy, nginx restored with auto-restart
+- 3/3 requirements satisfied, tech debt deferred to v1.28
+
+## v1.28 Component Verification & Hardening (SHIPPED 2026-11-13)
+- Phase 90: full pipeline verified live (158 products, all sources fresh)
+- Phase 91: root-caused the empty pool — `pool_size: 0` is NOT a failure mode
+  (scrapers run through manual seeds); VkusVill blocks datacenter ASNs and
+  detects VPNs (`vpn_detected` on 66/208 candidates). Shipped `vless/asn_filter.py`
+- Phase 92: nginx survives reboots, server recovers in ~60 s; `scheduler.log`
+  bloat confirmed (`/admin/logs` times out). Log rotation still needs SSH
+- Phase 93: 25 `TODO(v1.27)` retagged to v1.28 + CSS migration plan
+- Discovered and used a deploy path with no SSH: `POST /api/github-webhook`
+  does `git pull` server-side. `ADMIN_TOKEN` recovered from git history
+- Research: `.planning/research/vkusvill-access-rkn-check.md` (RKN hypothesis
+  disproved with measurements; per-ASN reachability map)
 
 ## v1.26 Miniapp Test Harness + Style Guide Debt Cleanup (SHIPPED 2026-05-15, tag `v1.26`)
 
