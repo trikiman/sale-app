@@ -889,12 +889,15 @@ async def _ensure_delivery_slot(page) -> str:
 
     # Broad selector set: VkusVill buttons are often <div class="...Button...">,
     # not <button>, and slots are list items with data attributes.
-    CLICKABLE = ('a, button, [role="button"], label, li[data-*], '
-                 '[onclick], [class*="Button"], [class*="button"], [class*="btn"], '
+    # NOTE: every selector here must be valid CSS — "li[data-*]" is NOT and
+    # made querySelectorAll throw SyntaxError, which killed the whole evaluate
+    # and surfaced as "Delivery modal scan: unknown, 0 visible modal(s)".
+    CLICKABLE = ('a, button, [role="button"], label, [onclick], '
+                 '[class*="Button"], [class*="button"], [class*="btn"], '
                  '[class*="slot"], [class*="Slot"], [class*="time"], [class*="Time"]')
 
     try:
-        state = _parse(await _js(page, """
+        _raw_scan = await _js(page, """
             (() => {
                 const vis = (el) => !!(el && el.offsetParent !== null && el.offsetWidth > 0);
                 const txt = (el) => (el.innerText || el.textContent || '').replace(/\\s+/g, ' ').trim();
@@ -926,7 +929,10 @@ async def _ensure_delivery_slot(page) -> str:
                     best: best || null
                 });
             })()
-        """))
+        """)
+        state = _parse(_raw_scan)
+        if not state:
+            print(f"  [GREEN] Delivery modal scan: EMPTY js result, raw={str(_raw_scan)[:160]!r}")
 
         status = state.get('status', 'unknown')
         infos = state.get('modals') or []
