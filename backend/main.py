@@ -5858,22 +5858,50 @@ def admin_catalog_discovery_status():
     }
 
 
+def _read_log_tail(path: str, n: int, chunk_size: int = 64 * 1024) -> list[str]:
+    """Return the last ``n`` log lines without loading the whole file.
+
+    Reads backwards in chunks until ``n+1`` newlines are collected; cost is
+    O(size of tail), not O(file). UTF-8 continuation bytes are all >= 0x80,
+    so a 0x0A byte is always a real newline, and byte-level buffering is safe.
+    """
+    buf = b""
+    with open(path, "rb") as f:
+        f.seek(0, os.SEEK_END)
+        size = f.tell()
+        pos = size
+        while pos > 0 and buf.count(b"\n") <= n:
+            read_now = min(chunk_size, pos)
+            pos -= read_now
+            f.seek(pos)
+            buf = f.read(read_now) + buf
+    text = buf.decode("utf-8", errors="replace")
+    lines = text.split("\n")
+    if pos > 0 and lines:
+        lines = lines[1:]  # first element is a partial line from a later chunk
+    if lines and lines[-1] == "":
+        lines.pop()  # file ends with "\n" — not a real log line
+    return [l.rstrip() for l in lines[-n:]]
+
+
 @app.get("/admin/logs")
 def admin_get_logs(
     n: int = Query(100, ge=1, le=300),
     token: Optional[str] = Header(None, alias="X-Admin-Token"),
 ):
-    """Return last N log lines from scheduler.log + in-memory buffer."""
+    """Return last N log lines from scheduler.log + in-memory buffer.
+
+    v1.29: reads the tail by seeking from the end of the file instead of
+    ``f.readlines()`` on the whole file. With a multi-MB scheduler.log the
+    old full read took >90 s and effectively timed out the endpoint.
+    """
     _require_token(token)
     lines = []
     # Primary source: scheduler.log (where the scheduler service writes)
     scheduler_log = os.path.join(BASE_PROJECT_DIR, "logs", "scheduler.log")
     if os.path.exists(scheduler_log):
         try:
-            with open(scheduler_log, "r", encoding="utf-8", errors="replace") as f:
-                # Read last N lines efficiently
-                all_lines = f.readlines()
-                lines = [l.rstrip() for l in all_lines[-n:]]
+            lines = _read_log_tail(scheduler_log, n)
         except Exception:
             pass
     # Supplement with in-memory buffer (from admin-triggered runs)
