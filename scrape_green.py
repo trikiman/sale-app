@@ -401,7 +401,16 @@ def _fetch_basket_snapshot() -> dict:
             print(f"  [GREEN] basket_recalc via {('urn' if 'bringyour' in _proxy else 'env')}: "
                   f"HTTP {getattr(r,'status_code','?')}, no basket; keys={_keys}")
         except Exception as e:
-            _tag = "urnetwork-ru" if 'bringyour' in _proxy else (_proxy or "direct")
+            if 'bringyour' in _proxy:
+                try:
+                    from urllib.parse import urlparse as _up
+                    _hp = _up(_proxy).hostname or '?'
+                    _hp += f":{_up(_proxy).port or '?'}"
+                except Exception:
+                    _hp = '?'
+                _tag = f"urnetwork-ru({_hp})"
+            else:
+                _tag = _proxy or "direct"
             print(f"  [GREEN] basket_recalc via {_tag} failed: {e}")
 
     print("  [GREEN] basket_recalc: all egress attempts failed")
