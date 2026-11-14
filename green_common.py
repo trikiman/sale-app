@@ -450,14 +450,17 @@ def fetch_basket_snapshot() -> dict:
                     cookies=cookies,
                 )
             data = r.json()
-            basket = data.get('basket', {})
-            if isinstance(basket, dict):
+            basket = data.get('basket')
+            if isinstance(basket, dict) and basket:
                 if _proxy.startswith('socks5h://') and 'crisp.bringyour.com' in _proxy:
                     print("  [GREEN] basket_recalc OK via URnetwork RU residential")
                 return basket
-            _keys = list(data.keys())[:8] if isinstance(data, dict) else type(data).__name__
+            _err = data.get('error') if isinstance(data, dict) else None
+            _ok = data.get('success') if isinstance(data, dict) else None
+            _n = len(basket) if isinstance(basket, dict) else 'null'
             print(f"  [GREEN] basket_recalc via {('urn' if 'bringyour' in _proxy else 'env')}: "
-                  f"HTTP {getattr(r,'status_code','?')}, no basket; keys={_keys}")
+                  f"HTTP {getattr(r,'status_code','?')} success={_ok} error={_err!r} "
+                  f"basket={_n} — session may lack delivery address")
         except Exception as e:
             if 'bringyour' in _proxy:
                 try:
