@@ -931,8 +931,13 @@ async def _ensure_delivery_slot(page) -> str:
             })()
         """)
         state = _parse(_raw_scan)
-        if not state:
-            print(f"  [GREEN] Delivery modal scan: EMPTY js result, raw={str(_raw_scan)[:160]!r}")
+        if not isinstance(state, dict) or 'status' not in state:
+            # nodriver may hand back a deep-serialized structure instead of the
+            # JSON string we return from JS — surface exactly what came back.
+            print(f"  [GREEN] Delivery modal scan: UNEXPECTED result "
+                  f"type={type(_raw_scan).__name__} raw={str(_raw_scan)[:220]!r}")
+            if isinstance(_raw_scan, dict):
+                state = _raw_scan.get('value') if isinstance(_raw_scan.get('value'), dict) else state
 
         status = state.get('status', 'unknown')
         infos = state.get('modals') or []
