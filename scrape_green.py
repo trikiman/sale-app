@@ -922,11 +922,13 @@ async def _ensure_delivery_slot(page) -> str:
                         samples: btns.map(b => txt(b).slice(0, 45)).filter(t => t).slice(0, 8)
                     };
                 });
-                const best = info.slice().sort((a, b) => b.buttons - a.buttons)[0];
+                const dlv = info.filter(m => /доставк|самовывоз|времени доставки|слот/i.test(m.text));
+                const best = (dlv.length ? dlv : []).sort((a, b) => b.buttons - a.buttons)[0] || null;
                 return JSON.stringify({
                     status: info.length ? 'modal_open' : 'no_modal',
                     modals: info,
-                    best: best || null
+                    best: best,
+                    delivery_candidates: dlv.length
                 });
             })()
         """)
@@ -952,6 +954,7 @@ async def _ensure_delivery_slot(page) -> str:
             return 'already'
 
         best = state.get('best') or {}
+        print(f"  [GREEN] Delivery-looking modals: {state.get('delivery_candidates')}")
         if status == 'modal_open' and (best.get('buttons') or 0) > 0:
             picked = await _js(page, """
                 (() => {
@@ -960,10 +963,10 @@ async def _ensure_delivery_slot(page) -> str:
                     const modalSel = '[class*="Modal"], [role="dialog"], [class*="modal"]';
                     const clickSel = '""" + CLICKABLE + """';
                     const modals = Array.from(document.querySelectorAll(modalSel)).filter(vis)
-                        .map(m => ({m: m, n: Array.from(m.querySelectorAll(clickSel)).filter(vis).length}))
-                        .sort((a, b) => b.n - a.n);
-                    if (!modals.length) return 'no_modal';
-                    const scope = modals[0].m;
+                        .map(m => ({m: m, n: Array.from(m.querySelectorAll(clickSel)).filter(vis).length}));
+                    const dlv = modals.filter(x => /доставк|самовывоз|времени доставки|слот/i.test(txt(x.m)));
+                    if (!dlv.length) return 'no_delivery_modal';
+                    const scope = dlv.sort((a, b) => b.n - a.n)[0].m;
                     const timeRe = /(\\d{1,2}[:.]\\d{2}\\s*[–-]\\s*\\d{1,2}[:.]\\d{2})|(сегодня|завтра|ближайш)/i;
                     const cands = Array.from(scope.querySelectorAll(clickSel)).filter(vis);
                     for (const el of cands) {
@@ -974,13 +977,9 @@ async def _ensure_delivery_slot(page) -> str:
                         try { el.click(); } catch (e) { continue; }
                         return 'picked:' + t.slice(0, 50);
                     }
-                    // No time-like text — click the first button that isn't a close control
-                    for (const el of cands) {
-                        const t = txt(el);
-                        if (!t) continue;
-                        if (/закры|отмена|крестик/i.test(t)) continue;
-                        try { el.click(); return 'picked_generic:' + t.slice(0, 40); } catch (e) {}
-                    }
+                    // No time-like slot text: do NOT click arbitrary controls —
+                    // a generic click landed on the "Скоро исчезнут с полок"
+                    // filter and destabilised the page.
                     return 'no_slot_found';
                 })()
             """) or ''
