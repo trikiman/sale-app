@@ -246,9 +246,36 @@ def build_urnetwork_outbounds(
     return [outbound], [tag]
 
 
+def socks_proxy_url(cache_path: Path | None = None) -> str | None:
+    """Return a ``socks5h://TOKEN@host:port`` URL for the cached RU proxy.
+
+    Used by scrapers as an egress fallback for VkusVill when the dynamic
+    VLESS pool is dead: URnetwork exits through real Russian ISPs, which
+    VkusVill does not block or flag as VPN.
+    """
+    cached = load_cached_proxy(cache_path)
+    if cached is None:
+        return None
+    return f"socks5h://{cached['auth_token']}@{cached['host']}:{int(cached['port'])}"
+
+
+def proxy_candidates(env_var: str = "SOCKS_PROXY") -> list[str]:
+    """Ordered proxy URLs to try for VkusVill: env-configured first, then URnetwork."""
+    out: list[str] = []
+    env_proxy = os.environ.get(env_var, "").strip()
+    if env_proxy:
+        out.append(env_proxy)
+    urn = socks_proxy_url()
+    if urn and urn not in out:
+        out.append(urn)
+    return out
+
+
 __all__ = [
     "build_urnetwork_outbounds",
     "default_cache_path",
     "ensure_ru_proxy",
     "load_cached_proxy",
+    "proxy_candidates",
+    "socks_proxy_url",
 ]

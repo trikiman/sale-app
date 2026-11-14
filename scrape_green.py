@@ -363,11 +363,23 @@ def _fetch_basket_snapshot() -> dict:
     cookies = {c['name']: c['value'] for c in raw}
 
     # Use httpx with SOCKS5 proxy — requests+PySocks is unreliable (timeouts)
-    # Reduced timeout and retries to avoid long hangs that trigger IP bans
+    # Reduced timeout and retries to avoid long hangs that trigger IP bans.
+    # Egress order: env SOCKS_PROXY (xray pool) then URnetwork RU residential;
+    # the dynamic pool is usually empty, which made this time out every cycle.
     import httpx
-    for attempt in range(1):
+
+    try:
+        from vless.urnetwork import proxy_candidates as _urn_candidates
+
+        _proxies = _urn_candidates()
+    except Exception:
+        _env_proxy = os.environ.get("SOCKS_PROXY", "").strip()
+        _proxies = [_env_proxy] if _env_proxy else []
+    if not _proxies:
+        _proxies = [""]  # direct
+
+    for _proxy in _proxies:
         try:
-            _proxy = os.environ.get("SOCKS_PROXY", "")
             client_kwargs = dict(timeout=15)
             if _proxy:
                 client_kwargs['proxy'] = _proxy
@@ -380,11 +392,15 @@ def _fetch_basket_snapshot() -> dict:
                 )
             data = r.json()
             basket = data.get('basket', {})
-            return basket if isinstance(basket, dict) else {}
+            if isinstance(basket, dict):
+                if 'bringyour' in _proxy:
+                    print("  [GREEN] basket_recalc OK via URnetwork RU residential")
+                return basket
         except Exception as e:
-            print(f"  [GREEN] basket_recalc httpx attempt {attempt+1} failed: {e}")
+            _tag = "urnetwork-ru" if 'bringyour' in _proxy else (_proxy or "direct")
+            print(f"  [GREEN] basket_recalc via {_tag} failed: {e}")
 
-    print("  [GREEN] basket_recalc: httpx fallback failed")
+    print("  [GREEN] basket_recalc: all egress attempts failed")
     return {}
 
 
