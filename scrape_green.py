@@ -872,12 +872,10 @@ async def _ensure_delivery_slot(page) -> str:
     and ``Seed item: no_button_found``), so green items can never be added and
     ``basket_recalc`` keeps returning ``delivery: []  basket: []``.
 
-    Returns a short status string for the log. Never raises: any failure is
-    reported and the caller continues with the old behaviour.
+    Returns a short status string for the log. Never raises.
 
-    NOTE: every evaluate returns ``JSON.stringify(...)`` because nodriver
-    deep-serializes plain objects and the previous version came back empty
-    ("Delivery modal: unknown; 0 clickable items").
+    All evaluates return ``JSON.stringify(...)`` — nodriver deep-serializes
+    plain objects into an empty dict otherwise.
     """
     import json as _json
 
@@ -889,57 +887,74 @@ async def _ensure_delivery_slot(page) -> str:
                 return {}
         return raw if isinstance(raw, dict) else {}
 
+    # Broad selector set: VkusVill buttons are often <div class="...Button...">,
+    # not <button>, and slots are list items with data attributes.
+    CLICKABLE = ('a, button, [role="button"], label, li[data-*], '
+                 '[onclick], [class*="Button"], [class*="button"], [class*="btn"], '
+                 '[class*="slot"], [class*="Slot"], [class*="time"], [class*="Time"]')
+
     try:
-        state = _parse(await _js(page, r"""
+        state = _parse(await _js(page, """
             (() => {
                 const vis = (el) => !!(el && el.offsetParent !== null && el.offsetWidth > 0);
-                const txt = (el) => (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+                const txt = (el) => (el.innerText || el.textContent || '').replace(/\\s+/g, ' ').trim();
                 const modalSel = '[class*="Modal"], [role="dialog"], [class*="modal"]';
+                const clickSel = '""" + CLICKABLE + """';
 
                 const chosen = document.querySelector(
                     '[class*="Slot"][class*="active"], [class*="slot"][class*="active"], ' +
-                    '[class*="Slot"][class*="selected"], [class*="slot"][class*="selected"], ' +
-                    '[class*="time"][class*="active"], [class*="Time"][class*="active"]'
+                    '[class*="Slot"][class*="selected"], [class*="slot"][class*="selected"]'
                 );
                 if (chosen && vis(chosen)) {
-                    return JSON.stringify({status: 'already', chosen: txt(chosen).slice(0, 60), items: []});
+                    return JSON.stringify({status: 'already', chosen: txt(chosen).slice(0, 60), modals: []});
                 }
 
                 const modals = Array.from(document.querySelectorAll(modalSel)).filter(vis);
-                const scope = modals.find(m => /доставк|самовывоз|времени|слот/i.test(txt(m))) || modals[0];
-                if (!scope) {
-                    return JSON.stringify({status: 'no_modal', chosen: '', items: [], modals: modals.length});
-                }
-                const clickable = Array.from(scope.querySelectorAll('a, button, [role="button"], label'))
-                    .filter(vis);
-                const items = clickable.map(el => txt(el).slice(0, 70)).filter(t => t).slice(0, 40);
-                return JSON.stringify({status: 'modal_open', chosen: '', items: items, modals: modals.length});
+                const info = modals.map((m, i) => {
+                    const btns = Array.from(m.querySelectorAll(clickSel)).filter(vis);
+                    return {
+                        i: i,
+                        text: txt(m).slice(0, 80),
+                        buttons: btns.length,
+                        samples: btns.map(b => txt(b).slice(0, 45)).filter(t => t).slice(0, 8)
+                    };
+                });
+                const best = info.slice().sort((a, b) => b.buttons - a.buttons)[0];
+                return JSON.stringify({
+                    status: info.length ? 'modal_open' : 'no_modal',
+                    modals: info,
+                    best: best || null
+                });
             })()
         """))
 
         status = state.get('status', 'unknown')
-        items = state.get('items') or []
-        print(f"  [GREEN] Delivery modal: {status} (modals={state.get('modals')}); "
-              f"{len(items)} clickable items")
-        for i, t in enumerate(items[:18]):
-            print(f"  [GREEN]   slot-candidate[{i}]: {t!r}")
+        infos = state.get('modals') or []
+        print(f"  [GREEN] Delivery modal scan: {status}, {len(infos)} visible modal(s)")
+        for m in infos:
+            print(f"  [GREEN]   modal[{m.get('i')}] buttons={m.get('buttons')} text={m.get('text')!r}")
+            for s in (m.get('samples') or [])[:6]:
+                print(f"  [GREEN]      btn: {s!r}")
 
         if status == 'already':
             print(f"  [GREEN] Delivery slot already set: {state.get('chosen')!r}")
             return 'already'
 
-        if status == 'modal_open':
-            picked = await _js(page, r"""
+        best = state.get('best') or {}
+        if status == 'modal_open' and (best.get('buttons') or 0) > 0:
+            picked = await _js(page, """
                 (() => {
                     const vis = (el) => !!(el && el.offsetParent !== null && el.offsetWidth > 0);
-                    const txt = (el) => (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+                    const txt = (el) => (el.innerText || el.textContent || '').replace(/\\s+/g, ' ').trim();
                     const modalSel = '[class*="Modal"], [role="dialog"], [class*="modal"]';
-                    const modals = Array.from(document.querySelectorAll(modalSel)).filter(vis);
-                    const scope = modals.find(m => /доставк|самовывоз|времени|слот/i.test(txt(m))) || modals[0];
-                    if (!scope) return 'no_modal';
-                    const timeRe = /(\d{1,2}[:.]\d{2}\s*[–-]\s*\d{1,2}[:.]\d{2})|(сегодня|завтра|ближайш)/i;
-                    const cands = Array.from(scope.querySelectorAll('a, button, [role="button"], label, li, div'))
-                        .filter(el => vis(el) && el.children.length <= 3);
+                    const clickSel = '""" + CLICKABLE + """';
+                    const modals = Array.from(document.querySelectorAll(modalSel)).filter(vis)
+                        .map(m => ({m: m, n: Array.from(m.querySelectorAll(clickSel)).filter(vis).length}))
+                        .sort((a, b) => b.n - a.n);
+                    if (!modals.length) return 'no_modal';
+                    const scope = modals[0].m;
+                    const timeRe = /(\\d{1,2}[:.]\\d{2}\\s*[–-]\\s*\\d{1,2}[:.]\\d{2})|(сегодня|завтра|ближайш)/i;
+                    const cands = Array.from(scope.querySelectorAll(clickSel)).filter(vis);
                     for (const el of cands) {
                         const t = txt(el);
                         if (!t || t.length > 70) continue;
@@ -948,19 +963,26 @@ async def _ensure_delivery_slot(page) -> str:
                         try { el.click(); } catch (e) { continue; }
                         return 'picked:' + t.slice(0, 50);
                     }
+                    // No time-like text — click the first button that isn't a close control
+                    for (const el of cands) {
+                        const t = txt(el);
+                        if (!t) continue;
+                        if (/закры|отмена|крестик/i.test(t)) continue;
+                        try { el.click(); return 'picked_generic:' + t.slice(0, 40); } catch (e) {}
+                    }
                     return 'no_slot_found';
                 })()
             """) or ''
             print(f"  [GREEN] Delivery slot pick: {picked}")
 
-            if isinstance(picked, str) and picked.startswith('picked:'):
+            if isinstance(picked, str) and picked.startswith('picked'):
                 await asyncio.sleep(2)
-                confirm = await _js(page, r"""
+                confirm = await _js(page, """
                     (() => {
                         const vis = (el) => !!(el && el.offsetParent !== null && el.offsetWidth > 0);
-                        const txt = (el) => (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+                        const txt = (el) => (el.innerText || el.textContent || '').replace(/\\s+/g, ' ').trim();
                         const words = ['Сохранить', 'Применить', 'Выбрать', 'Подтвердить', 'Готово', 'Продолжить'];
-                        const btns = Array.from(document.querySelectorAll('button, a, [role="button"]')).filter(vis);
+                        const btns = Array.from(document.querySelectorAll('button, a, [role="button"], [class*="Button"]')).filter(vis);
                         for (const b of btns) {
                             const t = txt(b);
                             if (words.some(w => t.toLowerCase().includes(w.toLowerCase()))) {
@@ -974,16 +996,16 @@ async def _ensure_delivery_slot(page) -> str:
                 await asyncio.sleep(3)
                 return 'selected'
 
-        # Nothing open — try to open the delivery picker explicitly
-        opened = await _js(page, r"""
+        # Nothing useful open — try to open the delivery picker explicitly
+        opened = await _js(page, """
             (() => {
                 const vis = (el) => !!(el && el.offsetParent !== null && el.offsetWidth > 0);
-                const txt = (el) => (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+                const txt = (el) => (el.innerText || el.textContent || '').replace(/\\s+/g, ' ').trim();
                 const links = document.querySelectorAll('.js-delivery-slots-load, a[class*="delivery-slots"]');
                 for (const l of links) if (vis(l)) { l.click(); return 'opened_link'; }
-                for (const el of document.querySelectorAll('a, button')) {
+                for (const el of document.querySelectorAll('a, button, [class*="Button"]')) {
                     const t = txt(el);
-                    if (vis(el) && /выбрать|изменить/i.test(t) && /доставк|время/i.test(t)) {
+                    if (vis(el) && /выбрать|изменить|время/i.test(t) && /доставк|время|слот/i.test(t)) {
                         el.click(); return 'opened_text';
                     }
                 }
