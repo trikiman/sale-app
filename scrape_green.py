@@ -864,6 +864,135 @@ async def _close_green_modal(page):
     """)
 
 
+async def _ensure_delivery_slot(page) -> str:
+    """Select a delivery slot when none is chosen.
+
+    Why this matters: with an empty delivery slot VkusVill renders the cart
+    without "в корзину" buttons (observed: ``Inline add-to-cart: no_button: 4``
+    and ``Seed item: no_button_found``), so green items can never be added and
+    ``basket_recalc`` keeps returning ``delivery: []  basket: []``.
+
+    Returns a short status string for the log. Never raises: any failure is
+    reported and the caller continues with the old behaviour.
+    """
+    try:
+        state = await _js(page, r"""
+            (() => {
+                const vis = (el) => !!(el && el.offsetParent !== null && el.offsetWidth > 0);
+                const txt = (el) => (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+                const modalSel = '[class*="Modal"], [role="dialog"], [class*="modal"]';
+
+                // 1) Is a slot already selected?
+                const chosen = document.querySelector(
+                    '[class*="Slot"][class*="active"], [class*="slot"][class*="active"], ' +
+                    '[class*="Slot"][class*="selected"], [class*="slot"][class*="selected"], ' +
+                    '[class*="time"][class*="active"], [class*="Time"][class*="active"]'
+                );
+                if (chosen && vis(chosen)) {
+                    return {status: 'already', chosen: txt(chosen).slice(0, 60), items: []};
+                }
+
+                // 2) Collect every visible clickable inside the delivery modal
+                const modals = Array.from(document.querySelectorAll(modalSel)).filter(vis);
+                const scope = modals.find(m => /доставк|самовывоз|времени|слот/i.test(txt(m))) || modals[0];
+                if (!scope) {
+                    return {status: 'no_modal', chosen: '', items: []};
+                }
+                const clickable = Array.from(scope.querySelectorAll('a, button, [role="button"], label'))
+                    .filter(vis);
+                const items = clickable
+                    .map(el => txt(el).slice(0, 70))
+                    .filter(t => t)
+                    .slice(0, 40);
+                return {status: 'modal_open', chosen: '', items: items};
+            })()
+        """) or {}
+
+        if not isinstance(state, dict):
+            state = {}
+        status = state.get('status', 'unknown')
+        if status == 'already':
+            print(f"  [GREEN] Delivery slot already set: {state.get('chosen')!r}")
+            return 'already'
+
+        items = state.get('items') or []
+        print(f"  [GREEN] Delivery modal: {status}; {len(items)} clickable items")
+        for i, t in enumerate(items[:18]):
+            print(f"  [GREEN]   slot-candidate[{i}]: {t!r}")
+
+        # 3) Pick the first time-looking candidate, confirm the dialog
+        picked = await _js(page, r"""
+            (() => {
+                const vis = (el) => !!(el && el.offsetParent !== null && el.offsetWidth > 0);
+                const txt = (el) => (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+                const modalSel = '[class*="Modal"], [role="dialog"], [class*="modal"]';
+                const modals = Array.from(document.querySelectorAll(modalSel)).filter(vis);
+                const scope = modals.find(m => /доставк|самовывоз|времени|слот/i.test(txt(m))) || modals[0];
+                if (!scope) return 'no_modal';
+
+                const timeRe = /(\d{1,2}[:.]\d{2}\s*[–-]\s*\d{1,2}[:.]\d{2})|(сегодня|завтра|ближайш)/i;
+                const cands = Array.from(scope.querySelectorAll('a, button, [role="button"], label, li, div'))
+                    .filter(el => vis(el) && el.children.length <= 3);
+                for (const el of cands) {
+                    const t = txt(el);
+                    if (!t || t.length > 70) continue;
+                    if (!timeRe.test(t)) continue;
+                    if (/недоступ|занят|нет мест/i.test(t)) continue;
+                    try { el.click(); } catch (e) { continue; }
+                    return 'picked:' + t.slice(0, 50);
+                }
+                return 'no_slot_found';
+            })()
+        """)
+        print(f"  [GREEN] Delivery slot pick: {picked}")
+
+        if isinstance(picked, str) and picked.startswith('picked:'):
+            await asyncio.sleep(2)
+            confirm = await _js(page, r"""
+                (() => {
+                    const vis = (el) => !!(el && el.offsetParent !== null && el.offsetWidth > 0);
+                    const txt = (el) => (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+                    const words = ['Сохранить', 'Применить', 'Выбрать', 'Подтвердить', 'Готово', 'Продолжить'];
+                    const btns = Array.from(document.querySelectorAll('button, a, [role="button"]')).filter(vis);
+                    for (const b of btns) {
+                        const t = txt(b);
+                        if (words.some(w => t.toLowerCase().includes(w.toLowerCase()))) {
+                            try { b.click(); return 'confirmed:' + t.slice(0, 40); } catch (e) {}
+                        }
+                    }
+                    return 'no_confirm_button';
+                })()
+            """)
+            print(f"  [GREEN] Delivery slot confirm: {confirm}")
+            await asyncio.sleep(3)
+            return 'selected'
+
+        if status == 'no_modal':
+            # Nothing open — try to open the delivery picker explicitly
+            opened = await _js(page, r"""
+                (() => {
+                    const vis = (el) => !!(el && el.offsetParent !== null && el.offsetWidth > 0);
+                    const txt = (el) => (el.innerText || el.textContent || '').replace(/\s+/g, ' ').trim();
+                    const links = document.querySelectorAll('.js-delivery-slots-load, a[class*="delivery-slots"]');
+                    for (const l of links) if (vis(l)) { l.click(); return 'opened_link'; }
+                    for (const el of document.querySelectorAll('a, button')) {
+                        const t = txt(el);
+                        if (vis(el) && /выбрать|изменить/i.test(t) && /доставк|время/i.test(t)) {
+                            el.click(); return 'opened_text';
+                        }
+                    }
+                    return 'not_found';
+                })()
+            """)
+            print(f"  [GREEN] Delivery picker open attempt: {opened}")
+            return f'open_attempt_{opened}'
+
+        return status
+    except Exception as exc:  # noqa: BLE001 — never break the scrape
+        print(f"  [GREEN] _ensure_delivery_slot error: {exc}")
+        return f'error:{type(exc).__name__}'
+
+
 async def _close_delivery_modal(page):
     """Force-close the 'Ассортимент зависит от времени доставки' delivery modal.
     This modal auto-pops after every page reload and blocks the green items modal.
@@ -1443,6 +1572,14 @@ async def scrape_green_prices_async():
             print("❌ [GREEN] Not logged in! Aborting.")
             return [], False
         print("  [GREEN] Logged in OK")
+
+        # ── STEP 1.5: Ensure a delivery slot is selected ──
+        # Without a slot VkusVill hides every "в корзину" button, so green
+        # items can never reach the cart and basket_recalc returns empty.
+        slot_status = await _ensure_delivery_slot(page)
+        print(f"  [GREEN] Step 1.5 delivery slot: {slot_status}")
+        await _close_delivery_modal(page)
+        await asyncio.sleep(1)
 
         # ── STEP 2: Turn on "Больше товаров" switch ──
         print("  [GREEN] Step 2: Checking 'Больше товаров' toggle...")
@@ -2405,6 +2542,18 @@ async def scrape_green_prices_async():
                 results_summary, added = await _add_green_cards_to_cart(page, 'inline', inline_count)
                 print(f"  [GREEN] Inline add-to-cart: {results_summary}")
                 print(f"  [GREEN] Added {added}/{inline_count} items to cart")
+
+                # If every card lacked a button, the usual cause is a missing
+                # delivery slot (VkusVill hides "в корзину" until it is picked).
+                # Select one and retry the add once.
+                if added == 0 and inline_count > 0:
+                    retry_slot = await _ensure_delivery_slot(page)
+                    print(f"  [GREEN] Slot retry after hidden buttons: {retry_slot}")
+                    await _close_delivery_modal(page)
+                    await asyncio.sleep(2)
+                    results_summary, added = await _add_green_cards_to_cart(page, 'inline', inline_count)
+                    print(f"  [GREEN] Inline add-to-cart (retry): {results_summary}")
+                    print(f"  [GREEN] Added {added}/{inline_count} items to cart (retry)")
             else:
                 print("  [GREEN] No inline cards found")
 
