@@ -455,6 +455,9 @@ def fetch_basket_snapshot() -> dict:
                 if _proxy.startswith('socks5h://') and 'crisp.bringyour.com' in _proxy:
                     print("  [GREEN] basket_recalc OK via URnetwork RU residential")
                 return basket
+            _keys = list(data.keys())[:8] if isinstance(data, dict) else type(data).__name__
+            print(f"  [GREEN] basket_recalc via {('urn' if 'bringyour' in _proxy else 'env')}: "
+                  f"HTTP {getattr(r,'status_code','?')}, no basket; keys={_keys}")
         except Exception as e:
             _tag = "urnetwork-ru" if 'bringyour' in _proxy else (_proxy or "direct")
             print(f"  [GREEN] basket_recalc via {_tag} failed: {e}")
