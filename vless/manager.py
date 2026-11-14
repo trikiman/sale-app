@@ -29,7 +29,7 @@ try:
 except ImportError:  # pragma: no cover — CI installs httpx
     HAS_HTTPX = False
 
-from vless import asn_filter, installer, pool_state, quarantine, sources
+from vless import asn_filter, installer, pool_state, quarantine, sources, urnetwork
 from vless.config_gen import XRAY_LISTEN_HOST, XRAY_LISTEN_PORT, build_xray_config
 from vless.parser import VlessNode
 from vless.xray import XrayProcess, XrayStartupError, _atomic_write_text
@@ -445,6 +445,12 @@ class VlessProxyManager:
             self._log(f"Pool low ({count}/{MIN_HEALTHY}) — refreshing...")
 
         self._last_refresh_monotonic = now_mono
+        had_urn = urnetwork.load_cached_proxy() is not None
+        if not had_urn:
+            provisioned = urnetwork.ensure_ru_proxy(log_fn=self._log)
+            if provisioned is not None:
+                with self._lock:
+                    self._rebuild_and_restart_xray()
         existing = {
             entry.get("host")
             for entry in self._pool.get("nodes", [])
@@ -1314,7 +1320,9 @@ class VlessProxyManager:
             test_port = 20000 + (idx % 10_000)
             test_config = _BASE_DIR / "bin" / "xray" / "configs" / f"probe-{idx}.json"
             test_log = _BASE_DIR / "bin" / "xray" / "logs" / f"probe-{idx}.log"
-            config_dict = build_xray_config([node], listen_port=test_port)
+            config_dict = build_xray_config(
+                [node], listen_port=test_port, include_urnetwork=False
+            )
             try:
                 test_config.parent.mkdir(parents=True, exist_ok=True)
                 test_config.write_text(

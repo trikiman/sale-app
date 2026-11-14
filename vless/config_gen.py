@@ -99,6 +99,7 @@ def build_xray_config(
     listen_host: str = XRAY_LISTEN_HOST,
     listen_port: int = XRAY_LISTEN_PORT,
     log_level: str = "warning",
+    include_urnetwork: bool = True,
 ) -> dict:
     """Build a full xray-core config dict from a list of VLESS nodes.
 
@@ -125,6 +126,14 @@ def build_xray_config(
     manual_outbounds, manual_tags = build_manual_outbounds()
     outbounds.extend(manual_outbounds)
     selector_tags.extend(manual_tags)
+
+    urn_tags: list[str] = []
+    if include_urnetwork:
+        from vless.urnetwork import build_urnetwork_outbounds
+
+        urn_outbounds, urn_tags = build_urnetwork_outbounds()
+        outbounds.extend(urn_outbounds)
+        selector_tags.extend(urn_tags)
 
     if not selector_tags:
         raise ValueError("build_xray_config requires at least one outbound (no VLESS nodes and no manual seeds)")
@@ -165,7 +174,7 @@ def build_xray_config(
         "observatory": {
             # v1.27: probe both dynamic VLESS (`node-N`) and manual trojan
             # seeds (`manual-N`) so leastPing ranks them on equal footing.
-            "subjectSelector": ["node-", "manual-"],
+            "subjectSelector": ["node-", "manual-"] + (["urn-"] if urn_tags else []),
             # v1.19 REL-06: probe VkusVill (real traffic target) instead of
             # google.com so leastPing ranks outbounds by end-to-end
             # reachability. Matches vless/preflight.py target. 60s interval
