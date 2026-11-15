@@ -864,6 +864,29 @@ async def _close_green_modal(page):
     """)
 
 
+async def _reacquire_page(browser):
+    """Get a fresh, working page handle after a DOM-triggered reload.
+
+    Chromium replaces the CDP target when the page navigates itself (which the
+    cart does after the first add). The previous handle then fails on every
+    call with "Connection closed" / "no close frame received or sent", killing
+    the whole scrape — this was the recurring crash site right after the seed
+    item was inserted. Retries a few times before giving up.
+    """
+    last = None
+    for attempt in range(3):
+        try:
+            page = await _navigate_and_settle(browser, GREEN_URL, sleep_seconds=8)
+            if page is not None:
+                return page
+        except Exception as exc:  # noqa: BLE001
+            last = exc
+            print(f"  [GREEN] _reacquire_page attempt {attempt + 1} failed: {exc}")
+            await asyncio.sleep(3)
+    print(f"  [GREEN] _reacquire_page exhausted retries (last: {last})")
+    return page
+
+
 async def _ensure_delivery_slot(page) -> str:
     """Select a delivery slot when none is chosen.
 
@@ -1853,16 +1876,17 @@ async def scrape_green_prices_async():
             """)
             print(f"  [GREEN] Seed item: {seed_added}")
             if seed_added and seed_added != 'no_button_found':
-                # Wait for page to reload after first cart addition
+                # Phase 58-02: after the first cart addition Chromium swaps the
+                # CDP target out from under the held handle — every call made
+                # through the OLD handle dies with "Connection closed" /
+                # "no close frame received or sent". So: no screenshot and no
+                # evaluate through `page` here, re-acquire the handle first.
                 await asyncio.sleep(5)
-                await _step_screenshot(page, "after_seed_reload")
-                # Navigate back to cart page (page may have reloaded).
-                # Phase 58-02: this navigation followed by `_js(page, ...)`
-                # was the recurring CDP-WS-HTTP-500 crash site after seed
-                # insertion — Chromium had swapped the target out from
-                # under us while the old handle was still held.
-                page = await _navigate_and_settle(browser, GREEN_URL, sleep_seconds=8)
-                await _step_screenshot(page, "after_seed_navigate")
+                page = await _reacquire_page(browser)
+                try:
+                    await _step_screenshot(page, "after_seed_navigate")
+                except Exception as exc:  # noqa: BLE001 — screenshot must never kill the run
+                    print(f"  [GREEN] screenshot after seed skipped: {exc}")
                 print("  [GREEN] Seed item added — cart is now non-empty")
             else:
                 print("  [GREEN] Could not add seed item — cart may still be empty")
