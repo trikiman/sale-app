@@ -71,14 +71,20 @@ async def launch_stealth_browser(tag="SCRAPER", profile_dir=None, offscreen=Fals
 
     # Wait for Chrome CDP to be ready (it should already be running)
     # On Linux (EC2), auto-launch Chrome if not running
-    for attempt in range(10):
+    # 30 attempts, not 10: on the 1 vCPU Oracle box Chrome regularly needs
+    # 15-25 s to expose CDP, and a launch attempt can also die instantly under
+    # memory pressure. With a 10 s budget the scraper aborted with
+    # "Chrome not available on port 19222" and every green cycle in that
+    # window failed, which is what aged green_products.json out.
+    _LAUNCH_ATTEMPTS = (0, 8, 16)
+    for attempt in range(30):
         if is_chrome_cdp_ready(port):
             if attempt == 0:
                 print(f"  [{tag}] Chrome ready on port {port}")
             else:
                 print(f"  [{tag}] Chrome ready on port {port} (waited {attempt}s)")
             break
-        if attempt == 0:
+        if attempt in _LAUNCH_ATTEMPTS:
             print(f"  [{tag}] Waiting for Chrome on port {port}...")
             # On Linux, auto-launch Chrome if not running
             if sys.platform != 'win32':
@@ -100,6 +106,8 @@ async def launch_stealth_browser(tag="SCRAPER", profile_dir=None, offscreen=Fals
                     'about:blank',
                 ], stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
                 print(f"  [{tag}] Auto-launched Chrome on Linux (port {port})")
+        elif attempt == 0:
+            print(f"  [{tag}] Waiting for Chrome on port {port}...")
         await asyncio.sleep(1)
     else:
         raise RuntimeError(
@@ -117,11 +125,33 @@ async def launch_stealth_browser(tag="SCRAPER", profile_dir=None, offscreen=Fals
                 parts.append(host)
         os.environ[env_key] = ','.join(parts)
 
-    # Connect via nodriver
-    browser = await uc.Browser.create(
-        host='127.0.0.1',
-        port=port,
-    )
+    # A responsive /json/version endpoint can still expose a dead websocket
+    # target. Recover once by recreating local Chrome; this must not depend on
+    # a remote scraper proxy because CDP itself is always localhost.
+    try:
+        browser = await uc.Browser.create(
+            host='127.0.0.1',
+            port=port,
+        )
+    except Exception as first_attach_error:
+        print(
+            f"  [{tag}] Chrome CDP attach failed: "
+            f"{type(first_attach_error).__name__}: {first_attach_error}; restarting once"
+        )
+        if not restart_chrome_with_proxy(proxy=None, tag=f"{tag}-CDP-RECOVERY"):
+            raise RuntimeError(
+                f"Chrome CDP attach failed and local restart did not become ready: "
+                f"{first_attach_error}"
+            ) from first_attach_error
+        try:
+            browser = await uc.Browser.create(
+                host='127.0.0.1',
+                port=port,
+            )
+        except Exception as retry_attach_error:
+            raise RuntimeError(
+                f"Chrome CDP attach failed after local restart: {retry_attach_error}"
+            ) from retry_attach_error
     print(f"  [{tag}] Chrome connected (port: {port})")
 
     # === Apply stealth patches via CDP ===
