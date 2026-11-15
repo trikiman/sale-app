@@ -1307,12 +1307,15 @@ def _merge_green_cart_data(raw_products: list, stock_map: dict) -> list:
             if cart_old_price and old_price in ['0', '1', '', 'None']:
                 p['oldPrice'] = cart_old_price
             elif not old_price or old_price in ['0', '1', '', 'None']:
-                try:
-                    current = int(p.get('currentPrice', 0))
-                    if current > 1:
-                        p['oldPrice'] = str(int(round(current / 0.6)))
-                except (ValueError, TypeError):
-                    pass
+                # NEVER invent an "old" price. This used to write
+                # round(current / 0.6), i.e. assume a flat 40% markdown, and it
+                # silently published wrong data: broccoli at 141 ₽ showed
+                # "было 235 ₽" while VkusVill actually displayed "было 295 ₽".
+                # If the card carries no struck-out price we simply have none —
+                # leave it empty so the UI does not render a fake discount.
+                p['oldPrice'] = ''
+                print(f"  [GREEN] no old price on card, leaving empty: "
+                      f"{str(p.get('name', ''))[:40]} (id={pid})")
         elif p.get('currentPrice') in ['0', '1', '']:
             print(f"  [DEBUG] Product not in cart, price=1: {p.get('name', '')[:40]} (id={pid})")
 
