@@ -114,14 +114,24 @@ async def _safe_js(page, browser, script: str):
     refreshed) page handle for subsequent operations without each step
     needing its own retry.
     """
-    try:
-        return await _js(page, script), page
-    except Exception as exc:  # noqa: BLE001 — diagnostic path
-        if not _is_dead_ws_error(exc):
-            raise
-        print(f"  [GREEN] CDP WS dead during eval ({exc}); re-acquiring tab")
-        page = await _refresh_page_handle(browser)
-        return await _js(page, script), page
+    last_exc = None
+    for attempt in range(3):
+        try:
+            return await _js(page, script), page
+        except Exception as exc:  # noqa: BLE001 — diagnostic path
+            if not _is_dead_ws_error(exc):
+                raise
+            last_exc = exc
+            print(f"  [GREEN] CDP WS dead during eval "
+                  f"(attempt {attempt + 1}/3: {exc}); re-acquiring tab")
+            # First retry: cheapest recovery, reuse any live tab. Later
+            # retries: full re-navigation — after a cart clear the whole
+            # target tree can be replaced, and a stale tab list keeps
+            # handing back dead handles.
+            page = (await _refresh_page_handle(browser) if attempt == 0
+                    else await _reacquire_page(browser))
+            await asyncio.sleep(2)
+    raise last_exc
 
 
 def _normalize_unit(unit_raw):
