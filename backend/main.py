@@ -894,7 +894,13 @@ def client_log(request: Request, payload: dict = Body(default={})):
 # because уценка stock churns fastest and a stale green price misleads
 # most.
 DEFAULT_STALE_THRESHOLDS_MINUTES: dict[str, int] = {
-    "green": 15,
+    # green: 45 rather than 15. The green scraper is the fragile one (browser +
+    # delivery slot + cart seed) and legitimately takes 1-3 minutes per cycle;
+    # one failed cycle used to age the snapshot past 15 minutes and the API then
+    # stripped EVERY green card, so the UI showed 0 while green_products.json
+    # still held 6-12 real products. Green-price markdowns are stable for far
+    # longer than 15 minutes — showing slightly old greens beats showing zero.
+    "green": 45,
     "red": 30,
     "yellow": 30,
 }
@@ -1651,9 +1657,18 @@ def get_products(response: Response):
             }
         elif stale_types and isinstance(data.get("products"), list):
             # Partial stale — v1.22 Phase 66.1 phantom-strip behavior.
+            # Exception for green: stripping it is only correct when VkusVill
+            # itself declared the section empty (its "Зелёных ценников сейчас
+            # нет" banner → greenEmptyReason == "source_empty"). A merely
+            # stale-but-non-empty snapshot means our scraper missed cycles,
+            # not that the offers vanished — dropping those cards produced a
+            # false "0 зелёных" while the file held real products.
+            _strip = set(stale_types)
+            if "green" in _strip and data.get("greenEmptyReason") not in ("source_empty", "missing"):
+                _strip.discard("green")
             data["products"] = [
                 p for p in data["products"]
-                if p.get("type") not in stale_types
+                if p.get("type") not in _strip
             ]
         # v1.26 Phase 85 UX-EMPTY-01: when the final products list is
         # empty (after staleness stripping or because the merge wrote
