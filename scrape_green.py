@@ -1961,7 +1961,19 @@ async def scrape_green_prices_async():
         # prevents the green items modal from opening.
         print("  [GREEN] Step 2.95: Closing any delivery modal...")
         for _attempt in range(3):
-            dm_result = await _close_delivery_modal(page)
+            try:
+                dm_result = await _close_delivery_modal(page)
+            except Exception as _dm_exc:  # noqa: BLE001
+                # Phase 58-02: the cart force-reload right before this step
+                # swaps the CDP target; without recovery here the whole cycle
+                # died with "no close frame received or sent" *after* a
+                # successful clear — green data then aged out and the API
+                # stripped every green card as stale.
+                if not _is_dead_ws_error(_dm_exc):
+                    raise
+                print(f"  [GREEN] WS dead closing delivery modal; re-acquiring tab ({_dm_exc})")
+                page = await _reacquire_page(browser)
+                continue
             if dm_result == 'no_delivery_modal':
                 break
             print(f"  [GREEN] Delivery modal close attempt {_attempt+1}: {dm_result}")
@@ -1972,17 +1984,23 @@ async def scrape_green_prices_async():
         # Scroll green section into viewport — VkusVill lazy-loads cards via
         # Intersection Observer. Cards show as gray placeholders until visible
         # for ~3 seconds. scrollIntoView is more reliable than fixed pixel scroll.
-        await _js(page, """
-            (() => {
-                const gs = document.getElementById('js-Delivery__Order-green-state-not-empty');
-                if (gs) {
-                    gs.scrollIntoView({behavior: 'instant', block: 'center'});
-                } else {
-                    // Fallback: scroll down to trigger any lazy sections
-                    window.scrollTo(0, document.body.scrollHeight);
-                }
-            })()
-        """)
+        try:
+            await _js(page, """
+                (() => {
+                    const gs = document.getElementById('js-Delivery__Order-green-state-not-empty');
+                    if (gs) {
+                        gs.scrollIntoView({behavior: 'instant', block: 'center'});
+                    } else {
+                        // Fallback: scroll down to trigger any lazy sections
+                        window.scrollTo(0, document.body.scrollHeight);
+                    }
+                })()
+            """)
+        except Exception as _sc_exc:  # noqa: BLE001
+            if not _is_dead_ws_error(_sc_exc):
+                raise
+            print(f"  [GREEN] WS dead while scrolling to green section; re-acquiring tab ({_sc_exc})")
+            page = await _reacquire_page(browser)
         await asyncio.sleep(4)  # Wait 4s for lazy-loaded cards to render
 
         # BUG 7 fix: get actual live_count from page inspection
@@ -1990,7 +2008,14 @@ async def scrape_green_prices_async():
         # сейчас нет" banner. When set, the suspicious-empty safety guard
         # below treats this as authoritative empty (wipe stale snapshot)
         # rather than a transient scraper glitch.
-        _, _, live_count, empty_explicit = await _inspect_green_section(page)
+        try:
+            _, _, live_count, empty_explicit = await _inspect_green_section(page)
+        except Exception as _in_exc:  # noqa: BLE001
+            if not _is_dead_ws_error(_in_exc):
+                raise
+            print(f"  [GREEN] WS dead while inspecting green section; re-acquiring tab ({_in_exc})")
+            page = await _reacquire_page(browser)
+            _, _, live_count, empty_explicit = await _inspect_green_section(page)
         print(f"  [GREEN] Inspected: live_count={live_count} empty_explicit={empty_explicit}")
 
         await _step_screenshot(page, "page_loaded_green_section")
