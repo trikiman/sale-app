@@ -92,7 +92,13 @@ async def launch_stealth_browser(tag="SCRAPER", profile_dir=None, offscreen=Fals
                 chrome_path = find_chrome()
                 _chrome_profile = os.path.join(tempfile.gettempdir(), f'uc_scraper_{port}')
                 os.makedirs(_chrome_profile, exist_ok=True)
-                _sp.Popen([
+                # Keep Chrome's stderr: with DEVNULL every launch failure on
+                # the 1 GB box was invisible ("Chrome not available on port
+                # 19222" with no cause) and each failed cycle aged the green
+                # snapshot out.
+                _chrome_log = open(os.path.join(tempfile.gettempdir(),
+                                                f'chrome_scraper_{port}.log'), 'ab')
+                _proc = _sp.Popen([
                     chrome_path,
                     f'--remote-debugging-port={port}',
                     f'--user-data-dir={_chrome_profile}',
@@ -104,8 +110,9 @@ async def launch_stealth_browser(tag="SCRAPER", profile_dir=None, offscreen=Fals
                     '--disable-blink-features=AutomationControlled',
                     '--window-size=1280,720',
                     'about:blank',
-                ], stdout=_sp.DEVNULL, stderr=_sp.DEVNULL)
-                print(f"  [{tag}] Auto-launched Chrome on Linux (port {port})")
+                ], stdout=_chrome_log, stderr=_chrome_log)
+                print(f"  [{tag}] Auto-launched Chrome on Linux "
+                      f"(port {port}, pid {_proc.pid}, log chrome_scraper_{port}.log)")
         elif attempt == 0:
             print(f"  [{tag}] Waiting for Chrome on port {port}...")
         await asyncio.sleep(1)
