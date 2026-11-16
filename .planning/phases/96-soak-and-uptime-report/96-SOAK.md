@@ -90,6 +90,23 @@ Two things worth recording:
   so the soak cannot honestly be called healthy yet even though the false-zero
   condition is clean.
 
+## Root cause of the failed cycles (2026-11-16, 22:00)
+
+The aggregates said `9/39 failed`; the new `?tail=N` view said **why**:
+
+```
+22:04 ok=True  exit=0  dur=233.5s live=1
+22:21 ok=False exit=-9  dur=340.1s live=1   <- SIGKILL by the silence watchdog
+```
+
+Successful cycles run **223–351 s**, and the watchdog kills after **300 s without
+output** — so long legitimate steps (basket recalc, merge) read as a hang and
+healthy runs died mid-flight. `SCRAPER_TIMEOUT` raised to **420 s** (`a923aed`),
+which keeps hang protection but covers the observed 351 s ceiling.
+
+**First cycle after the change:** `22:33 ok=True exit=0 dur=222.1s`. One sample is
+not proof — the failure rate over the next day is what will settle it.
+
 ## Daily log
 
 - **2026-11-16** — instrumentation deployed (`69fad23`). First cycle recorded
