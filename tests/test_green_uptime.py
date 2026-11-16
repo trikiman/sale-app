@@ -197,22 +197,29 @@ def test_backend_exposes_the_uptime_endpoint() -> None:
     assert "record_cycle(" in source, "cycles are no longer recorded"
 
 
-def test_scraper_itself_records_the_cycle() -> None:
-    """The scheduler runs scrape_green.py directly — recording must live there.
+def test_scheduler_parent_records_the_cycle() -> None:
+    """Recording belongs to the parent — the child gets SIGKILLed.
 
-    Recording only in the backend worker measured manual `/api/admin/run/green`
-    calls: the soak window sat at `cycles: 1` for over an hour while the real
-    loop ran every minute, so a week of it would have proven nothing.
+    The watchdog (`proc.kill()`) and kill-triggers terminate scrape_green.py
+    without unwinding, so its own `finally` never runs. Measured 2026-11-16: the
+    soak read `cycles: 1` after an hour of real traffic because every cycle
+    ended in a kill. The parent survives and knows the outcome.
     """
-    source = (_REPO_ROOT / "scrape_green.py").read_text(encoding="utf-8")
-    assert "def _record_uptime(" in source, "the per-cycle recorder disappeared"
-    assert "record_cycle(" in source
-    # it must run in a finally, so a crash still leaves evidence
-    idx = source.find("_record_uptime(time.time() - _t0")
-    assert idx != -1, "recorder no longer called at exit"
-    assert "finally:" in source[max(0, idx - 300) : idx], "recorder left the finally block"
-    # and it must read the snapshot that this very cycle produced
-    assert 'green_products.json' in source[idx - 2000 : idx + 200]
+    source = (_REPO_ROOT / "scheduler_service.py").read_text(encoding="utf-8")
+    assert "def _record_green_uptime(" in source, "parent-side recorder missing"
+    assert 'if tag == "GREEN":' in source, "recording no longer gated on the green tag"
+    idx = source.find('if tag == "GREEN":')
+    window = source[idx : idx + 400]
+    assert "killed_by_trigger" in window and "timed_out" in window, (
+        "killed/timed-out runs must still be recorded as failures"
+    )
+    assert "green_products.json" in source
+
+
+def test_scraper_does_not_record_a_second_time() -> None:
+    src = (_REPO_ROOT / "scrape_green.py").read_text(encoding="utf-8")
+    assert "_record_uptime" not in src, "child still records — double counting"
+    assert "record_cycle(" not in src
 
 
 def test_backend_does_not_double_count_manual_runs() -> None:

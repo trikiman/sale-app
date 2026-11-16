@@ -3035,50 +3035,9 @@ def scrape_green_prices():
     return scrape_success
 
 
-def _record_uptime(duration_s: float, ok: bool) -> None:
-    """v1.30 GREEN-UP-03: record this cycle for the 168-hour uptime proof.
-
-    The recorder lives here, not in the backend worker: the scheduler runs this
-    script as a plain subprocess every ~60 s, which is the traffic that matters.
-    An earlier version recorded only manual `/api/admin/run/green` runs, so the
-    soak window showed `cycles: 1` while the real loop had been running for an
-    hour — the measurement would have proven nothing.
-
-    Reads the snapshot this cycle just wrote. Never raises.
-    """
-    try:
-        backend_dir = os.path.join(BASE_DIR, "backend")
-        if backend_dir not in sys.path:
-            sys.path.insert(0, backend_dir)
-        from green_uptime import record_cycle
-
-        live_count, empty_reason = None, None
-        snapshot = os.path.join(DATA_DIR, "green_products.json")
-        if os.path.exists(snapshot):
-            with open(snapshot, "r", encoding="utf-8") as f:
-                gd = json.load(f)
-            live_count = int(gd.get("live_count") or 0)
-            empty_reason = gd.get("empty_reason")
-        record_cycle(
-            os.path.join(DATA_DIR, "green_uptime.jsonl"),
-            ts=time.time(),
-            ok=ok,
-            exit_code=0 if ok else 1,
-            live_count=live_count,
-            empty_reason=empty_reason,
-            duration_s=duration_s,
-        )
-    except Exception:
-        pass
-
-
 if __name__ == "__main__":
-    _t0 = time.time()
-    _ok = False
-    try:
-        _ok = bool(scrape_green_prices())
-    finally:
-        # finally, not after: a crash must still leave a record, otherwise the
-        # soak log shows a gap with no evidence of what happened.
-        _record_uptime(time.time() - _t0, _ok)
-    raise SystemExit(0 if _ok else 1)
+    # Cycle accounting (the 168-hour uptime proof) is done by the PARENT:
+    # scheduler_service.run_script records it. A record written here would be
+    # lost whenever the watchdog SIGKILLs this process, and would double-count
+    # when it does not.
+    raise SystemExit(0 if scrape_green_prices() else 1)

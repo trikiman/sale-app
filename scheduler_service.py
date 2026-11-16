@@ -340,6 +340,44 @@ def _is_kill_trigger(line: str) -> str | None:
     return None
 
 
+def _record_green_uptime(*, ok: bool, exit_code: int | None, duration_s: float,
+                         timed_out: bool, killed_by_trigger: str | None) -> None:
+    """v1.30 GREEN-UP-03: record a green cycle from the PARENT side.
+
+    The child cannot do this reliably: the watchdog and kill-triggers terminate
+    it with SIGKILL (`proc.kill()`), so its own `finally` never runs and the
+    record is lost. Measured 2026-11-16: the soak reported `cycles: 1` after an
+    hour of real traffic, purely because every cycle ended in a kill.
+
+    The parent always survives and always knows the outcome, so it owns the
+    record. Never raises.
+    """
+    try:
+        backend_dir = os.path.join(BASE_DIR, "backend")
+        if backend_dir not in sys.path:
+            sys.path.insert(0, backend_dir)
+        from green_uptime import record_cycle
+
+        live_count, empty_reason = None, None
+        snapshot = os.path.join(BASE_DIR, "data", "green_products.json")
+        if os.path.exists(snapshot):
+            with open(snapshot, "r", encoding="utf-8") as f:
+                gd = json.load(f)
+            live_count = int(gd.get("live_count") or 0)
+            empty_reason = gd.get("empty_reason")
+        record_cycle(
+            os.path.join(BASE_DIR, "data", "green_uptime.jsonl"),
+            ts=time.time(),
+            ok=bool(ok and not timed_out and not killed_by_trigger),
+            exit_code=exit_code,
+            live_count=live_count,
+            empty_reason=empty_reason,
+            duration_s=duration_s,
+        )
+    except Exception as e:
+        log(f"uptime record failed: {e}")
+
+
 def run_script(script_name, tag=None):
     """Run a script with real-time output parsing.
     Returns: 0 = OK, non-zero = error, -2 = block/timeout detected (retry candidate)."""
@@ -352,6 +390,7 @@ def run_script(script_name, tag=None):
     env['PYTHONIOENCODING'] = 'utf-8'
     env['PYTHONUNBUFFERED'] = '1'  # Force line-by-line output (no buffering)
 
+    _started_at = time.time()
     try:
         proc = subprocess.Popen(
             [sys.executable, script_path],
@@ -424,6 +463,15 @@ def run_script(script_name, tag=None):
     except subprocess.TimeoutExpired:
         proc.kill()
         proc.wait(timeout=5)
+
+    if tag == "GREEN":
+        _record_green_uptime(
+            ok=(proc.returncode == 0),
+            exit_code=proc.returncode,
+            duration_s=time.time() - _started_at,
+            timed_out=timed_out,
+            killed_by_trigger=killed_by_trigger,
+        )
 
     if timed_out:
         return -2
