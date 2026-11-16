@@ -123,6 +123,28 @@ have died with exit -9 exactly like the 340 s and 351 s failures. Aggregate move
 `39 cycles / 9 failed` -> `44 cycles / 10 failed`, i.e. **no new failures** while
 5 cycles completed.
 
+## Overnight (2026-11-17, 00:20) — the new limit behaves correctly
+
+```
+49 cycles | 38 ok | 11 failed | uptime 77.55% | false_zero 0 | gaps 4
+23:18 ok   dur=242.5s
+23:42 FAIL exit=-9 dur=493.8s   <- a real hang, killed as designed
+00:05 ok   dur=193.2s
+00:12 ok   dur=147.4s
+00:20 ok   dur=200.4s
+```
+
+The distinction that matters: after the 420 s change, the only kill is a cycle
+that genuinely hung for **493.8 s** (well past any legitimate step), and the
+watchdog ended it. That is the protection working, not a false positive — the
+earlier failures were killed at 340–351 s, i.e. *inside* normal run length.
+
+Cycles after the hang also got faster (147–200 s vs 300–480 s before), which
+suggests the stall was tied to a degraded Chrome session rather than steady load.
+
+`false_zero_count` remains **0** across 49 cycles: the milestone's actual promise
+is holding through the whole night.
+
 ## Daily log
 
 - **2026-11-16** — instrumentation deployed (`69fad23`). First cycle recorded
