@@ -73,6 +73,15 @@ EXTRA_VLESS_SOURCES: tuple[str, ...] = (
     # contains no `vless://` literal but decodes cleanly. Sample 2026-05-22:
     # 1928 bytes b64 → 6 vless+reality nodes after decode.
     "https://www.v2nodes.com/subscriptions/country/ru/?key=B128098C26C74AF",
+    # v1.27 — coloramamoe/vless-parser: aggregated RU-SNI vless nodes.
+    # 2026-11-10 sample: 44 KB, 140 vless:// nodes, pre-filtered for RU.
+    "https://raw.githubusercontent.com/coloramamoe/vless-parser/main/githubmirror/ru-sni-best-vless.txt",
+    # v1.27 — wlunlocker/vpn-configs: 914 nodes blacklist_all, auto-updated.
+    # 2026-11-10 sample: 265 KB, 841 vless:// nodes (mixed countries).
+    "https://raw.githubusercontent.com/wlunlocker/vpn-configs/main/blacklist_all.txt",
+    # v1.27 — u23jd9/russia-whitelist-vpn: auto-verified whitelist raw keys.
+    # 2026-11-10 sample: 16 KB, 23 vless:// nodes with RU label.
+    "https://raw.githubusercontent.com/u23jd9/russia-whitelist-vpn/main/whitelist_raw.txt",
 )
 
 _USER_AGENT = (
@@ -83,6 +92,34 @@ _USER_AGENT = (
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _DEFAULT_CACHE_PATH = _REPO_ROOT / ".cache" / "ip_country.json"
 _MIN_RU_NODES_FOR_OK = 5
+
+
+# jsDelivr mirrors any GitHub repo: raw.githubusercontent.com/<o>/<r>/<ref>/<path>
+# becomes cdn.jsdelivr.net/gh/<o>/<r>@<ref>/<path>. Measured 2026-11-17 from a RU
+# host: raw.githubusercontent.com fails TLS handshake (DPI), while the jsDelivr
+# mirror answers 200 in 0.1 s with the identical 39 KB list. Without this the
+# whole VLESS pool refresh comes back empty and the pool silently stays at 0.
+_JSDELIVR_PREFIX = "https://cdn.jsdelivr.net/gh/"
+_RAW_GITHUB_PREFIX = "https://raw.githubusercontent.com/"
+
+
+def mirror_url(url: str) -> str | None:
+    """Return a jsDelivr mirror for a raw.githubusercontent.com URL, else None.
+
+    Only raw GitHub URLs are mirrored — subscription endpoints with keys must
+    never be rewritten or the credentials would leak to a third party.
+    """
+    if not url.startswith(_RAW_GITHUB_PREFIX):
+        return None
+    rest = url[len(_RAW_GITHUB_PREFIX):]
+    parts = rest.split("/")
+    if len(parts) < 3:
+        return None
+    owner, repo, ref = parts[0], parts[1], parts[2]
+    path = "/".join(parts[3:])
+    if not owner or not repo or not ref:
+        return None
+    return f"{_JSDELIVR_PREFIX}{owner}/{repo}@{ref}/{path}"
 
 
 def _fetch_one(url: str, *, timeout: float) -> str:
@@ -96,10 +133,21 @@ def _fetch_one(url: str, *, timeout: float) -> str:
     unchanged.
     """
     req = urllib.request.Request(url, headers={"User-Agent": _USER_AGENT})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        charset = resp.headers.get_content_charset() or "utf-8"
-        raw = resp.read()
-        text = raw.decode(charset, errors="replace")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            charset = resp.headers.get_content_charset() or "utf-8"
+            raw = resp.read()
+            text = raw.decode(charset, errors="replace")
+    except (urllib.error.URLError, socket.timeout, OSError, TimeoutError) as exc:
+        mirror = mirror_url(url)
+        if mirror is None:
+            raise
+        print(f"[vless] direct fetch failed ({exc}); trying mirror {mirror}", file=sys.stderr)
+        req = urllib.request.Request(mirror, headers={"User-Agent": _USER_AGENT})
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            charset = resp.headers.get_content_charset() or "utf-8"
+            raw = resp.read()
+            text = raw.decode(charset, errors="replace")
     if "vless://" in text or "vmess://" in text:
         return text
     # Try base64 decode — strip whitespace first, tolerate URL-safe variants.
