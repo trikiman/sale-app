@@ -36,7 +36,7 @@
 ## Phase Details
 
 - [x] **Phase 94: Green Uptime Guardrails** - API never reports a green zero while a live green snapshot exists; suppression is explicit and tested
-- [ ] **Phase 95: Green Cycle Self-Healing** - every abort stage (Chrome launch, CDP target swap, delivery slot, cart seed) recovers within its retry budget
+- [x] **Phase 95: Green Cycle Self-Healing** - every abort stage (Chrome launch, CDP target swap, delivery slot, cart seed) recovers within its retry budget
 - [ ] **Phase 96: 7-Day Soak & Uptime Report** - 168 h measured run with a per-cycle record proving green never fell to a false zero
 
 ### Phase 94: Green Uptime Guardrails
