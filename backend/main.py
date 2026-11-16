@@ -192,6 +192,34 @@ _phone_map_lock = threading.Lock()  # R2-9: File lock for user_phone_map.json
 # green_products.json untouched for 42 minutes on 2026-11-15.
 _RUN_STALE_SECONDS = int(os.environ.get("SALEAPP_RUN_STALE_SECONDS", "900"))
 _run_started_at: dict = {}
+_GREEN_UPTIME_PATH = os.path.join(DATA_DIR, "green_uptime.jsonl")
+
+
+def _uptime_record_outcome(name: str, *, ok: bool, exit_code: int | None, duration_s: float | None) -> None:
+    """v1.30 GREEN-UP-03: one JSONL line per green cycle, for the 168 h proof.
+
+    Reads the live snapshot right after the worker finished so `live_count` and
+    `empty_reason` describe what that cycle actually produced. Best effort —
+    a recorder failure must never fail the scrape.
+    """
+    if name != "green":
+        return
+    live_count, empty_reason = None, None
+    try:
+        gp = os.path.join(DATA_DIR, "green_products.json")
+        if os.path.exists(gp):
+            with open(gp, "r", encoding="utf-8") as f:
+                gd = json.load(f)
+            live_count = int(gd.get("live_count") or 0)
+            empty_reason = gd.get("empty_reason")
+    except Exception:
+        pass
+    _uptime_record_cycle(
+        _GREEN_UPTIME_PATH,
+        ts=_time.time(), ok=ok, exit_code=exit_code,
+        live_count=live_count, empty_reason=empty_reason,
+        duration_s=duration_s,
+    )
 
 
 def _kill_quietly(proc) -> None:
@@ -261,6 +289,7 @@ def _run_script(name: str, script_path: str):
 
     def worker():
         _watchdog = None
+        proc = None  # bound even if Popen itself raises, the finally reads it
         try:
             proc = subprocess.Popen(
                 [sys.executable, script_path],
@@ -297,6 +326,12 @@ def _run_script(name: str, script_path: str):
                     _watchdog.cancel()
                 except Exception:
                     pass
+            _uptime_record_outcome(
+                name,
+                ok=proc is not None and proc.returncode == 0,
+                exit_code=proc.returncode if proc is not None else None,
+                duration_s=(_time.time() - _run_started_at.get(name, _time.time())),
+            )
             scraper_status[name]["running"] = False
             _run_started_at.pop(name, None)
             scraper_status[name]["last_output"] = "\n".join(lines[-40:])
@@ -954,8 +989,12 @@ def client_log(request: Request, payload: dict = Body(default={})):
 # implementation inside the endpoint. Staleness never hides green.
 try:  # `uvicorn backend.main:app` (repo root on sys.path)
     from backend.green_visibility import GREEN_HIDDEN_EMPTY_REASONS, green_visibility
+    from backend.green_uptime import record_cycle as _uptime_record_cycle
+    from backend.green_uptime import summarize as _uptime_summarize
 except ImportError:  # `uvicorn main:app` (backend/ itself on sys.path)
     from green_visibility import GREEN_HIDDEN_EMPTY_REASONS, green_visibility
+    from green_uptime import record_cycle as _uptime_record_cycle
+    from green_uptime import summarize as _uptime_summarize
 
 
 DEFAULT_STALE_THRESHOLDS_MINUTES: dict[str, int] = {
@@ -5797,6 +5836,23 @@ async def admin_tech_verify(req: TechCodeRequest, token: Optional[str] = Header(
         return {"success": True, "message": "Техническая авторизация успешна. Куки обновлены."}
 
     return {"success": False, "message": result.get("message", "Не удалось подтвердить вход")}
+
+
+@app.get("/api/admin/green-uptime")
+def admin_green_uptime_report(
+    token: Optional[str] = Header(None, alias="X-Admin-Token"),
+    hours: int = Query(168, ge=1, le=24 * 30),
+):
+    """v1.30 GREEN-UP-03: the 168-hour green uptime proof, computed on demand.
+
+    Verdicts: ``no_data`` / ``insufficient`` (<24 h of records) / ``healthy``
+    (zero gap incidents and zero false zeros) / ``incident`` (at least one).
+    A gap incident = more than 45 minutes without a successful green cycle;
+    a false zero = a cycle that claimed success with zero products and no
+    legitimate ``source_empty`` reason.
+    """
+    _require_token(token)
+    return _uptime_summarize(_GREEN_UPTIME_PATH, window_hours=hours)
 
 
 @app.post("/api/admin/run/{scraper}")
