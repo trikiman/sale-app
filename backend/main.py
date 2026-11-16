@@ -326,12 +326,11 @@ def _run_script(name: str, script_path: str):
                     _watchdog.cancel()
                 except Exception:
                     pass
-            _uptime_record_outcome(
-                name,
-                ok=proc is not None and proc.returncode == 0,
-                exit_code=proc.returncode if proc is not None else None,
-                duration_s=(_time.time() - _run_started_at.get(name, _time.time())),
-            )
+            # NOTE: uptime is recorded by scrape_green.py itself, not here.
+            # The scheduler runs that script as a plain subprocess every ~60 s,
+            # so recording in this worker measured only manual API runs and left
+            # the soak window at `cycles: 1` while the real loop kept running.
+            # Recording in both places would double-count every manual run.
             scraper_status[name]["running"] = False
             _run_started_at.pop(name, None)
             scraper_status[name]["last_output"] = "\n".join(lines[-40:])

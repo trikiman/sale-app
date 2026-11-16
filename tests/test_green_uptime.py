@@ -197,14 +197,26 @@ def test_backend_exposes_the_uptime_endpoint() -> None:
     assert "record_cycle(" in source, "cycles are no longer recorded"
 
 
-def test_worker_records_every_green_cycle_outcome() -> None:
+def test_scraper_itself_records_the_cycle() -> None:
+    """The scheduler runs scrape_green.py directly — recording must live there.
+
+    Recording only in the backend worker measured manual `/api/admin/run/green`
+    calls: the soak window sat at `cycles: 1` for over an hour while the real
+    loop ran every minute, so a week of it would have proven nothing.
+    """
+    source = (_REPO_ROOT / "scrape_green.py").read_text(encoding="utf-8")
+    assert "def _record_uptime(" in source, "the per-cycle recorder disappeared"
+    assert "record_cycle(" in source
+    # it must run in a finally, so a crash still leaves evidence
+    idx = source.find("_record_uptime(time.time() - _t0")
+    assert idx != -1, "recorder no longer called at exit"
+    assert "finally:" in source[max(0, idx - 300) : idx], "recorder left the finally block"
+    # and it must read the snapshot that this very cycle produced
+    assert 'green_products.json' in source[idx - 2000 : idx + 200]
+
+
+def test_backend_does_not_double_count_manual_runs() -> None:
     source = (_REPO_ROOT / "backend" / "main.py").read_text(encoding="utf-8")
-    # definition + at least one call site in the worker
-    assert source.count("_uptime_record_outcome(") >= 2, "outcome recording unwired"
-    call_idx = source.find("_uptime_record_outcome(")
-    # skip the definition, take the call site inside the worker
-    call_idx = source.find("_uptime_record_outcome(", call_idx + 1)
-    assert call_idx != -1, "the worker call disappeared"
-    # the call must sit inside the finally block (after the watchdog cancel)
-    cancel_idx = source.find("_watchdog.cancel()")
-    assert 0 < cancel_idx < call_idx < cancel_idx + 800
+    assert source.count("_uptime_record_outcome(\n") == 0, (
+        "backend still records cycles — a manual run would be counted twice"
+    )
