@@ -136,12 +136,62 @@ Family members see every VkusVill discount (green/red/yellow) the moment it appe
 
 ### Active
 
-<!-- v1.29 Own Proxy Egress & Ops Polish — planned -->
+<!-- v1.30 Green Tag Uptime — planned 2026-11-15 -->
 
-- ⏳ **EGRESS-01** (P1): Own proxy exit. 33 public Timeweb/Selectel nodes tested — all dead at VLESS handshake, so free feeds are exhausted. VkusVill blocks datacenter ASNs (`vpn_detected` on 66/208 candidates) and our Oracle Amsterdam box outright (0/4 probes). Needs a VPS on Timeweb AS9123 (5/5 reachability) or a Russian residential proxy.
-- ⏳ **OPS-01** (P1): Oracle memory/swap tuning — 1 vCPU / 1 GB / 582 MB swap. `POST /admin/proxy-refresh` and `/admin/logs` both buckle the box. Needs SSH.
-- ⏳ **OPS-02** (P2): `scheduler.log` rotation — `/admin/logs` times out because the endpoint `readlines()` the whole file.
-- ⏳ **TECH-DEBT-02** (P2): CSS architecture for miniapp — 25 `TODO(v1.28)` inline styles need `[data-type="red|yellow|green"]` selectors before they can be removed.
+**Problem (measured, 2026-11-15):** green tags fall to zero in the UI every day
+even though VkusVill has live green offers — the user sees them in the app while
+the miniapp shows `🟢 0`. Three independent failure chains were confirmed live:
+
+1. `/api/products` stripped **every** green card whenever the green snapshot was
+   older than the (then) 15-minute threshold — `greenLiveCount` and
+   `green_products.json` still held 6-12 real products while the UI showed 0.
+2. The green scraper cycle died on the CDP target swap: after the cart seed and
+   after "Cleared unavailable items", Chromium replaces the debugging target and
+   every call through the held handle failed with `no close frame received or
+   sent`. Roughly every other cycle aborted, which is what aged the snapshot.
+3. Chrome itself sometimes never exposed CDP (`Chrome not available on port
+   19222`): the wait budget was 10 s with one launch attempt on a 1 vCPU / 1 GB
+   box, and the child's stderr went to `/dev/null` so the cause was invisible.
+
+Interim mitigations shipped on 2026-11-15 (commits `05aab65`..`735efb6`):
+green staleness 15 → 45 min, green no longer stripped while
+`greenEmptyReason != source_empty`, `_reacquire_page` + 3-attempt `_safe_js`,
+Chrome wait 30 s with relaunches at 0/8/16 s and a child log, and removal of the
+fabricated `oldPrice = current / 0.6`. These are *not* a milestone; they buy
+headroom while the real work below makes a week of uptime provable.
+
+- ⏳ **GREEN-UP-01** (P1): **No false green zero, ever.** The API must never
+  return an empty green list while a non-empty green snapshot exists and
+  VkusVill has not declared the section empty. Enforced by an invariant test
+  over the stale/fresh × empty/non-empty matrix, plus an explicit
+  `greenSuppressed{reason}` field so a suppressed colour is visible instead of
+  silent.
+- ⏳ **GREEN-UP-02** (P1): **Self-healing green cycle.** Chrome launch, CDP
+  target swap, delivery-slot selection and the cart seed must each have a
+  bounded, logged recovery path; a single failed cycle must cost at most one
+  refresh interval, not a stale-out. Acceptance: 168 h with no gap longer than
+  the green interval × 3.
+- ⏳ **GREEN-UP-03** (P1): **Uptime is measured, not claimed.** A durable
+  per-cycle record (timestamp, green count, live count, exit code, failure
+  stage) plus a 7-day uptime report: total cycles, failed cycles, longest
+  green-zero streak, and the exact stage of every abort. Exposed at
+  `/admin/green-uptime` and summarised in `/admin/status`.
+- ⏳ **GREEN-UP-04** (P2): **Alert on the two deadly states** — green snapshot
+  older than 2× the interval, and `green == 0` while `liveCount > 0` — surfaced
+  through the existing admin-alert channel (Telegram needs SSH; the log/status
+  path must work regardless).
+- ⏳ **OPS-01** (P1, carried from v1.29): Oracle memory/swap tuning — 1 vCPU /
+  1 GB / 582 MB swap. Needs SSH.
+- ⏳ **TECH-DEBT-02** (P2, carried from v1.29): CSS architecture for miniapp —
+  25 `TODO(v1.28)` inline styles need `[data-type="red|yellow|green"]` selectors.
+
+### Shipped in v1.29
+
+- ✅ **EGRESS-01** (P1): Free RU residential egress via URnetwork
+  (`vless/urnetwork.py`, socks-outbound `urn-ru-0`, `basket_recalc` proxy
+  fallback chain). Verified from the server: `basket_recalc via urn: HTTP 200`.
+- ✅ **OPS-02** (P2): `scheduler.log` tail read by seeking from EOF
+  (`_read_log_tail`), 30k lines in ~5 ms; `/admin/logs` no longer times out.
 
 ### Shipped in v1.28
 
@@ -445,5 +495,5 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state
 
 ---
-*Last updated: 2026-11-13 22:00 MSK — v1.28 shipped. Root-caused the empty VLESS pool (VkusVill blocks datacenter ASNs and detects VPNs — not RKN), shipped `vless/asn_filter.py` with a measured blocklist, disproved the RKN-blocking hypothesis with Globalping measurements, and found a deploy path that needs no SSH (`POST /api/github-webhook` does `git pull` server-side). v1.29 scopes own proxy egress plus ops polish.*
+*Last updated: 2026-11-15 20:20 MSK — v1.29 shipped (URnetwork free RU egress, log-tail fix) and v1.30 opened: Green Tag Uptime. Green zeroing was root-caused to three live failure chains — the API stripping every green card on a merely stale snapshot, the green cycle dying on CDP target swap after the cart seed and after cart clear, and Chrome never exposing CDP inside a 10-second budget. Interim fixes are deployed; v1.30 makes 168 hours of no-false-zero provable.*
 

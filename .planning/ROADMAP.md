@@ -1,4 +1,4 @@
-# Roadmap — VkusVill Sale Monitor
+# Roadmap: VkusVill Sale Monitor
 
 ## Milestones
 
@@ -29,6 +29,69 @@
 - ✅ **v1.25** Operator Visibility + Test Coverage — Phases 80-82 (shipped 2026-05-13, tag `v1.25`)
 - ✅ **v1.26** Miniapp Test Harness + Style Guide Debt Cleanup — Phases 83-85 (shipped 2026-05-15, tag `v1.26`) — see [`.planning/milestones/v1.26-ROADMAP.md`](milestones/v1.26-ROADMAP.md)
 - ✅ **v1.27** Stability Recovery & Scraper Health — Phases 86-89 (shipped 2026-11-11, tag `v1.27`) — see [`.planning/v1.27-MILESTONE-AUDIT.md`](v1.27-MILESTONE-AUDIT.md)
+- ✅ **v1.28** Component Verification & Hardening — Phases 90-93 (shipped 2026-11-13)
+- ✅ **v1.29** Own Proxy Egress & Ops Polish — no phases (EGRESS-01 + OPS-02 shipped 2026-11-15)
+- ⏳ **v1.30** Green Tag Uptime — Phases 94-96 (active)
+
+## Phase Details
+
+- [ ] **Phase 94: Green Uptime Guardrails** - API never reports a green zero while a live green snapshot exists; suppression is explicit and tested
+- [ ] **Phase 95: Green Cycle Self-Healing** - every abort stage (Chrome launch, CDP target swap, delivery slot, cart seed) recovers within its retry budget
+- [ ] **Phase 96: 7-Day Soak & Uptime Report** - 168 h measured run with a per-cycle record proving green never fell to a false zero
+
+### Phase 94: Green Uptime Guardrails
+
+**Goal**: A false green zero becomes structurally impossible in the API response, and any suppression of green cards is explicit in the payload instead of silent.
+**Depends on**: Nothing (first phase of v1.30)
+**Requirements**: GREEN-UP-01, GREEN-UP-04
+**Success Criteria**:
+1. `GET /api/products` returns a non-empty green list whenever `green_products.json` holds products and VkusVill has not reported `source_empty` — asserted across the full stale/fresh × empty/non-empty matrix in a regression test.
+2. A `greenSuppressed` field (or equivalent) states the reason whenever green cards are withheld, and `/admin/status` mirrors it; no colour is dropped without a recorded reason.
+3. An alert fires (log/status path, Telegram if the channel is configured) when the green snapshot is older than 2× the interval, and when `green == 0` while `greenLiveCount > 0`.
+4. The regression test fails if anyone reinstates the old unconditional stale-strip for green.
+**Plans**: 3 plans
+
+Plans:
+- [ ] 94-01: Extract the green visibility decision into one function with an explicit reason enum
+- [ ] 94-02: Emit `greenSuppressed` from `/api/products` and surface it in `/admin/status`
+- [ ] 94-03: Matrix regression test + alert for stale-snapshot and zero-with-live-count
+
+### Phase 95: Green Cycle Self-Healing
+
+**Goal**: One failed green cycle costs at most one refresh interval; each abort stage has a bounded, logged recovery path instead of killing the run.
+**Depends on**: Phase 94
+**Requirements**: GREEN-UP-02
+**Success Criteria**:
+1. Chrome launch waits long enough and retries enough that a cold 1 vCPU box reaches CDP; a launch failure logs the child's stderr with the pid.
+2. A CDP target swap after the seed add or after the cart clear recovers on a fresh handle within the retry budget; the cycle continues instead of exiting 1.
+3. Delivery-slot selection never clicks arbitrary controls: only modals whose text mentions delivery, otherwise it no-ops and logs why.
+4. A synthetic failure injected at each stage (Chrome down, dead WS after seed, dead WS after clear, no delivery modal) ends with the cycle completing or aborting *after* exhausting retries — never hanging, never blocking the next run.
+5. Two consecutive weeks of scheduler output show no `Already running, skipping` lock held by a dead process.
+**Plans**: 3 plans
+
+Plans:
+- [ ] 95-01: Stage-by-stage recovery audit of scrape_green.py with per-stage retry budgets
+- [ ] 95-02: Stuck-process guard so a dead cycle cannot hold the run lock past the interval
+- [ ] 95-03: Fault-injection tests for the four abort stages
+
+### Phase 96: 7-Day Soak & Uptime Report
+
+**Goal**: Prove the user's goal — green tags do not fall off for a week — with measurements instead of claims.
+**Depends on**: Phase 95
+**Requirements**: GREEN-UP-03
+**Success Criteria**:
+1. Every green cycle appends a durable record: timestamp, exit code, green count, live count, failure stage.
+2. `/admin/green-uptime` returns the last 7 days: total cycles, failed cycles, longest green-zero streak, per-stage abort counts.
+3. A 168-hour soak completes with zero incidents of `green == 0` while a live green snapshot existed; any incident is listed with its timestamp and stage.
+4. The report is committed to `.planning/` as the milestone's verification artifact.
+**Plans**: 3 plans
+
+Plans:
+- [ ] 96-01: Per-cycle uptime recorder with rotation
+- [ ] 96-02: `/admin/green-uptime` aggregation endpoint + `/admin/status` summary
+- [ ] 96-03: 168 h soak, report written to `.planning/v1.30-GREEN-UPTIME.md`
+
+## v1.30 Green Tag Uptime (ACTIVE)
 
 ## v1.27 Stability Recovery & Scraper Health (SHIPPED 2026-11-11)
 - Session history orphan bug fixed (CLOSE_UNSAFE_TIMEOUT)

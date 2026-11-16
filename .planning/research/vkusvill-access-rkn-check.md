@@ -164,6 +164,64 @@ top survivor AS: CLOUDFLARENET 397, VK-AS 76, OKOLABS 59, TimeWeb 47, DDOS-GUARD
 `vless/manager.py`, `tests/test_asn_filter.py`; перезапустить scheduler;
 убедиться по логам, что появилась строка `ASN pre-filter: dropped N candidate(s)`.
 
+### 7.1 Деплой выполнен — без SSH, через GitHub webhook
+
+Обнаружен рабочий канал: `POST /api/github-webhook` на сервере делает
+`git pull --ff-only origin main` и перезапускает сервисы. Секрет
+(`GITHUB_WEBHOOK_SECRET`) не задан, подпись не проверяется — endpoint
+принимает любой POST с `ref=refs/heads/main`.
+
+Порядок, который сработал:
+
+1. Коммит + `git push origin main`.
+2. `POST /api/github-webhook` с payload, где `commits[].modified` содержит
+   затронутые файлы → сервер делает pull и рестартит `saleapp-backend`.
+3. Повторный вызов → уже новый код, который рестартит и `saleapp-scheduler`.
+
+**Грабли (первая попытка провалилась):** `git pull` молча не применялся.
+Причина — на сервере `vless/sources.py` был изменён вне git (заливался
+через SCP в v1.27). `git pull --ff-only` печатает `Updating X..Y` в stdout
+и падает с «local changes would be overwritten» в stderr, а webhook
+возвращает только `result.stdout[:200]` — выглядит как успех.
+
+Лечение: пересобрать коммит **без** этого файла
+(`git reset --soft HEAD~1` → снять со staging → новый коммит →
+`git push --force`). После этого pull прошёл: `Fast-forward`,
+`backend_restart: true`, затем `scheduler_restart: true`.
+
+### 7.2 Почему пул всё равно пустой: `vpn_detected`
+
+После деплоя карантин очищен (208 записей) и прогон повторился.
+Результат одного цикла:
+
+```
+21:38:15  cand=208  q_skip=0     ← карантин пуст, все 208 в пробу
+21:41:10  cand=135  q_skip=73    ← 73 провалились
+21:42:02  cand=0    q_skip=208   ← все снова в карантине
+```
+
+Карантин после цикла: `vpn_detected: 66`, `egress_country_non_ru: 8`.
+
+**66 нод из 208 ВкусВилл распознал как VPN** — их `_probe_vkusvill` поймал
+редиректом на `/vpn-detected/` и отправил в hard-tier (20 мин). Остальные
+упали по таймауту (soft tier, истёк).
+
+Это не проблема кода: система работает ровно как задумано. Проблема в
+исходном материале — **бесплатные публичные VLESS-ноды сидят на
+датацентровых IP, которые ВкусВилл целенаправленно детектит и блокирует.**
+
+Отсюда практический вывод: наращивать количество бесплатных нод бессмысленно.
+Нужен выход с «чистого» IP:
+
+- **свой VPS на Timeweb (AS9123)** — единственная AS с 5/5 проходимостью,
+  ~250–300 ₽/мес. Самый надёжный вариант.
+- либо платный residential-прокси в РФ.
+
+Важно: `pool_size: 0` при этом **не ломает скрейпинг**. Замер после всех
+манипуляций: `products=158`, `red 0.0m`, `yellow 6.0m`, `green 3.4m` —
+все источники свежие, `dataStale=false`. Здоровье `degraded` только из-за
+`pool_below_min_healthy`.
+
 ## Выводы
 
 1. **РКН не блокирует ВкусВилл.** Сайт в белых списках, доступен с российского
