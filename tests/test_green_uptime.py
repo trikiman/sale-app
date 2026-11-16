@@ -187,6 +187,34 @@ def test_torn_line_does_not_kill_the_report(tmp_path) -> None:
     assert out["verdict"] in ("healthy", "insufficient")
 
 
+def test_recent_returns_last_records(tmp_path) -> None:
+    """Aggregates hide the shape of failures; `recent` exposes it."""
+    gu = _mod()
+    p = str(tmp_path / "u.jsonl")
+    now = 10_000_000.0
+    for i in range(10):
+        _rec(gu, p, ts=now - (10 - i) * 60.0, ok=(i % 3 != 0), live=5)
+    rows = gu.recent(p, 4)
+    assert len(rows) == 4
+    assert all("ts" in r and "ok" in r and "duration_s" in r for r in rows)
+    # newest last, matching file order
+    assert rows[-1]["ts"] > rows[0]["ts"]
+    assert [bool(r["ok"]) for r in rows] == [bool(r["ok"]) for r in gu.recent(p, 10)[-4:]]
+
+
+def test_recent_on_empty_or_missing_file(tmp_path) -> None:
+    gu = _mod()
+    assert gu.recent(str(tmp_path / "nope.jsonl"), 5) == []
+
+
+def test_recent_limit_is_sane(tmp_path) -> None:
+    gu = _mod()
+    p = str(tmp_path / "u.jsonl")
+    _rec(gu, p, ts=1.0)
+    assert len(gu.recent(p, 0)) == 1, "limit 0 must not return an empty slice silently"
+    assert len(gu.recent(p, -5)) == 1
+
+
 # ── wiring ──────────────────────────────────────────────────────────────
 
 

@@ -92,6 +92,17 @@ def _load(path: str) -> list[dict]:
     return entries
 
 
+def recent(path: str, limit: int = 20) -> list[dict]:
+    """Last ``limit`` cycle records, newest last.
+
+    Diagnostic companion to :func:`summarize`: the aggregates say *how often* a
+    cycle failed, this says *which* ones and with what duration, which is what
+    you need before guessing at a cause.
+    """
+    entries = _load(path)
+    return entries[-max(1, int(limit)):]
+
+
 def summarize(path: str, *, now: float | None = None, window_hours: float = DEFAULT_WINDOW_HOURS) -> dict:
     """Compute the uptime report over the trailing window.
 

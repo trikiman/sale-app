@@ -988,10 +988,12 @@ def client_log(request: Request, payload: dict = Body(default={})):
 # implementation inside the endpoint. Staleness never hides green.
 try:  # `uvicorn backend.main:app` (repo root on sys.path)
     from backend.green_visibility import GREEN_HIDDEN_EMPTY_REASONS, green_visibility
+    from backend.green_uptime import recent as _uptime_recent
     from backend.green_uptime import record_cycle as _uptime_record_cycle
     from backend.green_uptime import summarize as _uptime_summarize
 except ImportError:  # `uvicorn main:app` (backend/ itself on sys.path)
     from green_visibility import GREEN_HIDDEN_EMPTY_REASONS, green_visibility
+    from green_uptime import recent as _uptime_recent
     from green_uptime import record_cycle as _uptime_record_cycle
     from green_uptime import summarize as _uptime_summarize
 
@@ -5883,6 +5885,7 @@ def admin_egress_probe(
 def admin_green_uptime_report(
     token: Optional[str] = Header(None, alias="X-Admin-Token"),
     hours: int = Query(168, ge=1, le=24 * 30),
+    tail: int = Query(0, ge=0, le=200),
 ):
     """v1.30 GREEN-UP-03: the 168-hour green uptime proof, computed on demand.
 
@@ -5893,7 +5896,11 @@ def admin_green_uptime_report(
     legitimate ``source_empty`` reason.
     """
     _require_token(token)
-    return _uptime_summarize(_GREEN_UPTIME_PATH, window_hours=hours)
+    report = _uptime_summarize(_GREEN_UPTIME_PATH, window_hours=hours)
+    if tail:
+        # last N raw records — see which cycles failed and how long they took
+        report["recent"] = _uptime_recent(_GREEN_UPTIME_PATH, tail)
+    return report
 
 
 @app.post("/api/admin/run/{scraper}")
