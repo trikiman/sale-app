@@ -748,19 +748,26 @@ def _prepare_proxy_connectivity(proxy_state):
             probe = None
             log(f"URnetwork preflight skipped: {e}")
 
-        if probe is not None and probe.ok and probe.route == "urnetwork":
-            proxy_url = "socks5://127.0.0.1:10809"
-            log(f"VkusVill: OK via URnetwork bridge (route={probe.route})")
+        # Any bridge that answers beats an empty pool. Measured 2026-11-16: the
+        # xray balancer on :10808 served VkusVill with HTTP 200 in 3.8 s while
+        # `get_working_proxy()` returned None (pool 1/5, 189 nodes quarantined),
+        # so the scheduler logged "no working proxy found" and skipped the cycle
+        # even though a working egress was sitting right there.
+        bridge_ports = {"urnetwork": 10809, "vless": 10808}
+        if probe is not None and probe.ok and probe.route in bridge_ports:
+            port = bridge_ports[probe.route]
+            proxy_url = f"socks5://127.0.0.1:{port}"
+            log(f"VkusVill: OK via {probe.route} bridge (127.0.0.1:{port})")
             if proxy_url != current_proxy:
                 from chrome_stealth import restart_chrome_with_proxy
 
                 restart_chrome_with_proxy(proxy=proxy_url, tag="PROXY")
                 proxy_state["active_proxy"] = proxy_url
             else:
-                log(f"Already using URnetwork bridge: {proxy_url}")
+                log(f"Already using {probe.route} bridge: {proxy_url}")
             return pm, proxy_state
-        if probe is not None and probe.ok:
-            log(f"VkusVill: reachable via {probe.route} bridge, but it is not the pinned UR route")
+        if probe is not None and not probe.ok:
+            log(f"All bridges failed ({probe.reason}) — falling back to the VLESS pool")
 
         proxy = pm.get_working_proxy()
         if proxy:
