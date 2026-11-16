@@ -5837,6 +5837,48 @@ async def admin_tech_verify(req: TechCodeRequest, token: Optional[str] = Header(
     return {"success": False, "message": result.get("message", "Не удалось подтвердить вход")}
 
 
+@app.get("/api/admin/egress-probe")
+def admin_egress_probe(
+    token: Optional[str] = Header(None, alias="X-Admin-Token"),
+):
+    """v1.30 GREEN-EGRESS-01: which bridge can actually reach VkusVill?
+
+    Runs the same route-aware preflight the scheduler uses, but from the backend
+    process, so the answer is observable over HTTP instead of requiring SSH
+    (port 22 is blocked by DPI on this host). Returns the per-route verdict and
+    which route the probe would drive Chrome to.
+
+    ``route`` is "urnetwork" (pinned URnetwork bridge on :10809) or "vless"
+    (leastPing balancer on :10808). ``ok: false`` on both means no egress works
+    and green cycles cannot run at all.
+    """
+    _require_token(token)
+    out: dict = {"routes": [], "route": None, "ok": False}
+    try:
+        from vless import preflight
+
+        for route, proxy in preflight._BRIDGE_PROXIES:
+            single = preflight._probe_once(proxy, preflight._PROBE_TIMEOUT_S_FLOOR, route)
+            out["routes"].append(
+                {
+                    "route": route,
+                    "proxy": proxy,
+                    "ok": single.ok,
+                    "status": single.status,
+                    "reason": single.reason,
+                    "elapsed_s": round(single.elapsed_s, 2),
+                }
+            )
+        for entry in out["routes"]:
+            if entry["ok"]:
+                out["route"] = entry["route"]
+                out["ok"] = True
+                break
+    except Exception as exc:  # noqa: BLE001 — diagnostic endpoint
+        out["error"] = f"{type(exc).__name__}: {exc}"
+    return out
+
+
 @app.get("/api/admin/green-uptime")
 def admin_green_uptime_report(
     token: Optional[str] = Header(None, alias="X-Admin-Token"),
