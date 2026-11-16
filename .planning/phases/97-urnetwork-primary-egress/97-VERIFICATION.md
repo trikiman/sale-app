@@ -13,9 +13,22 @@ verified: 2026-11-16
 `test_urn_traffic_is_pinned_not_balanced`,
 `test_general_inbound_still_uses_the_balancer`.
 
-**Live state:** `urn-socks-in` is absent on the box because no UR cache exists
-there (`/api/admin/egress-probe` → `urnetwork: connect_error`). That is the
-designed behaviour — the inbound must not be created without an outbound.
+**Live state, morning:** `urn-socks-in` was absent because the UR cache had not
+been provisioned (`urnetwork: connect_error`) — the designed behaviour, since the
+inbound must not be created without an outbound.
+
+**Live state, 18:40 (after `/admin/proxy-refresh`):**
+
+```
+GET /api/admin/egress-probe
+{"routes":[{"route":"urnetwork","ok":true,"reason":"ok"},
+           {"route":"vless","ok":false,"reason":"timeout"}],
+ "route":"urnetwork","ok":true}
+```
+
+The pinned UR network route now answers, and the balancer route is dead
+(`pool 0/5`) — exactly the situation the phase was built for: with the pool at
+zero the scraper still has a working egress instead of stalling.
 
 ## Criterion 2 — route-aware preflight
 

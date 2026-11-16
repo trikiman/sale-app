@@ -71,6 +71,25 @@ So the picture for the week is: green data never lies about emptiness, but the
 cycle is not yet reliable enough to call the soak healthy. Phase 97 made the
 scheduler usable; keeping the pool alive is the next front.
 
+## Second measurement (same day, after the egress work)
+
+```
+{"cycles":37,"cycles_ok":28,"cycles_failed":9,"uptime_pct":75.68,
+ "gap_incident_count":3,"false_zero_count":0}
+egress-probe: urnetwork ok | vless timeout (pool 0/5)
+```
+
+Two things worth recording:
+
+- **`false_zero_count` is still 0** across 37 cycles. The user-visible promise —
+  green never silently shows as empty — is holding.
+- The **balancer route died** (`pool 0/5`, `vless: timeout`) and green cycles kept
+  running through the **URnetwork** route. Phase 97's premise was verified live:
+  a dead pool no longer idles the scraper.
+- Cycle reliability is the remaining gap: 9 of 37 cycles failed (75.7% uptime),
+  so the soak cannot honestly be called healthy yet even though the false-zero
+  condition is clean.
+
 ## Daily log
 
 - **2026-11-16** — instrumentation deployed (`69fad23`). First cycle recorded
