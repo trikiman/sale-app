@@ -884,6 +884,9 @@ async def _reacquire_page(browser):
     item was inserted. Retries a few times before giving up.
     """
     last = None
+    page = None  # v1.30 GREEN-UP-02: bound even when every attempt raises, else
+    # the `return page` below crashed with UnboundLocalError and took the whole
+    # cycle down right at the recovery point.
     for attempt in range(3):
         try:
             page = await _navigate_and_settle(browser, GREEN_URL, sleep_seconds=8)
