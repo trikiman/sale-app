@@ -60,3 +60,4 @@ pass.
 Phase 96 cannot be closed by a code change: it is a 168-hour observation. Until
 2026-11-23 the milestone stays open, and the report says so explicitly rather
 than claiming a week that has not happened.
+- **2026-11-16** — ⏳ verdict `insufficient`, cycles 1 (uptime 100.0%), gaps 0, false zeros 0, last ok 3.6 min ago.
