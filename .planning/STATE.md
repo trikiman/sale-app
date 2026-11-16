@@ -17,11 +17,15 @@ progress:
 
 ## Blockers
 
-- **VLESS pool 0/5 healthy** (2026-11-16): `pool.size=0`, 189 nodes quarantined by
-  probe (`probe_error`, `tcp_unreachable`, `egress_country_non_ru`). Green cycles
-  survive only through the URnetwork route (`/api/admin/egress-probe` →
-  `urnetwork ok, vless timeout`). Replenishing the pool is a proxy/vless-hunt
-  problem, not saleapp code — do not "fix" it from this repo.
+- **VLESS pool 0/5 healthy** (diagnosed 2026-11-17 00:15, card `t_742784ed`).
+  Fetch is healthy: `parsed=1587, geo ru=422, uniq host:port=231`; TCP pre-filter
+  `102/152 reachable`. Then **xray probe fails on all 152** (`probe_error=102,
+  tcp_unreachable=50`) → pool 0. So the bottleneck is the **tunnel**, not the
+  sources: TCP opens but no node proxies. Probe target is already correct
+  (`https://vkusvill.ru/favicon.ico`). Next hypotheses: probe timeout too tight
+  for reality nodes from Amsterdam; flow/SNI/fingerprint not passed verbatim;
+  nodes demand RU egress. Green cycles survive on URnetwork (`urnetwork ok`).
+  Replenishing is a vless-hunt problem, not saleapp code — do not "fix" it here.
 - **Telegram notifications dead**: bot not polled server-side, `/admin/test-alert`
   → `no_admin_chat_ids`; needs SSH (port 22 blocked by DPI).
 
