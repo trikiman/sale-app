@@ -32,6 +32,12 @@ from starlette.middleware.gzip import GZipMiddleware
 from fastapi.responses import HTMLResponse, FileResponse, StreamingResponse, Response, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+
+# v1.30 GREEN-UP-02: run-lock zombie policy (dependency-free module, see backend/run_guard.py)
+try:
+    from backend.run_guard import is_zombie_run
+except ImportError:  # `uvicorn main:app` — backend/ itself on sys.path
+    from run_guard import is_zombie_run
 from typing import Any, Dict, List, Optional
 import hashlib
 import hmac
@@ -177,6 +183,29 @@ _run_locks: dict = {
     for name in ["green", "red", "yellow", "merge", "login", "categories", "catalog_discovery"]
 }
 _phone_map_lock = threading.Lock()  # R2-9: File lock for user_phone_map.json
+
+# v1.30 GREEN-UP-02: a run can outlive its useful life. The worker thread blocks
+# on `for line in proc.stdout` while the child is alive but silent (typical when
+# Chrome died and the scraper sits in a socket read), so its `finally` never runs
+# and `scraper_status[name]["running"]` stays True forever. Every later tick then
+# logs "Already running, skipping" and the colour ages out — this is what left
+# green_products.json untouched for 42 minutes on 2026-11-15.
+_RUN_STALE_SECONDS = int(os.environ.get("SALEAPP_RUN_STALE_SECONDS", "900"))
+_run_started_at: dict = {}
+
+
+def _kill_quietly(proc) -> None:
+    """Terminate a child process, ignoring races and already-dead states."""
+    try:
+        if proc is not None and proc.poll() is None:
+            proc.kill()
+    except Exception:
+        pass
+
+
+def _run_flag_is_zombie(name: str) -> bool:
+    """True when ``running`` is set but the run has outlived _RUN_STALE_SECONDS."""
+    return is_zombie_run(_run_started_at.get(name), _time.time(), _RUN_STALE_SECONDS)
 CATALOG_DISCOVERY_SCRIPT = os.path.join(BASE_PROJECT_DIR, "scrape_catalog_discovery.py")
 CATALOG_DISCOVERY_STATE_PATH = os.path.join(DATA_DIR, "catalog_discovery_state.json")
 
@@ -208,16 +237,30 @@ def _run_script(name: str, script_path: str):
         return
     with lock:
         if scraper_status[name]["running"]:
-            log_buffer.append(f"[{name}] Already running, skipping.")
-            return
+            if not _run_flag_is_zombie(name):
+                log_buffer.append(f"[{name}] Already running, skipping.")
+                return
+            # Zombie run: the process is gone or unresponsive but the flag never
+            # cleared. Kill the leftover, clear the flag and start fresh instead
+            # of letting the whole colour age out.
+            age = int(_time.time() - _run_started_at.get(name, _time.time()))
+            _kill_quietly(_scraper_processes.get(name))
+            _scraper_processes.pop(name, None)
+            scraper_status[name]["running"] = False
+            log_buffer.append(
+                f"[{name}] Zombie run detected ({age}s > {_RUN_STALE_SECONDS}s) "
+                f"— killed and restarting"
+            )
         # Atomic: mark running while still holding the lock
         scraper_status[name]["running"] = True
+        _run_started_at[name] = _time.time()
         scraper_status[name]["last_run"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         scraper_status[name]["last_output"] = ""
 
     lines: list = []  # capped at 5000 lines to prevent memory issues
 
     def worker():
+        _watchdog = None
         try:
             proc = subprocess.Popen(
                 [sys.executable, script_path],
@@ -230,11 +273,18 @@ def _run_script(name: str, script_path: str):
                 env={**os.environ, "PYTHONPATH": BASE_PROJECT_DIR},  # R2-17
             )
             _scraper_processes[name] = proc
+            # v1.30 GREEN-UP-02: hard ceiling. Without it a silent-but-alive
+            # child pins this thread in `for line in proc.stdout` forever and the
+            # running flag never clears (see _RUN_STALE_SECONDS above).
+            _watchdog = threading.Timer(_RUN_STALE_SECONDS, _kill_quietly, args=(proc,))
+            _watchdog.daemon = True
+            _watchdog.start()
             for line in proc.stdout:
                 line = line.rstrip()
                 lines.append(line)
                 log_buffer.append(f"[{name}] {line}")
             proc.wait()
+            _watchdog.cancel()
             scraper_status[name]["exit_code"] = proc.returncode
             status_emoji = "OK" if proc.returncode == 0 else "ERR"
             log_buffer.append(f"[{name}] {status_emoji} Finished (exit {proc.returncode})")
@@ -242,7 +292,13 @@ def _run_script(name: str, script_path: str):
             log_buffer.append(f"[{name}] Exception: {exc}")
             scraper_status[name]["exit_code"] = -1
         finally:
+            if _watchdog is not None:
+                try:
+                    _watchdog.cancel()
+                except Exception:
+                    pass
             scraper_status[name]["running"] = False
+            _run_started_at.pop(name, None)
             scraper_status[name]["last_output"] = "\n".join(lines[-40:])
             _scraper_processes.pop(name, None)
             # Cap lines to prevent unbounded memory growth
