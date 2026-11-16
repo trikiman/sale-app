@@ -29,7 +29,12 @@ if sys.platform == 'win32':
 FULL_CYCLE_INTERVAL_SECONDS = 300
 GREEN_TARGET_INTERVAL_SECONDS = 60
 DEFAULT_GREEN_RUNTIME_SECONDS = 60
-SCRAPER_TIMEOUT = 300  # 5 minutes max per scraper
+# v1.30 GREEN-UP-03: 420 s, not 300. Measured from the per-cycle records
+# (2026-11-16): successful green cycles take 223-351 s end to end, and the
+# watchdog counts *silence* — long legitimate steps (basket recalc, merge)
+# read as silence and 9 of 39 cycles were SIGKILLed (exit -9) at 340-351 s.
+# 420 s keeps the hang protection while no longer killing healthy runs.
+SCRAPER_TIMEOUT = 420  # 7 minutes max per scraper
 
 # v1.26 Phase 84.5 — robust freshness controls (target: green refresh < 5 min always)
 #
@@ -319,7 +324,9 @@ def _log_script_output(script_name, output_text, tag=None):
             f.write(entry)
 
 
-SCRAPER_TIMEOUT = 300  # seconds — green scraper: modal(40s) + add-to-cart(60s) + basket(40s) ≈ 140s
+# See the note above: observed green cycles reach 351 s, so the silence budget
+# must exceed that or healthy runs are killed mid-flight.
+SCRAPER_TIMEOUT = 420  # seconds — modal(40s) + add-to-cart(60s) + basket(40s) + merge slowness
 
 # Lines matching these → instant kill + retry with proxy
 KILL_TRIGGERS = [
