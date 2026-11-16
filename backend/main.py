@@ -893,6 +893,15 @@ def client_log(request: Request, payload: dict = Body(default={})):
 # missed refreshes. Green intentionally stays tighter than red/yellow
 # because уценка stock churns fastest and a stale green price misleads
 # most.
+# v1.30 GREEN-UP-01: the green visibility policy lives in its own dependency-free
+# module so it is testable without FastAPI and cannot grow a second
+# implementation inside the endpoint. Staleness never hides green.
+try:  # `uvicorn backend.main:app` (repo root on sys.path)
+    from backend.green_visibility import GREEN_HIDDEN_EMPTY_REASONS, green_visibility
+except ImportError:  # `uvicorn main:app` (backend/ itself on sys.path)
+    from green_visibility import GREEN_HIDDEN_EMPTY_REASONS, green_visibility
+
+
 DEFAULT_STALE_THRESHOLDS_MINUTES: dict[str, int] = {
     # green: 45 rather than 15. The green scraper is the fragile one (browser +
     # delivery slot + cart seed) and legitimately takes 1-3 minutes per cycle;
@@ -1546,7 +1555,7 @@ def get_products(response: Response):
                 else:
                     raise HTTPException(status_code=500, detail="Invalid JSON data")
         # v1.26 Phase 84.7 / 2026-08-13 update: use per-color defaults from
-        # DEFAULT_STALE_THRESHOLDS_MINUTES — green=15, red=30, yellow=30.
+        # DEFAULT_STALE_THRESHOLDS_MINUTES — green=45, red=30, yellow=30.
         # All three sit above their observed refresh intervals on the
         # current (2 vCPU) Oracle backend — see comment on the constant
         # definition for details.
@@ -1664,8 +1673,18 @@ def get_products(response: Response):
             # not that the offers vanished — dropping those cards produced a
             # false "0 зелёных" while the file held real products.
             _strip = set(stale_types)
-            if "green" in _strip and data.get("greenEmptyReason") not in ("source_empty", "missing"):
-                _strip.discard("green")
+            if "green" in _strip:
+                # v1.30 GREEN-UP-01: one decision point, and it is not staleness.
+                _g_visible, _g_reason = green_visibility(
+                    is_stale=True,
+                    has_snapshot_products=not bool(data.get("greenMissing")),
+                    empty_reason=data.get("greenEmptyReason"),
+                )
+                if _g_visible:
+                    _strip.discard("green")
+                else:
+                    data["greenSuppressed"] = _g_reason
+                    print(f"[api] green suppressed: {_g_reason}")
             data["products"] = [
                 p for p in data["products"]
                 if p.get("type") not in _strip
@@ -1677,6 +1696,27 @@ def get_products(response: Response):
         # not found" message.
         if isinstance(data.get("products"), list) and len(data["products"]) == 0:
             data["emptyReason"] = _compute_empty_reason(source_freshness)
+
+        # v1.30 GREEN-UP-01: never leave the caller guessing. When green cards
+        # are absent from the payload we say why, in the payload itself.
+        _green_in_payload = sum(
+            1 for p in (data.get("products") or []) if p.get("type") == "green"
+        )
+        if _green_in_payload:
+            data["greenSuppressed"] = None
+        else:
+            _visible, _reason = green_visibility(
+                is_stale="green" in stale_types,
+                has_snapshot_products=not bool(data.get("greenMissing")),
+                empty_reason=data.get("greenEmptyReason"),
+            )
+            data["greenSuppressed"] = None if _visible else _reason
+            if _visible:
+                # Snapshot has products and nothing forbids showing them, yet
+                # the payload carries none: that is a bug in this endpoint,
+                # never a legitimate empty state.
+                data["greenSuppressed"] = "payload_missing_but_snapshot_has_products"
+                print("[api] BUG GREEN-UP-01: green visible per snapshot but absent from payload")
         return data
     except json.JSONDecodeError:
         raise HTTPException(status_code=500, detail="Invalid JSON data")
@@ -5566,7 +5606,7 @@ def admin_get_status(token: Optional[str] = Header(None, alias="X-Admin-Token"))
     _require_token(token)
     counts = {"green": 0, "red": 0, "yellow": 0, "total": 0, "updatedAt": None, "greenLiveCount": 0}
     # v1.26 Phase 84.7 / 2026-08-13: use per-color defaults
-    # (green=15, red=30, yellow=30) from DEFAULT_STALE_THRESHOLDS_MINUTES.
+    # (green=45, red=30, yellow=30) from DEFAULT_STALE_THRESHOLDS_MINUTES.
     source_freshness, _, _ = _build_source_freshness()
     cycle_state = _load_cycle_state()
     if os.path.exists(PROPOSALS_PATH):
@@ -5582,6 +5622,39 @@ def admin_get_status(token: Optional[str] = Header(None, alias="X-Admin-Token"))
             counts["greenLiveCount"] = data.get("greenLiveCount", 0)
         except Exception:
             pass
+    # v1.30 GREEN-UP-01/04: mirror the green visibility decision and flag the
+    # two states that killed us: a snapshot nobody refreshed, and zero green
+    # cards while VkusVill reported live green offers.
+    _green_path = os.path.join(DATA_DIR, "green_products.json")
+    _green_snapshot_empty = True
+    _green_empty_reason = None
+    _green_age_minutes = None
+    if os.path.exists(_green_path):
+        try:
+            _green_age_minutes = round((_time.time() - os.path.getmtime(_green_path)) / 60, 1)
+            with open(_green_path, "r", encoding="utf-8") as _gf:
+                _gd = json.load(_gf)
+            _gp = _gd.get("products", _gd) if isinstance(_gd, dict) else _gd
+            _green_snapshot_empty = len(_gp) == 0
+            if isinstance(_gd, dict):
+                _green_empty_reason = _gd.get("empty_reason")
+        except Exception:
+            pass
+    _g_visible, _g_reason = green_visibility(
+        is_stale=False,
+        has_snapshot_products=not _green_snapshot_empty,
+        empty_reason=_green_empty_reason,
+    )
+    counts["greenSuppressed"] = None if _g_visible else _g_reason
+    counts["greenAgeMinutes"] = _green_age_minutes
+    _green_alerts: list[str] = []
+    _green_interval_min = DEFAULT_STALE_THRESHOLDS_MINUTES["green"]
+    if _green_age_minutes is not None and _green_age_minutes > 2 * _green_interval_min:
+        _green_alerts.append(f"green_snapshot_stale:{_green_age_minutes}m")
+    if counts["green"] == 0 and (counts.get("greenLiveCount") or 0) > 0:
+        _green_alerts.append("green_zero_with_live_count")
+    counts["greenAlerts"] = _green_alerts or None
+
     # Technical cookie health
     tech_cookies_path = os.path.join(DATA_DIR, "cookies.json")
     cookie_health = {"exists": False, "age_days": None, "expired": False}
