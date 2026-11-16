@@ -171,7 +171,9 @@ def test_failed_probe_clears_cache(monkeypatch):
     # First: success populates cache
     monkeypatch.setattr(preflight.httpx, "Client", _fake_httpx_client(status_code=200))
     preflight.probe_bridge_alive()
-    assert preflight._LAST_SUCCESS_AT is not None
+    # v1.30 GREEN-EGRESS-01: the cache is keyed by route (urnetwork/vless), so
+    # "populated" means non-empty rather than a single float.
+    assert preflight._LAST_SUCCESS_AT
 
     # Advance the monotonic clock past the cache TTL so the next probe
     # actually runs the network path (otherwise the cache short-circuits
@@ -187,7 +189,7 @@ def test_failed_probe_clears_cache(monkeypatch):
         _fake_httpx_client(raise_exc=preflight.httpx.ConnectTimeout("t")),
     )
     preflight.probe_bridge_alive()
-    assert preflight._LAST_SUCCESS_AT is None
+    assert not preflight._LAST_SUCCESS_AT  # every route's entry cleared
 
 
 # --- Never-raises contract ---

@@ -38,6 +38,7 @@
 - [x] **Phase 94: Green Uptime Guardrails** - API never reports a green zero while a live green snapshot exists; suppression is explicit and tested
 - [x] **Phase 95: Green Cycle Self-Healing** - every abort stage (Chrome launch, CDP target swap, delivery slot, cart seed) recovers within its retry budget
 - [ ] **Phase 96: 7-Day Soak & Uptime Report** - 168 h measured run with a per-cycle record proving green never fell to a false zero
+- [ ] **Phase 97: URnetwork-Primary Egress** - green cycles never stall because the VLESS pool died; URnetwork is a pinned route, not a balancer member
 
 ### Phase 94: Green Uptime Guardrails
 
@@ -90,6 +91,22 @@ Plans:
 - [ ] 96-01: Per-cycle uptime recorder with rotation
 - [ ] 96-02: `/admin/green-uptime` aggregation endpoint + `/admin/status` summary
 - [ ] 96-03: 168 h soak, report written to `.planning/v1.30-GREEN-UPTIME.md`
+
+### Phase 97: URnetwork-Primary Egress
+
+**Goal**: Green cycles never stall because the VLESS pool decayed to zero; URnetwork is a pinned route and the first probe, not a balancer member.
+**Depends on**: Phase 96 (blocker: the soak cannot collect cycles without a working egress)
+**Requirements**: GREEN-UP-04
+**Success Criteria**:
+1. A dedicated inbound (10809) routes to the URnetwork outbound via a pinned rule, and exists only when a UR cache is present.
+2. `probe_bridge_alive()` tries URnetwork first, names the winning route, and caches per route so a healthy UR never masks a dead balancer.
+3. `proxy_candidates()` returns URnetwork before the env/VLESS fallback.
+4. On the live server a green cycle completes through URnetwork and appends a record to `green_uptime.jsonl`.
+**Plans**: 2 plans
+
+Plans:
+- [ ] 97-01: Pinned URnetwork inbound + routing rule in `vless/config_gen.py`
+- [ ] 97-02: Route-aware preflight and UR-first proxy candidates
 
 ## v1.30 Green Tag Uptime (ACTIVE)
 

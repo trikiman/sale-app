@@ -27,6 +27,9 @@ from vless.parser import VlessNode
 
 XRAY_LISTEN_HOST = "127.0.0.1"
 XRAY_LISTEN_PORT = 10808
+# v1.30 GREEN-EGRESS-01: port pinned to the URnetwork outbound. Traffic here
+# never enters the leastPing balancer, so a dead VLESS node cannot capture it.
+XRAY_URN_LISTEN_PORT = 10809
 _BALANCER_TAG = "ru-balancer"
 
 
@@ -98,6 +101,7 @@ def build_xray_config(
     *,
     listen_host: str = XRAY_LISTEN_HOST,
     listen_port: int = XRAY_LISTEN_PORT,
+    urn_listen_port: int = XRAY_URN_LISTEN_PORT,
     log_level: str = "warning",
     include_urnetwork: bool = True,
 ) -> dict:
@@ -141,18 +145,59 @@ def build_xray_config(
     outbounds.append({"tag": "direct", "protocol": "freedom"})
     outbounds.append({"tag": "block", "protocol": "blackhole"})
 
-    return {
-        "log": {"loglevel": log_level},
-        "inbounds": [
+    # v1.30 GREEN-EGRESS-01: a dedicated inbound pinned to URnetwork.
+    #
+    # URnetwork residential RU egress is the only channel that reliably reaches
+    # vkusvill.ru from this box; the VLESS pool is being decimated by
+    # `vpn_detected` (measured 2026-11-16: pool 2 → 1, then "VkusVill: BLOCKED
+    # (direct connection failed)"). But `urn-ru-0` was only a *member of the
+    # leastPing balancer*, so Xray could — and did — pick a dead VLESS node
+    # instead. Membership is not priority.
+    #
+    # This inbound exists only when a UR cache is present, so the no-cache
+    # invariants in the existing tests stay intact.
+    inbounds = [
+        {
+            "tag": "socks-in",
+            "listen": listen_host,
+            "port": int(listen_port),
+            "protocol": "socks",
+            "settings": {"auth": "noauth", "udp": True},
+            "sniffing": {"enabled": True, "destOverride": ["http", "tls"]},
+        }
+    ]
+    routing_rules = [
+        {
+            "type": "field",
+            "inboundTag": ["socks-in"],
+            "balancerTag": _BALANCER_TAG,
+        }
+    ]
+    if urn_tags:
+        inbounds.append(
             {
-                "tag": "socks-in",
+                "tag": "urn-socks-in",
                 "listen": listen_host,
-                "port": int(listen_port),
+                "port": int(urn_listen_port),
                 "protocol": "socks",
                 "settings": {"auth": "noauth", "udp": True},
                 "sniffing": {"enabled": True, "destOverride": ["http", "tls"]},
             }
-        ],
+        )
+        # Pinned route, not a balancer entry: traffic on this port always leaves
+        # through URnetwork even when VLESS nodes look healthier to leastPing.
+        routing_rules.insert(
+            0,
+            {
+                "type": "field",
+                "inboundTag": ["urn-socks-in"],
+                "outboundTag": urn_tags[0],
+            },
+        )
+
+    return {
+        "log": {"loglevel": log_level},
+        "inbounds": inbounds,
         "policy": {
             "levels": {
                 "0": {
@@ -191,12 +236,6 @@ def build_xray_config(
                     "strategy": {"type": "leastPing"},
                 }
             ],
-            "rules": [
-                {
-                    "type": "field",
-                    "inboundTag": ["socks-in"],
-                    "balancerTag": _BALANCER_TAG,
-                }
-            ],
+            "rules": routing_rules,
         },
     }

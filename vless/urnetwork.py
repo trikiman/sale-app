@@ -260,14 +260,24 @@ def socks_proxy_url(cache_path: Path | None = None) -> str | None:
 
 
 def proxy_candidates(env_var: str = "SOCKS_PROXY") -> list[str]:
-    """Ordered proxy URLs to try for VkusVill: env-configured first, then URnetwork."""
+    """Ordered proxy URLs to try for VkusVill: **URnetwork first**, then env.
+
+    v1.30 GREEN-EGRESS-01 reversed the old order. URnetwork is a residential RU
+    exit (AS12389 Rostelecom) and is the only channel that reliably reaches
+    vkusvill.ru from the Oracle box; the VLESS pool decays to zero under
+    `vpn_detected` (measured 2026-11-16: pool 2 → 1 → "BLOCKED (direct
+    connection failed)"). Putting the fragile channel first meant every scrape
+    burned its timeout on a dead node before trying the working exit.
+
+    The env proxy stays in the list as a fallback, not a preference.
+    """
     out: list[str] = []
-    env_proxy = os.environ.get(env_var, "").strip()
-    if env_proxy:
-        out.append(env_proxy)
     urn = socks_proxy_url()
-    if urn and urn not in out:
+    if urn:
         out.append(urn)
+    env_proxy = os.environ.get(env_var, "").strip()
+    if env_proxy and env_proxy not in out:
+        out.append(env_proxy)
     return out
 
 

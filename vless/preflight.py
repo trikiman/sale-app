@@ -37,10 +37,24 @@ _PROBE_URL = "https://vkusvill.ru/favicon.ico"
 _PROBE_TIMEOUT_S_FLOOR = 12.0
 _CACHE_TTL_S = 30.0
 _ACCEPTED_STATUSES = frozenset({200, 204, 304, 403, 404})
-_BRIDGE_PROXY = "socks5h://127.0.0.1:10808"
 
-# Module-level cache of last successful probe timestamp (monotonic seconds).
-_LAST_SUCCESS_AT: Optional[float] = None
+# v1.30 GREEN-EGRESS-01: probe order, URnetwork first.
+#
+# `urn-ru-0` used to be merely one member of the leastPing balancer, so Xray
+# could pick a dead VLESS node instead — and by 2026-11-16 the pool had decayed
+# to one node and the scheduler logged "VkusVill: BLOCKED (direct connection
+# failed)", stalling every green cycle. Port 10809 is pinned to URnetwork by an
+# inbound+pinned-route pair in `config_gen.py`, so here we try it first and fall
+# back to the general balancer on 10808 only when it fails.
+_BRIDGE_PROXIES: tuple[tuple[str, str], ...] = (
+    ("urnetwork", "socks5h://127.0.0.1:10809"),
+    ("vless", "socks5h://127.0.0.1:10808"),
+)
+_BRIDGE_PROXY = _BRIDGE_PROXIES[-1][1]  # kept for backwards compatibility
+
+# Module-level cache of last successful probe timestamp (monotonic seconds),
+# per route: a healthy URnetwork must not mask a dead VLESS balancer.
+_LAST_SUCCESS_AT: dict[str, float] = {}
 
 
 @dataclass(frozen=True)
@@ -53,37 +67,16 @@ class ProbeResult:
     reason: str
     elapsed_s: float
     cached: bool = False
+    # "urnetwork" | "vless" — which egress actually served the probe.
+    route: str = ""
 
 
-def probe_bridge_alive(timeout: float = _PROBE_TIMEOUT_S_FLOOR) -> ProbeResult:
-    """Single HTTPS GET to VkusVill through the local SOCKS5 bridge.
-
-    Returns a typed :class:`ProbeResult`. Never raises. Caller uses
-    ``.ok`` to decide whether to rotate + retry.
-
-    If the last successful probe was within ``_CACHE_TTL_S`` (30 s), return
-    a cached OK without hitting the network.
-
-    :param timeout: HTTP timeout in seconds. Must be >=
-        ``_PROBE_TIMEOUT_S_FLOOR``; the floor is enforced at runtime to
-        prevent PR #25-style regression where 5 s false-negatived healthy
-        nodes with ~9 s latency.
-    """
-    global _LAST_SUCCESS_AT
-
-    effective_timeout = max(float(timeout), _PROBE_TIMEOUT_S_FLOOR)
-
-    if _LAST_SUCCESS_AT is not None:
-        age = time.monotonic() - _LAST_SUCCESS_AT
-        if age <= _CACHE_TTL_S:
-            return ProbeResult(
-                ok=True, status=None, reason="cached", elapsed_s=0.0, cached=True
-            )
-
+def _probe_once(proxy: str, effective_timeout: float, route: str) -> ProbeResult:
+    """Single probe attempt through one SOCKS bridge. Never raises."""
     start = time.monotonic()
     try:
         with httpx.Client(
-            proxy=_BRIDGE_PROXY,
+            proxy=proxy,
             timeout=effective_timeout,
             verify=True,
             follow_redirects=False,
@@ -91,60 +84,70 @@ def probe_bridge_alive(timeout: float = _PROBE_TIMEOUT_S_FLOOR) -> ProbeResult:
             resp = client.get(_PROBE_URL)
         elapsed = time.monotonic() - start
         if resp.status_code in _ACCEPTED_STATUSES:
-            _LAST_SUCCESS_AT = time.monotonic()
             return ProbeResult(
-                ok=True, status=resp.status_code, reason="ok", elapsed_s=elapsed
+                ok=True, status=resp.status_code, reason="ok",
+                elapsed_s=elapsed, route=route,
             )
-        _LAST_SUCCESS_AT = None
         return ProbeResult(
-            ok=False,
-            status=resp.status_code,
-            reason=f"http_{resp.status_code}",
-            elapsed_s=elapsed,
+            ok=False, status=resp.status_code,
+            reason=f"http_{resp.status_code}", elapsed_s=elapsed, route=route,
         )
-    except httpx.ConnectTimeout:
-        _LAST_SUCCESS_AT = None
+    except (httpx.ConnectTimeout, httpx.ReadTimeout):
         return ProbeResult(
-            ok=False,
-            status=None,
-            reason="timeout",
-            elapsed_s=time.monotonic() - start,
-        )
-    except httpx.ReadTimeout:
-        _LAST_SUCCESS_AT = None
-        return ProbeResult(
-            ok=False,
-            status=None,
-            reason="timeout",
-            elapsed_s=time.monotonic() - start,
+            ok=False, status=None, reason="timeout",
+            elapsed_s=time.monotonic() - start, route=route,
         )
     except httpx.ConnectError as exc:
-        _LAST_SUCCESS_AT = None
-        reason = (
-            "dns_fail"
-            if "name or service" in str(exc).lower()
-            else "connect_error"
-        )
         return ProbeResult(
-            ok=False,
-            status=None,
-            reason=reason,
-            elapsed_s=time.monotonic() - start,
+            ok=False, status=None,
+            reason=("dns_fail" if "name or service" in str(exc).lower() else "connect_error"),
+            elapsed_s=time.monotonic() - start, route=route,
         )
     except httpx.HTTPError:
-        _LAST_SUCCESS_AT = None
         return ProbeResult(
-            ok=False,
-            status=None,
-            reason="connect_error",
-            elapsed_s=time.monotonic() - start,
+            ok=False, status=None, reason="connect_error",
+            elapsed_s=time.monotonic() - start, route=route,
         )
+
+
+def probe_bridge_alive(timeout: float = _PROBE_TIMEOUT_S_FLOOR) -> ProbeResult:
+    """Probe VkusVill through the local SOCKS bridges, URnetwork first.
+
+    Returns a typed :class:`ProbeResult` whose ``route`` names the egress that
+    answered (``"urnetwork"`` on :10809, ``"vless"`` on :10808). Callers must
+    launch Chrome against the port of the winning route, otherwise the probe
+    would vouch for a channel the browser never uses.
+
+    A per-route 30 s cache short-circuits repeated probes; a healthy URnetwork
+    never masks a dead balancer because the cache is keyed by route.
+
+    :param timeout: HTTP timeout in seconds, floored at
+        ``_PROBE_TIMEOUT_S_FLOOR`` to keep PR #25 from returning.
+    """
+    effective_timeout = max(float(timeout), _PROBE_TIMEOUT_S_FLOOR)
+
+    for route, proxy in _BRIDGE_PROXIES:
+        last = _LAST_SUCCESS_AT.get(route)
+        if last is not None and (time.monotonic() - last) <= _CACHE_TTL_S:
+            return ProbeResult(
+                ok=True, status=None, reason="cached", elapsed_s=0.0,
+                cached=True, route=route,
+            )
+
+        result = _probe_once(proxy, effective_timeout, route)
+        if result.ok:
+            _LAST_SUCCESS_AT[route] = time.monotonic()
+            return result
+        _LAST_SUCCESS_AT.pop(route, None)
+
+    # Every route failed: report the first (primary) route's failure so the log
+    # names the channel we actually prefer, not the fallback's error.
+    return _probe_once(_BRIDGE_PROXIES[0][1], effective_timeout, _BRIDGE_PROXIES[0][0])
 
 
 def reset_probe_cache() -> None:
     """Clear the last-success cache. Used by tests; rarely by callers."""
-    global _LAST_SUCCESS_AT
-    _LAST_SUCCESS_AT = None
+    _LAST_SUCCESS_AT.clear()
 
 
 __all__ = ["ProbeResult", "probe_bridge_alive", "reset_probe_cache"]
