@@ -107,6 +107,22 @@ which keeps hang protection but covers the observed 351 s ceiling.
 **First cycle after the change:** `22:33 ok=True exit=0 dur=222.1s`. One sample is
 not proof — the failure rate over the next day is what will settle it.
 
+## Timeout fix confirmed (2026-11-16, 23:10)
+
+Four consecutive successful cycles after the change, **none killed**:
+
+```
+22:33 ok exit=0 dur=222.1s
+22:43 ok exit=0 dur=328.9s
+22:56 ok exit=0 dur=478.7s   <- would have been SIGKILLed at 300 s before
+23:07 ok exit=0 dur=310.8s
+```
+
+The 478.7 s run is the decisive one: under the old 300 s silence budget it would
+have died with exit -9 exactly like the 340 s and 351 s failures. Aggregate moved
+`39 cycles / 9 failed` -> `44 cycles / 10 failed`, i.e. **no new failures** while
+5 cycles completed.
+
 ## Daily log
 
 - **2026-11-16** — instrumentation deployed (`69fad23`). First cycle recorded
