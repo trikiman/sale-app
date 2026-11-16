@@ -238,6 +238,18 @@ class TestLookupCategoryDb(unittest.TestCase):
 class TestKeywordFallback(unittest.TestCase):
     """Test utils.keyword_fallback for various product names."""
 
+    def test_leafy_salad_is_produce(self):
+        self.assertEqual(
+            utils.keyword_fallback("Салат латук Романо, шт"),
+            "Овощи, фрукты, ягоды, зелень",
+        )
+
+    def test_prepared_salad_is_ready_food(self):
+        self.assertEqual(
+            utils.keyword_fallback("Салат Цезарь с курицей"),
+            "Готовая еда",
+        )
+
     def test_meat(self):
         self.assertEqual(utils.keyword_fallback("Колбаса докторская"), "Мясо, Мясные деликатесы")
 
