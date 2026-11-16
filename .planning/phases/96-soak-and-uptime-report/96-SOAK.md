@@ -48,6 +48,29 @@ pass.
 - [ ] daily check recorded in this file (see log below)
 - [ ] any incident has a timestamp, stage, and the fix that followed
 
+## First real measurements (2026-11-16, ~5 h of records)
+
+```
+{"cycles":19,"cycles_ok":15,"cycles_failed":4,"uptime_pct":78.95,
+ "gap_incident_count":2,"worst_gap_minutes":99.8,
+ "false_zero_cycles":0,"false_zero_count":0,"hours_recorded":5.3}
+```
+
+Reading it honestly:
+
+- **`false_zero_count: 0`** — the milestone's actual goal is already holding: no
+  cycle claimed success with nothing to show. This is the metric Phase 94 was
+  built for.
+- **4 of 19 cycles failed**, leaving two gaps (99.8 min and 57.1 min). The
+  recorder caught them with timestamps, which is exactly why it exists.
+- Current blocker: `health unhealthy [pool_below_min_healthy:0_lt_5,
+  stale_cycle_1049s, stale_products_1060s, cart_add_p95_critical:21592ms]` — the
+  VLESS pool is at **0** healthy nodes and `cart_add` p95 is 21.6 s.
+
+So the picture for the week is: green data never lies about emptiness, but the
+cycle is not yet reliable enough to call the soak healthy. Phase 97 made the
+scheduler usable; keeping the pool alive is the next front.
+
 ## Daily log
 
 - **2026-11-16** — instrumentation deployed (`69fad23`). First cycle recorded
@@ -61,3 +84,4 @@ Phase 96 cannot be closed by a code change: it is a 168-hour observation. Until
 2026-11-23 the milestone stays open, and the report says so explicitly rather
 than claiming a week that has not happened.
 - **2026-11-16** — ⏳ verdict `insufficient`, cycles 1 (uptime 100.0%), gaps 0, false zeros 0, last ok 3.6 min ago.
+- **2026-11-16** — ⏳ verdict `insufficient`, cycles 19 (uptime 78.95%), gaps 2, false zeros 0, last ok 18.0 min ago.
