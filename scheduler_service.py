@@ -735,6 +735,33 @@ def _prepare_proxy_connectivity(proxy_state):
         log("VkusVill: OK (direct)")
     else:
         log("VkusVill: BLOCKED (direct connection failed)")
+        # v1.30 GREEN-EGRESS-01: try the URnetwork-pinned bridge BEFORE the
+        # VLESS pool. The pool decays to nothing under `vpn_detected` (measured
+        # 2026-11-16: "Pool low (1/5)", then "no working proxy found" and every
+        # green cycle died), while URnetwork residential RU keeps working. Order
+        # matters: asking the broken pool first costs a refresh cycle and fails.
+        try:
+            from vless.preflight import probe_bridge_alive
+
+            probe = probe_bridge_alive()
+        except Exception as e:  # probe must never kill the cycle
+            probe = None
+            log(f"URnetwork preflight skipped: {e}")
+
+        if probe is not None and probe.ok and probe.route == "urnetwork":
+            proxy_url = "socks5://127.0.0.1:10809"
+            log(f"VkusVill: OK via URnetwork bridge (route={probe.route})")
+            if proxy_url != current_proxy:
+                from chrome_stealth import restart_chrome_with_proxy
+
+                restart_chrome_with_proxy(proxy=proxy_url, tag="PROXY")
+                proxy_state["active_proxy"] = proxy_url
+            else:
+                log(f"Already using URnetwork bridge: {proxy_url}")
+            return pm, proxy_state
+        if probe is not None and probe.ok:
+            log(f"VkusVill: reachable via {probe.route} bridge, but it is not the pinned UR route")
+
         proxy = pm.get_working_proxy()
         if proxy:
             proxy_url = f"socks5://{proxy}"
