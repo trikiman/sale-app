@@ -77,7 +77,14 @@ RATE_DECLINE_WINDOW_S = 5 * 60  # 5 minutes
 RATE_DECLINE_THRESHOLD = 3      # nodes lost to trigger proactive refresh
 _POOL_HISTORY_MAX = 20          # keep ~1h of samples at 3 min/cycle
 VKUSVILL_COOLDOWN_S = 4 * 3600
-PROBE_TIMEOUT = 8
+# v1.30 (2026-11-17): 8 → 20 s. The probe fetches the full VkusVill homepage
+# (~380 KB) through a fresh xray tunnel on a 1 vCPU / 1 GB box, and admission
+# requires the 20 KB body floor. Measured that night: TCP opened on 102 of 152
+# candidates, yet every single one was recorded as `probe_error` — the nodes
+# never got the time to move 380 KB. `probe_error` (not `probe_timeout`) is what
+# that looks like from the outside, which is why this hid so long.
+# Do not lower without re-measuring admission yield on a live refresh.
+PROBE_TIMEOUT = 20
 VKUSVILL_URL = "https://vkusvill.ru/"
 UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
