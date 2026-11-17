@@ -106,9 +106,12 @@ Chrome. A real failure (exit 1, proxy at fault) still retries. Live proof:
 `03:40:49 GREEN: OK (data updated)` and a new soak record
 (`ts 1794886849, ok=true, dur=238.6`) — the first green record after 03:10.
 
-Still open: the cycle itself is sequential, so green's effective cadence is
-bounded by red+yellow. Running green on its own timer is the next improvement,
-not needed for the soak to be honest (it now records what actually happens).
+**Fixed** (commit `dde9ad4`): GREEN moved to the front of the full cycle
+(`green, red, yellow`), so a hung yellow can no longer push it out. Verified live:
+`04:15:48 Starting scrape_green.py` → `04:19:38 scrape_red.py`, and records now
+arrive every ~10 min with real data — `07:19 ok live=47`, `/api/products` green 10
+and climbing (morning markdown). Soak is honest again: 73 cycles, 56 ok, 17 failed,
+`false_zero_count: 0`, 19.3 h recorded, `verdict: insufficient` (needs 168 h).
 
 ## Session
 
