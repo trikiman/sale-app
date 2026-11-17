@@ -471,7 +471,12 @@ def run_script(script_name, tag=None):
         proc.kill()
         proc.wait(timeout=5)
 
-    if tag == "GREEN":
+    # v1.30 fix (2026-11-17): the retry path calls run_script(script, "GREEN-RETRY")
+    # (line ~1189), and a strict `tag == "GREEN"` dropped every retried cycle from
+    # the soak — green_uptime.jsonl sat at 68 records while the scheduler was
+    # finishing cycles every few minutes and green_products.json kept updating.
+    # Dropped retries are exactly the cycles that matter most for the uptime number.
+    if tag and tag.upper().startswith("GREEN"):
         _record_green_uptime(
             ok=(proc.returncode == 0),
             exit_code=proc.returncode,
