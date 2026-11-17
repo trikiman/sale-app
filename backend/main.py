@@ -6600,7 +6600,7 @@ async def github_webhook(request: Request):
 
     return {
         "status": "updated",
-        "pull_output": result.stdout[:200],
+        "pull_output": (result.stdout + result.stderr)[:1500],
         "backend_restart": backend_changed,
         "scheduler_restart": scheduler_changed,
         "files_changed": len(changed_files)
