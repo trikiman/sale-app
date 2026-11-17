@@ -17,6 +17,20 @@ progress:
 
 ## Blockers
 
+- **Deploy pipeline broken since ~2026-11-17 01:00** (diagnosed 01:50): every
+  webhook says `pull_output: "Updating a923aed..25ec816\n"` — the same base
+  every time, one line only — while repo history shows several successful
+  deploys past that point. The server checkout is stuck at `a923aed` and both
+  restarts (`saleapp-backend`, `saleapp-scheduler`) keep bringing up the old
+  code: the backoff commit never executed (no `Backoff state:` log line, no
+  `[pool-watchdog] checkout=` diagnostics line, `pull_output` still truncated at
+  200 chars after the commit that raises it to 1500). The merge presumably fails
+  (dirty tree / local commits — an earlier webhook showed base `d51c257`, a hash
+  that does not exist in our history) and the error is swallowed. **Fixing
+  requires SSH** (`git -C /home/ubuntu/saleapp status; git pull; systemctl
+  restart saleapp-backend saleapp-scheduler`) — port 22 is DPI-blocked.
+  Until then: commits after `a923aed` are NOT live on the server.
+
 - **VLESS pool 0/5 healthy** (diagnosed 2026-11-17 00:15, card `t_742784ed`).
   Fetch is healthy: `parsed=1587, geo ru=422, uniq host:port=231`; TCP pre-filter
   `102/152 reachable`. Then **xray probe fails on all 152** (`probe_error=102,
