@@ -120,6 +120,22 @@ consecutive `GREEN: OK` (04:23, 04:34, 04:40), one run taking 646 s but
 completing, and a pre-existing `Page reload timed out after 45s — skipping
 basket_recalc` guard doing its job.
 
+## Audit 2026-11-18 00:02 MSK — history, prices, front-end all live
+
+- `/api/history/products` and `/api/history/product/{id}` serve real data: `Морковь`
+  (id 606) has `last_known_price 32.0`, `total_sale_count 30`, `last_sale_at 20:54:53Z`
+  (8 min old) and a price-time prediction. **Correcting my own earlier reading:** I
+  compared that timestamp to a "now" sampled hours before and briefly called it
+  "future time" — it was not; the real clock was 21:02 UTC.
+- `/api/products`: 161 products, `greenLiveCount 3` (night lull, same as 17:07), a
+  green entry reads `Морковь 32 / 53`, prices present, `updated 2026-11-18 00:00:14`.
+- `https://vkusvillsale.vercel.app/` → HTTP 200.
+- SSH via the local SOCKS is currently **unavailable** (`connect` SOCKS 0x00 then an
+  empty banner → `Connection closed by UNKNOWN port 65535`): the balancer picked a
+  node that drops :22. Not touching the proxy; ops work goes through the API and
+  the git webhook until it recovers. `VACUUM` on the 575 MB `salebot.db` waits for
+  SSH.
+
 ## Soak trending healthy after the navigation deadline (2026-11-17 09:05 UTC)
 
 Nine consecutive successful cycles since `2c7dd91` (06:40 → 09:05 UTC), **zero**
