@@ -136,6 +136,29 @@ basket_recalc` guard doing its job.
   the git webhook until it recovers. `VACUUM` on the 575 MB `salebot.db` waits for
   SSH.
 
+## Endpoint audit 2026-11-18 01:55 MSK (all public routes)
+
+Called through the live front `https://vkusvillsale.vercel.app`:
+
+| endpoint | result |
+|---|---|
+| `/api/products` | 200, 186 products, 13 fields each |
+| `/api/new-products` | 200, `{new_products, count}` → count 0 (nothing new at night) |
+| `/api/groups` | 200, 71 groups |
+| `/api/history/products` | 200, `{products, total, page, pages, per_page}`, per_page 50 |
+| `/api/history/product/{id}` | 200, price + sale count + prediction |
+| `/api/health/deep` | 503 `degraded` — only `pool_below_min_healthy:0_lt_5` |
+| `/admin/green-uptime` | 200, 172 cycles / 89.53% |
+| `/admin/test-alert` | 200 `{"sent": true}` |
+| `/admin/egress-probe` | ok (earlier check) |
+
+**SSH is still down:** the SOCKS CONNECT on `:22` succeeds (reply code `0x00`) but no
+banner ever arrives — `empty-banner` on every attempt, 40+ min. That is a different
+failure from the earlier `Connection closed`: the tunnel reaches the host and the
+TCP handshake completes, but sshd does not speak. Not touching the proxy or the
+server's unit files; everything in the audit above was done over HTTP. `VACUUM`
+of the 575 MB `salebot.db` stays pending until SSH returns.
+
 ## Data quality spot-check 2026-11-18 01:40 MSK (186 products)
 
 Checked through the public front (`https://vkusvillsale.vercel.app/api/products`):
