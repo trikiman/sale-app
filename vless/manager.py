@@ -69,6 +69,14 @@ DIRECT_CHECK_TTL = 60
 # all 231 RU-filtered candidates — pure wasted work.
 REFRESH_MIN_INTERVAL_S = 60.0
 
+# v1.30 (2026-11-17): back off when a refresh yields nothing. The pool-watchdog
+# retried every 60 s while the pool sat at 0, and each attempt costs ~2.5 min of
+# xray probing on a 1 vCPU box — a self-inflicted load spike that competes with
+# the green cycles for the only core. One empty refresh can be a transient blip;
+# two in a row means the upstream lists genuinely have nothing admissible for us,
+# so wait 30 min instead of thrashing.
+REFRESH_EMPTY_BACKOFF_S = 1800.0
+
 # v1.24 REL-18: rate-of-decline detection window + threshold. If the pool
 # lost more than RATE_DECLINE_THRESHOLD nodes in the last
 # RATE_DECLINE_WINDOW_S seconds, ensure_pool forces a refresh even when
@@ -193,6 +201,8 @@ class VlessProxyManager:
         # 19 refreshes in 15 min burned ~30s each doing useless re-probe
         # of the same 231 RU-filtered candidates).
         self._last_refresh_monotonic: float = 0.0
+        # Consecutive refreshes that admitted zero nodes (see REFRESH_EMPTY_BACKOFF_S).
+        self._empty_refresh_streak: int = 0
 
         # v1.24 REL-18: pool size history for rate-of-decline detection.
         # Stores (monotonic_ts, size) samples; capped at _POOL_HISTORY_MAX.
@@ -434,10 +444,16 @@ class VlessProxyManager:
 
         # REL-17: Throttle — skip if last refresh was within the min interval.
         elapsed = now_mono - self._last_refresh_monotonic
-        if self._last_refresh_monotonic > 0.0 and elapsed < REFRESH_MIN_INTERVAL_S:
+        min_interval = (
+            REFRESH_EMPTY_BACKOFF_S
+            if self._empty_refresh_streak >= 2
+            else REFRESH_MIN_INTERVAL_S
+        )
+        if self._last_refresh_monotonic > 0.0 and elapsed < min_interval:
             self._log(
                 f"Refresh throttled — last refresh was {elapsed:.1f}s ago "
-                f"(min interval {REFRESH_MIN_INTERVAL_S}s); current pool={count}"
+                f"(min interval {min_interval:.0f}s, "
+                f"empty streak={self._empty_refresh_streak}); current pool={count}"
             )
             return count
 
@@ -463,7 +479,16 @@ class VlessProxyManager:
             for entry in self._pool.get("nodes", [])
             if entry.get("host")
         }
-        self.refresh_proxy_list(exclude=existing)
+        admitted = self.refresh_proxy_list(exclude=existing)
+        if admitted == 0:
+            self._empty_refresh_streak += 1
+            if self._empty_refresh_streak >= 2:
+                self._log(
+                    f"Empty refresh streak={self._empty_refresh_streak} — backing off "
+                    f"{REFRESH_EMPTY_BACKOFF_S / 60:.0f} min before the next attempt"
+                )
+        else:
+            self._empty_refresh_streak = 0
         total = self.pool_count()
         self._log(f"Pool now has {total} nodes")
         return total
