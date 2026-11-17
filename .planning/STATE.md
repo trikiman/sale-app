@@ -110,8 +110,15 @@ Chrome. A real failure (exit 1, proxy at fault) still retries. Live proof:
 (`green, red, yellow`), so a hung yellow can no longer push it out. Verified live:
 `04:15:48 Starting scrape_green.py` → `04:19:38 scrape_red.py`, and records now
 arrive every ~10 min with real data — `07:19 ok live=47`, `/api/products` green 10
-and climbing (morning markdown). Soak is honest again: 73 cycles, 56 ok, 17 failed,
-`false_zero_count: 0`, 19.3 h recorded, `verdict: insufficient` (needs 168 h).
+and climbing (morning markdown). Soak is honest again, and the hang class is closed: records now show
+`live=10 → 47 → 71` (morning markdown), and the 446–470 s kills are gone —
+`page.get()` had no deadline and sat on a dead tunnel for 7 minutes after
+`Loaded 48/48 cookies via CDP`. All three navigation sites now go through
+`_page_get()` with a 90 s `asyncio.wait_for` (`2c7dd91`, 4 tests), so a stalled
+tunnel costs 90 s instead of a lost cycle. Observed after deploy: three
+consecutive `GREEN: OK` (04:23, 04:34, 04:40), one run taking 646 s but
+completing, and a pre-existing `Page reload timed out after 45s — skipping
+basket_recalc` guard doing its job.
 
 ## Session
 
