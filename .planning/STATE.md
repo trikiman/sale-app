@@ -24,8 +24,23 @@ progress:
   sources: TCP opens but no node proxies. Probe target is already correct
   (`https://vkusvill.ru/favicon.ico`). Next hypotheses: probe timeout too tight
   for reality nodes from Amsterdam; flow/SNI/fingerprint not passed verbatim;
-  nodes demand RU egress. Green cycles survive on URnetwork (`urnetwork ok`).
-  Replenishing is a vless-hunt problem, not saleapp code — do not "fix" it here.
+  nodes demand RU egress.
+
+  **After raising the probe budget to 20 s (commit `5314f21`) the rejection
+  buckets changed shape** — 231 candidates turned into
+  `probe_error=104, vpn_detected=66, tcp_unreachable=50, egress_country_non_ru=11`,
+  still 0 admitted. The `vpn_detected=66` bucket is the finding: those nodes DO
+  tunnel traffic, and VkusVill answers them with the VPN-flagged page. Public
+  free VLESS lists are datacenter IPs, and VkusVill blocks datacenter egress by
+  design — that is why the residential URnetwork route works (`urnetwork ok`,
+  `basket_recalc: success=Y`) while 231 free nodes yield nothing.
+
+  **Conclusion:** the pool cannot be fixed by collecting more free lists. Either
+  the pool moves to residential RU egress, or it is retired as a green-egress
+  path and URnetwork becomes primary with the pool as a best-effort extra.
+  Do not spend more cycles hunting free nodes for VkusVill.
+
+  Green cycles survive on URnetwork (`urnetwork ok`).
 - **Telegram notifications dead**: bot not polled server-side, `/admin/test-alert`
   → `no_admin_chat_ids`; needs SSH (port 22 blocked by DPI).
 
