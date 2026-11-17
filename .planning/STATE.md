@@ -136,6 +136,21 @@ basket_recalc` guard doing its job.
   the git webhook until it recovers. `VACUUM` on the 575 MB `salebot.db` waits for
   SSH.
 
+## Data quality spot-check 2026-11-18 01:40 MSK (186 products)
+
+Checked through the public front (`https://vkusvillsale.vercel.app/api/products`):
+
+- **0** products without `currentPrice`, **0** without `oldPrice`;
+- **0** products where `oldPrice <= currentPrice` (that would render a fake "−0%" badge);
+- **0** products with `stock = 0`;
+- distribution `green 1 / red 43 / yellow 142` — night lull, matches the soak record `live=1`.
+
+`discount` is **not** an API field (13 fields per product) and the front never reads it:
+the bundle computes `Math.round((1 - currentPrice/oldPrice) * 100)` only when
+`oldPrice > currentPrice` (verified in `assets/index-CcGxQfVB.js`). So `Monini 685/1268`
+renders as **−46%**, correctly derived — no missing-field bug here. My earlier note that
+`discount` came back `None` was reading a field the API simply does not expose.
+
 ## End-to-end verified 2026-11-18 01:25 MSK (front-end → API → server)
 
 `https://vkusvillsale.vercel.app/api/products` → **200, 183 products, greenLiveCount 1**
