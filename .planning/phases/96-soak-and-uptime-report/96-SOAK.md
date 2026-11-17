@@ -8,6 +8,31 @@ soak_ends: 2026-11-23
 
 # Phase 96 — Soak started
 
+## 2026-11-18 01:10 MSK — all recorded gaps are historical
+
+`GET /api/admin/green-uptime?hours=168`: **172 cycles, 154 ok, 18 failed, 89.53%,
+`false_zero_cycles: 0`, 36.7 h recorded, verdict `incident`.**
+
+The verdict is driven entirely by gaps, and every one of them predates the fixes:
+
+| gap | window (UTC) | age |
+|---|---|---|
+| 99.8 min | 16.11 09:04 → 10:44 | 35 h |
+| 57.1 min | 16.11 12:02 → 12:59 | 33 h |
+| 49.1 min | 16.11 16:58 → 17:47 | 28 h |
+| 46.9 min | 16.11 20:18 → 21:05 | 25 h |
+| 79.8 min | 17.11 00:59 → 02:19 | 19 h |
+| 54.0 min | 17.11 02:46 → 03:40 | 18 h |
+
+**No gap in the last 18 hours.** Cycle spacing since 17:19 UTC is 8–15 min, last
+`ok` 0.2 min old, and 20+ consecutive successful cycles. The 18 failures are the
+pre-fix `exit=-9` kills plus one `exit=1` at 17:58 (655 s run).
+
+Read this as: the mechanism is proven healthy from 03:40 UTC on; the 168 h window
+still carries the two bad days and will report `insufficient`/`incident` until
+they age out on 2026-11-23. That is the honest reading — not a claim that the
+whole window was clean.
+
 ## Instrumentation (shipped, live)
 
 - `backend/green_uptime.py` — dependency-free recorder + summarizer.
