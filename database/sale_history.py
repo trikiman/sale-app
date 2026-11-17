@@ -259,15 +259,28 @@ def record_sale_appearances(current_products: List[Dict[str, Any]]):
                 missing_minutes = int((now_dt - last_seen_dt).total_seconds() / 60)
 
                 if not source_state["counted_for_continuity"]:
-                    sessions_kept_unsafe += 1
+                    # Unsafe cycle, but if the product has been missing for
+                    # 3× the normal gap threshold (3 hours), force-close anyway.
+                    # Otherwise a stuck scraper keeps sessions open forever —
+                    # the history loses all meaning.
+                    if missing_minutes < SESSION_GAP_MINUTES * 3:
+                        sessions_kept_unsafe += 1
+                        _log_session_decision(
+                            "KEEP_ACTIVE_UNSAFE_CYCLE",
+                            row["product_id"],
+                            row["sale_type"],
+                            missing_minutes=missing_minutes,
+                            source_state=source_state,
+                        )
+                        continue
+                    # Fall through: close the session despite unsafe cycle
                     _log_session_decision(
-                        "KEEP_ACTIVE_UNSAFE_CYCLE",
+                        "CLOSE_UNSAFE_TIMEOUT",
                         row["product_id"],
                         row["sale_type"],
                         missing_minutes=missing_minutes,
                         source_state=source_state,
                     )
-                    continue
 
                 if missing_minutes < SESSION_GAP_MINUTES:
                     sessions_kept_grace += 1
