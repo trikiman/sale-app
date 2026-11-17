@@ -120,6 +120,22 @@ consecutive `GREEN: OK` (04:23, 04:34, 04:40), one run taking 646 s but
 completing, and a pre-existing `Page reload timed out after 45s — skipping
 basket_recalc` guard doing its job.
 
+## Soak trending healthy after the navigation deadline (2026-11-17 09:05 UTC)
+
+Nine consecutive successful cycles since `2c7dd91` (06:40 → 09:05 UTC), **zero**
+`exit=-9` kills in that window: `62 ok / 17 failed` overall, but every failure is
+older than the fix. `false_zero_count: 0`, uptime 78.48% (the 17 historical
+failures stay in the 168 h window by design).
+
+Cost side, stated plainly: removing the hangs made cycles longer where the tunnel
+was slow — one run took **821 s** (26 products) and completed, another 646 s. The
+watchdog only fires on silence, so these now finish instead of dying. Remaining
+inefficiency is card-by-card basket enrichment, not the network.
+
+One load-related event at 06:04 UTC: `Page reload timed out after 45s — skipping
+basket_recalc (using modal data + data-max)` — the existing guard degraded
+gracefully instead of hanging.
+
 ## Telegram + miniapp audited 2026-11-17 08:55 MSK
 
 **Telegram works — the earlier "bot is not polled" note was wrong.**
