@@ -264,7 +264,9 @@ def test_ensure_pool_throttles_rapid_calls(tmp_path: Path, monkeypatch: pytest.M
 
     def fake_refresh(self, exclude=None):
         refresh_calls.append(time.monotonic())
-        return 0
+        # Admit one node so the empty-refresh backoff (2 consecutive zero-yield
+        # refreshes -> 30 min) does not mask the REL-17 throttle under test.
+        return 1
 
     monkeypatch.setattr(VlessProxyManager, "refresh_proxy_list", fake_refresh)
     monkeypatch.setattr(VlessProxyManager, "_load_cooldowns", lambda self: {})

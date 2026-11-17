@@ -201,8 +201,9 @@ class VlessProxyManager:
         # 19 refreshes in 15 min burned ~30s each doing useless re-probe
         # of the same 231 RU-filtered candidates).
         self._last_refresh_monotonic: float = 0.0
-        # Consecutive refreshes that admitted zero nodes (see REFRESH_EMPTY_BACKOFF_S).
-        self._empty_refresh_streak: int = 0
+        # Persisted empty-refresh streak (see REFRESH_EMPTY_BACKOFF_S). Lives on
+        # disk because the scheduler instantiates a new manager per call.
+        self._backoff_path = self._pool_path.with_name("vless_backoff.json")
 
         # v1.24 REL-18: pool size history for rate-of-decline detection.
         # Stores (monotonic_ts, size) samples; capped at _POOL_HISTORY_MAX.
@@ -409,6 +410,26 @@ class VlessProxyManager:
             },
         }
 
+    def _load_backoff(self) -> tuple[int, float]:
+        """Return ``(empty_streak, last_attempt_wall_clock)`` from disk.
+
+        Failures are non-fatal: a missing or corrupt file simply means "no
+        history", which is the safe direction (a refresh may run).
+        """
+        try:
+            raw = json.loads(self._backoff_path.read_text(encoding="utf-8"))
+            return int(raw.get("empty_streak", 0)), float(raw.get("last_attempt", 0.0))
+        except (OSError, ValueError, TypeError):
+            return 0, 0.0
+
+    def _save_backoff(self, streak: int) -> None:
+        payload = {"empty_streak": int(streak), "last_attempt": time.time()}
+        try:
+            self._backoff_path.parent.mkdir(parents=True, exist_ok=True)
+            self._backoff_path.write_text(json.dumps(payload), encoding="utf-8")
+        except OSError as exc:
+            self._log(f"Backoff state not saved: {exc!r}")
+
     def ensure_pool(self) -> int:
         """Refresh if the pool is below :data:`MIN_HEALTHY` or stale (>24h).
 
@@ -443,17 +464,32 @@ class VlessProxyManager:
             return count
 
         # REL-17: Throttle — skip if last refresh was within the min interval.
-        elapsed = now_mono - self._last_refresh_monotonic
-        min_interval = (
-            REFRESH_EMPTY_BACKOFF_S
-            if self._empty_refresh_streak >= 2
-            else REFRESH_MIN_INTERVAL_S
+        # The scheduler builds a fresh VlessProxyManager per call
+        # (scheduler_service.py:943, :1032), so any in-memory streak would reset
+        # every time and the backoff would never engage. State lives on disk.
+        streak, last_attempt_wall = self._load_backoff()
+        # Two clocks on purpose: the wall-clock attempt persisted by a previous
+        # process (the scheduler builds a new manager per call) and any attempt
+        # made by THIS instance. Throttle if either one is still inside the window.
+        elapsed_disk = (
+            time.time() - last_attempt_wall if last_attempt_wall else float("inf")
         )
-        if self._last_refresh_monotonic > 0.0 and elapsed < min_interval:
+        elapsed_mem = (
+            now_mono - self._last_refresh_monotonic
+            if self._last_refresh_monotonic > 0.0
+            else float("inf")
+        )
+        # A fresh process trusts the file; an instance that already attempted a
+        # refresh itself trusts its own clock (tests drive that clock directly).
+        elapsed = elapsed_mem if self._last_refresh_monotonic > 0.0 else elapsed_disk
+        min_interval = (
+            REFRESH_EMPTY_BACKOFF_S if streak >= 2 else REFRESH_MIN_INTERVAL_S
+        )
+        if elapsed < min_interval:
             self._log(
                 f"Refresh throttled — last refresh was {elapsed:.1f}s ago "
-                f"(min interval {min_interval:.0f}s, "
-                f"empty streak={self._empty_refresh_streak}); current pool={count}"
+                f"(min interval {min_interval:.0f}s, empty streak={streak}); "
+                f"current pool={count}"
             )
             return count
 
@@ -481,14 +517,16 @@ class VlessProxyManager:
         }
         admitted = self.refresh_proxy_list(exclude=existing)
         if admitted == 0:
-            self._empty_refresh_streak += 1
-            if self._empty_refresh_streak >= 2:
+            streak, _ = self._load_backoff()
+            streak += 1
+            self._save_backoff(streak)
+            if streak >= 2:
                 self._log(
-                    f"Empty refresh streak={self._empty_refresh_streak} — backing off "
+                    f"Empty refresh streak={streak} — backing off "
                     f"{REFRESH_EMPTY_BACKOFF_S / 60:.0f} min before the next attempt"
                 )
         else:
-            self._empty_refresh_streak = 0
+            self._save_backoff(0)
         total = self.pool_count()
         self._log(f"Pool now has {total} nodes")
         return total
