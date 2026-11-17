@@ -468,6 +468,9 @@ class VlessProxyManager:
         # (scheduler_service.py:943, :1032), so any in-memory streak would reset
         # every time and the backoff would never engage. State lives on disk.
         streak, last_attempt_wall = self._load_backoff()
+        self._log(
+            f"Backoff state: streak={streak}, last_attempt={last_attempt_wall:.0f}"
+        )
         # Two clocks on purpose: the wall-clock attempt persisted by a previous
         # process (the scheduler builds a new manager per call) and any attempt
         # made by THIS instance. Throttle if either one is still inside the window.
