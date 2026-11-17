@@ -17,7 +17,20 @@ progress:
 
 ## Blockers
 
-- **Deploy pipeline broken since ~2026-11-17 01:00** (diagnosed 01:50): every
+- ~~Deploy pipeline broken~~ **FIXED 2026-11-17 02:20.** Root cause: the server
+  working tree had uncommitted edits (`database/sale_history.py`, `vless/sources.py`),
+  so `git pull` aborted with "Your local changes would be overwritten by merge" —
+  and the webhook only ever returned stdout, hiding stderr, so it looked like a
+  successful update while HEAD stayed at `a923aed`. Fixed by saving the diff
+  (`/home/ubuntu/server-local-changes-20261117.patch`), `git stash`, `git pull`,
+  restoring the `sale_history.py` hotfix (now committed as `2819e04`), and
+  restarting both services. **SSH works through the server's own SOCKS**
+  (`connect -S 127.0.0.1:10870`) — port 22 is DPI-blocked directly, but reachable
+  via the tunnel; that is now the supported path for server ops.
+  Verified live: `[pool-watchdog] checkout=/home/ubuntu/saleapp head=043b282`,
+  `Backoff state: streak=0`, `data/vless_backoff.json` written.
+
+- **Deploy pipeline (historical note)**: every
   webhook says `pull_output: "Updating a923aed..25ec816\n"` — the same base
   every time, one line only — while repo history shows several successful
   deploys past that point. The server checkout is stuck at `a923aed` and both
