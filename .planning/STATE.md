@@ -87,6 +87,23 @@ progress:
 - **Empty-refresh backoff verified live**: intervals went from 60 s to 26 min
   (`data/vless_backoff.json` → `{"empty_streak": 1}`, 30 min after streak ≥ 2).
 
+## Found 2026-11-17 03:27 — why green cycles are sparse (new, not yet fixed)
+
+`green_uptime.jsonl` had no new record between 03:10 and 03:28 while the scheduler
+was busy the whole time. The cycle is **sequential** (RED → YELLOW → GREEN), and
+`scrape_yellow.py` hangs: the log shows `TIMEOUT scrape_yellow.py killed after 420s`
+twice in a row (02:07, 02:29) and a `YELLOW-RETRY` in progress at 03:26. With the
+420 s watchdog plus the retry pass, one stuck yellow run can occupy ~14 minutes
+and the green pass simply never gets its turn — so the soak under-counts green
+cycles for a reason that has nothing to do with green.
+
+Also fixed on this pass: the soak recorder was gated on a strict `tag == "GREEN"`,
+so every retried cycle (`GREEN-RETRY`) was dropped — `eee19ba`, 3 tests.
+
+Next step (not started): either run green on its own cadence independent of the
+yellow/red queue, or make the yellow hang non-blocking (its own watchdog budget
+plus skip-to-next-cycle instead of an immediate retry).
+
 ## Session
 
 **Last session:** 2026-11-16 (v1.30: phases 94, 95, 97 closed; Phase 96 soak running)
