@@ -1178,8 +1178,20 @@ def _run_scraper_set(scrapers, proxy_state):
         before_ts = os.path.getmtime(data_path) if os.path.exists(data_path) else 0
 
         code = run_script(script, tag)
-        if code == -2 or code == 1:
-            log(f"  {tag}: {'TIMEOUT' if code == -2 else 'FAILED'} — attempting kill + proxy + retry")
+        if code == -2:
+            # v1.30 (2026-11-17): a TIMEOUT means the run hung, not that the proxy
+            # misbehaved. Retrying it immediately costs another full watchdog budget
+            # (420 s) and starves the queue: the log showed `scrape_yellow.py killed
+            # after 420s` twice back to back while the green pass never got a turn
+            # (green_uptime.jsonl frozen 03:10-03:28). Drop the turn, let the next
+            # cycle try with a restarted Chrome.
+            log(
+                f"  {tag}: TIMEOUT — skipping the retry, next cycle retries "
+                f"(hung run, not a proxy fault)"
+            )
+            _kill_all_scraper_chrome()
+        elif code == 1:
+            log(f"  {tag}: FAILED — attempting kill + proxy + retry")
             _kill_all_scraper_chrome()
 
             proxy = pm.next_proxy()

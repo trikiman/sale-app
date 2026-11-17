@@ -235,8 +235,10 @@ def test_scheduler_parent_records_the_cycle() -> None:
     """
     source = (_REPO_ROOT / "scheduler_service.py").read_text(encoding="utf-8")
     assert "def _record_green_uptime(" in source, "parent-side recorder missing"
-    assert 'if tag == "GREEN":' in source, "recording no longer gated on the green tag"
-    idx = source.find('if tag == "GREEN":')
+    # The gate must match "GREEN" AND "GREEN-RETRY" (retried cycles were silently
+    # dropped from the soak until 2026-11-17 — see test_green_uptime_tags.py).
+    assert 'startswith("GREEN")' in source, "recording no longer gated on the green tag"
+    idx = source.find('startswith("GREEN")')
     window = source[idx : idx + 400]
     assert "killed_by_trigger" in window and "timed_out" in window, (
         "killed/timed-out runs must still be recorded as failures"
