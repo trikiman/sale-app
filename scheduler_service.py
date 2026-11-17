@@ -1240,10 +1240,16 @@ def run_full_cycle(proxy_state):
     log("=== Starting Full Scrape Cycle ===")
     log("=" * 60)
     cycle_started_at = datetime.now().isoformat(timespec="seconds")
+    # v1.30 (2026-11-17): GREEN first. Measured that night, green got its turn
+    # only after red and yellow — and a hung yellow (420 s watchdog) plus its
+    # retry starved it completely: `green_uptime.jsonl` had no record from 03:10
+    # to 03:28 while the scheduler was busy the whole time. Green is the product
+    # the milestone measures and it takes ~200 s, so it goes first; red/yellow
+    # produce history that tolerates being late.
     scrapers = [
+        ("scrape_green.py", "GREEN", "green_products.json"),
         ("scrape_red.py", "RED", "red_products.json"),
         ("scrape_yellow.py", "YELLOW", "yellow_products.json"),
-        ("scrape_green.py", "GREEN", "green_products.json"),
     ]
     proxy_state, scraper_results = _run_scraper_set(scrapers, proxy_state)
     _write_cycle_state(
