@@ -71,6 +71,22 @@ progress:
 - **Telegram notifications dead**: bot not polled server-side, `/admin/test-alert`
   → `no_admin_chat_ids`; needs SSH (port 22 blocked by DPI).
 
+## Ops done 2026-11-17 (v1.30 hardening)
+
+- **Log rotation installed** (was missing entirely): `logs/scheduler.log` had grown
+  to **326 MB**, which is why `/admin/logs` needed >90 s and kept timing out.
+  `/etc/logrotate.d/saleapp`: `su ubuntu ubuntu`, daily, `size 50M`, rotate 5,
+  compress, delaycompress, copytruncate. Applied immediately: history trimmed to
+  a 2.3 MB `.gz`, live file restarted at 0. Verified: `/admin/logs` answers in
+  **0.87 s** (was >90 s timeout).
+- **SSH via the server's own SOCKS** is the supported ops path
+  (`connect -S 127.0.0.1:10870`) — see the deploy note below.
+- **Pool probe budget** raised to 20 s (commit `5314f21`) — pool admitted a node
+  (`Pool now has 1 nodes`, `active_outbounds: 1`), then lost it; free lists are
+  still ~98% dead, URnetwork carries the traffic.
+- **Empty-refresh backoff verified live**: intervals went from 60 s to 26 min
+  (`data/vless_backoff.json` → `{"empty_streak": 1}`, 30 min after streak ≥ 2).
+
 ## Session
 
 **Last session:** 2026-11-16 (v1.30: phases 94, 95, 97 closed; Phase 96 soak running)
