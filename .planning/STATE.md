@@ -100,9 +100,15 @@ cycles for a reason that has nothing to do with green.
 Also fixed on this pass: the soak recorder was gated on a strict `tag == "GREEN"`,
 so every retried cycle (`GREEN-RETRY`) was dropped — `eee19ba`, 3 tests.
 
-Next step (not started): either run green on its own cadence independent of the
-yellow/red queue, or make the yellow hang non-blocking (its own watchdog budget
-plus skip-to-next-cycle instead of an immediate retry).
+**Fixed on this pass** (commit `fc67414`): a TIMEOUT no longer triggers an
+immediate retry — the turn is dropped and the next cycle starts with a fresh
+Chrome. A real failure (exit 1, proxy at fault) still retries. Live proof:
+`03:40:49 GREEN: OK (data updated)` and a new soak record
+(`ts 1794886849, ok=true, dur=238.6`) — the first green record after 03:10.
+
+Still open: the cycle itself is sequential, so green's effective cadence is
+bounded by red+yellow. Running green on its own timer is the next improvement,
+not needed for the soak to be honest (it now records what actually happens).
 
 ## Session
 
