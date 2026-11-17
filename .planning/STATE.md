@@ -120,6 +120,32 @@ consecutive `GREEN: OK` (04:23, 04:34, 04:40), one run taking 646 s but
 completing, and a pre-existing `Page reload timed out after 45s — skipping
 basket_recalc` guard doing its job.
 
+## Telegram + miniapp audited 2026-11-17 08:55 MSK
+
+**Telegram works — the earlier "bot is not polled" note was wrong.**
+- `saleapp-bot` (main.py, python-telegram-bot) polls `getUpdates` every 10 s, HTTP 200.
+- `scheduler_service._run_merge_and_notifier()` runs `backend/notifier.py` each cycle
+  (`NOTIF: OK (notifications run)`), which calls `run_notification_cycle`.
+- Delivery proof: `notification_history` rows are written **only after** a successful
+  `send_message` (bot/notifier.py:73-75 inside try). Three rows at `04:40:28` for
+  user `8436144812` = three delivered push messages.
+
+**Admin alerts were the only broken part** — no `ADMIN_TELEGRAM_CHAT_IDS` (backend)
+and no `ADMIN_CHAT_ID` (notifier) in `.env`, hence `no_admin_chat_ids`. Set both to
+`8436144812` (the id already receiving pushes, taken from `data/salebot.db`).
+Verified: `POST /admin/test-alert` → `{"sent": true, "reason": "ok", "sent_to": [8436144812]}`.
+
+**miniapp**: never built (`no dist`, `no node_modules`). Built with
+`systemd-run --unit=miniapp-build` → `dist/index.html` + assets (vite, 1m 47s).
+`GET /` of the backend now serves it (`MINIAPP_DIST` mount). Public HTTPS is still
+absent: `https://vpn.trikiman.shop/` → **525** (Cloudflare cannot reach origin TLS)
+and nginx on :80 answers 301 for `/`. `WEB_APP_URL` set to the live
+`https://vkusvillsale.vercel.app` so the bot's "Открыть" button no longer points at
+the `t.me/your_bot_name/app` placeholder.
+
+**Needs the operator:** the domain/TLS decision (Cloudflare 525) — serving the
+miniapp on its own HTTPS host means DNS/CF changes on his side. Nothing else blocks.
+
 ## Session
 
 **Last session:** 2026-11-16 (v1.30: phases 94, 95, 97 closed; Phase 96 soak running)
