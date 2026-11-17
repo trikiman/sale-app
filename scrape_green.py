@@ -500,6 +500,25 @@ def _deserialize(val):
     return v
 
 
+# v1.30 (2026-11-17): every navigation gets a hard deadline. Measured that night:
+# the run printed "Loaded 48/48 cookies via CDP" at 03:55:42 and then said nothing
+# for SEVEN minutes until the 420 s watchdog killed it — `page.get()` was awaiting a
+# tunnel that never answered (pool at 0-1 nodes, URnetwork route). An unbounded CDP
+# navigation turns one bad exit into a lost cycle.
+PAGE_GET_TIMEOUT_S = 90
+
+
+async def _page_get(page, url: str, *, timeout: float = PAGE_GET_TIMEOUT_S):
+    """``page.get`` with a deadline, so a dead tunnel cannot hang the cycle."""
+    import asyncio
+
+    try:
+        return await asyncio.wait_for(page.get(url), timeout=timeout)
+    except asyncio.TimeoutError:
+        print(f"  [GREEN] page.get({url}) timed out after {timeout:.0f}s — tunnel stalled")
+        raise
+
+
 async def _js(page, script):
     """Run JS via page.evaluate and deserialize the result."""
     raw = await page.evaluate(script)
@@ -1416,7 +1435,7 @@ async def _fetch_basket_via_cdp(page) -> dict:
         current_url = await _js(page, 'window.location.href')
         if not current_url or 'vkusvill.ru' not in str(current_url):
             print(f"  [GREEN] Page not on vkusvill.ru (at: {str(current_url)[:60]}), navigating...")
-            await page.get('https://vkusvill.ru/cart/')
+            await _page_get(page, 'https://vkusvill.ru/cart/')
             import asyncio
             await asyncio.sleep(3)
     except Exception as e:
@@ -1507,7 +1526,7 @@ async def _fetch_stock_per_product(page, products: list) -> int:
             if not url:
                 continue
             try:
-                await page.get(url)
+                await _page_get(page, url)
                 await asyncio.sleep(3)  # Wait for JS rendering
                 stock_text = await _js(page, r"""
                     (() => {
@@ -1551,7 +1570,7 @@ async def _fetch_stock_per_product(page, products: list) -> int:
     # Navigate back to cart page
     if original_url:
         try:
-            await page.get(original_url)
+            await _page_get(page, str(original_url))
             await asyncio.sleep(3)
         except Exception:
             pass
