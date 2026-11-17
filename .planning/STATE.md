@@ -136,6 +136,19 @@ basket_recalc` guard doing its job.
   the git webhook until it recovers. `VACUUM` on the 575 MB `salebot.db` waits for
   SSH.
 
+## End-to-end verified 2026-11-18 01:25 MSK (front-end → API → server)
+
+`https://vkusvillsale.vercel.app/api/products` → **200, 183 products, greenLiveCount 1**
+(`Monini 685 / 1268`) — identical to what the server API returns at the same moment
+(`live=1` in the newest soak record). So the Vercel front-end proxies `/api/*` to this
+server and the data is not stale. The deployed bundle hash `assets/index-CcGxQfVB.js`
+is the same artefact the local build now produces, so Vercel and the server share
+the current source.
+
+Practical note: the browser tool refuses this host ("private or internal address" —
+the proxy resolves it internally), so end-to-end checks go through `curl` against
+the public host; that path works and is what produced the numbers above.
+
 ## Soak trending healthy after the navigation deadline (2026-11-17 09:05 UTC)
 
 Nine consecutive successful cycles since `2c7dd91` (06:40 → 09:05 UTC), **zero**
