@@ -915,6 +915,17 @@ def _pool_watchdog_loop(stop_event: "threading.Event") -> None:
     # help, just adds churn).
     quarantine_bloated_since: float | None = None
     last_quarantine_clear: float = 0.0
+    # 2026-11-17: prove which checkout the scheduler runs from — the log above
+    # showed a restarted scheduler still executing pre-backoff vless code.
+    try:
+        import subprocess as _sp
+
+        _head = _sp.run(
+            ["git", "rev-parse", "--short", "HEAD"], capture_output=True, text=True
+        ).stdout.strip()
+        log(f"[pool-watchdog] checkout={__file__} head={_head}")
+    except Exception as _exc:  # noqa: BLE001 — diagnostics only
+        log(f"[pool-watchdog] checkout probe failed: {_exc!r}")
     log("[pool-watchdog] Started — polling every "
         f"{POOL_WATCHDOG_INTERVAL_S}s, refresh after "
         f"{POOL_DEAD_GRACE_SECONDS}s dead.")
