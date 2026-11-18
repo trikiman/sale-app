@@ -136,6 +136,23 @@ basket_recalc` guard doing its job.
   the git webhook until it recovers. `VACUUM` on the 575 MB `salebot.db` waits for
   SSH.
 
+## 2026-11-18 06:00 MSK — Vercel build failure caught and fixed (lesson)
+
+Committing the whole local `miniapp/src/App.jsx` (commit `1f2dbc4`) took the Vercel
+deploy down: this working copy has drifted from the repo, so the file carried
+`import { fetchProducts } from './api'` while `miniapp/src/api.js` in the repo exports
+only `getAuthHeaders`. Vercel build → **failure**.
+
+Recovery: reverted (`fb1b1a2`), then re-applied only my 17 added lines on top of the
+**repo** version, and verified by building the repo tree in a detached worktree
+(`git worktree add --detach ... && npm ci && npx vite build` → `index-opH5fajR.js`).
+Deploy `61b7bd1` → **success**, and the site serves `assets/index-opH5fajR.js`.
+`GET /api/products` through the front now returns `greenLiveCount 1,
+greenListedCount 1, greenCountMismatch null`.
+
+Rule going forward: never `git add` a whole file from this drifted local tree —
+diff first, apply only the intended lines, and prove the build on the repo tree.
+
 ## 2026-11-18 05:05 MSK — green counter vs green cards fixed (`05ddf63`)
 
 Caught a live contradiction: `/api/products` said `greenLiveCount: 4` while the
