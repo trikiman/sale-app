@@ -136,6 +136,23 @@ basket_recalc` guard doing its job.
   the git webhook until it recovers. `VACUUM` on the 575 MB `salebot.db` waits for
   SSH.
 
+## 2026-11-18 22:55 UTC — hangs eliminated, remaining failures are plain errors
+
+Last 20 cycles: **0 SIGKILL** (the 45 s `page.evaluate` deadline + 90 s navigation
+deadline hold), 2 failures total — `22:30 exit=1 dur=518 s` and `22:34 exit=1
+dur=234 s`. Those are ordinary errors (probe timeout → browser path), not hangs:
+`[RED]/[YELLOW] VkusVill probe failed: timed out - continuing with browser scraper`.
+Soak: 320 cycles, 295 ok / 25 failed, **92.19%**, `false_zero_cycles 0`, 61.8 h.
+
+`/admin/status` exposes `scraper_status` all-empty because that dict lives in the
+backend process while scraping runs in the scheduler service — the live truth is
+`cycleState` (currently `overall_status: healthy`, all three sources `ok`). Worth
+fixing later so nobody reads the empty block as "scrapers never ran".
+
+Pool: `size 0`, `last_refresh_at 11:50`, backoff active; `xray listening: true`,
+breaker `closed`, and `/api/admin/egress-probe` reports `vless ok 200 3.91 s` +
+`urnetwork ok 200 7.5 s` — traffic has a working path even with an empty pool.
+
 ## Realtime + auth audited 2026-11-18 21:55 UTC
 
 - `GET /api/stream` (SSE) works: a 35 s listen produced `: keepalive` at ~30 s, and
