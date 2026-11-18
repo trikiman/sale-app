@@ -136,6 +136,17 @@ basket_recalc` guard doing its job.
   the git webhook until it recovers. `VACUUM` on the 575 MB `salebot.db` waits for
   SSH.
 
+## Realtime + auth audited 2026-11-18 21:55 UTC
+
+- `GET /api/stream` (SSE) works: a 35 s listen produced `: keepalive` at ~30 s, and
+  `event: update` fires when `proposals.json` mtime changes (verified in source:
+  mtime poll every 2 s, keepalive every 15 ticks). My first 12 s probe returned
+  nothing — that was the probe being shorter than the keepalive interval, not a fault.
+- `GET /api/favorites/<user_id>` returns **403** without Telegram `initData` — the
+  expected auth behaviour, not a defect; the payload would leak another user's
+  favourites otherwise.
+- `/api/products` and `/api/new-products` → 200.
+
 ## 2026-11-18 21:05 UTC — 7th gap closed by itself; the silence class is now bounded
 
 The cron reported a genuine incident: two runs killed by the silence watchdog at
