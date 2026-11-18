@@ -5785,6 +5785,27 @@ def admin_get_status(token: Optional[str] = Header(None, alias="X-Admin-Token"))
         )
     bug_reports_unread = _bug_reports_unread_count()
 
+    # v1.30 (2026-11-18): `scraper_status` is populated by the scraper runner inside
+    # THIS process, but scraping actually runs in the separate scheduler service, so
+    # over the admin API it always came back as "never ran" (every field None) while
+    # cycles were in fact healthy every few minutes. Fill the blanks from cycleState,
+    # which the scheduler writes after every cycle — an empty block is misleading.
+    _cs = cycle_state or {}
+    _cs_sources = dict(_cs.get("sources") or {})
+    for _extra in ("merge", "notifier"):
+        if isinstance(_cs.get(_extra), dict):
+            _cs_sources[_extra] = _cs[_extra]
+    for _name, _info in _cs_sources.items():
+        if not isinstance(_info, dict):
+            continue
+        _row = scraper_status.setdefault(
+            _name, {"running": False, "last_run": None, "exit_code": None, "last_output": ""}
+        )
+        if _row.get("last_run") is None:
+            _row["last_run"] = _info.get("updated_at") or _cs.get("cycle_finished_at")
+        if not _row.get("last_output"):
+            _row["last_output"] = _info.get("status_text") or ""
+
     return {
         "scrapers": scraper_status,
         "data": counts,
