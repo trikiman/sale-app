@@ -524,6 +524,13 @@ class Product(BaseModel):
 class ProductsResponse(BaseModel):
     updatedAt: str
     greenLiveCount: Optional[int] = 0
+    # v1.30 (2026-11-18): greenLiveCount is read from proposals.json (stamped at
+    # merge time) while the cards come from that same payload. When a green scrape
+    # lands between merge and request the two disagree — the counter says "4
+    # зелёных" over a list holding 1 card. Observed live at 04:55 MSK. Expose both
+    # numbers so the drift is visible in the contract instead of in a screenshot.
+    greenListedCount: Optional[int] = None
+    greenCountMismatch: Optional[int] = None
     greenMissing: Optional[bool] = False
     # 2026-08-13: why the green list is empty, when it is. One of
     # "source_empty" (VkusVill shows no green items), "unknown_empty"
@@ -1813,6 +1820,15 @@ def get_products(response: Response):
                 # never a legitimate empty state.
                 data["greenSuppressed"] = "payload_missing_but_snapshot_has_products"
                 print("[api] BUG GREEN-UP-01: green visible per snapshot but absent from payload")
+        # v1.30 (2026-11-18): greenLiveCount is stamped at merge time; the cards
+        # come from the same payload. A green scrape landing between merge and
+        # request makes them disagree (seen live: counter 4 over a 1-card list).
+        data["greenListedCount"] = _green_in_payload
+        _live_green = data.get("greenLiveCount") or 0
+        if _live_green and _green_in_payload and _live_green != _green_in_payload:
+            data["greenCountMismatch"] = _live_green - _green_in_payload
+        else:
+            data["greenCountMismatch"] = None
         return data
     except json.JSONDecodeError:
         raise HTTPException(status_code=500, detail="Invalid JSON data")
