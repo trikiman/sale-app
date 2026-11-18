@@ -136,6 +136,25 @@ basket_recalc` guard doing its job.
   the git webhook until it recovers. `VACUUM` on the 575 MB `salebot.db` waits for
   SSH.
 
+## 2026-11-18 23:26 UTC — `/admin/status` scrapers block fixed
+
+Was: every scraper field `None` (the dict is filled in the backend process, scraping
+runs in the scheduler service) — read by anyone as "скрейперы не запускались".
+Now: back-filled from `cycleState`, verified live right after deploy:
+
+```
+green    → 2026-11-18T23:22:10 | OK (data updated)
+red      → 2026-11-18T23:23:14 | OK (data updated)
+yellow   → 2026-11-18T23:25:11 | OK (data updated)
+merge    → 2026-11-18T23:25:34 | OK (data updated)
+notifier → 2026-11-18T23:25:34 | OK (notifications run)
+```
+
+5 of 8 keys filled (`login`, `categories`, `catalog_discovery` are not part of the
+cycle state and stay empty by design). Commit `0ffafc0`, 3 tests, suite
+**326 passed / 2 skipped**. The first admin call during the deploy returned 502 — that
+was the backend restarting; the next one answered with the filled block.
+
 ## 2026-11-18 22:55 UTC — hangs eliminated, remaining failures are plain errors
 
 Last 20 cycles: **0 SIGKILL** (the 45 s `page.evaluate` deadline + 90 s navigation
