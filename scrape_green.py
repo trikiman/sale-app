@@ -63,6 +63,11 @@ def _is_dead_ws_error(exc: BaseException) -> bool:
         "ConnectionClosedOK",
         "InvalidStatusCode",
         "InvalidStatus",
+        # v1.30 (2026-11-18): a hung evaluate is the same class of failure as a
+        # closed socket — the tab stopped answering. Retrying on a fresh handle is
+        # what recovered every previous case, and it keeps _safe_js's 3-attempt
+        # budget honest instead of letting the first TimeoutError kill the cycle.
+        "TimeoutError",
     }
 
 
@@ -519,9 +524,19 @@ async def _page_get(page, url: str, *, timeout: float = PAGE_GET_TIMEOUT_S):
         raise
 
 
+# v1.30 (2026-11-18): every JS evaluation gets a deadline too. The 420 s watchdog
+# fires on silence, but a single hung `page.evaluate` produces silence for 15-17
+# minutes (observed: two runs killed at 1027 s and 864 s, both after "Loaded 48/48
+# cookies"), which in turn opened a 69.4-min gap in the uptime series. A stalled CDP
+# round-trip now costs 45 s and surfaces as a recoverable error instead.
+JS_EVAL_TIMEOUT_S = 45
+
+
 async def _js(page, script):
     """Run JS via page.evaluate and deserialize the result."""
-    raw = await page.evaluate(script)
+    import asyncio
+
+    raw = await asyncio.wait_for(page.evaluate(script), timeout=JS_EVAL_TIMEOUT_S)
     # nodriver may return deep-serialized objects for complex results
     if isinstance(raw, dict) and 'type' in raw:
         return _deserialize(raw)
