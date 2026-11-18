@@ -136,6 +136,24 @@ basket_recalc` guard doing its job.
   the git webhook until it recovers. `VACUUM` on the 575 MB `salebot.db` waits for
   SSH.
 
+## 2026-11-18 05:05 MSK — green counter vs green cards fixed (`05ddf63`)
+
+Caught a live contradiction: `/api/products` said `greenLiveCount: 4` while the
+payload carried **one** green card (04:55 MSK). Cause: `greenLiveCount` is stamped
+into `proposals.json` at merge time, the cards come from that same payload, and a
+green scrape landing between merge and request lets the counter run ahead.
+
+Fix: the response now carries `greenListedCount` (cards actually present) and
+`greenCountMismatch` (counter minus cards, `null` when they agree or either is 0).
+Verified after deploy: `greenLiveCount=1, greenListedCount=1, mismatch=None`.
+3 tests; suite 320 passed / 2 skipped.
+
+Also observed on the same pass: **the VLESS route is alive again** —
+`/api/admin/egress-probe` → `vless ok, status 200, 2.99 s` (was `timeout` all
+night), `urnetwork ok, 12.32 s`. Pool still reports 1 node, so health stays
+`degraded` on `pool_below_min_healthy:1_lt_5`, but traffic no longer depends on
+URnetwork alone.
+
 ## Endpoint audit 2026-11-18 01:55 MSK (all public routes)
 
 Called through the live front `https://vkusvillsale.vercel.app`:
