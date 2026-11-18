@@ -136,6 +136,25 @@ basket_recalc` guard doing its job.
   the git webhook until it recovers. `VACUUM` on the 575 MB `salebot.db` waits for
   SSH.
 
+## 2026-11-18 21:05 UTC — 7th gap closed by itself; the silence class is now bounded
+
+The cron reported a genuine incident: two runs killed by the silence watchdog at
+**1027 s** and **864 s**, both right after `Loaded 48/48 cookies via CDP`, opening
+gap #7 (05:12 → 06:21 UTC, 69.4 min). It closed on its own with the next good cycle;
+since then 20+ consecutive `ok` and uptime climbed back to **92.46%**
+(305 cycles, 282 ok, 23 failed, `false_zero_cycles 0`, 59.9 h recorded).
+
+Root cause of that silence: `_js` called `page.evaluate` with **no deadline**, and the
+420 s watchdog only fires on silence — one stalled CDP round-trip therefore looked
+like a dead cycle. Fix (`ed58274`): `_js` wraps `page.evaluate` in
+`asyncio.wait_for(JS_EVAL_TIMEOUT_S=45)`, and `TimeoutError` joins
+`_is_dead_ws_error` so `_safe_js` re-acquires a handle and retries within its
+3-attempt budget instead of dying on the first timeout. 3 tests; suite 323 passed.
+
+Side note from the logs: the dynamic pool has been empty for ~4.7 h
+(`ensure_pool() returned 0 nodes`, backoff `streak=9`, 30-min interval), so all green
+traffic rides URnetwork. That is the known free-list limitation, not a new regression.
+
 ## 2026-11-18 06:00 MSK — Vercel build failure caught and fixed (lesson)
 
 Committing the whole local `miniapp/src/App.jsx` (commit `1f2dbc4`) took the Vercel
