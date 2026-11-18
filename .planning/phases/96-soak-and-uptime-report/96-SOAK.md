@@ -177,6 +177,27 @@ is holding through the whole night.
   Earlier the same day: green age had reached 41.8 min under the old rules; after
   the Phase 94+95 fixes, cycles resumed (7.7 min, then 1.0 min).
 
+## Acceptance checklist for 2026-11-23 (prepared, not yet run)
+
+Run these in order and paste the real numbers into the closure note — nothing is
+"ok" until the first two commands say so:
+
+1. `curl -s -H "X-Admin-Token: $ADMIN_TOKEN" http://152.70.58.201/api/admin/green-uptime?hours=168`
+   → record `verdict`, `cycles`, `cycles_ok`, `uptime_pct`, `false_zero_cycles`,
+   `hours_recorded`, `gap_incident_count`.
+2. Same endpoint with `&tail=200` → count gaps whose `from_ts` is **after** 2026-11-17
+   03:40 UTC. The six pre-fix gaps must have aged out of the 168 h window; any *new*
+   gap older than today means the fix did not hold.
+3. `scripts/green_soak_check.py` exit code 0 = norm, 2 = incident, 3 = stale recorder.
+   Only exit 0 counts as acceptance.
+4. `python3 -m pytest tests/ -q` → expect 317 passed / 2 skipped.
+5. `gsd-tools state complete-phase --phase 96` **only** if step 1 shows
+   `false_zero_cycles == 0` AND every gap in step 2 is historical.
+6. Then `gsd-audit-milestone` and `gsd-complete-milestone` for v1.30.
+
+What blocks closure, stated up front: a new gap, `false_zero_cycles > 0`, fewer than
+168 h recorded, or a verdict that contradicts the data.
+
 ## Note
 
 Phase 96 cannot be closed by a code change: it is a 168-hour observation. Until
