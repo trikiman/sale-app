@@ -207,6 +207,11 @@ function App() {
     yellow: true
   })
   const [greenLiveCount, setGreenLiveCount] = useState(() => initialProductsCache?.greenLiveCount ?? null)
+  // v1.30 (2026-11-18): the API stamps greenLiveCount at merge time while the cards
+  // come from the same payload, so a green scrape landing in between leaves the
+  // counter ahead of the list (seen live: 4 vs 1 card). The API reports the gap;
+  // surface it instead of showing a number the grid cannot back up.
+  const [greenCountMismatch, setGreenCountMismatch] = useState(() => initialProductsCache?.greenCountMismatch ?? null)
   const [dataStale, setDataStale] = useState(() => !!initialProductsCache?.dataStale)
   const [greenMissing, setGreenMissing] = useState(() => !!initialProductsCache?.greenMissing)
   // 2026-08-13: why green is empty, so the banner can stop blaming
@@ -477,6 +482,7 @@ function App() {
           updatedAtRef.current = data.updatedAt
           freshnessSignatureRef.current = freshnessSignature
           if (data.greenLiveCount !== undefined) setGreenLiveCount(data.greenLiveCount)
+          if (data.greenCountMismatch !== undefined) setGreenCountMismatch(data.greenCountMismatch)
           setDataStale(!!data.dataStale)
           setGreenMissing(!!data.greenMissing)
           setGreenEmptyReason(data.greenEmptyReason ?? null)
@@ -506,6 +512,7 @@ function App() {
             products: normalizedProducts,
             updatedAt: data.updatedAt,
             greenLiveCount: data.greenLiveCount,
+            greenCountMismatch: data.greenCountMismatch,
             dataStale: !!data.dataStale,
             greenMissing: !!data.greenMissing,
             greenEmptyReason: data.greenEmptyReason ?? null,
@@ -1903,6 +1910,16 @@ function App() {
         {!dataStale && updatedAt && (Date.now() - new Date(updatedAt).getTime() > 15 * 60 * 1000) && (
           <div className="stale-info-bar">
             Обновлено {Math.round((Date.now() - new Date(updatedAt).getTime()) / 60000)} мин. назад
+          </div>
+        )}
+
+        {/* Counter/list drift — the API found more green items than the grid holds
+            right now (a scrape landed between merge and request). Short-lived. */}
+        {greenCountMismatch !== null && greenCountMismatch > 0 && (
+          <div className="mt-3 px-4 py-2 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-300 text-center anim-scale">
+            <div className="text-xs opacity-80">
+              Обновляем зелёные: счётчик {greenLiveCount}, в списке {countGreen}. Данные догоняют.
+            </div>
           </div>
         )}
 
