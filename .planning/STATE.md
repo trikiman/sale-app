@@ -136,6 +136,23 @@ basket_recalc` guard doing its job.
   the git webhook until it recovers. `VACUUM` on the 575 MB `salebot.db` waits for
   SSH.
 
+## 2026-11-19 21:12 UTC — price history audited across all three tiers
+
+`GET /api/history/product/<id>` verified on one product of each colour, live:
+
+- green 46052 (Monini): 1 session, 685 → was 1268 ₽ (−46%), forecast next Sun 10:05,
+  confidence 20% (only one appearance so far — honest, not a bug);
+- red 56687 (tomato paste): 3 sessions, 66–97 ₽, forecast 20:55, confidence 20%;
+- yellow 72242 (turkey thigh): 6 sessions, 258–384 ₽, forecast 23:25, confidence 100%.
+
+`product`, `prediction` (day pattern, hour distribution, avg window, avg discount),
+and per-session rows with price/old_price/discount/window all present. Note: the
+history endpoint is `/api/history/product/{id}` — `/api/price-history/{id}` is 404
+(my first probe; the endpoint name is easy to mix up, the data is fine).
+
+Soak at the same moment: 462 cycles, 418 ok / 44 failed, 90.48%, `false_zero_cycles 0`,
+84.0 h recorded, last ok 4 min ago; no new gaps since #8 (still 8, all known).
+
 ## 2026-11-19 00:10 UTC — pool refresh re-run, and an API-contract spot check
 
 Manual `POST /admin/proxy-refresh` executed for real (log, not just the 200):
