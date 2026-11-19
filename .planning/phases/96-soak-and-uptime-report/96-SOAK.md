@@ -252,3 +252,4 @@ than claiming a week that has not happened.
 - **2026-11-18** — 🔴 verdict `incident`, cycles 192 (uptime 90.62%), gaps 6, false zeros 0, last ok 0.8 min ago.
 - **2026-11-18** — 🔴 verdict `incident`, cycles 213 (uptime 90.61%), gaps 7, false zeros 0, last ok 47.9 min ago.
 - **2026-11-19** — 🔴 verdict `incident`, cycles 346 (uptime 92.77%), gaps 7, false zeros 0, last ok 14.4 min ago. ⏳ window still holds 7 pre-fix gap(s); acceptance 2026-11-25
+- **2026-11-19** — 🔴 verdict `incident`, cycles 367 (uptime 91.01%), gaps 8, false zeros 0, hours 68.8/168, last ok 65.7 min ago. 🚨 NEW post-fix gap: с 2026-11-19 04:54:30 UTC, открыт на момент проверки; green scrape exit 1 (green section: 0 items, seed no_button_found, reload timeout 45s); dynamic VLESS pool=0 ~9 ч (refresh streak=27, 444 quarantine), работа через manual-seed bridge 10808. Не исторический гэп — фиксы не держат.
