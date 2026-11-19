@@ -3,7 +3,7 @@ phase: 96
 title: 7-Day Green Soak & Uptime Report
 status: in_progress
 started: 2026-11-16
-soak_ends: 2026-11-23
+soak_ends: 2026-11-25
 ---
 
 # Phase 96 — Soak started
@@ -30,7 +30,7 @@ pre-fix `exit=-9` kills plus one `exit=1` at 17:58 (655 s run).
 
 Read this as: the mechanism is proven healthy from 03:40 UTC on; the 168 h window
 still carries the two bad days and will report `insufficient`/`incident` until
-they age out on 2026-11-23. That is the honest reading — not a claim that the
+they age out between 2026-11-23 and 2026-11-25. That is the honest reading — not a claim that the
 whole window was clean.
 
 ## Instrumentation (shipped, live)
@@ -68,7 +68,7 @@ pass.
 
 ## Acceptance for closing v1.30
 
-- [ ] soak window reaches 168 h (2026-11-23) with ≥ 1000 cycles recorded
+- [ ] soak window reaches 168 h (clears 2026-11-25 06:21 UTC) with ≥ 1000 cycles recorded
 - [ ] `verdict: healthy` — zero gap incidents, zero false zeros
 - [ ] daily check recorded in this file (see log below)
 - [ ] any incident has a timestamp, stage, and the fix that followed
@@ -177,7 +177,30 @@ is holding through the whole night.
   Earlier the same day: green age had reached 41.8 min under the old rules; after
   the Phase 94+95 fixes, cycles resumed (7.7 min, then 1.0 min).
 
-## Acceptance checklist for 2026-11-23 (prepared, not yet run)
+## Date correction: acceptance reads 2026-11-25 09:21 MSK, not 2026-11-23
+
+Stated plainly because it changes the plan: with the criterion unchanged
+(`healthy` = zero gaps > 45 min **and** zero false zeros inside the 168 h window),
+2026-11-23 cannot produce `healthy` — the window still contains six historical gaps.
+Each gap leaves the window 168 h after it *ended*, so the last one dictates the date:
+
+| gap | window of the gap (UTC) | leaves the 168 h window |
+|---|---|---|
+| 99.8 min | 16.11 09:04 → 10:44 | 23.11 10:44 |
+| 57.1 min | 16.11 12:02 → 12:59 | 23.11 12:59 |
+| 49.1 min | 16.11 16:58 → 17:47 | 23.11 17:47 |
+| 46.9 min | 16.11 20:18 → 21:05 | 23.11 21:05 |
+| 79.8 min | 17.11 00:59 → 02:19 | 24.11 02:19 |
+| 54.0 min | 17.11 02:46 → 03:40 | 24.11 03:40 |
+| **69.4 min** | **18.11 05:12 → 06:21** | **25.11 06:21** |
+
+The 7th gap is the one that matters: it happened *after* the "fixed since 17.11"
+line, so a run that only waits for the 16–17.11 gaps to age out would still read
+`incident`. Acceptance therefore reads **2026-11-25 09:21 MSK** at the earliest — the
+first moment the series holds 168 h with no gap at all. Nothing else changes: the
+criterion is not relaxed, the date follows from arithmetic.
+
+## Acceptance checklist (read 2026-11-25 09:21 MSK or later)
 
 Run these in order and paste the real numbers into the closure note — nothing is
 "ok" until the first two commands say so:
@@ -192,7 +215,8 @@ Run these in order and paste the real numbers into the closure note — nothing 
    Only exit 0 counts as acceptance.
 4. `python3 -m pytest tests/ -q` → expect 317 passed / 2 skipped.
 5. `gsd-tools state complete-phase --phase 96` **only** if step 1 shows
-   `false_zero_cycles == 0` AND every gap in step 2 is historical.
+   `false_zero_cycles == 0` AND `gap_incident_count == 0` (the 168 h window is clean,
+   i.e. no gap at all — historical or new — sits inside it).
 6. Then `gsd-audit-milestone` and `gsd-complete-milestone` for v1.30.
 
 What blocks closure, stated up front: a new gap, `false_zero_cycles > 0`, fewer than
@@ -201,7 +225,7 @@ What blocks closure, stated up front: a new gap, `false_zero_cycles > 0`, fewer 
 ## Note
 
 Phase 96 cannot be closed by a code change: it is a 168-hour observation. Until
-2026-11-23 the milestone stays open, and the report says so explicitly rather
+2026-11-25 the milestone stays open, and the report says so explicitly rather
 than claiming a week that has not happened.
 - **2026-11-16** — ⏳ verdict `insufficient`, cycles 1 (uptime 100.0%), gaps 0, false zeros 0, last ok 3.6 min ago.
 - **2026-11-16** — ⏳ verdict `insufficient`, cycles 19 (uptime 78.95%), gaps 2, false zeros 0, last ok 18.0 min ago.

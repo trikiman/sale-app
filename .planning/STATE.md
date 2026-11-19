@@ -349,5 +349,5 @@ miniapp on its own HTTPS host means DNS/CF changes on his side. Nothing else blo
 ## Session
 
 **Last session:** 2026-11-16 (v1.30: phases 94, 95, 97 closed; Phase 96 soak running)
-**Stopped at:** soak in progress (168 h, verdict 2026-11-23); instrumentation + daily cron live
+**Stopped at:** soak in progress (168 h; verdict readable **2026-11-25 09:21 MSK** — the window must clear the 18.11 gap, see 96-SOAK.md «Date correction»); instrumentation + daily cron live
 **Resume file:** None
