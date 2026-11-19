@@ -136,6 +136,22 @@ basket_recalc` guard doing its job.
   the git webhook until it recovers. `VACUUM` on the 575 MB `salebot.db` waits for
   SSH.
 
+## 2026-11-19 00:10 UTC — pool refresh re-run, and an API-contract spot check
+
+Manual `POST /admin/proxy-refresh` executed for real (log, not just the 200):
+`00:01:55 Fetching VLESS list` → `00:05:48 Candidate-probe outer timeout reached;
+continuing with partial pool` → `Refresh produced no admitted nodes; pool unchanged`
+→ `Empty refresh streak=15 — backing off 30 min`. So the pool being 0 is the free-list
+reality (231 hosts quarantined, none admitted: datacenter egress gets the VpnVill
+VPN-page), not a stuck job. Green traffic keeps flowing over URnetwork + the static
+VLESS node; `vless ok 200 3.91 s`, `urnetwork ok 200 7.5 s`.
+
+Contract spot check: `/api/products` returns 13 fields per product; the miniapp reads
+11 product fields, all present. My grep flagged `favKey`/`label` as missing — false
+alarm: those belong to filter entries (`group:`/`subgroup:` rows built in App.jsx),
+not to products. Same class of mistake as the earlier `discount: None`; the lesson
+holds — verify the field's owner before calling it a defect.
+
 ## 2026-11-18 23:26 UTC — `/admin/status` scrapers block fixed
 
 Was: every scraper field `None` (the dict is filled in the backend process, scraping
