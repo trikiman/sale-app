@@ -8,6 +8,10 @@ Exit codes (so cron can tell the difference):
   0  healthy / insufficient-but-running soak
   2  incident — a gap over 45 min or a false green zero inside the window
   3  the report endpoint could not be reached (server down / tunnel down)
+  4  incident, but ONLY because historical pre-fix gaps have not aged out of the
+     168 h window yet (no gap newer than FIX_MARK). Not an alarm: acceptance reads
+     2026-11-25 after the last such gap leaves the window. A gap newer than
+     FIX_MARK is a real event and still returns 2.
 
 The admin token is read from the project `.env` (`ADMIN_TOKEN`); it is never
 printed, echoed, or written into the log.
@@ -73,21 +77,47 @@ def main() -> int:
 
     verdict = report.get("verdict")
     gaps = report.get("gap_incident_count", 0)
+    new_gaps = _new_gaps(report)
     zeros = report.get("false_zero_count", 0)
     cycles = report.get("cycles", 0)
     uptime = report.get("uptime_pct")
     age = report.get("last_ok_age_minutes")
 
+    historic = 0 if new_gaps is None else max(0, gaps - new_gaps)
     icon = {"healthy": "✅", "incident": "🔴", "insufficient": "⏳", "no_data": "⏳"}.get(str(verdict), "❓")
+    note = ""
+    if new_gaps:
+        note = f" ⚠️ NEW gaps after fix: {new_gaps}"
+    elif historic:
+        note = f" ⏳ window still holds {historic} pre-fix gap(s); acceptance 2026-11-25"
     line = (
         f"- **{dt.date.today().isoformat()}** — {icon} verdict `{verdict}`, "
         f"cycles {cycles} (uptime {uptime}%), gaps {gaps}, false zeros {zeros}, "
-        f"last ok {age} min ago.\n"
+        f"last ok {age} min ago.{note}\n"
     )
     _append(line)
     print(line.strip())
 
-    return 2 if verdict == "incident" else 0
+    if verdict != "incident":
+        return 0
+    if new_gaps:
+        return 2          # a real, post-fix gap — alarm
+    return 4              # only pre-fix gaps remain in the window
+
+
+# End of the last pre-fix gap (18.11 05:12 -> 06:21 UTC). Anything at or before this
+# is history that the 168 h window will drop by 2026-11-25 06:21 UTC.
+FIX_MARK_TS = 1794982887.0
+
+
+def _new_gaps(report: dict) -> int | None:
+    """Gaps that started AFTER the fix — the only ones that mean the fix failed."""
+    incidents = report.get("gap_incidents")
+    if not isinstance(incidents, list):
+        return None
+    # Keyed on the gap's START: the pre-fix gap begins 18.11 05:12, well before the
+    # mark, while any gap caused by a post-fix regression starts after it.
+    return sum(1 for g in incidents if (g.get("from_ts") or 0) > FIX_MARK_TS)
 
 
 def _append(line: str) -> None:

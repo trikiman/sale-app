@@ -251,3 +251,4 @@ than claiming a week that has not happened.
 - **2026-11-18** — 🔴 verdict `incident`, cycles 192 (uptime 90.62%), gaps 6, false zeros 0, last ok 0.6 min ago.
 - **2026-11-18** — 🔴 verdict `incident`, cycles 192 (uptime 90.62%), gaps 6, false zeros 0, last ok 0.8 min ago.
 - **2026-11-18** — 🔴 verdict `incident`, cycles 213 (uptime 90.61%), gaps 7, false zeros 0, last ok 47.9 min ago.
+- **2026-11-19** — 🔴 verdict `incident`, cycles 346 (uptime 92.77%), gaps 7, false zeros 0, last ok 14.4 min ago. ⏳ window still holds 7 pre-fix gap(s); acceptance 2026-11-25
