@@ -177,6 +177,24 @@ is holding through the whole night.
   Earlier the same day: green age had reached 41.8 min under the old rules; after
   the Phase 94+95 fixes, cycles resumed (7.7 min, then 1.0 min).
 
+## Risk measurement, 2026-11-19 00:55 UTC — how close are we to a new gap?
+
+The criterion is a gap > 45 min, and failures still happen (25 of 342 cycles), so the
+question is how much slack sits between a failure burst and the threshold. Measured
+over the last 200 cycles (33.2 h, from `?tail=200`):
+
+- 192 ok, 8 failed — max **failure run = 2** (runs: 1, 2, 1, 1, 1, 2), never 3;
+- max gap between successful cycles **24.3 min** (18.11 22:18 → 22:42); the only
+  larger gap is the known 69.4 min incident, which predates the 45 s evaluate deadline;
+- average gap 10.4 min.
+
+So the worst observed burst uses ~54% of the 45-minute budget. At ~200–500 s per failed
+run, a gap stays under the threshold as long as failures do not chain past two. That is
+the standing risk for 25.11: **not hangs (those are gone — 0 SIGKILL), but a 3-in-a-row
+burst of ordinary errors.** No code change was made on the strength of one measurement;
+if a third consecutive failure ever appears in the series, the fix is to force a Chrome
+restart between cycles rather than let the burst ride.
+
 ## Date correction: acceptance reads 2026-11-25 09:21 MSK, not 2026-11-23
 
 Stated plainly because it changes the plan: with the criterion unchanged
