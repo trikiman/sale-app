@@ -136,6 +136,29 @@ basket_recalc` guard doing its job.
   the git webhook until it recovers. `VACUUM` on the 575 MB `salebot.db` waits for
   SSH.
 
+## 2026-11-19 21:40 UTC — BLOCKER: the public site loads, its API returns 502
+
+The Vercel front is up, but it cannot reach the origin, so the site is empty for any
+visitor. Measured, three attempts each:
+
+- `https://vkusvillsale.vercel.app/` → **200**, 2693 B, bundle `assets/index-*.js` present;
+- `https://vkusvillsale.vercel.app/api/products` → **502**,
+  `ROUTER_EXTERNAL_TARGET_CONNECTION_ERROR` (122 B error page);
+- `http://152.70.58.201/api/products` through our SOCKS tunnel → **200**, data fresh
+  (soak recording 462 cycles, last ok minutes ago).
+
+External reachability of the origin, checked from 10 nodes worldwide
+(check-host.net, `check-http`): **1 node got a 2xx, 9 timed out**; an earlier 4-node run
+gave Indonesia 301 and Hong Kong / Slovenia / Vietnam timeouts. So port 80 on the
+origin is reachable only from part of the internet — that is why Vercel's edge fails.
+Our own access works because it goes through the xray tunnel (443), not port 80.
+
+Regression window: on 18.11 01:25 MSK the same Vercel `/api/products` returned 200 with
+183 products, so this broke between then and now. Candidate causes, none provable
+without shell access: an nginx/iptables allow-list change, or an Oracle Security List
+rule restricting ingress on 80. **Needs server access (SSH is currently dead:
+`empty-banner` through SOCKS) or the OCI console.**
+
 ## 2026-11-19 21:12 UTC — price history audited across all three tiers
 
 `GET /api/history/product/<id>` verified on one product of each colour, live:
