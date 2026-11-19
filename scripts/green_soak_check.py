@@ -87,9 +87,12 @@ def main() -> int:
     icon = {"healthy": "✅", "incident": "🔴", "insufficient": "⏳", "no_data": "⏳"}.get(str(verdict), "❓")
     note = ""
     if new_gaps:
-        note = f" ⚠️ NEW gaps after fix: {new_gaps}"
+        note = f" ⚠️ UNDIAGNOSED new gaps: {new_gaps}"
     elif historic:
-        note = f" ⏳ window still holds {historic} pre-fix gap(s); acceptance 2026-11-25"
+        note = (
+            f" ⏳ window still holds {historic} known gap(s) (pre-fix + diagnosed "
+            f"post-fix); acceptance {ACCEPTANCE_UTC}"
+        )
     line = (
         f"- **{dt.date.today().isoformat()}** — {icon} verdict `{verdict}`, "
         f"cycles {cycles} (uptime {uptime}%), gaps {gaps}, false zeros {zeros}, "
@@ -105,19 +108,47 @@ def main() -> int:
     return 4              # only pre-fix gaps remain in the window
 
 
-# End of the last pre-fix gap (18.11 05:12 -> 06:21 UTC). Anything at or before this
-# is history that the 168 h window will drop by 2026-11-25 06:21 UTC.
+# End of the last pre-fix gap (18.11 05:12 -> 06:21 UTC). Gaps ending at or before
+# this are history that the 168 h window drops on 2026-11-25 06:21 UTC.
 FIX_MARK_TS = 1794982887.0
+
+# Gaps already investigated and written up in 96-SOAK.md, with the reason they are
+# NOT an open regression: (from_ts, to_ts, why). Matching one of these keeps the check
+# at exit 4 ("still waiting") instead of crying alarm forever; anything else is exit 2.
+# Never add an entry here without a written diagnosis in the soak log — otherwise this
+# list silently becomes a way to mute real alarms.
+KNOWN_GAPS = [
+    (1795064070.669, 1795069112.662,
+     "gap #8, 19.11 04:54-06:18 UTC: egress stall on the only live route "
+     "(urnetwork), every navigation hit its deadline; recovered on its own"),
+]
+KNOWN_GAP_TOLERANCE_S = 120
+
+# First moment the 168 h window holds no gap at all (end of the latest diagnosed gap
+# + 168 h). Printed in the log line so the daily note never says an outdated date.
+ACCEPTANCE_UTC = "2026-11-26 06:18 UTC (09:18 MSK)"
+
+
+def _is_known(gap: dict) -> bool:
+    start = gap.get("from_ts") or 0
+    end = gap.get("to_ts") or 0
+    return any(
+        abs(start - k_start) <= KNOWN_GAP_TOLERANCE_S
+        and abs(end - k_end) <= KNOWN_GAP_TOLERANCE_S
+        for k_start, k_end, _why in KNOWN_GAPS
+    )
 
 
 def _new_gaps(report: dict) -> int | None:
-    """Gaps that started AFTER the fix — the only ones that mean the fix failed."""
+    """Gaps after the fix mark that are NOT already diagnosed — the real alarms."""
     incidents = report.get("gap_incidents")
     if not isinstance(incidents, list):
         return None
-    # Keyed on the gap's START: the pre-fix gap begins 18.11 05:12, well before the
-    # mark, while any gap caused by a post-fix regression starts after it.
-    return sum(1 for g in incidents if (g.get("from_ts") or 0) > FIX_MARK_TS)
+    # Keyed on the gap's START: pre-fix gaps begin before the mark, a regression after.
+    return sum(
+        1 for g in incidents
+        if (g.get("from_ts") or 0) > FIX_MARK_TS and not _is_known(g)
+    )
 
 
 def _append(line: str) -> None:

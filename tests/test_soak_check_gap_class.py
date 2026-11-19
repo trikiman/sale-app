@@ -43,6 +43,32 @@ def test_post_fix_gap_is_counted() -> None:
     assert mod._new_gaps(report) == 1
 
 
+def test_diagnosed_gap_is_not_an_alarm() -> None:
+    mod = _mod()
+    k_start, k_end, _why = mod.KNOWN_GAPS[0]
+    report = {"gap_incidents": [_gap(k_start, k_end)]}
+    assert mod._new_gaps(report) == 0
+
+
+def test_near_miss_does_not_match_known_gap() -> None:
+    mod = _mod()
+    k_start, k_end, _why = mod.KNOWN_GAPS[0]
+    far = mod.KNOWN_GAP_TOLERANCE_S + 60
+    report = {"gap_incidents": [_gap(k_start + far, k_end + far)]}
+    assert mod._new_gaps(report) == 1
+
+
+def test_known_gap_requires_a_written_reason() -> None:
+    mod = _mod()
+    for _start, _end, why in mod.KNOWN_GAPS:
+        assert len(why) > 20, "a known gap must carry its diagnosis in the code"
+
+
+def test_acceptance_date_is_single_constant() -> None:
+    mod = _mod()
+    assert mod.ACCEPTANCE_UTC.startswith("2026-11-26")
+
+
 def test_missing_incident_list_is_unknown_not_zero() -> None:
     mod = _mod()
     assert mod._new_gaps({}) is None

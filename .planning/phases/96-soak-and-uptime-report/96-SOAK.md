@@ -177,6 +177,33 @@ is holding through the whole night.
   Earlier the same day: green age had reached 41.8 min under the old rules; after
   the Phase 94+95 fixes, cycles resumed (7.7 min, then 1.0 min).
 
+## Gap #8 (the first post-fix gap): 19.11 04:54 → 06:18 UTC, 84.0 min
+
+**This one is on us, not history.** It started after the fix mark, so the daily check
+correctly raised exit 2. Symptoms, from the cron report and `/admin/logs`:
+
+- green ran, Chrome came up, login OK, `Loaded 48/48 cookies via CDP`, then
+  `Green section: found 0 items`, `live_count=0`, `Seed item: no_button_found`,
+  `delivery picker not_found`, and page reloads hitting the 45 s deadline;
+- failure mode was repeated `exit 1` with `TimeoutError` — **no SIGKILL**, so the
+  deadline work did its job: nothing hung, runs simply failed fast and often;
+- the stale snapshot was preserved (`58 items`, mtime touched), so `false_zero_cycles`
+  stayed **0** — the protocol held even while scraping was broken.
+
+Probable cause (inference, not proven — the logs of that window are gone):
+the only working egress was URnetwork. `vless` has been timing out for hours and the
+dynamic pool sits at 0 nodes, so every navigation depended on one route; when it
+slowed, all three navigation attempts burned their deadlines. Measured now, after
+recovery: `urnetwork ok 200 8.9 s`, `vless timeout 13.1 s` — a single-route setup with
+no headroom. Closing the gap at 06:18 happened on its own, which fits a transient
+route stall rather than a site-layout change.
+
+**Consequence for acceptance:** the 168 h window now clears only after *this* gap
+leaves it — **26.11 06:18 UTC = 09:18 MSK**. Stated bluntly: with one gap every ~1.5 days,
+waiting for a fully clean 168 h window may never succeed, and each new gap pushes the
+date. That is a decision for the operator (fix the egress / accept a criterion based on
+time-without-false-zero), not something to paper over by re-reading the numbers.
+
 ## Risk measurement, 2026-11-19 00:55 UTC — how close are we to a new gap?
 
 The criterion is a gap > 45 min, and failures still happen (25 of 342 cycles), so the
@@ -195,7 +222,7 @@ burst of ordinary errors.** No code change was made on the strength of one measu
 if a third consecutive failure ever appears in the series, the fix is to force a Chrome
 restart between cycles rather than let the burst ride.
 
-## Date correction: acceptance reads 2026-11-25 09:21 MSK, not 2026-11-23
+## Date correction: acceptance reads **2026-11-26 09:18 MSK** (was 2026-11-25, before gap #8)
 
 Stated plainly because it changes the plan: with the criterion unchanged
 (`healthy` = zero gaps > 45 min **and** zero false zeros inside the 168 h window),
@@ -253,3 +280,5 @@ than claiming a week that has not happened.
 - **2026-11-18** — 🔴 verdict `incident`, cycles 213 (uptime 90.61%), gaps 7, false zeros 0, last ok 47.9 min ago.
 - **2026-11-19** — 🔴 verdict `incident`, cycles 346 (uptime 92.77%), gaps 7, false zeros 0, last ok 14.4 min ago. ⏳ window still holds 7 pre-fix gap(s); acceptance 2026-11-25
 - **2026-11-19** — 🔴 verdict `incident`, cycles 367 (uptime 91.01%), gaps 8, false zeros 0, hours 68.8/168, last ok 65.7 min ago. 🚨 NEW post-fix gap: с 2026-11-19 04:54:30 UTC, открыт на момент проверки; green scrape exit 1 (green section: 0 items, seed no_button_found, reload timeout 45s); dynamic VLESS pool=0 ~9 ч (refresh streak=27, 444 quarantine), работа через manual-seed bridge 10808. Не исторический гэп — фиксы не держат.
+- **2026-11-19** — 🔴 verdict `incident`, cycles 412 (uptime 90.53%), gaps 8, false zeros 0, last ok 6.1 min ago. ⏳ window still holds 8 pre-fix gap(s); acceptance 2026-11-25
+- **2026-11-19** — 🔴 verdict `incident`, cycles 412 (uptime 90.53%), gaps 8, false zeros 0, last ok 6.5 min ago. ⏳ window still holds 8 known gap(s) (pre-fix + diagnosed post-fix); acceptance 2026-11-26 06:18 UTC (09:18 MSK)
