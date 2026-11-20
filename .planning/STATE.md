@@ -136,6 +136,36 @@ basket_recalc` guard doing its job.
   the git webhook until it recovers. `VACUUM` on the 575 MB `salebot.db` waits for
   SSH.
 
+## 2026-11-20 12:20 MSK — the cart is broken site-wide for the tech account
+
+Fixing the slot exposed a wider fault. Latest cycles (12:04–12:14 MSK):
+
+```
+Step 1.5 delivery slot: open_attempt_not_found   (header control not found this run)
+Cart check: empty (no_items_no_clear)
+Step 2.5: Cart is empty — adding seed item...
+Seed item: no_button_found                       <-- a NORMAL product cannot be added
+Inspected: live_count=0 empty_explicit=False
+Green section: found 0 green items
+Button state: not_in_dom
+```
+
+`Seed item: no_button_found` is the important line: an ordinary seed product also cannot
+be added, so this is not a green-section problem — add-to-cart does not work for the tech
+account at all. Earlier diagnostics proved the control exists and is not disabled
+(`kinds=['a','a','div','div','button','span']`, `buttons=['В корзину', ...]`), so the
+click itself is what fails. The prime suspect is that `.click()` on those nodes does not
+reach VkusVill's handler — a synthetic CDP click (pointerdown/mouseup/click sequence on
+real coordinates) is the next thing to try.
+
+The diagnostics function was also wrong on its first version (it scanned every card on
+the page and reported cart items), now fixed to use the green-section scope (`10e3d49`) —
+it simply has not run since, because the section reports 0 cards.
+
+Egress is worse than before: `urnetwork-ru ... failed: [Errno 101] Network is unreachable`,
+pool 0 nodes with `streak=82`, and SSH via 127.0.0.1:10870 still refused three times, so
+none of this could be checked on the box itself.
+
 ## 2026-11-20 11:55 MSK — the 8-hour green=0 is a broken cart, not an empty shelf
 
 Green has been 0 since **02:03 MSK**, and the API kept saying `source_empty` (VkusVill's own
