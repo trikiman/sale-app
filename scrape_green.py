@@ -825,17 +825,46 @@ async def _add_green_cards_to_cart(page, card_source: str, total_cards: int):
                 // "В корзину" controls inside one card while this loop still reported
                 // no_button. Match the text on any clickable element and record
                 // disabled ones separately — "disabled" and "absent" are different bugs.
-                const btns = card.querySelectorAll('button, a, [role="button"], [class*="Button"]');
+                // A bare .click() does not reach VkusVill's handler on these nodes:
+                // the control exists and is enabled (diagnostics: kinds a/div/button,
+                // buttons ['В корзину', ...]) yet nothing is added — the cart stayed
+                // empty for hours and the green list was wiped to 0. Dispatch the full
+                // pointer/mouse/click sequence on real coordinates instead.
+                const fireClick = (el) => {{
+                    let r = {{left: 0, top: 0, width: 0, height: 0}};
+                    try {{ r = el.getBoundingClientRect(); }} catch (e) {{}}
+                    const opt = {{
+                        bubbles: true, cancelable: true, composed: true, view: window,
+                        clientX: r.left + (r.width || 0) / 2,
+                        clientY: r.top + (r.height || 0) / 2,
+                        button: 0
+                    }};
+                    const seq = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
+                    for (const t of seq) {{
+                        try {{
+                            const Ctor = (t.indexOf('pointer') === 0 && typeof PointerEvent === 'function')
+                                ? PointerEvent : MouseEvent;
+                            el.dispatchEvent(new Ctor(t, opt));
+                        }} catch (e) {{
+                            try {{ el.dispatchEvent(new MouseEvent(t, opt)); }} catch (e2) {{}}
+                        }}
+                    }}
+                    try {{ el.click(); }} catch (e) {{}}
+                }};
+                const btns = card.querySelectorAll('button, a, [role="button"], [class*="Button"], span, div');
                 for (const btn of btns) {{
                     const text = (btn.innerText || '').toLowerCase().trim();
-                    if (!text) continue;
+                    if (!text || text.length > 30) continue;
                     if (text.indexOf('в корзину') < 0 && text.indexOf('корзин') < 0 && text.indexOf('добавить') < 0) continue;
                     if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') {{
                         results.disabled = (results.disabled || 0) + 1;
                         continue;
                     }}
-                    btn.click();
+                    // Prefer the innermost element carrying the label: walking span/div
+                    // keeps us on the node VkusVill binds to.
+                    fireClick(btn);
                     clicked = true;
+                    results.via = (btn.tagName || '').toLowerCase();
                     break;
                 }}
                 if (!clicked) {{
@@ -910,6 +939,7 @@ async def _diagnose_no_button_cards(page, limit: int = 4) -> None:
                         .slice(0, 6)
                         .map(b => ({
                             kind: b.tagName.toLowerCase() + (b.disabled ? ':disabled' : '') + (vis(b) ? '' : ':hidden'),
+                            cls: (b.className || '').toString().slice(0, 40),
                             text: (b.innerText || b.textContent || '').replace(/ +/g, ' ').trim().slice(0, 24)
                         }));
                     return {
