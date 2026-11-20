@@ -363,15 +363,14 @@ def _record_green_uptime(*, ok: bool, exit_code: int | None, duration_s: float,
         backend_dir = os.path.join(BASE_DIR, "backend")
         if backend_dir not in sys.path:
             sys.path.insert(0, backend_dir)
-        from green_uptime import record_cycle
+        from green_uptime import record_cycle, read_snapshot_fresh
 
-        live_count, empty_reason = None, None
         snapshot = os.path.join(BASE_DIR, "data", "green_products.json")
-        if os.path.exists(snapshot):
-            with open(snapshot, "r", encoding="utf-8") as f:
-                gd = json.load(f)
-            live_count = int(gd.get("live_count") or 0)
-            empty_reason = gd.get("empty_reason")
+        # Freshness matters: an untouched snapshot belongs to an EARLIER cycle, and
+        # reporting its count next to ok=False made a failed run look like it had data.
+        live_count, empty_reason = read_snapshot_fresh(
+            snapshot, time.time() - max(duration_s or 0.0, 0.0)
+        )
         record_cycle(
             os.path.join(BASE_DIR, "data", "green_uptime.jsonl"),
             ts=time.time(),

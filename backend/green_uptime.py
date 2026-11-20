@@ -72,6 +72,34 @@ def record_cycle(
         pass
 
 
+def read_snapshot_fresh(path: str, cycle_started_ts: float,
+                        tolerance_s: float = 5.0) -> tuple[int | None, str | None]:
+    """Return (live_count, empty_reason) **only if this cycle wrote the snapshot**.
+
+    Why: a green run that finds nothing leaves `green_products.json` untouched on purpose
+    (an unproven empty state must not overwrite good data). The soak recorder used to read
+    that file anyway, so a failed cycle was stored as `ok=False, live_count=24` — the
+    previous cycle's number attached to a run that produced nothing. That made the uptime
+    log unfalsifiable: you could not tell "24 greens, then a hiccup" from "nothing found".
+    """
+    if not os.path.exists(path):
+        return None, None
+    try:
+        if os.path.getmtime(path) < cycle_started_ts - tolerance_s:
+            return None, "stale_snapshot_not_read"
+        with open(path, "r", encoding="utf-8") as f:
+            snapshot = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return None, "unreadable_snapshot"
+    live = snapshot.get("live_count")
+    try:
+        live_count = int(live) if live is not None else 0
+    except (TypeError, ValueError):
+        live_count = 0
+    reason = snapshot.get("empty_reason")
+    return live_count, (str(reason) if reason is not None else None)
+
+
 def _load(path: str) -> list[dict]:
     entries: list[dict] = []
     try:

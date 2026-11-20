@@ -136,6 +136,34 @@ basket_recalc` guard doing its job.
   the git webhook until it recovers. `VACUUM` on the 575 MB `salebot.db` waits for
   SSH.
 
+## 2026-11-21 02:15 MSK — correction: those `exit=1, live=24` cycles were GREEN, not RED
+
+An earlier note in this file blamed the CDP-drop traceback from `scrape_red` for the failed
+green cycles. **That was wrong, and the code says so:** `_record_green_uptime` is called
+only from `_run_script` when `tag.startswith("GREEN")`, so the recorded `exit_code` is the
+exit code of `scrape_green.py` itself. RED cannot write that record.
+
+The real mechanism is in `scrape_green.py`'s entry point:
+
+```python
+raise SystemExit(0 if scrape_green_prices() else 1)
+```
+
+So `exit=1` means the green run produced **nothing**. Meanwhile `_record_green_uptime` reads
+`live_count` from `data/green_products.json` — which, by design, is *not* overwritten when
+the empty state cannot be proven (`unknown_empty`). The record therefore pair
+`ok=False, live_count=24` — a failed run showing the previous run's number.
+
+That is a measurement defect, not a scraper defect: the soak stores "how many greens the
+file had" instead of "how many this cycle found", and the two get read as one number.
+
+Honest status: 4 of the failures in the 3-hour sample were genuine green runs that returned
+nothing; the CDP-drop fix in RED/YELLOW (`ce08b7b`) is unrelated to them and stays in place
+for its own reason (a dead socket should not fail a whole cycle).
+
+Still unproven: why those green runs produced nothing — the log window for 23:03/23:11 was
+already gone when I looked, so the cause is unexplained rather than diagnosed.
+
 ## 2026-11-21 01:50 MSK — the failed cycles were RED losing its browser, not green
 
 24 h of soak showed `150 cycles / 134 ok / 89.33%`, and a suspicious shape inside the
