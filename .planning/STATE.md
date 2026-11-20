@@ -136,6 +136,27 @@ basket_recalc` guard doing its job.
   the git webhook until it recovers. `VACUUM` on the 575 MB `salebot.db` waits for
   SSH.
 
+## 2026-11-20 06:00 MSK — verified the empty-green night is explained in the UI
+
+The night-time `green: 0` must not look like a broken site, so I followed it all the way
+to what a visitor actually sees. The production bundle served by Vercel
+(`assets/index-opH5fajR.js`, 270 776 B) contains every message needed:
+
+- `Сейчас нет зелёных ценников — ВкусВилл ничего не уценил` — shown when
+  `greenEmptyReason === 'source_empty'`, i.e. the honest night case;
+- `Зелёные ценники не загрузились — проверяем подключение` — the real-failure wording;
+- `Обновляем зелёные: счётчик N, в списке M` — the counter/list drift bar added earlier;
+- `greenCountMismatch` — the API field behind it.
+
+`gsd-tools validate health`: **0 errors**, warnings unchanged (W007×42 is the known
+validator artefact — it reads only the current milestone section, so completed phases
+named as ranges in the milestone list can never satisfy it; W019×3 stray planning notes;
+W009/W018/W005 historical). Nothing here blocks phase 96.
+
+Next planned step is not a code change: green appears around 10:05 MSK per the history
+forecast, so the next real check is that `live` climbs above zero and the site shows
+real green cards with the counter matching the list.
+
 ## 2026-11-20 05:50 MSK — yellow dropped from the site for 32 min; threshold fixed
 
 Spotted while re-checking the blocker: `/api/products` returned **43 products instead of
