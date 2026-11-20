@@ -136,6 +136,25 @@ basket_recalc` guard doing its job.
   the git webhook until it recovers. `VACUUM` on the 575 MB `salebot.db` waits for
   SSH.
 
+## 2026-11-21 02:40 MSK — deploys were not restarting the scheduler at all
+
+Found while trying to ship the snapshot-freshness fix: the webhook takes the changed-file
+list from `payload["commits"][*]["modified"|"added"]` (`backend/main.py` ~6609). I had been
+posting `{"ref": "refs/heads/main"}` — no `commits` key — so `changed_files` was empty,
+`backend_changed` and `scheduler_changed` were both `False`, and the response still said
+`status: updated`. `git pull` had run; nothing was restarted.
+
+Consequence: every deploy in this session that touched `scheduler_service.py`,
+`backend/*.py` or `vless/*` applied to disk but **not to the running processes**. Scraper
+fixes (`scrape_*.py`) did take effect, because scrapers are spawned as separate processes.
+
+Re-deployed with the real payload (`commits: [{modified: [scheduler_service.py,
+backend/green_uptime.py]}]`) → `scheduler_restart: True`, new `[pool-watchdog] Started` at
+23:17:06 and a green cycle began immediately.
+
+Rule for the skill and for me: judge a deploy by `scheduler_restart`/`backend_restart` in the
+response, never by `status: updated`.
+
 ## 2026-11-21 02:15 MSK — correction: those `exit=1, live=24` cycles were GREEN, not RED
 
 An earlier note in this file blamed the CDP-drop traceback from `scrape_red` for the failed
