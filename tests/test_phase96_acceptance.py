@@ -70,4 +70,4 @@ def test_post_epoch_gap_fails() -> None:
 def test_acceptance_epoch_is_the_documented_moment() -> None:
     mod = _mod()
     when = __import__("datetime").datetime.fromtimestamp(mod.ACCEPTANCE_EPOCH, __import__("datetime").timezone.utc)
-    assert when.strftime("%Y-%m-%d %H:%M") == "2026-11-26 06:18"
+    assert when.strftime("%Y-%m-%d %H:%M") == "2026-11-27 05:12"

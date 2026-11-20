@@ -77,8 +77,9 @@ def main() -> int:
 
     verdict = report.get("verdict")
     gaps = report.get("gap_incident_count", 0)
+    zeros = report.get("false_zero_cycles", 0) or 0
     new_gaps = _new_gaps(report)
-    zeros = report.get("false_zero_count", 0)
+    new_zeros = max(0, zeros - len(KNOWN_FALSE_ZEROS))
     cycles = report.get("cycles", 0)
     uptime = report.get("uptime_pct")
     age = report.get("last_ok_age_minutes")
@@ -86,8 +87,12 @@ def main() -> int:
     historic = 0 if new_gaps is None else max(0, gaps - new_gaps)
     icon = {"healthy": "✅", "incident": "🔴", "insufficient": "⏳", "no_data": "⏳"}.get(str(verdict), "❓")
     note = ""
-    if new_gaps:
+    if new_zeros:
+        note = f" 🚨 FALSE ZEROS beyond the diagnosed one: {new_zeros}"
+    elif new_gaps:
         note = f" ⚠️ UNDIAGNOSED new gaps: {new_gaps}"
+    elif zeros:
+        note = f" ⏳ {zeros} diagnosed false zero(s) in window; acceptance {ACCEPTANCE_UTC}"
     elif historic:
         note = (
             f" ⏳ window still holds {historic} known gap(s) (pre-fix + diagnosed "
@@ -103,9 +108,11 @@ def main() -> int:
 
     if verdict != "incident":
         return 0
+    if new_zeros:
+        return 2          # an undiagnosed false zero — the milestone's core failure
     if new_gaps:
         return 2          # a real, post-fix gap — alarm
-    return 4              # only pre-fix gaps remain in the window
+    return 4              # only known gaps / diagnosed false zeros remain
 
 
 # End of the last pre-fix gap (18.11 05:12 -> 06:21 UTC). Gaps ending at or before
@@ -126,7 +133,17 @@ KNOWN_GAP_TOLERANCE_S = 120
 
 # First moment the 168 h window holds no gap at all (end of the latest diagnosed gap
 # + 168 h). Printed in the log line so the daily note never says an outdated date.
-ACCEPTANCE_UTC = "2026-11-26 06:18 UTC (09:18 MSK)"
+ACCEPTANCE_UTC = "2026-11-27 05:12 UTC (08:12 MSK)"
+
+# False zeros are cycles that reported exit 0 with live_count 0 and no VkusVill
+# "nothing is marked down" reason — the exact thing v1.30 exists to kill. Each one is
+# diagnosed and listed here with its ts; anything beyond this count is a live alarm.
+KNOWN_FALSE_ZEROS = [
+    (1795151532.0,
+     "20.11 05:12:12 UTC: exited 0 with live_count 0 and empty_reason=unknown_empty "
+     "(empty page, no VkusVill banner). Night-time green was already empty; the run "
+     "could not prove why, yet still claimed success."),
+]
 
 
 def _is_known(gap: dict) -> bool:

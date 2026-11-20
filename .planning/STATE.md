@@ -482,5 +482,5 @@ miniapp on its own HTTPS host means DNS/CF changes on his side. Nothing else blo
 ## Session
 
 **Last session:** 2026-11-16 (v1.30: phases 94, 95, 97 closed; Phase 96 soak running)
-**Stopped at:** soak in progress (168 h; verdict readable **2026-11-26 09:18 MSK** — gap #8 on 19.11 04:54-06:18 was post-fix and pushes the window — the window must clear the 18.11 gap, see 96-SOAK.md «Date correction»); instrumentation + daily cron live
+**Stopped at:** soak in progress — **false zero #1 at 20.11 05:12:12 UTC** pushes the readable date to **2026-11-27 08:12 MSK**; was 2026-11-26 09:18 — gap #8 on 19.11 04:54-06:18 was post-fix and pushes the window — the window must clear the 18.11 gap, see 96-SOAK.md «Date correction»); instrumentation + daily cron live
 **Resume file:** None

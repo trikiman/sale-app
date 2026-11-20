@@ -66,7 +66,15 @@ def test_known_gap_requires_a_written_reason() -> None:
 
 def test_acceptance_date_is_single_constant() -> None:
     mod = _mod()
-    assert mod.ACCEPTANCE_UTC.startswith("2026-11-26")
+    assert mod.ACCEPTANCE_UTC.startswith("2026-11-27")
+
+
+def test_diagnosed_false_zero_is_not_an_alarm() -> None:
+    mod = _mod()
+    assert len(mod.KNOWN_FALSE_ZEROS) == 1
+    ts, why = mod.KNOWN_FALSE_ZEROS[0]
+    assert abs(ts - 1795151532.0) < 1, "the diagnosed false zero is 20.11 05:12:12 UTC"
+    assert len(why) > 40, "a diagnosed false zero must carry its reason"
 
 
 def test_missing_incident_list_is_unknown_not_zero() -> None:

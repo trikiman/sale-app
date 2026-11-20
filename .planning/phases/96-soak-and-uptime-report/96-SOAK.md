@@ -177,6 +177,38 @@ is holding through the whole night.
   Earlier the same day: green age had reached 41.8 min under the old rules; after
   the Phase 94+95 fixes, cycles resumed (7.7 min, then 1.0 min).
 
+## False zero #1: 20.11 05:12:12 UTC — the milestone's core failure, once
+
+`false_zero_cycles` went from 0 to **1**. The record says exactly what happened:
+
+```
+20.11 05:12:12  ok=True  exit=0  live=0  empty_reason='unknown_empty'
+```
+
+By the definition this phase is built on — a cycle that exits 0 reporting
+`live_count == 0` without VkusVill's own `source_empty`/`missing` reason — that is a
+false zero: the run **claimed success with nothing to show**. `unknown_empty` is the
+scraper's honest way of saying "the green section was empty and VkusVill did not show
+its «Зелёных ценников сейчас нет» banner, so I cannot prove the emptiness is real".
+The neighbouring cycles at 05:03 and 05:34 both recorded `source_empty`, so the site
+really was empty that night — but "probably empty" is not the standard this milestone
+set, and I am not going to relabel a recorded failure as a pass.
+
+Consequences, stated plainly:
+
+- acceptance **cannot** be read on 26.11 — the false zero sits inside the 168 h window;
+- the window clears 168 h after it: **2026-11-27 05:12 UTC = 08:12 MSK**;
+- `scripts/green_soak_check.py` now treats false zeros as first-class (exit 2 for any
+  beyond the diagnosed one), instead of letting them hide behind "only known gaps";
+- `scripts/phase96_acceptance.py` uses the new epoch and still fails on
+  `false_zero_cycles != 0`.
+
+What I have NOT done: change the definition, delete the record, or reclassify it as
+`source_empty` after the fact. What would actually prevent a repeat is making the green
+scraper retry the section once before concluding `unknown_empty` (a single empty read
+can be a timing artefact) — noted as the next real fix, not applied while a soak is
+being judged.
+
 ## Gap #8 (the first post-fix gap): 19.11 04:54 → 06:18 UTC, 84.0 min
 
 **This one is on us, not history.** It started after the fix mark, so the daily check
@@ -286,3 +318,4 @@ than claiming a week that has not happened.
 - **2026-11-19** — 🔴 verdict `incident`, cycles 367 (uptime 91.01%), gaps 8, false zeros 0, hours 68.8/168, last ok 65.7 min ago. 🚨 NEW post-fix gap: с 2026-11-19 04:54:30 UTC, открыт на момент проверки; green scrape exit 1 (green section: 0 items, seed no_button_found, reload timeout 45s); dynamic VLESS pool=0 ~9 ч (refresh streak=27, 444 quarantine), работа через manual-seed bridge 10808. Не исторический гэп — фиксы не держат.
 - **2026-11-19** — 🔴 verdict `incident`, cycles 412 (uptime 90.53%), gaps 8, false zeros 0, last ok 6.1 min ago. ⏳ window still holds 8 pre-fix gap(s); acceptance 2026-11-25
 - **2026-11-19** — 🔴 verdict `incident`, cycles 412 (uptime 90.53%), gaps 8, false zeros 0, last ok 6.5 min ago. ⏳ window still holds 8 known gap(s) (pre-fix + diagnosed post-fix); acceptance 2026-11-26 06:18 UTC (09:18 MSK)
+- **2026-11-20** — 🔴 verdict `incident`, cycles 522 (uptime 90.8%), gaps 8, false zeros 1, last ok 4.0 min ago. ⏳ 1 diagnosed false zero(s) in window; acceptance 2026-11-27 05:12 UTC (08:12 MSK)
