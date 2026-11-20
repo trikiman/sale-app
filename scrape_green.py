@@ -873,7 +873,53 @@ async def _add_green_cards_to_cart(page, card_source: str, total_cards: int):
         results_summary = {'added': 0, 'error': 1}
         added_count = 0
 
+    if isinstance(results_summary, dict) and results_summary.get('no_button'):
+        await _diagnose_no_button_cards(page)
+
     return results_summary, added_count
+
+
+async def _diagnose_no_button_cards(page, limit: int = 4) -> None:
+    """Log what the cards actually offer when they have no "В корзину" button.
+
+    Without this the log said only `no_button: 4`, and an 8-hour green=0 was mistaken
+    for "VkusVill has no markdowns" while the real question — out of stock? not
+    deliverable to this address/slot? different markup? — had no evidence at all.
+
+    Raw JS string on purpose: no f-string, so regex escapes stay readable.
+    """
+    try:
+        raw = await _js(page, r"""
+            (() => {
+                const vis = (el) => !!(el && el.offsetParent !== null && el.offsetWidth > 0);
+                const cards = Array.from(document.querySelectorAll('.ProductCard, .HProductCard, .BasketItem')).filter(vis);
+                const out = cards.slice(0, 4).map(c => {
+                    const text = (c.innerText || '').replace(/\s+/g, ' ');
+                    const clicks = Array.from(c.querySelectorAll('button, a, [role="button"], [class*="Button"]'))
+                        .filter(vis)
+                        .map(b => (b.innerText || b.textContent || '').replace(/\s+/g, ' ').trim().slice(0, 28))
+                        .filter(Boolean);
+                    return {
+                        name: text.slice(0, 40),
+                        buttons: clicks.slice(0, 6),
+                        flags: [
+                            /нет в наличии|раскупили|закончил/i.test(text) ? 'out_of_stock' : '',
+                            /недоступ|не доставля/i.test(text) ? 'not_deliverable' : '',
+                            /сообщить о поступлен/i.test(text) ? 'notify_me' : ''
+                        ].filter(Boolean)
+                    };
+                });
+                return JSON.stringify(out);
+            })()
+        """)
+        import json as _json
+        parsed = _json.loads(raw) if isinstance(raw, str) else (raw or [])
+        items: list = [c for c in parsed if isinstance(c, dict)] if isinstance(parsed, list) else []
+        print(f"  [GREEN] No-button cards: {len(items)}")
+        for c in items[:limit]:
+            print(f"  [GREEN]   card {c.get('name')!r} flags={c.get('flags')} buttons={c.get('buttons')}")
+    except Exception as exc:  # noqa: BLE001 — diagnostics must never break the run
+        print(f"  [GREEN] No-button diagnostics failed: {type(exc).__name__}: {exc}")
 
 
 async def _close_green_modal(page):
