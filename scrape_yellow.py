@@ -101,6 +101,40 @@ async def _js(page, script):
     return raw
 
 
+async def _wait_for_cards(page, timeout_s: float = 45.0, label: str = "") -> int:
+    """Wait until the offer page actually renders product cards.
+
+    The scrapers used a fixed ``await asyncio.sleep(10)`` and then counted
+    ``.ProductCard``. On this 1-vCPU box that is not enough: the log said
+    ``Products visible: False`` / ``Total: 0`` and the run was reported as
+    "Not logged in", while the very same URL serves 24 cards in a normal browser.
+    Counting too early looks exactly like a dead session — that is why RED kept
+    "failing to log in" while GREEN scraped fine with the same cookies.
+
+    Returns the number of cards seen (0 if none appeared within the timeout).
+    """
+    waited = 0.0
+    cards = 0
+    while waited < timeout_s:
+        try:
+            val = await _js(page, "document.querySelectorAll('.ProductCard').length")
+            try:
+                cards = int(val)
+            except (TypeError, ValueError):
+                cards = 0
+        except Exception:  # noqa: BLE001 — a failed probe just means "not yet"
+            cards = 0
+        if cards > 0:
+            if label:
+                print(f"  [{label}] Cards rendered: {cards} (after {waited:.0f}s)")
+            return cards
+        await asyncio.sleep(3.0)
+        waited += 3.0
+    if label:
+        print(f"  [{label}] No .ProductCard after {timeout_s:.0f}s — page did not render")
+    return cards
+
+
 async def scrape_yellow_prices_async():
     print("🔄 [YELLOW] Starting...")
     browser = None
@@ -122,7 +156,7 @@ async def scrape_yellow_prices_async():
         await _load_cookies(page)
 
         page = await browser.get(YELLOW_URL)
-        await asyncio.sleep(10)
+        await _wait_for_cards(page, label="YELLOW")
 
         # Check if logged in
         page_text = await _js(page, 'document.body.innerText')
