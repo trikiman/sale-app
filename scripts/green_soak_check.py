@@ -128,6 +128,12 @@ KNOWN_GAPS = [
     (1795064070.669, 1795069112.662,
      "gap #8, 19.11 04:54-06:18 UTC: egress stall on the only live route "
      "(urnetwork), every navigation hit its deadline; recovered on its own"),
+    (1795185191.048, 1795188044.052,
+     "gap #9, 20.11 17:33-18:20 MSK (14:33-15:20 UTC): self-inflicted — a run of "
+     "consecutive deploys for the RED/YELLOW card-render fix restarted the scheduler "
+     "several times in a row, so no GREEN cycle could finish inside the window. "
+     "Diagnosed, expected, and NOT a scraper fault; the very next cycle after the "
+     "last restart completed normally (Found 18 green products)."),
 ]
 KNOWN_GAP_TOLERANCE_S = 120
 
