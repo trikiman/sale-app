@@ -331,7 +331,30 @@ async def scrape_red_prices_async():
 def scrape_red_prices():
     if not check_vkusvill_available():
         return []
-    return asyncio.run(scrape_red_prices_async())
+    try:
+        return asyncio.run(scrape_red_prices_async())
+    except Exception as exc:  # noqa: BLE001 — only the CDP drop is retried
+        if not _is_ws_drop(exc):
+            raise
+        print(f"  [RED] CDP connection dropped ({type(exc).__name__}: {exc}) "
+              f"— retrying once with a fresh browser")
+        return asyncio.run(scrape_red_prices_async())
+def _is_ws_drop(exc: BaseException) -> bool:
+    """True when the CDP websocket died mid-run (RED/YELLOW lost whole cycles to this).
+
+    Seen in production on 20.11.2026: ``websockets.exceptions.ConnectionClosedError:
+    no close frame received or sent`` raised out of ``page.evaluate`` — the browser was
+    gone, not the session, but the uncaught exception exited the scraper with code 1 and
+    the cycle was recorded as failed. GREEN already recovers from this via
+    ``_reacquire_page``; RED and YELLOW had no such handling.
+    """
+    name = type(exc).__name__
+    text = str(exc).lower()
+    if "ConnectionClosed" in name or "ConnectionClosed" in type(exc).__mro__[0].__name__:
+        return True
+    markers = ("connectionclosed", "no close frame", "websocket", "target closed",
+               "browser has disconnected", "connection reset")
+    return any(m in text for m in markers)
 
 
 if __name__ == "__main__":
