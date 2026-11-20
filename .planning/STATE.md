@@ -136,6 +136,21 @@ basket_recalc` guard doing its job.
   the git webhook until it recovers. `VACUUM` on the 575 MB `salebot.db` waits for
   SSH.
 
+## 2026-11-20 08:05 MSK — history does not inflate; still waiting for green
+
+Checked that the price history is not creating a fake "sale" on every cycle (a real risk
+with a scraper running every few minutes). Session dates on the same products, 24 h apart:
+
+- yellow 72242: **6 sessions**, dates 2026-11-16, 15, 14, 13, 11, then 2026-09-11 — distinct
+  days, prices 258–430 ₽, windows 422 min+, no duplicate from today;
+- red 56687: 3 sessions, 2026-09-16 / 2026-08-16 / 2026-07-26;
+- green 46052: 1 session, 2026-11-15, 685 → 1268 ₽.
+
+So each appearance is recorded once, not once per scan. Green is still `source_empty` at
+08:01 MSK (greenLive 0, 165 products: red 43 / yellow 122, `updatedAt 07:58:31`), which is
+the normal nightly state; the next real check is the ~10:05 MSK appearance window.
+Soak: 517 cycles, 470 ok, 90.91%, **91.8 h**, `false_zero_cycles 0`, 8 known gaps.
+
 ## 2026-11-20 07:30 MSK — data-quality check, and a trap in my own measuring
 
 Night product set (168 items, red 43 / yellow 125, green empty as expected):
