@@ -136,6 +136,48 @@ basket_recalc` guard doing its job.
   the git webhook until it recovers. `VACUUM` on the 575 MB `salebot.db` waits for
   SSH.
 
+## 2026-11-20 11:55 MSK — the 8-hour green=0 is a broken cart, not an empty shelf
+
+Green has been 0 since **02:03 MSK**, and the API kept saying `source_empty` (VkusVill's own
+"Зелёных ценников сейчас нет" banner). The banner is real but it is a **consequence**, not
+proof: the scraper's tech account could not put anything in the cart, so the banner was
+inevitable. Log evidence from the failing cycles:
+
+```
+cart_empty_before_seed -> Seed item: no_button_found -> Button state: hidden:4
+Inline add-to-cart: {added: 0, no_button: 4}  (and again on retry)
+```
+
+Three defects found and fixed in `scrape_green.py` (each deployed via the webhook):
+
+1. **`aa63271`** — `_ensure_delivery_slot` opened the picker and returned without choosing
+   a slot; the very next call, `_close_delivery_modal`, pressed Escape and closed it. Added
+   `_select_slot_after_open()` (rescan, pick a time-like slot, confirm).
+2. **`43a64f2` + `a903752`** — the "slot already chosen" test was falsely positive:
+   `[class*="Slot"][class*="active"]` matches filter tabs, and `/в корзин/i` matched
+   "В корзине". Now it needs a visible "В корзину" button anchored to its full text inside
+   a `.ProductCard/.HProductCard/.BasketItem`.
+3. **`317ef17`** — `.js-delivery-slots-load` does NOT open the picker (it left four
+   unrelated modals: оплата / подарочные карты / показать все). What opens
+   "Мои адреса / Доставка / Самовывоз" is the header control "Выберите способ и время
+   доставки" — verified in a live browser. It is tried first now.
+
+**Result of the fixes (live logs, 08:43 UTC):**
+`After opening picker: modals=66 delivery_candidates=20` →
+`Delivery slot pick (after open): picked:Ближайшие 40 минут` →
+`confirm: confirmed:Применить` → `Slot retry after hidden buttons: selected_after_open`.
+
+**Still broken:** the four cards keep reporting `no_button: 4` even with the slot selected,
+so `basket_recalc` returns nothing and the snapshot is wiped. Cause unknown — out of stock,
+not deliverable to this address/slot, or different markup. Commit `c307a88` adds
+`_diagnose_no_button_cards`, which dumps each card's text, its visible buttons and
+out-of-stock / not-deliverable / notify-me flags, so the next cycle answers that instead of
+inviting another guess.
+
+**Also degraded:** `basket_recalc via urnetwork-ru failed: [Errno 101] Network is
+unreachable`; VLESS pool 0 nodes (streak 80); SSH through 127.0.0.1:10870 is refused
+(`Connection closed by UNKNOWN port 65535`, three attempts), so all of this is HTTP-only.
+
 ## 2026-11-20 08:05 MSK — history does not inflate; still waiting for green
 
 Checked that the price history is not creating a fake "sale" on every cycle (a real risk
