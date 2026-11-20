@@ -2332,15 +2332,19 @@ async def scrape_green_prices_async():
         cart_check = await _js(page, r"""
             (() => {
                 const bodyText = document.body.innerText || '';
-                // Signal 1: empty cart text
-                if (bodyText.includes('Корзина ждёт') || bodyText.includes('Корзина пуста')) {
-                    return {empty: true, reason: 'empty_text'};
-                }
-                // Signal 2: count actual cart items using the correct selector
-                // .js-delivery-basket-item = real cart items (NOT green section, NOT recommendations)
+                // Count the DOM first. The empty-cart wording also appears inside hidden
+                // templates and recommendation blocks, so trusting it first made the cart
+                // look empty forever: the log said 'Seed item added — cart is now non-empty'
+                // and the very next cycle reported {'empty': True, 'reason': 'empty_text'},
+                // sending the scraper back to seeding on every run.
                 const cartItems = document.querySelectorAll('.js-delivery-basket-item, .Delivery__Order__BasketItem');
-                if (cartItems.length > 0) {
-                    return {empty: false, reason: 'cart_items_' + cartItems.length};
+                const visibleItems = Array.from(cartItems).filter(el => el.offsetParent !== null).length;
+                if (visibleItems > 0) {
+                    return {empty: false, reason: 'cart_items_' + visibleItems};
+                }
+                // Fallback signal: the wording, but only when no item nodes exist at all.
+                if (bodyText.includes('Корзина ждёт') || bodyText.includes('Корзина пуста')) {
+                    return {empty: true, reason: 'empty_text_no_items_' + cartItems.length};
                 }
                 // Signal 3: no "Очистить корзину" button = likely no items
                 const clearBtn = [...document.querySelectorAll('*')].find(el => 
