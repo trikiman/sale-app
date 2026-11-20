@@ -49,3 +49,16 @@ def test_confirm_click_uses_expected_words() -> None:
     confirm = SRC[SRC.index("_SLOT_CONFIRM_JS"):SRC.index("async def _select_slot_after_open")]
     for word in ("Сохранить", "Применить", "Выбрать", "Подтвердить", "Готово", "Продолжить"):
         assert word in confirm
+
+
+def test_already_requires_real_evidence() -> None:
+    """A [class*="Slot"][class*="active"] element is not proof a slot is chosen.
+
+    2026-11-20: the scraper logged 'Step 1.5 delivery slot: already' and still saw
+    hidden:4 / no_button: 4 — the selector had matched a filter tab, so no slot was
+    picked and the green list was wiped to 0. 'already' now needs either visible
+    add-to-cart buttons or a delivery time spelled out in the element.
+    """
+    assert "add_buttons" in SRC
+    assert "addBtns.length > 0" in SRC
+    assert "timeRe2.test(chosenTxt)" in SRC

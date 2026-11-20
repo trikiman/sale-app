@@ -957,8 +957,18 @@ _SLOT_SCAN_JS = """
                     '[class*="Slot"][class*="active"], [class*="slot"][class*="active"], ' +
                     '[class*="Slot"][class*="selected"], [class*="slot"][class*="selected"]'
                 );
-                if (chosen && vis(chosen)) {
-                    return JSON.stringify({status: 'already', chosen: txt(chosen).slice(0, 60), modals: []});
+                const timeRe2 = /(\\d{1,2}[:.]\\d{2})|(сегодня|завтра|ближайш)/i;
+                const addBtns = Array.from(document.querySelectorAll('button, a, [role="button"], [class*="Button"]'))
+                    .filter(vis).filter(el => /в корзин/i.test(txt(el)));
+                const chosenTxt = chosen && vis(chosen) ? txt(chosen).slice(0, 60) : '';
+                // "A slot element exists" is NOT proof that a slot is chosen:
+                // [class*="Slot"][class*="active"] also matches filter tabs, and trusting it
+                // made the scraper skip picking a slot while every add-to-cart button stayed
+                // hidden (hidden:4 / no_button: 4) and the green list was wiped to 0.
+                // Trust it only when the page actually offers add-to-cart buttons, or when
+                // the element spells out a delivery time.
+                if (chosenTxt && (timeRe2.test(chosenTxt) || addBtns.length > 0)) {
+                    return JSON.stringify({status: 'already', chosen: chosenTxt, modals: [], add_buttons: addBtns.length});
                 }
                 const modals = Array.from(document.querySelectorAll(modalSel)).filter(vis);
                 const info = modals.map((m, i) => {
@@ -1095,8 +1105,18 @@ async def _ensure_delivery_slot(page) -> str:
                     '[class*="Slot"][class*="active"], [class*="slot"][class*="active"], ' +
                     '[class*="Slot"][class*="selected"], [class*="slot"][class*="selected"]'
                 );
-                if (chosen && vis(chosen)) {
-                    return JSON.stringify({status: 'already', chosen: txt(chosen).slice(0, 60), modals: []});
+                const timeRe2 = /(\\d{1,2}[:.]\\d{2})|(сегодня|завтра|ближайш)/i;
+                const addBtns = Array.from(document.querySelectorAll('button, a, [role="button"], [class*="Button"]'))
+                    .filter(vis).filter(el => /в корзин/i.test(txt(el)));
+                const chosenTxt = chosen && vis(chosen) ? txt(chosen).slice(0, 60) : '';
+                // "A slot element exists" is NOT proof that a slot is chosen:
+                // [class*="Slot"][class*="active"] also matches filter tabs, and trusting it
+                // made the scraper skip picking a slot while every add-to-cart button stayed
+                // hidden (hidden:4 / no_button: 4) and the green list was wiped to 0.
+                // Trust it only when the page actually offers add-to-cart buttons, or when
+                // the element spells out a delivery time.
+                if (chosenTxt && (timeRe2.test(chosenTxt) || addBtns.length > 0)) {
+                    return JSON.stringify({status: 'already', chosen: chosenTxt, modals: [], add_buttons: addBtns.length});
                 }
 
                 const modals = Array.from(document.querySelectorAll(modalSel)).filter(vis);
