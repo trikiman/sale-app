@@ -1191,11 +1191,17 @@ async def _ensure_delivery_address(page) -> str:
                     // On the cart page the header opens the SLOT picker
                     // ('Ассортимент зависит от времени доставки … Применить'), which has no
                     // address at all. The address lives behind 'Доставка и оплата'.
-                    const slotPicker = /ассортимент зависит от времени доставки/i.test(norm(document.body.innerText));
-                    const toAddress = Array.from(document.querySelectorAll('button, a'))
+                    // A body-level text test proved unreliable (the slot picker shows in
+                    // .Modal__inner while body.innerText did not carry it), so look for the
+                    // target control directly, on any element type, by its short label.
+                    const isTarget = (e) => {{
+                        const t = norm(e.innerText);
+                        return t.length > 0 && t.length <= 26 && /доставка.*оплат/i.test(t);
+                    }};
+                    const toAddress = Array.from(document.querySelectorAll('button, a, span, div'))
                         .filter(vis)
-                        .find(e => /доставка и оплата|доставка и  оплата|доставка иоплата/i.test(norm(e.innerText)));
-                    if (slotPicker && toAddress) {{
+                        .find(isTarget);
+                    if (toAddress) {{
                         toAddress.click();
                         return 'opened_delivery_and_payment|header=' + headerText;
                     }}
