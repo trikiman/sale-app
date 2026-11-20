@@ -204,10 +204,15 @@ Consequences, stated plainly:
   `false_zero_cycles != 0`.
 
 What I have NOT done: change the definition, delete the record, or reclassify it as
-`source_empty` after the fact. What would actually prevent a repeat is making the green
-scraper retry the section once before concluding `unknown_empty` (a single empty read
-can be a timing artefact) — noted as the next real fix, not applied while a soak is
-being judged.
+`source_empty` after the fact.
+
+**The repeat is now closed at the root** (`green_empty.py` + `scrape_green.py`): an
+empty green list is a success only when VkusVill itself proves it — a non-empty list, or
+the explicit "Зелёных ценников сейчас нет" banner. `unknown_empty` now **fails the run**
+(exit 1), keeps the previous snapshot instead of overwriting it with an unproven empty
+one, and is recorded as a failed cycle rather than a false zero. The rule lives in one
+dependency-free function so it cannot grow a second implementation; a test asserts the
+scraper imports it and does not redefine it.
 
 ## Gap #8 (the first post-fix gap): 19.11 04:54 → 06:18 UTC, 84.0 min
 

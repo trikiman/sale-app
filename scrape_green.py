@@ -14,6 +14,7 @@ import shutil
 from chrome_stealth import launch_stealth_browser, find_chrome
 from nodriver import cdp
 
+from green_empty import classify_empty_state
 from utils import normalize_category, parse_stock, clean_price, deduplicate_products, synthesize_discount, save_products_safe, check_vkusvill_available, normalize_stock_unit
 
 # Fix Windows console encoding
@@ -3033,12 +3034,19 @@ async def scrape_green_prices_async():
             #                     "Зелёных ценников сейчас нет" banner
             #   "unknown_empty" — empty without that banner; could be markup
             #                     drift, a failed cart seed, or auth trouble
-            if products:
-                empty_reason = "ok"
-            elif empty_explicit:
-                empty_reason = "source_empty"
-            else:
-                empty_reason = "unknown_empty"
+            empty_reason, empty_is_proven = classify_empty_state(products, empty_explicit)
+            if not empty_is_proven:
+                # An empty section WITHOUT VkusVill's own "Зелёных ценников сейчас
+                # нет" banner is not proof that nothing is marked down: it can be
+                # markup drift, a failed cart seed or a half-rendered page. Claiming
+                # exit 0 here is precisely the false zero v1.30 forbids — it produced
+                # one on 20.11 05:12 UTC — so report a failure and keep the previous
+                # snapshot instead of overwriting it with an unproven empty list.
+                print(
+                    "⚠️ [GREEN] Empty section and no VkusVill empty banner — cannot "
+                    "prove the list is really empty; failing instead of reporting 0"
+                )
+                scrape_success = False
             output_data = {
                 "live_count": live_count,
                 "scraped_count": len(products),
@@ -3049,12 +3057,15 @@ async def scrape_green_prices_async():
                 "logged_in": bool(is_logged_in),
                 "products": products
             }
-            try:
-                os.makedirs(os.path.dirname(output_path), exist_ok=True)
-                save_products_safe(output_data, output_path)  # BUG 15: atomic write
-                print(f"✅ Saved {len(products)} products (live_count={live_count}) -> {output_path}")
-            except Exception as e:
-                print(f"❌ Error saving {output_path}: {e}")
+            if not scrape_success:
+                print(f"⚠️ Unknown-empty run — keeping the existing {output_path}")
+            else:
+                try:
+                    os.makedirs(os.path.dirname(output_path), exist_ok=True)
+                    save_products_safe(output_data, output_path)  # BUG 15: atomic write
+                    print(f"✅ Saved {len(products)} products (live_count={live_count}) -> {output_path}")
+                except Exception as e:
+                    print(f"❌ Error saving {output_path}: {e}")
         else:
             print(f"⚠️ Scraper failed — keeping existing {output_path}")
 
