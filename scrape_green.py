@@ -3588,6 +3588,25 @@ async def scrape_green_prices_async():
                     "prove the list is really empty; failing instead of reporting 0"
                 )
                 scrape_success = False
+            # Final guard at the single exit point: never publish an "old" price that is
+            # not higher than the current one. The API was serving "Лук репчатый 55 было 55"
+            # (-0%) because the per-item guards sit inside branches that do not all run for
+            # green cards. One check here covers every path, and nothing downstream can
+            # put a meaningless "old" price back.
+            _dropped_old = 0
+            for _p in products:
+                try:
+                    _c = float(str(_p.get('currentPrice', '')).replace(',', '.').replace(' ', ''))
+                    _o = float(str(_p.get('oldPrice', '')).replace(',', '.').replace(' ', ''))
+                except (TypeError, ValueError):
+                    continue
+                if _o <= _c:
+                    _p['oldPrice'] = ''
+                    _dropped_old += 1
+            if _dropped_old:
+                print(f"  [GREEN] Dropped meaningless old price on {_dropped_old} item(s) "
+                      f"(old <= current)")
+
             output_data = {
                 "live_count": live_count,
                 "scraped_count": len(products),
