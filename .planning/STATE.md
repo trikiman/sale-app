@@ -136,7 +136,32 @@ basket_recalc` guard doing its job.
   the git webhook until it recovers. `VACUUM` on the 575 MB `salebot.db` waits for
   SSH.
 
-## 2026-11-19 21:40 UTC — BLOCKER: the public site loads, its API returns 502
+## 2026-11-20 05:05 MSK — blocker CLEARED: the 502 was transient, not a firewall
+
+Re-checked as asked. Now, three consecutive calls:
+
+```
+https://vkusvillsale.vercel.app/api/products → 200, 84380 B, 0.8-4.5 s
+updatedAt "2026-11-20 05:04:27", 165 products
+external reachability of :80 from 10 nodes → 2xx: 9, timeout: 1   (was 1 / 9)
+```
+
+So the origin was reachable again from almost everywhere — the earlier `1/10` reading
+caught a transient routing/stall window on Oracle AMS, not an ingress rule. No firewall
+change is needed; the OCI/SSH ask is withdrawn (SSH itself is still dead, but it is no
+longer blocking anything right now).
+
+Also verified while the site was up: `greenLiveCount 0, greenListedCount 0` is NOT a
+suppressed or false zero — `greenEmptyReason: "source_empty"`, `greenMissing: true`, and
+`sourceFreshness.green` says `exists: true, ageMinutes 11.5, isStale: false`. Last six
+cycles recorded `live=0` at 01:20–01:53 UTC, which matches the normal daily pattern
+(the history page's forecast puts green appearances around 10:05 MSK). The API is telling
+the truth: there are no green items right now, and it says why.
+
+Soak at the same moment: 497 cycles, 450 ok / 47 failed, **90.54%**, `false_zero_cycles 0`,
+**88.8 h** recorded, 8 gaps (all known — no new one since #8), last ok 11.5 min ago.
+
+## 2026-11-19 21:40 UTC — [CLEARED] the public site loads, its API returns 502
 
 The Vercel front is up, but it cannot reach the origin, so the site is empty for any
 visitor. Measured, three attempts each:
