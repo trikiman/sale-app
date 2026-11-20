@@ -24,6 +24,8 @@ if sys.platform == 'win32':
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_DIR = os.path.join(BASE_DIR, "data")
 GREEN_URL = "https://vkusvill.ru/cart/"
+# Used only to seed one item when /cart/ offers no add button at all.
+CATALOG_URL = "https://vkusvill.ru/goods/ovoshchi-frukty-yagody-zelen/"
 COOKIES_PATH = os.path.join(BASE_DIR, "data", "cookies.json")
 TECH_PROFILE_DIR = os.path.join(DATA_DIR, "tech_profile")
 SCREENSHOT_DIR = os.path.join(BASE_DIR, "logs", "screenshots", "green")
@@ -797,6 +799,66 @@ def _green_product_cards_script(card_source: str) -> str:
 
 async def _extract_green_cards(page, card_source: str) -> list:
     return await _js(page, _green_product_cards_script(card_source)) or []
+
+
+async def _seed_from_catalog(page) -> str:
+    """Add one cheap item from the catalogue when the cart page has no add buttons.
+
+    `/cart/` for this account renders neither a recommendation strip nor any
+    add-to-cart control (`Seed item: no_button_found` even after 5 polls), so the cart can
+    never become non-empty — and VkusVill only reveals green prices inside a non-empty
+    cart. The catalogue page always has real cards with real buttons, so add one there and
+    come back.
+
+    Returns a status string for the log.
+    """
+    try:
+        await _page_get(page, CATALOG_URL)
+        await asyncio.sleep(5)
+        clicked = await _js(page, r"""
+            (() => {
+                const vis = (el) => !!(el && el.offsetParent !== null && el.offsetWidth > 0);
+                const fire = (el) => {
+                    let r = {left: 0, top: 0, width: 0, height: 0};
+                    try { r = el.getBoundingClientRect(); } catch (e) {}
+                    const opt = {bubbles: true, cancelable: true, composed: true, view: window,
+                                 clientX: r.left + (r.width || 0) / 2,
+                                 clientY: r.top + (r.height || 0) / 2, button: 0};
+                    for (const t of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
+                        try {
+                            const Ctor = (t.indexOf('pointer') === 0 && typeof PointerEvent === 'function')
+                                ? PointerEvent : MouseEvent;
+                            el.dispatchEvent(new Ctor(t, opt));
+                        } catch (e) {
+                            try { el.dispatchEvent(new MouseEvent(t, opt)); } catch (e2) {}
+                        }
+                    }
+                    try { el.click(); } catch (e) {}
+                };
+                const btn = Array.from(document.querySelectorAll(
+                        'button.CartButton__content--add, .js-delivery__basket--add'))
+                    .filter(vis)[0];
+                if (!btn) return 'catalog_no_button';
+                try { btn.scrollIntoView({block: 'center'}); } catch (e) {}
+                fire(btn);
+                return 'catalog_clicked';
+            })()
+        """)
+        status = clicked if isinstance(clicked, str) else str(clicked)
+        await asyncio.sleep(4)
+        print(f"  [GREEN] Seed via catalogue: {status}")
+        # Always return to the cart page — the scrape continues there
+        await _page_get(page, GREEN_URL)
+        await asyncio.sleep(6)
+        return status
+    except Exception as exc:  # noqa: BLE001 — never break the run
+        print(f"  [GREEN] Seed via catalogue failed: {type(exc).__name__}: {exc}")
+        try:
+            await _page_get(page, GREEN_URL)
+            await asyncio.sleep(5)
+        except Exception:  # noqa: BLE001
+            pass
+        return "catalog_error"
 
 
 async def _wait_for_green_cards(page, timeout_s: float = 25.0) -> int:
@@ -2382,6 +2444,9 @@ async def scrape_green_prices_async():
                         print(f"  [GREEN] Seed item appeared on attempt {seed_attempt}")
                     break
                 await asyncio.sleep(4.0)
+            if seed_added == 'no_button_found':
+                seed_added = await _seed_from_catalog(page)
+
             print(f"  [GREEN] Seed item: {seed_added}")
             if seed_added and seed_added != 'no_button_found':
                 # Phase 58-02: after the first cart addition Chromium swaps the
