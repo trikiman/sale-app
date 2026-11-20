@@ -136,6 +136,54 @@ basket_recalc` guard doing its job.
   the git webhook until it recovers. `VACUUM` on the 575 MB `salebot.db` waits for
   SSH.
 
+## 2026-11-20 13:00 MSK — ROOT CAUSE: the tech account has no delivery address
+
+Proof, not inference. New log line from the deployed fix:
+
+```
+[GREEN] Delivery address: no_saved_address
+```
+
+And the mechanism, verified on the live site in a real browser:
+
+* The add-to-cart control is `button.CartButton__content--add.js-delivery__basket--add`
+  inside `div.ProductCard__cartFooter` / `div.CartButton[data-product-id]`.
+* With **no delivery address** that button is present, visible and enabled — and does
+  nothing. Both a JS `.click()` and a real coordinate click (trusted CDP input) leave the
+  wrapper class at `CartButton--notAdded`; nothing lands in the cart.
+* The header keeps showing "Выберите способ и время доставки" and the address modal says
+  "Адрес не найден".
+
+So the chain that has been costing us the whole day is:
+
+`no delivery address` → add-to-cart impossible (even for the ordinary seed item, which is
+why `Seed item: no_button_found`) → cart is empty → VkusVill renders its
+"Зелёных ценников сейчас нет" banner → `classify_empty_state()` sees `empty_explicit=True`
+→ snapshot wiped to 0 with `source_empty` → the UI honestly reports "ВкусВилл ничего не
+уценил" while the real cause is a missing address.
+
+**Consequence for phase 96's acceptance criteria (must be rewritten):** `source_empty` is
+NOT proof of an empty shelf while the cart cannot be filled. Any `source_empty` produced in
+a cycle where the seed item failed to add must be treated as a scraping failure, not as a
+genuine empty state. This is the difference between a real 168-hour proof and a formal one.
+
+Fixes shipped today (each committed and deployed through the webhook):
+
+| commit | what it fixed |
+|---|---|
+| `aa63271` | slot picker was opened and abandoned; added `_select_slot_after_open` |
+| `43a64f2` / `a903752` | "slot already chosen" was a false positive (tabs, "В корзине") |
+| `317ef17` | picker opens from the header control, not `.js-delivery-slots-load` (4 wrong modals) |
+| `c307a88` / `10e3d49` | `_diagnose_no_button_cards` — and scoped to the green section |
+| `419c754` / `f5b4890` | click matches the label on any element, full pointer/mouse sequence |
+| `523a8ea` | `_ensure_delivery_address` — pick a saved address before the slot |
+
+**Open:** the account needs an address added once. The modal's "Добавить новый адрес" form
+uses Yandex autocomplete — typing an address string alone does not resolve it ("Адрес не
+найден"), and the input disappears between steps, so this needs a proper suggestion-pick
+flow (open `HeaderATDToggler__Link` → «Добавить новый адрес» → type → click the suggestion
+→ «Выбрать»/«Сохранить»). Until that lands, green stays 0 no matter what the slot does.
+
 ## 2026-11-20 12:20 MSK — the cart is broken site-wide for the tech account
 
 Fixing the slot exposed a wider fault. Latest cycles (12:04–12:14 MSK):
