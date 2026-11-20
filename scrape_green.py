@@ -935,6 +935,122 @@ async def _reacquire_page(browser):
     return page
 
 
+# ── Delivery-slot helpers (shared by the first attempt and the post-open retry) ──
+# Why a retry exists: opening the picker used to be the LAST step of
+# _ensure_delivery_slot — the function clicked `.js-delivery-slots-load` and returned
+# without ever choosing a slot. The next call in the pipeline, _close_delivery_modal,
+# then pressed Escape and closed the picker. Net effect: no slot, every "в корзину"
+# button stays hidden (`hidden:4`, `no_button: 4`, `Seed item: no_button_found`), the
+# cart never fills, VkusVill renders its "Зелёных ценников сейчас нет" banner, and the
+# green snapshot is wiped to 0 while real markdowns exist on the site.
+_SLOT_CLICKABLE = ('a, button, [role="button"], label, [onclick], '
+                   '[class*="Button"], [class*="button"], [class*="btn"], '
+                   '[class*="slot"], [class*="Slot"], [class*="time"], [class*="Time"]')
+
+_SLOT_SCAN_JS = """
+            (() => {
+                const vis = (el) => !!(el && el.offsetParent !== null && el.offsetWidth > 0);
+                const txt = (el) => (el.innerText || el.textContent || '').replace(/\\s+/g, ' ').trim();
+                const modalSel = '[class*="Modal"], [role="dialog"], [class*="modal"]';
+                const clickSel = '""" + _SLOT_CLICKABLE + """';
+                const chosen = document.querySelector(
+                    '[class*="Slot"][class*="active"], [class*="slot"][class*="active"], ' +
+                    '[class*="Slot"][class*="selected"], [class*="slot"][class*="selected"]'
+                );
+                if (chosen && vis(chosen)) {
+                    return JSON.stringify({status: 'already', chosen: txt(chosen).slice(0, 60), modals: []});
+                }
+                const modals = Array.from(document.querySelectorAll(modalSel)).filter(vis);
+                const info = modals.map((m, i) => {
+                    const btns = Array.from(m.querySelectorAll(clickSel)).filter(vis);
+                    return {i: i, text: txt(m).slice(0, 80), buttons: btns.length,
+                            samples: btns.map(b => txt(b).slice(0, 45)).filter(t => t).slice(0, 8)};
+                });
+                const dlv = info.filter(m => /доставк|самовывоз|времени доставки|слот/i.test(m.text));
+                const best = dlv.sort((a, b) => b.buttons - a.buttons)[0] || null;
+                return JSON.stringify({status: info.length ? 'modal_open' : 'no_modal',
+                                       modals: info, best: best, delivery_candidates: dlv.length});
+            })()
+"""
+
+_SLOT_PICK_JS = """
+                (() => {
+                    const vis = (el) => !!(el && el.offsetParent !== null && el.offsetWidth > 0);
+                    const txt = (el) => (el.innerText || el.textContent || '').replace(/\\s+/g, ' ').trim();
+                    const modalSel = '[class*="Modal"], [role="dialog"], [class*="modal"]';
+                    const clickSel = '""" + _SLOT_CLICKABLE + """';
+                    const modals = Array.from(document.querySelectorAll(modalSel)).filter(vis)
+                        .map(m => ({m: m, n: Array.from(m.querySelectorAll(clickSel)).filter(vis).length}));
+                    const dlv = modals.filter(x => /доставк|самовывоз|времени доставки|слот/i.test(txt(x.m)));
+                    if (!dlv.length) return 'no_delivery_modal';
+                    const scope = dlv.sort((a, b) => b.n - a.n)[0].m;
+                    const timeRe = /(\\d{1,2}[:.]\\d{2}\\s*[–-]\\s*\\d{1,2}[:.]\\d{2})|(сегодня|завтра|ближайш)/i;
+                    for (const el of Array.from(scope.querySelectorAll(clickSel)).filter(vis)) {
+                        const t = txt(el);
+                        if (!t || t.length > 70) continue;
+                        if (!timeRe.test(t)) continue;
+                        if (/недоступ|занят|нет мест/i.test(t)) continue;
+                        try { el.click(); } catch (e) { continue; }
+                        return 'picked:' + t.slice(0, 50);
+                    }
+                    return 'no_slot_found';
+                })()
+"""
+
+_SLOT_CONFIRM_JS = """
+                    (() => {
+                        const vis = (el) => !!(el && el.offsetParent !== null && el.offsetWidth > 0);
+                        const txt = (el) => (el.innerText || el.textContent || '').replace(/\\s+/g, ' ').trim();
+                        const words = ['Сохранить', 'Применить', 'Выбрать', 'Подтвердить', 'Готово', 'Продолжить'];
+                        const btns = Array.from(document.querySelectorAll('button, a, [role="button"], [class*="Button"]')).filter(vis);
+                        for (const b of btns) {
+                            const t = txt(b);
+                            if (words.some(w => t.toLowerCase().includes(w.toLowerCase()))) {
+                                try { b.click(); return 'confirmed:' + t.slice(0, 40); } catch (e) {}
+                            }
+                        }
+                        return 'no_confirm_button';
+                    })()
+"""
+
+
+async def _select_slot_after_open(page) -> str:
+    """Choose a slot after the picker was just opened by a click.
+
+    Returns 'selected_after_open' only when a time-like slot was actually clicked;
+    otherwise the caller keeps its previous status so the log shows what failed.
+    """
+    import json as _json
+
+    def _parse(raw):
+        if isinstance(raw, str):
+            try:
+                return _json.loads(raw)
+            except Exception:
+                return {}
+        return raw if isinstance(raw, dict) else {}
+
+    await asyncio.sleep(3)
+    state = _parse(await _js(page, _SLOT_SCAN_JS))
+    if state.get('status') == 'already':
+        print(f"  [GREEN] Slot active after open: {state.get('chosen')!r}")
+        return 'already'
+    print(f"  [GREEN] After opening picker: modals={len(state.get('modals') or [])} "
+          f"delivery_candidates={state.get('delivery_candidates')}")
+    best = state.get('best') or {}
+    if (best.get('buttons') or 0) <= 0:
+        return 'no_delivery_modal_after_open'
+    picked = await _js(page, _SLOT_PICK_JS) or ''
+    print(f"  [GREEN] Delivery slot pick (after open): {picked}")
+    if not (isinstance(picked, str) and picked.startswith('picked')):
+        return 'no_slot_found_after_open'
+    await asyncio.sleep(2)
+    confirm = await _js(page, _SLOT_CONFIRM_JS) or ''
+    print(f"  [GREEN] Delivery slot confirm (after open): {confirm}")
+    await asyncio.sleep(3)
+    return 'selected_after_open'
+
+
 async def _ensure_delivery_slot(page) -> str:
     """Select a delivery slot when none is chosen.
 
@@ -1094,6 +1210,11 @@ async def _ensure_delivery_slot(page) -> str:
             })()
         """) or ''
         print(f"  [GREEN] Delivery picker open attempt: {opened}")
+        if isinstance(opened, str) and opened.startswith('opened'):
+            after = await _select_slot_after_open(page)
+            if after in ('selected_after_open', 'already'):
+                return after
+            print(f"  [GREEN] Slot after open: {after}")
         return f'open_attempt_{opened}'
     except Exception as exc:  # noqa: BLE001 — never break the scrape
         print(f"  [GREEN] _ensure_delivery_slot error: {exc}")
