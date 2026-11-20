@@ -1115,6 +1115,54 @@ _SLOT_CONFIRM_JS = """
 """
 
 
+async def _log_delivery_modal_state(page) -> None:
+    """Dump what the delivery modal actually shows when the address step fails.
+
+    `modal_not_ready` alone is not diagnosable: on the cart page the header control may
+    not exist, or the modal may open on a different step than it does on the catalogue.
+    Without this dump the next fix is a guess again — and guessing has already cost a day.
+    """
+    try:
+        raw = await _js(page, """
+            (() => {
+                const vis = (el) => !!(el && el.offsetParent !== null && el.offsetWidth > 0);
+                const norm = (s) => (s || '').split(String.fromCharCode(10)).join(' ').trim();
+                const modals = Array.from(document.querySelectorAll('.Modal__inner, [role="dialog"]'))
+                    .filter(vis)
+                    .slice(0, 4)
+                    .map(m => ({
+                        cls: (m.className || '').toString().slice(0, 50),
+                        text: norm(m.innerText).slice(0, 160)
+                    }));
+                const header = Array.from(document.querySelectorAll('.HeaderATDToggler__Link, [class*="HeaderATDToggler"]'))
+                    .filter(vis).length;
+                const buttons = Array.from(document.querySelectorAll('button, a'))
+                    .filter(vis)
+                    .map(b => norm(b.innerText))
+                    .filter(t => t && t.length < 30
+                        && /достав|адрес|самовывоз|выбрать|сохранить|применить|время/i.test(t))
+                    .slice(0, 12);
+                return JSON.stringify({
+                    modals: modals,
+                    header_controls: header,
+                    action_buttons: buttons
+                });
+            })()
+        """)
+        import json as _json
+        data = _json.loads(raw) if isinstance(raw, str) else {}
+        if not isinstance(data, dict):
+            data = {}
+        print(f"  [GREEN] Delivery modal state: header_controls={data.get('header_controls')} "
+              f"modals={len(data.get('modals') or [])}")
+        for m in (data.get("modals") or [])[:4]:
+            if isinstance(m, dict):
+                print(f"  [GREEN]   modal {m.get('cls')!r}: {m.get('text')!r}")
+        print(f"  [GREEN]   action buttons: {data.get('action_buttons')}")
+    except Exception as exc:  # noqa: BLE001 — diagnostics must never break the run
+        print(f"  [GREEN] Delivery modal dump failed: {type(exc).__name__}: {exc}")
+
+
 async def _ensure_delivery_address(page) -> str:
     """Pick a saved delivery address inside the delivery modal.
 
@@ -1166,6 +1214,8 @@ async def _ensure_delivery_address(page) -> str:
         await asyncio.sleep(1.5)
 
     print(f"  [GREEN] Delivery address: {last} (3 attempts)")
+    if last in ("modal_not_ready", "unknown") or last.startswith("error"):
+        await _log_delivery_modal_state(page)
     return last
 
 
