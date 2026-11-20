@@ -13,6 +13,8 @@ SPEC = pathlib.Path(__file__).resolve().parents[1] / "scripts" / "check_frontend
 
 def _mod():
     spec = importlib.util.spec_from_file_location("front_api_check", SPEC)
+    assert spec is not None, f"cannot build a spec for {SPEC}"
+    assert spec.loader is not None, f"no loader for {SPEC}"
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
