@@ -1126,7 +1126,7 @@ async def _log_delivery_modal_state(page) -> None:
         raw = await _js(page, """
             (() => {
                 const vis = (el) => !!(el && el.offsetParent !== null && el.offsetWidth > 0);
-                const norm = (s) => (s || '').split(String.fromCharCode(10)).join(' ').trim();
+                const norm = (s) => (s || '').split(String.fromCharCode(10)).join(' ').split(String.fromCharCode(160)).join(' ').split(String.fromCharCode(9)).join(' ').trim();
                 const modals = Array.from(document.querySelectorAll('.Modal__inner, [role="dialog"]'))
                     .filter(vis)
                     .slice(0, 4)
@@ -1183,7 +1183,7 @@ async def _ensure_delivery_address(page) -> str:
             raw = await _js(page, """
                 (() => {
                     const vis = (el) => !!(el && el.offsetParent !== null && el.offsetWidth > 0);
-                    const norm = (s) => (s || '').split(String.fromCharCode(10)).join(' ').trim();
+                    const norm = (s) => (s || '').split(String.fromCharCode(10)).join(' ').split(String.fromCharCode(160)).join(' ').split(String.fromCharCode(9)).join(' ').trim();
                     // What does the header say right now? 'Выберите способ и время доставки'
                     // means no address; showing a street means an address is set.
                     const hdr = document.querySelector('.HeaderATDToggler__Text');
@@ -1194,7 +1194,7 @@ async def _ensure_delivery_address(page) -> str:
                     const slotPicker = /ассортимент зависит от времени доставки/i.test(norm(document.body.innerText));
                     const toAddress = Array.from(document.querySelectorAll('button, a'))
                         .filter(vis)
-                        .find(e => /доставка и оплата/i.test(norm(e.innerText)));
+                        .find(e => /доставка и оплата|доставка и  оплата|доставка иоплата/i.test(norm(e.innerText)));
                     if (slotPicker && toAddress) {{
                         toAddress.click();
                         return 'opened_delivery_and_payment|header=' + headerText;
