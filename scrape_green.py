@@ -1830,23 +1830,6 @@ def _merge_green_cart_data(raw_products: list, stock_map: dict) -> list:
                 p['currentPrice'] = cart_price
                 cur_price = str(cart_price)
 
-            # A struck-out price that equals (or undercuts) the current one is not a
-            # markdown — the green cards repeat the same number in the old-price node, and
-            # the API published "Лук репчатый 55 было 55" (-0%). Dropping it is the same
-            # rule as 'never invent an old price': no discount info beats nonsense.
-            def _price_num(v):
-                try:
-                    return float(str(v).replace(',', '.').replace(' ', ''))
-                except (TypeError, ValueError):
-                    return None
-
-            _cur_num, _old_num = _price_num(cur_price), _price_num(old_price)
-            if _cur_num is not None and _old_num is not None and _old_num <= _cur_num:
-                print(f"  [GREEN] old price <= current, dropping it: "
-                      f"{str(p.get('name', ''))[:35]} ({_old_num} vs {_cur_num})")
-                old_price = ''
-                p['oldPrice'] = ''
-
             if cart_old_price and old_price in ['0', '1', '', 'None']:
                 p['oldPrice'] = cart_old_price
             elif not old_price or old_price in ['0', '1', '', 'None']:
@@ -1859,6 +1842,20 @@ def _merge_green_cart_data(raw_products: list, stock_map: dict) -> list:
                 p['oldPrice'] = ''
                 print(f"  [GREEN] no old price on card, leaving empty: "
                       f"{str(p.get('name', ''))[:40]} (id={pid})")
+            # ...and finally: never publish an "old" price that is not higher than the
+            # current one (it arrives from the cart merge above, which has no such guard).
+            def _price_num(v):
+                try:
+                    return float(str(v).replace(',', '.').replace(' ', ''))
+                except (TypeError, ValueError):
+                    return None
+
+            _cur_num = _price_num(p.get('currentPrice', ''))
+            _old_num = _price_num(p.get('oldPrice', ''))
+            if _cur_num is not None and _old_num is not None and _old_num <= _cur_num:
+                print(f"  [GREEN] old price <= current, dropping it: "
+                      f"{str(p.get('name', ''))[:35]} ({_old_num} vs {_cur_num})")
+                p['oldPrice'] = ''
         elif p.get('currentPrice') in ['0', '1', '']:
             print(f"  [DEBUG] Product not in cart, price=1: {p.get('name', '')[:40]} (id={pid})")
 
