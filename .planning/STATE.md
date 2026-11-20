@@ -136,6 +136,27 @@ basket_recalc` guard doing its job.
   the git webhook until it recovers. `VACUUM` on the 575 MB `salebot.db` waits for
   SSH.
 
+## 2026-11-20 05:50 MSK — yellow dropped from the site for 32 min; threshold fixed
+
+Spotted while re-checking the blocker: `/api/products` returned **43 products instead of
+165**, and `sourceFreshness.yellow` said `ageMinutes 32.2, isStale true`. Cause: yellow
+is a paginated crawl (48 → 72 → 96 → 144 items, each page a fresh DOM read) and one
+pass legitimately ran past the 30-minute threshold, so the API stripped **all 122 yellow
+cards** while the file itself was healthy. Recovery confirmed on its own minutes later:
+165 products, yellow `age 3.0`, `dataStale false`.
+
+Fix (`544b3e1`): `DEFAULT_STALE_THRESHOLDS_MINUTES` yellow **30 → 45**, matching green —
+long enough for one paginated pass, short enough to still catch a dead scraper. Live
+after deploy: thresholds `{green: 45, red: 30, yellow: 45}`, 165 products.
+
+Two more honest notes from the same window:
+- green was 0 and that was correct: the log shows `VkusVill explicit empty banner
+  detected — wiping stale snapshot (0 → 0)`, i.e. the site itself says there are no
+  green items right now (night; history forecasts appearances around 10:05 MSK);
+- while editing the threshold dict I first produced a **duplicate `"yellow"` key**
+  (the later 30 silently shadowed my 45). Caught immediately, and a test now asserts
+  the keys are unique so this cannot pass review again.
+
 ## 2026-11-20 05:05 MSK — blocker CLEARED: the 502 was transient, not a firewall
 
 Re-checked as asked. Now, three consecutive calls:
