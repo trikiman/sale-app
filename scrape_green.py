@@ -1220,11 +1220,24 @@ async def _ensure_delivery_slot(page) -> str:
             (() => {
                 const vis = (el) => !!(el && el.offsetParent !== null && el.offsetWidth > 0);
                 const txt = (el) => (el.innerText || el.textContent || '').replace(/\\s+/g, ' ').trim();
+                // WHAT ACTUALLY OPENS THE PICKER (verified in a live browser, 20.11):
+                // the header control reading "Выберите способ и время доставки" opens the
+                // "Мои адреса / Доставка / Самовывоз" modal. The .js-delivery-slots-load
+                // link does NOT — clicking it first left 4 unrelated modals open
+                // ("Выберите способ оплаты", "Подарочные карты", "Показать все") and
+                // delivery_candidates=0, so the retry could never find a slot.
+                for (const el of document.querySelectorAll('a, button, [role="button"], [class*="Button"]')) {
+                    const t = txt(el);
+                    if (!vis(el) || !t || t.length > 70) continue;
+                    if (/способ и время доставки|выберите адрес|укажите адрес|выбрать адрес|изменить адрес/i.test(t)) {
+                        el.click(); return 'opened_header';
+                    }
+                }
                 const links = document.querySelectorAll('.js-delivery-slots-load, a[class*="delivery-slots"]');
                 for (const l of links) if (vis(l)) { l.click(); return 'opened_link'; }
                 for (const el of document.querySelectorAll('a, button, [class*="Button"]')) {
                     const t = txt(el);
-                    if (vis(el) && /выбрать|изменить|время/i.test(t) && /доставк|время|слот/i.test(t)) {
+                    if (vis(el) && /выбер|выбрать|изменить|время/i.test(t) && /доставк|время|слот/i.test(t)) {
                         el.click(); return 'opened_text';
                     }
                 }
