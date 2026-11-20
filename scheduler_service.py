@@ -371,6 +371,23 @@ def _record_green_uptime(*, ok: bool, exit_code: int | None, duration_s: float,
         live_count, empty_reason = read_snapshot_fresh(
             snapshot, time.time() - max(duration_s or 0.0, 0.0)
         )
+        if exit_code not in (0, None):
+            # The snapshot keeps the previous cycle's data on a failed run, so the reason
+            # for the failure lives in its own file (scrape_green.py writes it). Without
+            # this, a failed cycle says only "exit 1" and nothing about why.
+            failure_path = os.path.join(BASE_DIR, "data", "green_last_failure.json")
+            try:
+                if os.path.exists(failure_path):
+                    with open(failure_path, "r", encoding="utf-8") as f:
+                        fail = json.load(f)
+                    ts_text = str(fail.get("ts") or "")
+                    cycle_started_ts = time.time() - max(duration_s or 0.0, 0.0)
+                    started_text = time.strftime("%Y-%m-%d %H:%M:%S",
+                                                 time.localtime(cycle_started_ts))
+                    if ts_text >= started_text:
+                        empty_reason = f"failed:{fail.get('reason')}|found={fail.get('products_found')}"
+            except (OSError, json.JSONDecodeError):
+                pass
         record_cycle(
             os.path.join(BASE_DIR, "data", "green_uptime.jsonl"),
             ts=time.time(),

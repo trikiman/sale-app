@@ -3588,6 +3588,25 @@ async def scrape_green_prices_async():
                     "prove the list is really empty; failing instead of reporting 0"
                 )
                 scrape_success = False
+                # Leave the reason on disk. The snapshot is not overwritten in this case (by
+                # design), so without this file a failed run is indistinguishable from a
+                # hiccup: the soak sees only exit 1 and the PREVIOUS cycle's count.
+                # Gap #10 (20.11 22:50→23:35) was exactly that — two green runs produced
+                # nothing, and by the time I looked the log window had rotated away.
+                try:
+                    with open(os.path.join(DATA_DIR, "green_last_failure.json"), "w",
+                              encoding="utf-8") as _ff:
+                        json.dump({
+                            "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
+                            "reason": empty_reason,
+                            "products_found": len(products),
+                            "vkusvill_empty_banner": bool(empty_explicit),
+                            "logged_in": bool(is_logged_in),
+                        }, _ff, ensure_ascii=False, indent=1)
+                    print(f"  [GREEN] Failure report -> data/green_last_failure.json "
+                          f"(reason={empty_reason}, found={len(products)})")
+                except Exception as _fe:  # noqa: BLE001 — diagnostics must never fail the run
+                    print(f"  [GREEN] Could not write failure report: {_fe}")
             # Final guard at the single exit point: never publish an "old" price that is
             # not higher than the current one. The API was serving "Лук репчатый 55 было 55"
             # (-0%) because the per-item guards sit inside branches that do not all run for
