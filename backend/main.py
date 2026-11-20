@@ -1013,8 +1013,14 @@ DEFAULT_STALE_THRESHOLDS_MINUTES: dict[str, int] = {
     # still held 6-12 real products. Green-price markdowns are stable for far
     # longer than 15 minutes — showing slightly old greens beats showing zero.
     "green": 45,
+    # v1.30 (2026-11-20): yellow is a paginated crawl (48 -> 72 -> 96 -> 144 items,
+    # each page a fresh DOM read), so one pass can legitimately exceed 30 minutes.
+    # Observed 2026-11-20 05:36 MSK: yellow snapshot 32 min old -> marked stale ->
+    # the API dropped all 122 yellow cards while the file was fine, and the site
+    # showed 43 products instead of 165. A long crawl is not staleness; 45 min
+    # matches green's budget and still catches a genuinely dead scraper.
+    "yellow": 45,
     "red": 30,
-    "yellow": 30,
 }
 
 
