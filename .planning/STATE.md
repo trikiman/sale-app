@@ -136,6 +136,34 @@ basket_recalc` guard doing its job.
   the git webhook until it recovers. `VACUUM` on the 575 MB `salebot.db` waits for
   SSH.
 
+## 2026-11-20 15:00 MSK — GREEN IS BACK, and the deadlock is explained
+
+First green items since 02:03 MSK: `Found 3 green products`, soak recorded `live 1` then
+`live 3` with `ok`. The deadlock was a loop of three separate defects, each hiding the next:
+
+1. **The cart could never become non-empty.** `/cart/` exposes no add-to-cart control at
+   all for this account (`Seed item: no_button_found` survived 5 polls of 4 s), so the seed
+   step had nothing to click. VkusVill shows green prices *only inside a non-empty cart* →
+   empty section → its own "Зелёных ценников сейчас нет" banner → `source_empty` → snapshot
+   wiped to 0. The banner was true, but it was caused by our own empty cart.
+2. **The cart's emptiness was decided from wording, not from the DOM.** The log said
+   `Seed item added — cart is now non-empty` and the next cycle said
+   `{'empty': True, 'reason': 'empty_text'}`: "Корзина пуста" also lives in hidden
+   templates, and it was checked before the item nodes. So the scraper re-seeded every
+   cycle instead of proceeding.
+3. **The seed had to come from the catalogue.** `/goods/ovoshchi-frukty-yagody-zelen/`
+   always has real cards with real buttons; `_seed_from_catalog()` clicks one with the full
+   pointer/mouse sequence and returns to `/cart/`.
+
+Fixes in order: `ba16e10` (poll + real click for the in-cart seed), `2440ab0`
+(`_seed_from_catalog`), `bd3605e` (DOM-first emptiness check).
+
+**New defect spotted in the same breath, not yet fixed:** the green item served by the API
+is `Лук репчатый 55 было 55` — `oldPrice == currentPrice`. A markdown price equal to the
+old price means the old price is being read from the wrong field on green cards (the same
+class of bug as the deleted `current / 0.6` heuristic). Worth checking before the UI shows
+a meaningless "−0%".
+
 ## 2026-11-20 14:05 MSK — correction: the address EXISTS; the cards were empty skeletons
 
 Two of my own conclusions were wrong, and the new diagnostics overturned both.
