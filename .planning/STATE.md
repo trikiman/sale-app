@@ -136,6 +136,31 @@ basket_recalc` guard doing its job.
   the git webhook until it recovers. `VACUUM` on the 575 MB `salebot.db` waits for
   SSH.
 
+## 2026-11-20 18:50 MSK — RED was never "not logged in"; it counted cards too early
+
+After green started working, RED began reporting a dead session every cycle:
+
+```
+[RED] Not logged in! Results may be for wrong location.
+[RED] Products visible: False
+[RED] Total: 0, In-stock: 0
+RED: ERROR (exit 1)  →  api/products served green only (red/yellow trimmed as stale)
+```
+
+The session was fine. The same `/offers/?F%5B212%5D%5B%5D=284…` URL, opened in a real
+browser, serves **24 cards** — and the fixed `await asyncio.sleep(10)` before counting them
+is not enough on this 1-vCPU box. The login check only reads page text (`Кабинет`/`Выход`
+vs `Войти`), and an unrendered page has none of them, so "page still loading" was reported
+as "not logged in". That is why GREEN scraped fine with the same cookies while RED failed.
+
+Fix (`d62b564`): `_wait_for_cards()` in both `scrape_red.py` and `scrape_yellow.py` — polls
+up to 45 s (3 s step) and logs either `Cards rendered: N (after Xs)` or an explicit
+`page did not render`. Result on the next cycle: `Cards rendered: 24 (after 6s)` →
+`Found 41 products`, API back to `red 41 + green 15`.
+
+**Rule:** a fixed sleep is never evidence that a page is broken. Poll for the element you
+are about to count, and make the login check wait for the same element.
+
 ## 2026-11-20 15:00 MSK — GREEN IS BACK, and the deadlock is explained
 
 First green items since 02:03 MSK: `Found 3 green products`, soak recorded `live 1` then
