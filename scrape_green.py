@@ -1115,6 +1115,45 @@ _SLOT_CONFIRM_JS = """
 """
 
 
+async def _ensure_delivery_address(page) -> str:
+    """Pick an already saved delivery address inside the open delivery modal.
+
+    Proven on the live site (20.11): with no delivery address the "В корзину" button
+    exists, is enabled, is visible — and does nothing. A real coordinate click does not
+    change it either (`CartButton--notAdded` stays). The header keeps showing "Выберите
+    способ и время доставки" and the modal says "Адрес не найден". So an add-to-cart
+    failure is usually a *missing address*, not a missing slot, which is why choosing a
+    slot alone never fixed the empty green list.
+
+    Returns a short status for the log.
+    """
+    try:
+        raw = await _js(page, r"""
+            (() => {
+                const vis = (el) => !!(el && el.offsetParent !== null && el.offsetWidth > 0);
+                const norm = (s) => (s || '').split(String.fromCharCode(10)).join(' ').trim();
+                // 1) An explicit "Выбрать" next to a saved address is the cheapest path.
+                const pick = Array.from(document.querySelectorAll('button, a, [role="button"]'))
+                    .filter(vis)
+                    .find(b => /^выбрать$/i.test(norm(b.innerText)));
+                if (pick) { pick.click(); return 'picked_saved_address'; }
+                // 2) Some layouts let the address row itself be clicked.
+                const row = Array.from(document.querySelectorAll('[class*="Address"]'))
+                    .filter(vis)
+                    .find(e => /москва|обл|улица|проспект|переулок|шоссе|дом/i.test(norm(e.innerText)) && norm(e.innerText).length < 120 && !/город, улица, дом/i.test(norm(e.innerText)));
+                if (row) { row.click(); return 'clicked_address_row'; }
+                // 3) Nothing saved — the account must add an address once.
+                return 'no_saved_address';
+            })()
+        """)
+        status = raw if isinstance(raw, str) else str(raw)
+        print(f"  [GREEN] Delivery address: {status}")
+        return status
+    except Exception as exc:  # noqa: BLE001 — never break the run
+        print(f"  [GREEN] Delivery address failed: {type(exc).__name__}: {exc}")
+        return "error"
+
+
 async def _select_slot_after_open(page) -> str:
     """Choose a slot after the picker was just opened by a click.
 
@@ -1336,6 +1375,7 @@ async def _ensure_delivery_slot(page) -> str:
         """) or ''
         print(f"  [GREEN] Delivery picker open attempt: {opened}")
         if isinstance(opened, str) and opened.startswith('opened'):
+            await _ensure_delivery_address(page)
             after = await _select_slot_after_open(page)
             if after in ('selected_after_open', 'already'):
                 return after
