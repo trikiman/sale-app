@@ -136,6 +136,52 @@ basket_recalc` guard doing its job.
   the git webhook until it recovers. `VACUUM` on the 575 MB `salebot.db` waits for
   SSH.
 
+## 2026-11-20 14:05 MSK — correction: the address EXISTS; the cards were empty skeletons
+
+Two of my own conclusions were wrong, and the new diagnostics overturned both.
+
+**1. "The account has no address" — false.** The deployed dump prints the header text:
+
+```
+Delivery address: opened_delivery_and_payment|header=...сногорск, Подмосковный бульвар, 11
+```
+
+The tech account has a saved, selected delivery address (Krasnogorsk, Podmoskovny bulvar 11).
+Everything I built on "no address" was chasing the wrong fault; the `no_saved_address`
+status came from scanning the SLOT picker, which legitimately contains no address.
+
+**2. "The cards have no add button" — false.** Scoping the diagnostics to the green
+section showed what the four `.ProductCard` nodes really are:
+
+```
+Green section cards in scope: 4
+card ' ' has_add_text=False / controls=[]
+```
+
+They are **empty skeleton placeholders**. `no_button: 4` was the scraper clicking on four
+empty boxes. Counting `.ProductCard` never proved anything.
+
+Fixes shipped for this: `_wait_for_green_cards()` (scrolls the lazy section into view,
+polls 25 s for cards with text > 8 chars) and, before it, `ac4e386` — UI labels contain a
+non-breaking space (`Доставка и\xa0оплата`), which silently broke my own `norm()`.
+
+**Current, honest state of the green cycle (14:00 MSK):**
+
+```
+⚠️ Green section still shows no rendered cards after 25s — the section is empty, not just slow
+⚠️ VkusVill explicit empty banner detected — wiping stale snapshot (0 → 0)
+Found 0 green products
+```
+
+So the section really is empty for this account right now, and VkusVill's own banner says
+so — `source_empty` is *legitimate* in this cycle, not a scraping artifact. The scraper now
+distinguishes "slow" from "empty" instead of blaming a missing button.
+
+**What is still unexplained and is the next real question:** the account is in Krasnogorsk
+while the sale assortment is regional. Whether greens exist for this address at this hour is
+unknown — the only way to tell is to compare the same address in a browser. That is the
+next check, and it needs no SSH.
+
 ## 2026-11-20 13:00 MSK — ROOT CAUSE: the tech account has no delivery address
 
 Proof, not inference. New log line from the deployed fix:
