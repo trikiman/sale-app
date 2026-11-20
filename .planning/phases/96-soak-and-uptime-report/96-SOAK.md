@@ -250,6 +250,10 @@ criterion is not relaxed, the date follows from arithmetic.
 Run these in order and paste the real numbers into the closure note — nothing is
 "ok" until the first two commands say so:
 
+0. `python scripts/phase96_acceptance.py` — runs checks 1-2 mechanically and prints
+   PASS/FAIL per criterion (exit 0 = all pass, 2 = a criterion failed, 3 = endpoint
+   unreachable). It never closes anything; steps below stay human-owned.
+
 1. `curl -s -H "X-Admin-Token: $ADMIN_TOKEN" http://152.70.58.201/api/admin/green-uptime?hours=168`
    → record `verdict`, `cycles`, `cycles_ok`, `uptime_pct`, `false_zero_cycles`,
    `hours_recorded`, `gap_incident_count`.
