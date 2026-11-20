@@ -799,12 +799,61 @@ async def _extract_green_cards(page, card_source: str) -> list:
     return await _js(page, _green_product_cards_script(card_source)) or []
 
 
+async def _wait_for_green_cards(page, timeout_s: float = 25.0) -> int:
+    """Wait until the green section renders real cards, not empty skeletons.
+
+    The diagnostics finally showed the truth behind `no_button: N`:
+        Green section cards in scope: 4
+        card ' ' has_add_text=False / controls=[]
+    Those four .ProductCard nodes are placeholders — the section had not rendered yet, so
+    every "add to cart" click landed on empty boxes and the cart stayed empty. Counting
+    .ProductCard elements is therefore useless; we must wait for content.
+
+    The section is also lazy: it only builds when scrolled into view.
+
+    Returns the number of cards that look real (non-trivial text) at the end.
+    """
+    scope_expr = _green_card_scope_expr('inline')
+    ready = 0
+    waited = 0.0
+    while waited < timeout_s:
+        try:
+            ready = await _js(page, """
+                (() => {
+                    const scope = """ + scope_expr + """;
+                    if (!scope) return 0;
+                    try { scope.scrollIntoView({block: 'center'}); } catch (e) {}
+                    const norm = (s) => (s || '').split(String.fromCharCode(10)).join(' ')
+                        .split(String.fromCharCode(160)).join(' ').trim();
+                    const cards = Array.from(scope.querySelectorAll('.ProductCard'));
+                    return cards.filter(c => norm(c.innerText).length > 8).length;
+                })()
+            """)
+            if not isinstance(ready, int):
+                try:
+                    ready = int(ready)
+                except (TypeError, ValueError):
+                    ready = 0
+        except Exception:  # noqa: BLE001 — a failed probe just means "not ready yet"
+            ready = 0
+        if ready > 0:
+            print(f"  [GREEN] Green cards rendered: {ready} (after {waited:.1f}s)")
+            return ready
+        await asyncio.sleep(2.0)
+        waited += 2.0
+    print(f"  [GREEN] ⚠️ Green section still shows no rendered cards after {timeout_s:.0f}s "
+          f"— the section is empty, not just slow")
+    return ready
+
+
 async def _add_green_cards_to_cart(page, card_source: str, total_cards: int):
     scope_expr = _green_card_scope_expr(card_source)
 
     # Batch ALL clicks in a SINGLE JS call to avoid Chrome WebSocket timeout
     # (137 individual _js() calls = 411 WebSocket evaluations → HTTP 500)
     # NOTE: Must be SYNCHRONOUS — nodriver can't await async IIFEs
+    await _wait_for_green_cards(page)
+
     result_json = await _js(page, f"""
         (() => {{
             const results = {{no_scope: 0, no_card: 0, already_in_cart: 0, added: 0, no_button: 0}};
