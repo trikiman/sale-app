@@ -136,6 +136,17 @@ basket_recalc` guard doing its job.
   the git webhook until it recovers. `VACUUM` on the 575 MB `salebot.db` waits for
   SSH.
 
+## 2026-11-20 07:30 MSK — data-quality check, and a trap in my own measuring
+
+Night product set (168 items, red 43 / yellow 125, green empty as expected):
+**0 without currentPrice, 0 without oldPrice, 0 non-numeric prices, 0 with stock=0.**
+
+My first pass reported "22 items with oldPrice <= currentPrice" — **that was my bug, not
+the data**: `/api/products` returns prices as **strings** (`"66"`, `"110"`), so lexicographic
+comparison says `"110" <= "66"` is true. Re-checked with `float()`: **0 inverted pairs**.
+Recorded the rule so it stops recurring: in this API `currentPrice`/`oldPrice` are strings
+and must be compared numerically.
+
 ## 2026-11-20 06:00 MSK — verified the empty-green night is explained in the UI
 
 The night-time `green: 0` must not look like a broken site, so I followed it all the way
