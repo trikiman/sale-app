@@ -2312,44 +2312,76 @@ async def scrape_green_prices_async():
         if cart_empty:
             print("  [GREEN] Step 2.5: Cart is empty — adding seed item...")
             await _step_screenshot(page, "cart_empty_before_seed")
-            seed_added = await _js(page, r"""
-                (() => {
-                    // Find "Добавьте в заказ" section and click first "В корзину" button
-                    const sections = document.querySelectorAll('.VV23_CartPage_Section, [class*="Recommend"], [class*="recommend"]');
-                    for (const section of sections) {
-                        const title = section.querySelector('h2, h3, [class*="title"], [class*="Title"]');
-                        if (title && (title.textContent || '').includes('Добавьте в заказ')) {
-                            section.scrollIntoView({behavior: 'instant', block: 'center'});
-                            const btn = section.querySelector('.js-delivery__basket--add, .CartButton__content, button[class*="cart"], button[class*="Cart"]');
-                            if (btn) {
-                                btn.scrollIntoView({behavior: 'instant', block: 'center'});
-                                btn.click();
-                                return 'added_from_recommend';
+            seed_added = "no_button_found"
+            # Same failure class as the green cards: the recommendation strip is
+            # rendered lazily, so a single immediate scan finds no buttons at all
+            # (`Seed item: no_button_found`) while the cart stays empty and VkusVill
+            # then shows its "Зелёных ценников сейчас нет" banner. Poll, and click with
+            # a full pointer/mouse sequence instead of a bare .click().
+            for seed_attempt in range(1, 6):
+                seed_added = await _js(page, r"""
+                    (() => {
+                        const vis = (el) => !!(el && el.offsetParent !== null && el.offsetWidth > 0);
+                        const fireClick = (el) => {
+                            let r = {left: 0, top: 0, width: 0, height: 0};
+                            try { r = el.getBoundingClientRect(); } catch (e) {}
+                            const opt = {
+                                bubbles: true, cancelable: true, composed: true, view: window,
+                                clientX: r.left + (r.width || 0) / 2,
+                                clientY: r.top + (r.height || 0) / 2,
+                                button: 0
+                            };
+                            for (const t of ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click']) {
+                                try {
+                                    const Ctor = (t.indexOf('pointer') === 0 && typeof PointerEvent === 'function')
+                                        ? PointerEvent : MouseEvent;
+                                    el.dispatchEvent(new Ctor(t, opt));
+                                } catch (e) {
+                                    try { el.dispatchEvent(new MouseEvent(t, opt)); } catch (e2) {}
+                                }
+                            }
+                            try { el.click(); } catch (e) {}
+                        };
+                        const greenSection = document.getElementById('js-Delivery__Order-green-state-not-empty');
+                        const usable = (btn) => vis(btn) && !(greenSection && greenSection.contains(btn));
+                        // 1) recommendation strip "Добавьте в заказ"
+                        const sections = document.querySelectorAll('.VV23_CartPage_Section, [class*="Recommend"], [class*="recommend"]');
+                        for (const section of sections) {
+                            const title = section.querySelector('h2, h3, [class*="title"], [class*="Title"]');
+                            if (title && (title.textContent || '').includes('Добавьте в заказ')) {
+                                const btn = section.querySelector('.js-delivery__basket--add, .CartButton__content--add, .CartButton__content--add, button[class*="Cart"]');
+                                if (btn && vis(btn)) {
+                                    try { btn.scrollIntoView({block: 'center'}); } catch (e) {}
+                                    fireClick(btn);
+                                    return 'added_from_recommend';
+                                }
                             }
                         }
-                    }
-                    // Fallback: click the first "В корзину" button NOT in the green section
-                    const greenSection = document.getElementById('js-Delivery__Order-green-state-not-empty');
-                    const allBtns = document.querySelectorAll('.js-delivery__basket--add, .CartButton__content--add');
-                    for (const btn of allBtns) {
-                        if (greenSection && greenSection.contains(btn)) continue;
-                        btn.scrollIntoView({behavior: 'instant', block: 'center'});
-                        btn.click();
-                        return 'added_fallback';
-                    }
-                    // Last resort: find any button with cart text
-                    const allButtons = document.querySelectorAll('button');
-                    for (const btn of allButtons) {
-                        const t = (btn.innerText || '').toLowerCase();
-                        if (t.includes('корзин') && !greenSection?.contains(btn)) {
-                            btn.scrollIntoView({behavior: 'instant', block: 'center'});
-                            btn.click();
-                            return 'added_text_match';
+                        // 2) any add button outside the green section
+                        for (const btn of document.querySelectorAll('.js-delivery__basket--add, .CartButton__content--add')) {
+                            if (!usable(btn)) continue;
+                            try { btn.scrollIntoView({block: 'center'}); } catch (e) {}
+                            fireClick(btn);
+                            return 'added_fallback';
                         }
-                    }
-                    return 'no_button_found';
-                })()
-            """)
+                        // 3) any visible button whose label says cart, outside green
+                        for (const btn of document.querySelectorAll('button, a, div[class*="Button"]')) {
+                            if (!usable(btn)) continue;
+                            const t = (btn.innerText || '').split(String.fromCharCode(10)).join(' ').trim().toLowerCase();
+                            if (t.length <= 22 && t.indexOf('в корзину') >= 0) {
+                                try { btn.scrollIntoView({block: 'center'}); } catch (e) {}
+                                fireClick(btn);
+                                return 'added_text_match';
+                            }
+                        }
+                        return 'no_button_found';
+                    })()
+                """)
+                if isinstance(seed_added, str) and seed_added.startswith("added"):
+                    if seed_attempt > 1:
+                        print(f"  [GREEN] Seed item appeared on attempt {seed_attempt}")
+                    break
+                await asyncio.sleep(4.0)
             print(f"  [GREEN] Seed item: {seed_added}")
             if seed_added and seed_added != 'no_button_found':
                 # Phase 58-02: after the first cart addition Chromium swaps the
