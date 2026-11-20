@@ -61,4 +61,11 @@ def test_already_requires_real_evidence() -> None:
     """
     assert "add_buttons" in SRC
     assert "addBtns.length > 0" in SRC
-    assert "timeRe2.test(chosenTxt)" in SRC
+    # A time in the matched element is NOT evidence either: filter tabs carry times.
+    assert "timeRe2.test(chosenTxt)" not in SRC
+    # And "В корзине" / "Перейти в корзину" must not be counted as an add-to-cart button.
+    assert "$/i.test(txt(el))" in SRC            # the match is anchored to the whole text
+    assert "в корзину" in SRC
+    assert "./ProductCard" not in SRC or "ProductCard" in SRC
+    assert "ProductCard, .HProductCard, .BasketItem" in SRC
+    assert "BasketItem" in SRC
