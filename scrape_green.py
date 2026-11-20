@@ -821,15 +821,22 @@ async def _add_green_cards_to_cart(page, card_source: str, total_cards: int):
                 }}
                 card.scrollIntoView({{behavior: 'instant', block: 'center'}});
                 let clicked = false;
-                const btns = card.querySelectorAll('button');
+                // The button is not always a <button>: the diagnostics showed five
+                // "В корзину" controls inside one card while this loop still reported
+                // no_button. Match the text on any clickable element and record
+                // disabled ones separately — "disabled" and "absent" are different bugs.
+                const btns = card.querySelectorAll('button, a, [role="button"], [class*="Button"]');
                 for (const btn of btns) {{
-                    if (btn.disabled) continue;
                     const text = (btn.innerText || '').toLowerCase().trim();
-                    if (text.includes('в корзину') || text.includes('корзин') || text.includes('добавить')) {{
-                        btn.click();
-                        clicked = true;
-                        break;
+                    if (!text) continue;
+                    if (text.indexOf('в корзину') < 0 && text.indexOf('корзин') < 0 && text.indexOf('добавить') < 0) continue;
+                    if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') {{
+                        results.disabled = (results.disabled || 0) + 1;
+                        continue;
                     }}
+                    btn.click();
+                    clicked = true;
+                    break;
                 }}
                 if (!clicked) {{
                     const cssBtn = card.querySelector(
@@ -902,6 +909,9 @@ async def _diagnose_no_button_cards(page, limit: int = 4) -> None:
                     return {
                         name: text.slice(0, 40),
                         buttons: clicks.slice(0, 6),
+                        kinds: Array.from(c.querySelectorAll('button, a, [role="button"], [class*="Button"]'))
+                            .filter(vis).slice(0, 6)
+                            .map(b => b.tagName.toLowerCase() + (b.disabled ? ':disabled' : '')),
                         flags: [
                             /нет в наличии|раскупили|закончил/i.test(text) ? 'out_of_stock' : '',
                             /недоступ|не доставля/i.test(text) ? 'not_deliverable' : '',
@@ -917,7 +927,8 @@ async def _diagnose_no_button_cards(page, limit: int = 4) -> None:
         items: list = [c for c in parsed if isinstance(c, dict)] if isinstance(parsed, list) else []
         print(f"  [GREEN] No-button cards: {len(items)}")
         for c in items[:limit]:
-            print(f"  [GREEN]   card {c.get('name')!r} flags={c.get('flags')} buttons={c.get('buttons')}")
+            print(f"  [GREEN]   card {c.get('name')!r} flags={c.get('flags')} "
+                  f"kinds={c.get('kinds')} buttons={c.get('buttons')}")
     except Exception as exc:  # noqa: BLE001 — diagnostics must never break the run
         print(f"  [GREEN] No-button diagnostics failed: {type(exc).__name__}: {exc}")
 
