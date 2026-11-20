@@ -1184,11 +1184,26 @@ async def _ensure_delivery_address(page) -> str:
                 (() => {
                     const vis = (el) => !!(el && el.offsetParent !== null && el.offsetWidth > 0);
                     const norm = (s) => (s || '').split(String.fromCharCode(10)).join(' ').trim();
+                    // What does the header say right now? 'Выберите способ и время доставки'
+                    // means no address; showing a street means an address is set.
+                    const hdr = document.querySelector('.HeaderATDToggler__Text');
+                    const headerText = hdr ? norm(hdr.innerText).slice(0, 60) : '';
+                    // On the cart page the header opens the SLOT picker
+                    // ('Ассортимент зависит от времени доставки … Применить'), which has no
+                    // address at all. The address lives behind 'Доставка и оплата'.
+                    const slotPicker = /ассортимент зависит от времени доставки/i.test(norm(document.body.innerText));
+                    const toAddress = Array.from(document.querySelectorAll('button, a'))
+                        .filter(vis)
+                        .find(e => /доставка и оплата/i.test(norm(e.innerText)));
+                    if (slotPicker && toAddress) {{
+                        toAddress.click();
+                        return 'opened_delivery_and_payment|header=' + headerText;
+                    }}
                     const pick = Array.from(document.querySelectorAll('button, a, [role="button"]'))
                         .filter(vis)
                         .find(b => (/выбрать/i.test(norm(b.innerText)) || /^выбрать$/i.test(norm(b.innerText)))
                                    && norm(b.innerText).length < 20);
-                    if (pick) { pick.click(); return 'picked_saved_address'; }
+                    if (pick) { pick.click(); return 'picked_saved_address|header=' + headerText; }
                     const row = Array.from(document.querySelectorAll('[class*="Address"]'))
                         .filter(vis)
                         .find(e => /москва|обл|улица|проспект|переулок|шоссе|дом/i.test(norm(e.innerText))
@@ -1203,7 +1218,11 @@ async def _ensure_delivery_address(page) -> str:
                 })()
             """)
             last = raw if isinstance(raw, str) else str(raw)
-            if last in ("picked_saved_address", "clicked_address_row"):
+            if last.startswith("opened_delivery_and_payment"):
+                print(f"  [GREEN] Delivery address: {last} — switching to the address screen")
+                await asyncio.sleep(2.0)
+                continue
+            if last.startswith("picked_saved_address") or last.startswith("clicked_address_row"):
                 print(f"  [GREEN] Delivery address: {last} (attempt {attempt})")
                 return last
             if last == "form_only_no_saved_address":
