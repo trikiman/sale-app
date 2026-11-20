@@ -325,3 +325,5 @@ than claiming a week that has not happened.
 - **2026-11-19** — 🔴 verdict `incident`, cycles 412 (uptime 90.53%), gaps 8, false zeros 0, last ok 6.5 min ago. ⏳ window still holds 8 known gap(s) (pre-fix + diagnosed post-fix); acceptance 2026-11-26 06:18 UTC (09:18 MSK)
 - **2026-11-20** — 🔴 verdict `incident`, cycles 522 (uptime 90.8%), gaps 8, false zeros 1, last ok 4.0 min ago. ⏳ 1 diagnosed false zero(s) in window; acceptance 2026-11-27 05:12 UTC (08:12 MSK)
 - **2026-11-20** — 🔴 verdict `incident`, cycles 524 (uptime 90.84%), gaps 8, false zeros 1, last ok 5.3 min ago. ⏳ 1 diagnosed false zero(s) in window; acceptance 2026-11-27 05:12 UTC (08:12 MSK)
+- **2026-11-20** — 🔴 verdict `incident`, cycles 606 (uptime 90.1%), gaps 9, false zeros 1, last ok 14.2 min ago. ⚠️ UNDIAGNOSED new gaps: 1
+- **2026-11-20** — 🔴 verdict `incident`, cycles 606 (uptime 90.1%), gaps 9, false zeros 1, last ok 15.4 min ago. ⏳ 1 diagnosed false zero(s) in window; acceptance 2026-11-27 05:12 UTC (08:12 MSK)

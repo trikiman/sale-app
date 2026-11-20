@@ -136,6 +136,37 @@ basket_recalc` guard doing its job.
   the git webhook until it recovers. `VACUUM` on the 575 MB `salebot.db` waits for
   SSH.
 
+## 2026-11-21 01:50 MSK — the failed cycles were RED losing its browser, not green
+
+24 h of soak showed `150 cycles / 134 ok / 89.33%`, and a suspicious shape inside the
+failures: `ok=False, exit=1, live_count=24, empty_reason=ok`. A cycle cannot fail while it
+just wrote 24 green products.
+
+The log explains it — the traceback belongs to RED, not green:
+
+```
+[red] websockets.exceptions.ConnectionClosedError: no close frame received or sent
+[red]     remote_object, errors = await self.send(
+❌ [RED] Error: no close frame received or sent
+```
+
+An uncaught CDP drop exits `scrape_red.py` with code 1, which fails the whole cycle and is
+recorded against green. GREEN already recovers from exactly this via `_reacquire_page`;
+RED and YELLOW had no handling at all.
+
+Fix `ce08b7b`: both wrappers catch the exception and, **only when it really is a CDP drop**
+(`_is_ws_drop`), re-run the scrape once with a fresh browser. Any other error still
+propagates, so a genuine data bug cannot be retried into a double load.
+`test_cdp_drop_retry_red_yellow.py` — 4 passed. Deployed `d62b564..ce08b7b`
+(`scheduler_restart: False`; scrapers are separate processes and pick the code up on the
+next tick).
+
+NOT yet proven in production: the next cycles finished `GREEN: OK / RED: OK / YELLOW: OK`
+without a drop, so the retry path itself has only been exercised by tests, not by a real
+connection loss. The honest status is "instrumented and unit-tested", not "verified".
+
+Live after the deploy: `green 25 / red 57 / yellow 123`, `dataStale: false`.
+
 ## 2026-11-20 18:50 MSK — RED was never "not logged in"; it counted cards too early
 
 After green started working, RED began reporting a dead session every cycle:
