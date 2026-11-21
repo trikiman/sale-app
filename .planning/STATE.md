@@ -15,6 +15,38 @@ progress:
 
 *Session checkpoint 2026-10-19 (ops review). Milestone v1.26 remains shipped/archived. Operator milestone "Telegram Favorites Notifications" verified end-to-end on prod and closed as working. Green-уценка confirmed morning-only (VkusVill stock reality, not a bug). RU VLESS pool degraded to 1/5 — scraping survives on the manual trojan seed floor; pool replenishment is the top candidate for the next milestone.*
 
+## 2026-11-21 08:55 MSK — a big markdown day broke the green run five times, in two places
+
+VkusVill put ~100 green tags up this morning (modal went 48 → 96 → 100 cards). The scraper
+had been tuned for a handful, and one heavy `page.evaluate` blew the 45 s deadline — the
+TimeoutError threw away runs that had already scraped the modal:
+
+| time | duration | where it died |
+|---|---|---|
+| 07:17 | 301 s | `_add_green_cards_to_cart` (100 clicks in one evaluate) |
+| 07:26 | 522 s | same |
+| 07:44 | 475 s | same |
+| 07:55 | 518 s | same |
+| 08:02 | 399 s | same, `live=69` already scraped |
+| 08:26 | 538 s | modal scroll evaluate, 98 products collected |
+
+Because GREEN runs first, RED and YELLOW never executed: at 07:35 the API served green only
+(`red` 34.9 min old, marked stale) while `red_products.json` was intact. The site showed 69
+greens and nothing else.
+
+Three fixes, all deployed:
+
+1. `4e9ac8f` — clicks in batches of ten per evaluate, each batch guarded (a timeout costs ten
+   cards, logs, re-acquires the page handle, continues).
+2. `507e43a` — the modal scroll is guarded (logs `stopping the loader at N cards`, breaks) and
+   `JS_EVAL_TIMEOUT_S` goes 45 → 90 s.
+3. `dfb423a` — red staleness 30 → 45 min, matching green and yellow. A slow cycle is not a dead
+   scraper; the price is that a genuinely dead red is noticed 15 minutes later.
+
+First clean run after the fixes: `Found 26 green products`, `Dropped meaningless old price on
+25 item(s)`, `Saved 26 products (live_count=26)` — the old-price guard is now confirmed in a
+live log, which it never was before.
+
 ## Blockers
 
 - ~~Deploy pipeline broken~~ **FIXED 2026-11-17 02:20.** Root cause: the server
