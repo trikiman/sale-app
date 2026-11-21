@@ -33,4 +33,7 @@ def test_no_duplicate_keys_in_thresholds() -> None:
 def test_green_and_red_unchanged() -> None:
     block = _dict_block()
     assert re.search(r'"green":\s*45', block)
-    assert re.search(r'"red":\s*30', block)
+    # red moved 30 -> 45 on 2026-11-21: the cycle runs GREEN first and a big markdown day
+    # (48 -> 96 modal cards, 69 products) pushed it past 30 minutes, so the API dropped all
+    # 57 red cards while red_products.json was intact. A slow cycle is not staleness.
+    assert re.search(r'"red":\s*45', block)

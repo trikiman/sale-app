@@ -1020,7 +1020,13 @@ DEFAULT_STALE_THRESHOLDS_MINUTES: dict[str, int] = {
     # showed 43 products instead of 165. A long crawl is not staleness; 45 min
     # matches green's budget and still catches a genuinely dead scraper.
     "yellow": 45,
-    "red": 30,
+    # v1.30 (2026-11-21 07:40 MSK): red goes to 45 for the same measured reason. The cycle
+    # runs GREEN first, and on a big markdown day green legitimately takes 10+ minutes
+    # (observed: modal loaded 48 -> 96 cards, 69 products added), pushing the whole cycle
+    # past 30 minutes. Red was then marked stale and the API silently dropped all 57 red
+    # cards while red_products.json was intact — the site showed green+yellow only.
+    # A slow cycle is not a dead scraper; 45 min matches the other two tiers.
+    "red": 45,
 }
 
 
