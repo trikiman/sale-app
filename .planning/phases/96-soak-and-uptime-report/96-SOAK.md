@@ -340,7 +340,28 @@ last 168 h. Each move below is forced by a gap leaving the window later than the
 | 2026-11-25 | 28.11 → n/a | first estimate, before the last pre-fix gap was known |
 | 2026-11-26 06:18 | 09:18 | gap #8 (19.11 04:54→06:18) pushed the window out |
 | 2026-11-27 05:12 | 08:12 | false zero #1 at 20.11 05:12:12 UTC |
-| **2026-11-27 21:00** | **28.11 00:00** | gap #10 (20.11 22:50→23:35 MSK) only leaves the window at 27.11 23:35 MSK |
+| 2026-11-27 21:00 | 28.11 00:00 | gap #10 (20.11 22:50→23:35 MSK) only leaves the window at 27.11 23:35 MSK |
+| **2026-11-28 06:00** | **28.11 09:00** | gap #11 (21.11 07:10→08:47 MSK) only leaves the window at 28.11 08:47 MSK |
+
+### Gap #11 (21.11 04:10–05:47 UTC, 97 min) — diagnosed, unlike #10
+
+Eight green cycles in a row failed with `failed:unclassified_failure`, durations 300–571 s.
+The cause is established and was **not** egress, even though both egress probes timed out
+at the time and the cron report guessed an egress stall:
+
+- VkusVill put ~100 green tags up that morning (modal 48 → 96 → 100 cards).
+- `_add_green_cards_to_cart` sent all 100 click sequences in one `page.evaluate`; the call
+  exceeded `JS_EVAL_TIMEOUT_S = 45 s` and the `TimeoutError` threw away runs that had
+  already scraped the modal.
+- At 08:26 MSK the same happened one step earlier, in the modal scroll evaluate, with 98
+  products already collected.
+
+Fixed: `4e9ac8f` (clicks in batches of ten, each batch guarded), `507e43a` (scroll guarded,
+deadline 90 s), `dfb423a` (red staleness 45 min so a slow GREEN no longer hides red cards).
+First clean runs afterwards: `live 26`, then `48`.
+
+This gap is the first whose cause is provable rather than guessed — because the failure
+report from `799a12f`/`0b9adf1` recorded a marker on every failed cycle.
 
 Honest note on gap #10: its cause is **not** established — two green runs produced nothing and
 the log had rotated before it was read. It is recorded in `KNOWN_GAPS` so the alarm is
@@ -369,3 +390,5 @@ Instrumentation added afterwards: `data/green_last_failure.json` plus
     NOT added to KNOWN_GAPS (root cause not established; alarm must stay live).
     Acceptance arithmetic: gap #11 leaves the 168 h window on 28.11 05:47:51 UTC
     (08:47:51 MSK) — later than the current 28.11 00:00 MSK date.
+- **2026-11-21** — 🔴 verdict `incident`, cycles 654 (uptime 89.14%), gaps 11, false zeros 1, last ok 9.4 min ago. ⚠️ UNDIAGNOSED new gaps: 1
+- **2026-11-21** — 🔴 verdict `incident`, cycles 654 (uptime 89.14%), gaps 11, false zeros 1, last ok 9.8 min ago. ⏳ 1 diagnosed false zero(s) in window; acceptance 2026-11-28 06:00 UTC (28.11 09:00 MSK)
