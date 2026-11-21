@@ -72,6 +72,25 @@ Live check after deploy: `status: degraded`, `status_note: egress_debt_only`, `a
 
 The daily cron prompt now treats `acute: false` as non-alarm and alarms on `acute: true`.
 
+## 2026-11-21 12:45 MSK — stability after the cascade, and what is still unverified
+
+Eight consecutive `ok=True` cycles (11:25 → 12:36 MSK), `live` 30–37, durations **232–392 s**
+against 300–571 s during the failures. No gaps since 08:47 MSK.
+
+Honest gap in the evidence: **the batched click path has not yet been exercised in production.**
+`/admin/logs` contains no `Batch …` lines today, because the green modal has been empty since
+the morning markdown sold out (`Modal loaded: 0 cards`), so the add-to-cart step never runs and
+greens come from the inline section. What IS proven:
+
+- the failure itself (`TimeoutError` in `_add_green_cards_to_cart` / modal scroll) is gone —
+  five runs died that way before 08:47 and none has since;
+- cycle duration dropped out of the danger zone;
+- 4 + 3 + 2 guard tests pin the batching, the guarded scroll and the 90 s deadline.
+
+What is NOT proven: that ten-card batches add all 100 cards on a real 100-card markdown day.
+That needs the next big markdown (typically morning). Until then this stays UNVERIFIED — do not
+report the batching as "tested on the real thing".
+
 ## Blockers
 
 - ~~Deploy pipeline broken~~ **FIXED 2026-11-17 02:20.** Root cause: the server
