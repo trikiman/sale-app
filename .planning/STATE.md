@@ -151,6 +151,30 @@ shows two or more batches, the 97-minute gap #11 fix is confirmed at one batch, 
 
 Also learned: `/admin/logs` rejects `n=400` with HTTP 422 — the ceiling is `n=300`.
 
+## 2026-11-22 00:15 MSK — an empty green section no longer kills the cycle
+
+The 21:00 MSK run hit the exact shape that used to break everything:
+
+```
+[GREEN] Delivery slot pick (after open): picked:Ближайший 1 час Выбрано
+[GREEN] Slot retry after hidden buttons: selected_after_open
+[GREEN] ⚠️ Green section still shows no rendered cards after 25s — the section is empty, not just slow
+[GREEN] Batch 0-4: added 0 (running total 0)
+[GREEN] Green section cards in scope: 4
+[GREEN]   card ' ' has_add_text=False   controls=[]   (×4)
+```
+
+Four empty skeletons, zero clicks, and the run finished anyway: RED and YELLOW executed, and by
+00:02 the API carried all three tiers (24 green / 50 red / 100 yellow, `dataStale: false`).
+Before the batching and the skeleton wait, this same shape threw away a finished run — and
+because GREEN runs first, its failure looked like "red and yellow disappeared".
+
+A batch returning `added 0` is therefore a normal outcome, not a failure: it means the section
+was genuinely empty at that moment. Do not "fix" it by retrying clicks.
+
+Still not observed: two or more `Batch` lines in one run (multi-batch on a real markdown).
+Cron `3dc7ab1ba33a` at 08:15 watches for exactly that.
+
 ## Blockers
 
 - ~~Deploy pipeline broken~~ **FIXED 2026-11-17 02:20.** Root cause: the server
