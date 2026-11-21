@@ -136,6 +136,30 @@ basket_recalc` guard doing its job.
   the git webhook until it recovers. `VACUUM` on the 575 MB `salebot.db` waits for
   SSH.
 
+## 2026-11-21 05:20 MSK — how often the greens actually vanish now, measured
+
+Counted the last 200 cycles (24 h) by `empty_reason`:
+
+| Reason | Cycles | When |
+|---|---|---|
+| `ok` | 106 | — |
+| `source_empty` | **92** | almost all inside two long runs |
+| `unknown_empty` | 2 | the known false zero + one other |
+
+The 92 empty cycles are not spread out — they sit in two runs: **02:10→08:12 (362 min)** and
+**08:34→14:47 (373 min)**, i.e. the pre-fix deadlock (empty cart → hidden buttons → VkusVill's
+own "no green tags" banner). After the 15:00 fix there are only two isolated cases:
+21:20→21:38 (18 min) and 04:02→04:15 (13 min) — 31 minutes out of ~10 hours.
+
+So the earlier "source_empty is legitimate emptiness" is true for the isolated cases and
+**was not true for the two 6-hour runs**: those were our own deadlock wearing a legitimate
+label. That is the trap in this design — `source_empty` cannot by itself distinguish "VkusVill
+has nothing" from "we failed to seed the cart and VkusVill therefore showed nothing", and the
+banner appears in both cases.
+
+Practical consequence: watch for runs, not single cycles. A `source_empty` streak longer than
+~45 min is a scraper symptom, not a shelf state.
+
 ## 2026-11-21 03:55 MSK — acceptance moved to 28.11 00:00 MSK — the old date could not pass
 
 The previous epoch (27.11 05:12 UTC) was arithmetically impossible to satisfy. The acceptance

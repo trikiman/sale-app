@@ -2115,6 +2115,11 @@ async def scrape_green_prices_async():
     5. Process & save
     6. Close Chrome
     """
+    # Tracks whether the cart seed actually succeeded. `source_empty` (VkusVill's own
+    # "Зелёных ценников сейчас нет" banner) only proves the shelf state when the cart
+    # was non-empty: with an empty cart the banner appears too, which is exactly how a
+    # 13-hour deadlock hid behind a legitimate-looking label on 20.11.2026.
+    cart_seed_ok = False
     print("🔄 [GREEN] Starting...")
 
     # BUG 20 fix: check availability in async function too
@@ -2480,10 +2485,12 @@ async def scrape_green_prices_async():
                 except Exception as exc:  # noqa: BLE001 — screenshot must never kill the run
                     print(f"  [GREEN] screenshot after seed skipped: {exc}")
                 print("  [GREEN] Seed item added — cart is now non-empty")
+                cart_seed_ok = True
             else:
                 print("  [GREEN] Could not add seed item — cart may still be empty")
         else:
             print("  [GREEN] Cart already has items — skipping seed")
+            cart_seed_ok = True
 
         # ── STEP 2.9: Clear unavailable items from cart ──
         # VkusVill cart has ~300 item limit. Unavailable (faded/half-alpha)
@@ -3576,6 +3583,13 @@ async def scrape_green_prices_async():
             #   "unknown_empty" — empty without that banner; could be markup
             #                     drift, a failed cart seed, or auth trouble
             empty_reason, empty_is_proven = classify_empty_state(products, empty_explicit)
+            if empty_reason == "source_empty" and not cart_seed_ok:
+                print(
+                    "⚠️ [GREEN] VkusVill says 'no green tags', but the cart seed FAILED — "
+                    "with an empty cart it says the same thing, so this is not a proven "
+                    "empty shelf; failing instead of reporting 0"
+                )
+                empty_reason, empty_is_proven = "unknown_empty", False
             if not empty_is_proven:
                 # An empty section WITHOUT VkusVill's own "Зелёных ценников сейчас
                 # нет" banner is not proof that nothing is marked down: it can be
