@@ -39,8 +39,8 @@ def test_modal_close_is_guarded():
 
 def test_guard_reacquires_the_page():
     body = _function("scrape_green_prices_async")
-    idx = body.index("_close_green_modal")
-    tail = body[idx:idx + 900]
+    idx = body.index("await _close_green_modal(page)")
+    tail = body[idx:idx + 1500]
     assert "_reacquire_page" in tail, (
         "after a failed evaluate the old handle is dead — it must be re-acquired"
     )
