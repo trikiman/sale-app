@@ -128,6 +128,29 @@ This is a mechanism check, not a verdict: the script refuses to close phase 96 b
 Kept UNVERIFIED honestly: batched add-to-cart on a real 100-card modal (modal empty since
 09:00), and the Telegram send for today. The morning cron has an explicit step for the batching.
 
+## 2026-11-21 22:25 MSK — the batched add path ran in production (partly)
+
+`/admin/logs?n=300` now contains the line the fix was written for:
+
+```
+[GREEN] Step 3.3: Button not in DOM but 4 green items found — adding inline...
+[GREEN] Green cards rendered: 4 (after 0.0s)
+[GREEN] Batch 0-4: added 4 (running total 4)
+[GREEN] Inline add-to-cart: {'added': 4, 'no_button': 0, 'already_in_cart': 0, 'no_card': 0, 'disabled': 0}
+[GREEN] Added 4/4 items to cart
+```
+
+Two consecutive runs did this. So `_add_green_cards_to_cart(batch_size=10)` is **no longer
+unverified code**: it executes, it reports `running total`, and the inline section is the
+source (not the modal, which stays at `Modal loaded: 0 cards`).
+
+What this still does NOT prove: the multi-batch case. Here the whole job was one batch
+(`0-4`, five card slots, four cards with buttons). The 100-card markdown that broke the run
+on 21.11 morning needed ten batches; nobody has seen `Batch 10-20` or higher yet. Until a run
+shows two or more batches, the 97-minute gap #11 fix is confirmed at one batch, not at ten.
+
+Also learned: `/admin/logs` rejects `n=400` with HTTP 422 — the ceiling is `n=300`.
+
 ## Blockers
 
 - ~~Deploy pipeline broken~~ **FIXED 2026-11-17 02:20.** Root cause: the server
