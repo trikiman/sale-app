@@ -1157,8 +1157,13 @@ _MERGED_PRODUCTS_PATH = PROPOSALS_PATH
 _XRAY_SOCKS_PORT = 10808
 _HEALTH_DEEP_RATE_LIMIT_S = 1.0  # 1 req/s/IP
 _DEEP_LAST_HIT: dict[str, float] = {}  # ip -> last request monotonic
-_DEEP_MAX_CYCLE_AGE_S = 15 * 60  # OBS-02: > 15 min cycle age is degraded
-_DEEP_MAX_PRODUCTS_AGE_S = 15 * 60  # OBS-02: > 15 min products.json mtime is degraded
+# 2026-11-21: 15 min was OBS-02's estimate of a cycle, and it is now arithmetically wrong.
+# A full cycle is GREEN (which takes 570-800 s on a big markdown day), then RED, then YELLOW —
+# 18-20 minutes end to end on 1 vCPU. So the endpoint reported stale_cycle and stale_products
+# during every healthy cycle, which is exactly the noise that hid gap #11. 30 and 45 min still
+# catch a genuinely stopped scheduler (three missed cycles) without crying wolf in between.
+_DEEP_MAX_CYCLE_AGE_S = 30 * 60
+_DEEP_MAX_PRODUCTS_AGE_S = 45 * 60
 # v1.20 Phase 66 OBS-04: cart-add latency visibility thresholds/windows
 _HEALTH_CART_ADD_DEGRADED_P95_MS = 6000
 _HEALTH_CART_ADD_UNHEALTHY_P95_MS = 12000
