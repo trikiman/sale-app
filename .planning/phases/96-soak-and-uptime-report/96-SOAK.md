@@ -382,13 +382,20 @@ Instrumentation added afterwards: `data/green_last_failure.json` plus
     /api/admin/egress-probe times out on BOTH routes (urnetwork 10809, vless 10808),
     /api/health/deep = degraded (pool 0<5). Meanwhile browser scrapers keep working
     (RED logged "VkusVill probe failed: timed out — continuing with browser scraper"
-    and still delivered 57 products). Working hypothesis — same class as gap #8:
-    egress stall, every navigation hit its deadline, self-recovered. NOT proven:
-    the actual failure lines are gone with the rotation; only the recorder's
-    `unclassified_failure` stamp survived. Pool-empty is chronic (since 18.11), not
-    new, and alone does not explain the gap — but the concurrent egress stall matches.
-    NOT added to KNOWN_GAPS (root cause not established; alarm must stay live).
+    and still delivered 57 products). ~~Working hypothesis — same class as gap #8:
+    egress stall, every navigation hit its deadline, self-recovered.~~ **CORRECTED later the
+    same day: the cause is NOT egress.** The traces were still in the live buffer when the
+    failure report started recording: `TimeoutError` from `_add_green_cards_to_cart` →
+    `_js` → `page.evaluate` (100 green cards sent in a single call, past the 45 s deadline),
+    and at 08:26 the same from the modal scroll with 98 products already collected. Fixed in
+    `4e9ac8f` (clicks batched by ten), `507e43a` (scroll guarded, deadline 90 s) and
+    `dfb423a` (red staleness 45 min). The empty pool remains chronic debt since 18.11 and is
+    now reported separately as `acute: false` / `egress_debt_only`.
+    Added to `KNOWN_GAPS` **with the established cause** (`489ccb7`), which is why
+    `green_soak_check.py` now returns 4 instead of 2. The gap still counts in
+    `gap_incident_count` and still gates acceptance.
     Acceptance arithmetic: gap #11 leaves the 168 h window on 28.11 05:47:51 UTC
-    (08:47:51 MSK) — later than the current 28.11 00:00 MSK date.
+    (08:47:51 MSK) — later than the previous 28.11 00:00 MSK date, hence 28.11 09:00 MSK.
 - **2026-11-21** — 🔴 verdict `incident`, cycles 654 (uptime 89.14%), gaps 11, false zeros 1, last ok 9.4 min ago. ⚠️ UNDIAGNOSED new gaps: 1
 - **2026-11-21** — 🔴 verdict `incident`, cycles 654 (uptime 89.14%), gaps 11, false zeros 1, last ok 9.8 min ago. ⏳ 1 diagnosed false zero(s) in window; acceptance 2026-11-28 06:00 UTC (28.11 09:00 MSK)
+- **2026-11-21** — 🔴 verdict `incident`, cycles 710 (uptime 89.58%), gaps 11, false zeros 1, last ok 8.9 min ago. ⏳ 1 diagnosed false zero(s) in window; acceptance 2026-11-28 06:00 UTC (28.11 09:00 MSK)
