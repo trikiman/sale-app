@@ -91,6 +91,25 @@ What is NOT proven: that ten-card batches add all 100 cards on a real 100-card m
 That needs the next big markdown (typically morning). Until then this stays UNVERIFIED — do not
 report the batching as "tested on the real thing".
 
+## 2026-11-21 13:40 MSK — acceptance re-run mechanically, still 3 FAIL (as designed)
+
+`python scripts/phase96_acceptance.py --proxy socks5h://127.0.0.1:10870` → exit 2:
+
+```
+cycles: 678 (607 ok / 71 failed), uptime 89.53%
+[FAIL] false_zero_cycles == 0 — 1
+[FAIL] gap_incident_count == 0 — 11
+[FAIL] hours_recorded >= 168 — 121.6
+[PASS] no gap after acceptance epoch — 0 post-epoch gap(s)
+```
+
+Three of the four criteria cannot pass before 28.11 09:00 MSK — the window still contains ten
+pre-fix gaps, gap #11 and the diagnosed false zero #1. The fourth criterion (no gap after the
+epoch) already passes, which is the part that actually depends on today's work.
+
+This is a mechanism check, not a verdict: the script refuses to close phase 96 by design
+(`Do not close phase 96`). Nothing here should be read as "almost done".
+
 ## Blockers
 
 - ~~Deploy pipeline broken~~ **FIXED 2026-11-17 02:20.** Root cause: the server
