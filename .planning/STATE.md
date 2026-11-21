@@ -110,6 +110,24 @@ epoch) already passes, which is the part that actually depends on today's work.
 This is a mechanism check, not a verdict: the script refuses to close phase 96 by design
 (`Do not close phase 96`). Nothing here should be read as "almost done".
 
+## 2026-11-21 17:20 MSK — declared features audited again, one line each
+
+| Feature | Endpoint / signal | Result today |
+|---|---|---|
+| Products, three tiers | `/api/products` | 210 items: green 33 / red 55 / yellow 122, `dataStale: false` |
+| Data integrity | same | 0 items without price, 0 with `oldPrice <= currentPrice` (float compare), 0 duplicate ids |
+| Green not suppressed | `greenSuppressed` | `null` — greens really shown, not hidden by staleness |
+| Price history | `/api/history/product/23074` | 22 sessions, DESC by date; `last_known_price 385.0` in **`product`**, not at the root |
+| Prediction | same | 27.11 12:15, `confidence_pct 99`, avg window 185 min, advice "сейчас 0% — бывало 40%" |
+| SSE | `/api/stream` | `: keepalive` (13 bytes) at ~30 s |
+| Favorites auth | `/api/favorites/<id>` without initData | 403 — correct refusal |
+| Frontend ↔ API | `check_frontend_matches_api.py` | exit 0, 214 = 214, age 6.7 min |
+| Mini-app bundle | `vkusvillsale.vercel.app` | `assets/index-opH5fajR.js` |
+| Telegram delivery | `POST /admin/test-alert` | last confirmed `sent: true` (not re-sent today — it messages the operator) |
+
+Kept UNVERIFIED honestly: batched add-to-cart on a real 100-card modal (modal empty since
+09:00), and the Telegram send for today. The morning cron has an explicit step for the batching.
+
 ## Blockers
 
 - ~~Deploy pipeline broken~~ **FIXED 2026-11-17 02:20.** Root cause: the server
