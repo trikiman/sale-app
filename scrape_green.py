@@ -3665,6 +3665,32 @@ async def scrape_green_prices_async():
     return products, scrape_success
 
 
+def _write_generic_failure() -> None:
+    """Leave a reason on disk even when the run died before it could classify anything.
+
+    `green_last_failure.json` used to be written only on the "empty section, no banner" path.
+    A cycle that fails earlier — a navigation deadline, a dead socket, a kill during deploy —
+    left nothing but an exit code, and by the time anyone looked the log window had rotated
+    (that is exactly what happened to the 06:18 failure on 21.11.2026: no reason anywhere).
+    This fallback refuses to overwrite a detailed report produced by this same run.
+    """
+    path = os.path.join(DATA_DIR, "green_last_failure.json")
+    try:
+        if os.path.exists(path) and (time.time() - os.path.getmtime(path)) < 300:
+            return
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({
+                "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "reason": "unclassified_failure",
+                "products_found": None,
+                "vkusvill_empty_banner": None,
+                "logged_in": None,
+            }, f, ensure_ascii=False, indent=1)
+        print("  [GREEN] Failure report -> data/green_last_failure.json (unclassified)")
+    except Exception as exc:  # noqa: BLE001 — diagnostics must never mask the real exit code
+        print(f"  [GREEN] Could not write failure report: {exc}")
+
+
 def scrape_green_prices():
     """Sync wrapper for backward compatibility."""
     if not check_vkusvill_available():
@@ -3677,5 +3703,9 @@ if __name__ == "__main__":
     # Cycle accounting (the 168-hour uptime proof) is done by the PARENT:
     # scheduler_service.run_script records it. A record written here would be
     # lost whenever the watchdog SIGKILLs this process, and would double-count
-    # when it does not.
-    raise SystemExit(0 if scrape_green_prices() else 1)
+    # when it does not. The failure report is different: it must be written here,
+    # because only this process knows why it gave up.
+    _ok = scrape_green_prices()
+    if not _ok:
+        _write_generic_failure()
+    raise SystemExit(0 if _ok else 1)
