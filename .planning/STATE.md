@@ -47,6 +47,31 @@ First clean run after the fixes: `Found 26 green products`, `Dropped meaningless
 25 item(s)`, `Saved 26 products (live_count=26)` — the old-price guard is now confirmed in a
 live log, which it never was before.
 
+## 2026-11-21 09:50 MSK — health stopped crying "egress" every cycle
+
+`/api/health/deep` had said `degraded` on every single check since 18.11: the VLESS pool is
+empty (refresh admits 0 of hundreds of candidates, backoff streak 120) while all three scrapers
+keep collecting through direct/URnetwork. That is standing debt, not a fault — but it was
+reported identically to a real one, and gap #11 is the proof of what that costs: the daily
+report blamed egress and both probes timed out, while the true cause was a JS deadline on a
+100-card modal.
+
+Two changes, both deployed:
+
+- `27cb16b` — the snapshot now carries `chronic_reasons` / `acute_reasons` / `acute` /
+  `status_note`. A pool-only reason list gives `acute: false` and
+  `status_note: egress_debt_only`; a stale products file or a dead xray bridge stays acute.
+  `status` keeps its documented OBS-02 meaning, so existing monitors are unaffected.
+- `3485e0c` — the freshness budgets were shorter than one real cycle. GREEN alone takes
+  570-800 s on a markdown day, then RED, then YELLOW: 18-20 minutes on 1 vCPU. 15-minute
+  budgets meant `stale_cycle` + `stale_products` during healthy runs. Now 30 and 45 min
+  (45 matching the tier staleness thresholds).
+
+Live check after deploy: `status: degraded`, `status_note: egress_debt_only`, `acute: false`,
+`reasons: ['pool_below_min_healthy:0_lt_5']` — the only remaining reason is the known debt.
+
+The daily cron prompt now treats `acute: false` as non-alarm and alarms on `acute: true`.
+
 ## Blockers
 
 - ~~Deploy pipeline broken~~ **FIXED 2026-11-17 02:20.** Root cause: the server
