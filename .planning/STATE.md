@@ -175,6 +175,24 @@ was genuinely empty at that moment. Do not "fix" it by retrying clicks.
 Still not observed: two or more `Batch` lines in one run (multi-batch on a real markdown).
 Cron `3dc7ab1ba33a` at 08:15 watches for exactly that.
 
+## 2026-11-22 01:45 MSK — nearly recorded a false defect about /admin/status
+
+I read `scrapers.green.last_run = 2026-11-21T22:39:12` at 01:41 MSK and was about to write
+"the scrapers have not run for three hours". The `ageMinutes` next to it said 3.9, which is
+three **minutes**: `scrapers.*.last_run`, `sourceFreshness.*.updatedAt` and `cycleState.*_at`
+are UTC, while `data.updatedAt` in the same JSON is Moscow time. `ageMinutes` is computed
+server-side and is the field to trust; subtracting the printed timestamps by hand produces a
+convincing false alarm.
+
+Same response, two other traps: the key is `scrapers` (not `scraper_status`, which earlier code
+did backfill), and `cycleState` refers to the last **full** cycle (22:32–22:42 UTC) — it is
+legitimately older than the data files and must not be used as a freshness signal.
+
+Recorded in the `saleapp` skill so the next reader (or the next cron) does not re-derive it.
+
+State at the time of the check: green 25 / red 55 / yellow 117, `dataStale: false`,
+`greenSuppressed: null`, health `degraded / egress_debt_only / acute: false`.
+
 ## Blockers
 
 - ~~Deploy pipeline broken~~ **FIXED 2026-11-17 02:20.** Root cause: the server
