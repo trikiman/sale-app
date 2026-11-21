@@ -532,7 +532,10 @@ async def _page_get(page, url: str, *, timeout: float = PAGE_GET_TIMEOUT_S):
 # minutes (observed: two runs killed at 1027 s and 864 s, both after "Loaded 48/48
 # cookies"), which in turn opened a 69.4-min gap in the uptime series. A stalled CDP
 # round-trip now costs 45 s and surfaces as a recoverable error instead.
-JS_EVAL_TIMEOUT_S = 45
+# 2026-11-21: 45 s proved too tight on a big markdown day — one evaluate over a 100-card
+# modal legitimately needed longer, and every timeout threw away a finished run. 90 s still
+# bounds a hung socket, and the heavy call sites are batched or guarded on top of this.
+JS_EVAL_TIMEOUT_S = 90
 
 
 async def _js(page, script):
@@ -2970,18 +2973,27 @@ async def scrape_green_prices_async():
                     ajax_event.clear()  # Reset before scroll/click
 
                     # First: scroll modal to bottom
-                    await _js(page, r"""
-                        (() => {
-                            const modal = document.getElementById('js-modal-cart-prods-scroll');
-                            if (!modal) return;
-                            const cards = modal.querySelectorAll('.ProductCard');
-                            if (cards.length > 0) {
-                                cards[cards.length - 1].scrollIntoView({behavior: 'instant', block: 'end'});
-                            }
-                            modal.scrollTop = modal.scrollHeight;
-                            modal.dispatchEvent(new Event('scroll', {bubbles: true}));
-                        })()
-                    """)
+                    # 21.11.2026: with 100 cards and CDP network monitoring on, this evaluate
+                    # ran past JS_EVAL_TIMEOUT_S = 45 s and the TimeoutError threw away a run
+                    # that had already collected 98 products (08:26). A stuck scroll is not a
+                    # reason to lose the modal — stop the loader with what we have.
+                    try:
+                        await _js(page, r"""
+                            (() => {
+                                const modal = document.getElementById('js-modal-cart-prods-scroll');
+                                if (!modal) return;
+                                const cards = modal.querySelectorAll('.ProductCard');
+                                if (cards.length > 0) {
+                                    cards[cards.length - 1].scrollIntoView({behavior: 'instant', block: 'end'});
+                                }
+                                modal.scrollTop = modal.scrollHeight;
+                                modal.dispatchEvent(new Event('scroll', {bubbles: true}));
+                            })()
+                        """)
+                    except Exception as exc:  # noqa: BLE001 — keep the cards we already have
+                        print(f"    [CDP] Modal scroll evaluate failed ({type(exc).__name__}: {exc}) "
+                              f"— stopping the loader at {prev_count} cards")
+                        break
                     # Wait for "показать ещё" button to appear after scroll
                     await asyncio.sleep(0.5)
 
