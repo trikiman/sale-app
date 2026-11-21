@@ -134,12 +134,18 @@ KNOWN_GAPS = [
      "several times in a row, so no GREEN cycle could finish inside the window. "
      "Diagnosed, expected, and NOT a scraper fault; the very next cycle after the "
      "last restart completed normally (Found 18 green products)."),
+    (1795204232.442, 1795206951.752,
+     "gap #10, 20.11 22:50-23:35 MSK: two consecutive green runs produced nothing "
+     "(exit 1 with the previous cycle's snapshot left in place). Root cause NOT established — "
+     "the log window had rotated before it was read. Instrumentation was added afterwards: "
+     "scrape_green.py now writes data/green_last_failure.json and the recorder stores "
+     "'failed:<reason>|found=N'. Recorded here so the alarm is classified, not silenced."),
 ]
 KNOWN_GAP_TOLERANCE_S = 120
 
 # First moment the 168 h window holds no gap at all (end of the latest diagnosed gap
 # + 168 h). Printed in the log line so the daily note never says an outdated date.
-ACCEPTANCE_UTC = "2026-11-27 05:12 UTC (08:12 MSK)"
+ACCEPTANCE_UTC = "2026-11-27 21:00 UTC (28.11 00:00 MSK)"
 
 # False zeros are cycles that reported exit 0 with live_count 0 and no VkusVill
 # "nothing is marked down" reason — the exact thing v1.30 exists to kill. Each one is

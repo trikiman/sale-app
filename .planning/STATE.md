@@ -136,6 +136,27 @@ basket_recalc` guard doing its job.
   the git webhook until it recovers. `VACUUM` on the 575 MB `salebot.db` waits for
   SSH.
 
+## 2026-11-21 03:55 MSK — acceptance moved to 28.11 00:00 MSK — the old date could not pass
+
+The previous epoch (27.11 05:12 UTC) was arithmetically impossible to satisfy. The acceptance
+criterion is `gap_incident_count == 0` inside a 168 h window, and the newest gap (#10,
+20.11 22:50→23:35 MSK) only leaves that window at **27.11 23:35 MSK** — 15.4 h after the old
+date. Nothing would have been broken; the check would simply have failed on arithmetic.
+
+New epoch: **2026-11-28 00:00 MSK (27.11 21:00 UTC)**, documented in
+`scripts/green_soak_check.py` (`ACCEPTANCE_UTC`), `scripts/phase96_acceptance.py`
+(`ACCEPTANCE_EPOCH`), the test that pins the moment, the daily cron prompt, and here.
+
+Gap #10 is also recorded in `KNOWN_GAPS` **with an honest label**: its root cause is not
+established (the log rotated before it was read); instrumentation was added afterwards
+(`data/green_last_failure.json` → `failed:<reason>|found=N` in the journal). Recording it
+classifies the alarm — it does not make it disappear: the gap still counts in
+`gap_incident_count: 10` and still gates acceptance.
+
+After the change: `green_soak_check.py` → **exit 4** (only known gaps inside the window,
+nothing unexplained), `test_soak_check_gap_class.py` + `test_phase96_acceptance.py` → 15
+passed.
+
 ## 2026-11-21 03:30 MSK — re-audit of the declared functions after the whole day of fixes
 
 Everything below was checked against the live API just now, not read off old notes:
