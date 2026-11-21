@@ -327,3 +327,23 @@ than claiming a week that has not happened.
 - **2026-11-20** — 🔴 verdict `incident`, cycles 524 (uptime 90.84%), gaps 8, false zeros 1, last ok 5.3 min ago. ⏳ 1 diagnosed false zero(s) in window; acceptance 2026-11-27 05:12 UTC (08:12 MSK)
 - **2026-11-20** — 🔴 verdict `incident`, cycles 606 (uptime 90.1%), gaps 9, false zeros 1, last ok 14.2 min ago. ⚠️ UNDIAGNOSED new gaps: 1
 - **2026-11-20** — 🔴 verdict `incident`, cycles 606 (uptime 90.1%), gaps 9, false zeros 1, last ok 15.4 min ago. ⏳ 1 diagnosed false zero(s) in window; acceptance 2026-11-27 05:12 UTC (08:12 MSK)
+- **2026-11-21** — 🔴 verdict `incident`, cycles 624 (uptime 90.06%), gaps 10, false zeros 1, last ok 10.4 min ago. ⚠️ UNDIAGNOSED new gaps: 1
+- **2026-11-21** — 🔴 verdict `incident`, cycles 631 (uptime 90.17%), gaps 10, false zeros 1, last ok 2.7 min ago. ⏳ 1 diagnosed false zero(s) in window; acceptance 2026-11-27 21:00 UTC (28.11 00:00 MSK)
+
+## Acceptance epoch history (why the date keeps moving)
+
+The verdict is a window computation, not a calendar event: `gap_incident_count == 0` over the
+last 168 h. Each move below is forced by a gap leaving the window later than the previous date.
+
+| Epoch (UTC) | MSK | Why |
+|---|---|---|
+| 2026-11-25 | 28.11 → n/a | first estimate, before the last pre-fix gap was known |
+| 2026-11-26 06:18 | 09:18 | gap #8 (19.11 04:54→06:18) pushed the window out |
+| 2026-11-27 05:12 | 08:12 | false zero #1 at 20.11 05:12:12 UTC |
+| **2026-11-27 21:00** | **28.11 00:00** | gap #10 (20.11 22:50→23:35 MSK) only leaves the window at 27.11 23:35 MSK |
+
+Honest note on gap #10: its cause is **not** established — two green runs produced nothing and
+the log had rotated before it was read. It is recorded in `KNOWN_GAPS` so the alarm is
+classified, not silenced; it still counts in `gap_incident_count` and still gates acceptance.
+Instrumentation added afterwards: `data/green_last_failure.json` plus
+`failed:<reason>|found=N` in the uptime journal.
