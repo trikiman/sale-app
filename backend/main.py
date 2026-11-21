@@ -1029,6 +1029,12 @@ DEFAULT_STALE_THRESHOLDS_MINUTES: dict[str, int] = {
     "red": 45,
 }
 
+# Reasons that describe standing debt, not a new failure. The VLESS pool has been empty since
+# 18.11 while all three scrapers keep collecting through direct/URnetwork, so reporting it as
+# an acute fault every single health check is noise — and noise is how a real fault (gap #11,
+# wrongly blamed on egress) gets missed.
+_CHRONIC_REASON_PREFIXES: tuple[str, ...] = ("pool_below_min_healthy",)
+
 
 def _build_source_freshness(
     stale_minutes: int | None = None,
@@ -1562,6 +1568,16 @@ def _build_reliability_snapshot() -> dict:
     has_critical = any(r in critical for r in reasons) or drift_is_critical
     n_failed = len(reasons)
 
+    # 2026-11-21: the VLESS pool has been empty for days while every scraper still collects
+    # (they run direct / through the URnetwork bridge). One chronic reason reported as
+    # "degraded" forever trains the operator to ignore this endpoint, and then a real failure
+    # hides inside the habit — gap #11 was exactly that: the cron report blamed egress while
+    # the actual cause was a JS deadline. So the reasons are split: chronic egress debt is
+    # listed separately, and `acute` is true only for reasons that are NOT egress debt.
+    # `status` keeps its documented OBS-02 meaning so existing monitors are unaffected.
+    chronic_reasons = [r for r in reasons if r.startswith(_CHRONIC_REASON_PREFIXES)]
+    acute_reasons = [r for r in reasons if r not in chronic_reasons]
+
     if n_failed == 0:
         status = "healthy"
     elif has_critical or n_failed >= 3:
@@ -1569,9 +1585,17 @@ def _build_reliability_snapshot() -> dict:
     else:
         status = "degraded"
 
+    status_note = None
+    if status != "healthy" and chronic_reasons and not acute_reasons:
+        status_note = "egress_debt_only"
+
     snapshot = {
         "status": status,
+        "status_note": status_note,
         "reasons": reasons,
+        "chronic_reasons": chronic_reasons,
+        "acute_reasons": acute_reasons,
+        "acute": bool(acute_reasons),
         "pool": pool,
         "breaker": breaker,
         "xray": xray,
