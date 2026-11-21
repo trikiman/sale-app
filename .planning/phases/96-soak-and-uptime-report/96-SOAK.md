@@ -347,3 +347,25 @@ the log had rotated before it was read. It is recorded in `KNOWN_GAPS` so the al
 classified, not silenced; it still counts in `gap_incident_count` and still gates acceptance.
 Instrumentation added afterwards: `data/green_last_failure.json` plus
 `failed:<reason>|found=N` in the uptime journal.
+- **2026-11-21** — 🔴 verdict `incident`, cycles 653 (uptime 89.13%), gaps 11, false zeros 1, last ok 12.7 min ago. ⚠️ UNDIAGNOSED new gaps: 1
+  - **Gap #11 diagnosis (2026-11-21, exit 2 — new undiagnosed gap, ALARM):**
+    21.11 04:10:11–05:47:51 UTC (07:10–08:47 MSK), 97.7 min — 8 consecutive green runs
+    exit 1, each with `failed:unclassified_failure|found=None` and FULL duration
+    300–571 s (no SIGKILL pattern; runs burned their whole budget, i.e. navigation
+    deadlines, not kills). Recovered by itself at 05:47:51 UTC; the run right after
+    found 26, then 48 green products. All scrapers OK now, source fresh (2.8 min),
+    frontend == API (209: 26/57/126, age 1 min).
+    Context found by HTTP diagnostics (log buffer had rotated — only ~100 lines kept):
+    dynamic vless pool is EMPTY (pool_size 0 since 18.11 11:50 UTC, refresh fetches
+    288–386 candidates but admits 0, backoff streak 120, throttle 1800 s) and
+    /api/admin/egress-probe times out on BOTH routes (urnetwork 10809, vless 10808),
+    /api/health/deep = degraded (pool 0<5). Meanwhile browser scrapers keep working
+    (RED logged "VkusVill probe failed: timed out — continuing with browser scraper"
+    and still delivered 57 products). Working hypothesis — same class as gap #8:
+    egress stall, every navigation hit its deadline, self-recovered. NOT proven:
+    the actual failure lines are gone with the rotation; only the recorder's
+    `unclassified_failure` stamp survived. Pool-empty is chronic (since 18.11), not
+    new, and alone does not explain the gap — but the concurrent egress stall matches.
+    NOT added to KNOWN_GAPS (root cause not established; alarm must stay live).
+    Acceptance arithmetic: gap #11 leaves the 168 h window on 28.11 05:47:51 UTC
+    (08:47:51 MSK) — later than the current 28.11 00:00 MSK date.
