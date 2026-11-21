@@ -908,122 +908,154 @@ async def _wait_for_green_cards(page, timeout_s: float = 25.0) -> int:
     return ready
 
 
-async def _add_green_cards_to_cart(page, card_source: str, total_cards: int):
+async def _add_green_cards_to_cart(page, card_source: str, total_cards: int,
+                                    browser=None, batch_size: int = 10):
+    """Add the green cards to the cart in batches.
+
+    21.11.2026: a big markdown day put 100 cards in the modal, and the single batched
+    evaluate (100 cards, each with scrollIntoView + a five-event pointer sequence + a
+    modal sweep) blew past JS_EVAL_TIMEOUT_S = 45 s. The TimeoutError killed the whole
+    run five times in a row (07:17, 07:26, 07:44, 07:55, 08:02), which also stopped RED
+    and YELLOW from ever running. Batches keep every evaluate well inside the deadline,
+    and a failed batch costs ten cards instead of the entire cycle.
+    """
     scope_expr = _green_card_scope_expr(card_source)
 
-    # Batch ALL clicks in a SINGLE JS call to avoid Chrome WebSocket timeout
-    # (137 individual _js() calls = 411 WebSocket evaluations → HTTP 500)
-    # NOTE: Must be SYNCHRONOUS — nodriver can't await async IIFEs
     await _wait_for_green_cards(page)
 
-    result_json = await _js(page, f"""
-        (() => {{
-            const results = {{no_scope: 0, no_card: 0, already_in_cart: 0, added: 0, no_button: 0}};
-            const scope = {scope_expr};
-            if (!scope) return JSON.stringify({{results, added: 0}});
-            const cards = scope.querySelectorAll('.ProductCard, .ProductCards__item');
-            let addedCount = 0;
-            for (let i = 0; i < {total_cards}; i++) {{
-                const card = cards[i];
-                if (!card) {{ results.no_card++; continue; }}
-                if (card.querySelector('.ProductCard__quantityControl, [class*="quantityControl"]')) {{
-                    results.already_in_cart++;
+    totals = {"added": 0, "no_button": 0, "already_in_cart": 0, "no_card": 0,
+              "disabled": 0, "failed_batches": 0}
+
+    for start in range(0, max(total_cards, 0), batch_size):
+        end = min(start + batch_size, total_cards)
+        try:
+            result_json = await _js(page, f"""
+    (() => {{
+        const results = {{no_scope: 0, no_card: 0, already_in_cart: 0, added: 0, no_button: 0}};
+        const scope = {scope_expr};
+        if (!scope) return JSON.stringify({{results, added: 0}});
+        const cards = scope.querySelectorAll('.ProductCard, .ProductCards__item');
+        let addedCount = 0;
+        for (let i = {start}; i < {end}; i++) {{
+            const card = cards[i];
+            if (!card) {{ results.no_card++; continue; }}
+            if (card.querySelector('.ProductCard__quantityControl, [class*="quantityControl"]')) {{
+                results.already_in_cart++;
+                continue;
+            }}
+            card.scrollIntoView({{behavior: 'instant', block: 'center'}});
+            let clicked = false;
+            // The button is not always a <button>: the diagnostics showed five
+            // "В корзину" controls inside one card while this loop still reported
+            // no_button. Match the text on any clickable element and record
+            // disabled ones separately — "disabled" and "absent" are different bugs.
+            // A bare .click() does not reach VkusVill's handler on these nodes:
+            // the control exists and is enabled (diagnostics: kinds a/div/button,
+            // buttons ['В корзину', ...]) yet nothing is added — the cart stayed
+            // empty for hours and the green list was wiped to 0. Dispatch the full
+            // pointer/mouse/click sequence on real coordinates instead.
+            const fireClick = (el) => {{
+                let r = {{left: 0, top: 0, width: 0, height: 0}};
+                try {{ r = el.getBoundingClientRect(); }} catch (e) {{}}
+                const opt = {{
+                    bubbles: true, cancelable: true, composed: true, view: window,
+                    clientX: r.left + (r.width || 0) / 2,
+                    clientY: r.top + (r.height || 0) / 2,
+                    button: 0
+                }};
+                const seq = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
+                for (const t of seq) {{
+                    try {{
+                        const Ctor = (t.indexOf('pointer') === 0 && typeof PointerEvent === 'function')
+                            ? PointerEvent : MouseEvent;
+                        el.dispatchEvent(new Ctor(t, opt));
+                    }} catch (e) {{
+                        try {{ el.dispatchEvent(new MouseEvent(t, opt)); }} catch (e2) {{}}
+                    }}
+                }}
+                try {{ el.click(); }} catch (e) {{}}
+            }};
+            const btns = card.querySelectorAll('button, a, [role="button"], [class*="Button"], span, div');
+            for (const btn of btns) {{
+                const text = (btn.innerText || '').toLowerCase().trim();
+                if (!text || text.length > 30) continue;
+                if (text.indexOf('в корзину') < 0 && text.indexOf('корзин') < 0 && text.indexOf('добавить') < 0) continue;
+                if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') {{
+                    results.disabled = (results.disabled || 0) + 1;
                     continue;
                 }}
-                card.scrollIntoView({{behavior: 'instant', block: 'center'}});
-                let clicked = false;
-                // The button is not always a <button>: the diagnostics showed five
-                // "В корзину" controls inside one card while this loop still reported
-                // no_button. Match the text on any clickable element and record
-                // disabled ones separately — "disabled" and "absent" are different bugs.
-                // A bare .click() does not reach VkusVill's handler on these nodes:
-                // the control exists and is enabled (diagnostics: kinds a/div/button,
-                // buttons ['В корзину', ...]) yet nothing is added — the cart stayed
-                // empty for hours and the green list was wiped to 0. Dispatch the full
-                // pointer/mouse/click sequence on real coordinates instead.
-                const fireClick = (el) => {{
-                    let r = {{left: 0, top: 0, width: 0, height: 0}};
-                    try {{ r = el.getBoundingClientRect(); }} catch (e) {{}}
-                    const opt = {{
-                        bubbles: true, cancelable: true, composed: true, view: window,
-                        clientX: r.left + (r.width || 0) / 2,
-                        clientY: r.top + (r.height || 0) / 2,
-                        button: 0
-                    }};
-                    const seq = ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'];
-                    for (const t of seq) {{
-                        try {{
-                            const Ctor = (t.indexOf('pointer') === 0 && typeof PointerEvent === 'function')
-                                ? PointerEvent : MouseEvent;
-                            el.dispatchEvent(new Ctor(t, opt));
-                        }} catch (e) {{
-                            try {{ el.dispatchEvent(new MouseEvent(t, opt)); }} catch (e2) {{}}
-                        }}
-                    }}
-                    try {{ el.click(); }} catch (e) {{}}
-                }};
-                const btns = card.querySelectorAll('button, a, [role="button"], [class*="Button"], span, div');
-                for (const btn of btns) {{
-                    const text = (btn.innerText || '').toLowerCase().trim();
-                    if (!text || text.length > 30) continue;
-                    if (text.indexOf('в корзину') < 0 && text.indexOf('корзин') < 0 && text.indexOf('добавить') < 0) continue;
-                    if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') {{
-                        results.disabled = (results.disabled || 0) + 1;
-                        continue;
-                    }}
-                    // Prefer the innermost element carrying the label: walking span/div
-                    // keeps us on the node VkusVill binds to.
-                    fireClick(btn);
-                    clicked = true;
-                    results.via = (btn.tagName || '').toLowerCase();
-                    break;
-                }}
-                if (!clicked) {{
-                    const cssBtn = card.querySelector(
-                        '.js-delivery__basket--add, .CartButton__content--add, .CartButton__content, ' +
-                        '.ProductCard__add, .ProductCard__addToCart'
-                    );
-                    if (cssBtn) {{ cssBtn.click(); clicked = true; }}
-                }}
-                if (clicked) {{
-                    results.added++;
-                    addedCount++;
-                }} else {{
-                    results.no_button++;
-                }}
-                // Dismiss popups inline (sync)
-                const modals = document.querySelectorAll('[class*="Modal"]');
-                for (const m of modals) {{
-                    if (m.id === 'js-modal-cart-prods-scroll') continue;
-                    const txt = m.innerText || '';
-                    if (txt.includes('Уже работаем') || txt.includes('похожие товары')) {{
-                        const close = m.querySelector('[class*="close"], [class*="Close"]');
-                        if (close) close.click();
-                    }}
+                // Prefer the innermost element carrying the label: walking span/div
+                // keeps us on the node VkusVill binds to.
+                fireClick(btn);
+                clicked = true;
+                results.via = (btn.tagName || '').toLowerCase();
+                break;
+            }}
+            if (!clicked) {{
+                const cssBtn = card.querySelector(
+                    '.js-delivery__basket--add, .CartButton__content--add, .CartButton__content, ' +
+                    '.ProductCard__add, .ProductCard__addToCart'
+                );
+                if (cssBtn) {{ cssBtn.click(); clicked = true; }}
+            }}
+            if (clicked) {{
+                results.added++;
+                addedCount++;
+            }} else {{
+                results.no_button++;
+            }}
+            // Dismiss popups inline (sync)
+            const modals = document.querySelectorAll('[class*="Modal"]');
+            for (const m of modals) {{
+                if (m.id === 'js-modal-cart-prods-scroll') continue;
+                const txt = m.innerText || '';
+                if (txt.includes('Уже работаем') || txt.includes('похожие товары')) {{
+                    const close = m.querySelector('[class*="close"], [class*="Close"]');
+                    if (close) close.click();
                 }}
             }}
-            return JSON.stringify({{results, added: addedCount}});
-        }})()
+        }}
+        return JSON.stringify({{results, added: addedCount}});
+    }})()
     """)
+        except Exception as exc:  # noqa: BLE001 — one batch must not end the cycle
+            totals["failed_batches"] += 1
+            print(f"  [GREEN] Batch {start}-{end} failed "
+                  f"({type(exc).__name__}: {exc}) — continuing with the next batch")
+            if browser is not None:
+                try:
+                    page = await _reacquire_page(browser)
+                except Exception as again:  # noqa: BLE001
+                    print(f"  [GREEN] Could not re-acquire the page: {again}")
+            continue
 
-    # Parse the batched result
-    try:
-        if isinstance(result_json, str):
-            data = json.loads(result_json)
-        elif isinstance(result_json, dict):
-            data = result_json
-        else:
-            data = {'results': {'added': 0}, 'added': 0}
-        results_summary = data.get('results', {})
-        added_count = data.get('added', 0)
-    except (json.JSONDecodeError, TypeError):
-        results_summary = {'added': 0, 'error': 1}
-        added_count = 0
+        try:
+            if isinstance(result_json, str):
+                data = json.loads(result_json)
+            elif isinstance(result_json, dict):
+                data = result_json
+            else:
+                data = {'results': {}, 'added': 0}
+        except (json.JSONDecodeError, TypeError):
+            data = {'results': {'error': 1}, 'added': 0}
 
-    if isinstance(results_summary, dict) and results_summary.get('no_button'):
+        chunk = data.get('results') or {}
+        for key in ("no_button", "already_in_cart", "no_card", "disabled"):
+            totals[key] += int(chunk.get(key) or 0)
+        totals["added"] += int(data.get('added') or 0)
+        print(f"  [GREEN] Batch {start}-{end}: added {data.get('added') or 0} "
+              f"(running total {totals['added']})")
+        await asyncio.sleep(0.3)
+
+    if totals["no_button"]:
         await _diagnose_no_button_cards(page)
 
-    return results_summary, added_count
+    if totals["failed_batches"]:
+        totals["partial"] = 1
+        print(f"  [GREEN] ⚠️ {totals['failed_batches']} batch(es) failed — "
+              f"{totals['added']} cards added overall")
+
+    return totals, totals["added"]
 
 
 async def _diagnose_no_button_cards(page, limit: int = 4) -> None:
@@ -3206,7 +3238,7 @@ async def scrape_green_prices_async():
                 # ── STEP 3.1.3: Add all to cart ──
                 if total_in_modal > 0:
                     print(f"  [GREEN] Step 3.1.3: Adding {total_in_modal} items to cart...")
-                    results_summary, added = await _add_green_cards_to_cart(page, 'modal', total_in_modal)
+                    results_summary, added = await _add_green_cards_to_cart(page, 'modal', total_in_modal, browser=browser)
                     print(f"  [GREEN] Modal add-to-cart: {results_summary}")
                     print(f"  [GREEN] Added {added}/{total_in_modal} items to cart")
                     await _step_screenshot(page, "after_add_to_cart")
@@ -3232,7 +3264,7 @@ async def scrape_green_prices_async():
             print(f"  [GREEN] Step 3.2: Button hidden — {inline_count} inline items")
             if inline_count > 0:
                 print(f"  [GREEN] Adding {inline_count} inline green items to cart...")
-                results_summary, added = await _add_green_cards_to_cart(page, 'inline', inline_count)
+                results_summary, added = await _add_green_cards_to_cart(page, 'inline', inline_count, browser=browser)
                 print(f"  [GREEN] Inline add-to-cart: {results_summary}")
                 print(f"  [GREEN] Added {added}/{inline_count} items to cart")
 
@@ -3244,7 +3276,7 @@ async def scrape_green_prices_async():
                     print(f"  [GREEN] Slot retry after hidden buttons: {retry_slot}")
                     await _close_delivery_modal(page)
                     await asyncio.sleep(2)
-                    results_summary, added = await _add_green_cards_to_cart(page, 'inline', inline_count)
+                    results_summary, added = await _add_green_cards_to_cart(page, 'inline', inline_count, browser=browser)
                     print(f"  [GREEN] Inline add-to-cart (retry): {results_summary}")
                     print(f"  [GREEN] Added {added}/{inline_count} items to cart (retry)")
             else:
@@ -3264,7 +3296,7 @@ async def scrape_green_prices_async():
                     })()
                 """)
                 await asyncio.sleep(3)  # Wait for lazy cards to load
-                results_summary, added = await _add_green_cards_to_cart(page, 'inline', len(raw_products))
+                results_summary, added = await _add_green_cards_to_cart(page, 'inline', len(raw_products), browser=browser)
                 print(f"  [GREEN] Inline add-to-cart: {results_summary}")
                 print(f"  [GREEN] Added {added}/{len(raw_products)} items to cart")
             else:
