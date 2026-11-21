@@ -29,7 +29,7 @@ API = "http://152.70.58.201/api/admin/green-uptime?hours=168&tail=200"
 PROXY = "socks5h://127.0.0.1:10870"
 # First moment the 168 h window holds no gap AND no false zero: the last incident is
 # the false zero at 2026-11-20 05:12:12 UTC, so the window clears 168 h later.
-ACCEPTANCE_EPOCH = dt.datetime(2026, 11, 27, 21, 0, tzinfo=dt.timezone.utc).timestamp()
+ACCEPTANCE_EPOCH = dt.datetime(2026, 11, 28, 6, 0, tzinfo=dt.timezone.utc).timestamp()
 REQUIRED_HOURS = 168
 
 

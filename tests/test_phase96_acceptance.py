@@ -70,11 +70,12 @@ def test_post_epoch_gap_fails() -> None:
 def test_acceptance_epoch_is_the_documented_moment() -> None:
     """The epoch must sit AFTER the last gap has left the 168 h window.
 
-    The window arithmetic, not the calendar, decides this: gap #10 ended
-    20.11 23:35 MSK, so it only leaves a 168 h window at 27.11 23:35 MSK. The previous
-    epoch (27.11 05:12 UTC) would have failed `gap_incident_count == 0` at a moment when
-    nothing was wrong except the arithmetic.
+    The window arithmetic, not the calendar, decides this. Gap #10 ended 20.11 23:35 MSK
+    (leaves 27.11 23:35 MSK); gap #11 ended 21.11 08:47 MSK and therefore leaves only at
+    28.11 08:47 MSK, which makes 28.11 00:00 MSK arithmetic that cannot pass. Every previous
+    epoch (25.11, 26.11 09:18, 27.11 08:12, 28.11 00:00) was invalidated by a new gap, not by
+    a real defect in the acceptance criteria.
     """
     mod = _mod()
     when = __import__("datetime").datetime.fromtimestamp(mod.ACCEPTANCE_EPOCH, __import__("datetime").timezone.utc)
-    assert when.strftime("%Y-%m-%d %H:%M") == "2026-11-27 21:00"
+    assert when.strftime("%Y-%m-%d %H:%M") == "2026-11-28 06:00"

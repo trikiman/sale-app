@@ -66,7 +66,9 @@ def test_known_gap_requires_a_written_reason() -> None:
 
 def test_acceptance_date_is_single_constant() -> None:
     mod = _mod()
-    assert mod.ACCEPTANCE_UTC.startswith("2026-11-27")
+    # moved 28.11 00:00 -> 28.11 09:00 MSK when gap #11 (21.11 08:47 MSK) appeared:
+    # the epoch must always be later than the last gap plus 168 h
+    assert mod.ACCEPTANCE_UTC.startswith("2026-11-28")
 
 
 def test_diagnosed_false_zero_is_not_an_alarm() -> None:

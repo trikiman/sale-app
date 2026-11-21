@@ -125,6 +125,15 @@ FIX_MARK_TS = 1794982887.0
 # Never add an entry here without a written diagnosis in the soak log — otherwise this
 # list silently becomes a way to mute real alarms.
 KNOWN_GAPS = [
+    (1795234200.0, 1795240020.0,
+     "gap #11, 21.11 04:10-05:47 UTC: diagnosed — not egress. A big markdown day put ~100 "
+     "green cards in the modal, and one page.evaluate holding all 100 clicks (scrollIntoView "
+     "+ five-event pointer sequence + modal sweep) ran past JS_EVAL_TIMEOUT_S=45s, so the "
+     "TimeoutError threw away runs that had already scraped the modal; the modal-scroll "
+     "evaluate failed the same way at 08:26 MSK. Fixed in 4e9ac8f (clicks in batches of ten), "
+     "507e43a (scroll guarded, deadline 90s) and dfb423a (red staleness 45 min). "
+     "First clean runs after: live 26, then 48."),
+
     (1795064070.669, 1795069112.662,
      "gap #8, 19.11 04:54-06:18 UTC: egress stall on the only live route "
      "(urnetwork), every navigation hit its deadline; recovered on its own"),
@@ -145,7 +154,7 @@ KNOWN_GAP_TOLERANCE_S = 120
 
 # First moment the 168 h window holds no gap at all (end of the latest diagnosed gap
 # + 168 h). Printed in the log line so the daily note never says an outdated date.
-ACCEPTANCE_UTC = "2026-11-27 21:00 UTC (28.11 00:00 MSK)"
+ACCEPTANCE_UTC = "2026-11-28 06:00 UTC (28.11 09:00 MSK)"
 
 # False zeros are cycles that reported exit 0 with live_count 0 and no VkusVill
 # "nothing is marked down" reason — the exact thing v1.30 exists to kill. Each one is
