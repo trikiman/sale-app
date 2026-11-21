@@ -136,6 +136,24 @@ basket_recalc` guard doing its job.
   the git webhook until it recovers. `VACUUM` on the 575 MB `salebot.db` waits for
   SSH.
 
+## 2026-11-21 03:30 MSK — re-audit of the declared functions after the whole day of fixes
+
+Everything below was checked against the live API just now, not read off old notes:
+
+| Function | Evidence |
+|---|---|
+| Products API | 206 items: green **26**, red 57, yellow 123, `dataStale: false`, `updatedAt 03:19` |
+| Mini-app vs API | `check_frontend_matches_api.py` → exit 0, identical counts, age 9.4 min |
+| Price history | `/api/history/product/605` → **29 sessions**, `last_known_price 62.0`, `last_sale_type green`, `last_sale_at 2026-11-21T00:53` |
+| Prediction | `predicted_at 2026-11-22T12:25`, `usual_time 12:25`, `confidence high (99%)` |
+| Soak | last 7 cycles all `ok=True`, `live_count 25→26`, `last_ok` 17.8 min |
+| Health | `degraded` **only** for `pool_below_min_healthy:0_lt_5`; `quarantined_count: 0` |
+
+The one standing degradation is the VLESS pool sitting at 0 nodes; it does not affect the
+scrapers because egress falls back to direct/URnetwork. Note that `quarantined_count` is now
+0 where it used to show 233–444 — either the quarantine was cleaned or the counter reset;
+I have not verified which, so I am not claiming the pool is healthier than the number says.
+
 ## 2026-11-21 02:40 MSK — deploys were not restarting the scheduler at all
 
 Found while trying to ship the snapshot-freshness fix: the webhook takes the changed-file
