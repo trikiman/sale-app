@@ -38,9 +38,23 @@ def test_modal_close_is_guarded():
 
 
 def test_guard_reacquires_the_page():
-    body = _function("scrape_green_prices_async")
-    idx = body.index("await _close_green_modal(page)")
-    tail = body[idx:idx + 1500]
-    assert "_reacquire_page" in tail, (
-        "after a failed evaluate the old handle is dead — it must be re-acquired"
+    """The try-block that wraps the modal close must re-acquire the dead page handle."""
+    tree = ast.parse(SRC)
+    fn = next(n for n in tree.body
+              if isinstance(n, ast.AsyncFunctionDef) and n.name == "scrape_green_prices_async")
+    found_guarded = []
+    for node in ast.walk(fn):
+        if not isinstance(node, ast.Try):
+            continue
+        seg = ast.get_source_segment(SRC, node) or ""
+        if "_close_green_modal" not in seg:
+            continue
+        handler_src = "".join(
+            ast.get_source_segment(SRC, h) or "" for h in node.handlers
+        )
+        found_guarded.append("_reacquire_page" in handler_src)
+    assert found_guarded, "no try/except around _close_green_modal"
+    assert any(found_guarded), (
+        "the modal-close handler must re-acquire the page: after a failed evaluate the old "
+        "handle is dead"
     )
