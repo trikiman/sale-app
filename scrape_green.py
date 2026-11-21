@@ -3211,7 +3211,16 @@ async def scrape_green_prices_async():
                     print(f"  [GREEN] Added {added}/{total_in_modal} items to cart")
                     await _step_screenshot(page, "after_add_to_cart")
 
-                await _close_green_modal(page)
+                try:
+                    await _close_green_modal(page)
+                except Exception as exc:  # noqa: BLE001 — closing the modal is not the point of the run
+                    # 21.11.2026: `_close_green_modal` hangs on `page.evaluate` until
+                    # JS_EVAL_TIMEOUT_S (45 s) and the TimeoutError killed whole cycles
+                    # (07:17, 07:26) right after 69 items had been added to the cart.
+                    # Closing the modal is cosmetic — the next step reloads the page anyway.
+                    print(f"  [GREEN] Closing the green modal failed "
+                          f"({type(exc).__name__}: {exc}) — continuing with a fresh handle")
+                    page = await _reacquire_page(browser)
                 await asyncio.sleep(2)
             else:
                 print("  [GREEN] Modal didn't open")
