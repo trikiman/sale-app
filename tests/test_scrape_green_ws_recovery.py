@@ -37,7 +37,18 @@ def test_is_dead_ws_error_matches_connection_closed_class() -> None:
 
 def test_is_dead_ws_error_ignores_unrelated_errors() -> None:
     assert _is_dead_ws_error(ValueError("bad selector")) is False
-    assert _is_dead_ws_error(TimeoutError("nav timeout")) is False
+    assert _is_dead_ws_error(KeyError("products")) is False
+
+
+def test_is_dead_ws_error_treats_a_hung_evaluate_as_dead() -> None:
+    """v1.30 (2026-11-18): `TimeoutError` joined the dead-WS set on purpose.
+
+    A hung evaluate is the same failure as a closed socket — the tab stopped
+    answering — and retrying on a fresh handle is what recovered every such
+    case. The old expectation here was `is False`, written before that fix;
+    keeping it would have pushed the next person to "fix" the retry away.
+    """
+    assert _is_dead_ws_error(TimeoutError("nav timeout")) is True
 
 
 # ── Fakes ────────────────────────────────────────────────────────────
