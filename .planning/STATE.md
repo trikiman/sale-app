@@ -15,6 +15,31 @@ progress:
 
 *Session checkpoint 2026-10-19 (ops review). Milestone v1.26 remains shipped/archived. Operator milestone "Telegram Favorites Notifications" verified end-to-end on prod and closed as working. Green-уценка confirmed morning-only (VkusVill stock reality, not a bug). RU VLESS pool degraded to 1/5 — scraping survives on the manual trojan seed floor; pool replenishment is the top candidate for the next milestone.*
 
+## 2026-11-22 16:05 MSK — acceptance arithmetic re-checked, and the margin is 5 minutes, not 168 hours
+
+Ran the numbers against the live endpoint instead of trusting the phase note
+(`green-uptime?hours=168&tail=200`, 200 cycles covering 21.11 02:43 → 22.11 13:15 UTC):
+
+| criterion | now | at 2026-11-28 06:00 UTC |
+|---|---|---|
+| `false_zero_cycles == 0` | 1 (20.11 05:12 UTC) | window starts 21.11 06:00 → event 43 h outside |
+| `gap_incident_count == 0` | 11 (last: gap #11 04:10→05:47:51 UTC 21.11) | window starts 21.11 06:00 → 12 min of air |
+| `hours_recorded >= 168` | 148.2 | needs ~20 more hours; recorder starts 16.11 → fine |
+| no gap after epoch | 0 | — |
+
+`GAP_INCIDENT_MINUTES = 45` (`backend/green_uptime.py:36`), so a single failed cycle is not a
+gap — only a hole wider than 45 minutes between two `ok` cycles is. Sixteen cycles failed in
+that 200-cycle span (eight of them inside gap #11, plus 21.11 11:23, 11:32, 13:37, 21:28 and
+22.11 04:52, 05:04, 08:54), and **none of them produced a gap** because the `ok` neighbours
+stayed closer than 45 min.
+
+**The risk, with a number:** after gap #11 the widest hole was **40.0 min** (22.11 04:47 →
+05:27 UTC, two failed cycles in a row) and another 38.6 min on 21.11 11:11 → 11:50. That is
+**5 minutes of headroom** to a new incident. Two failed cycles that happen to straddle a
+15-minute gap will reset the whole 168 h window and push acceptance out by another week. So:
+no deploys, no config changes, no manual scrape triggers before 28.11 09:00 MSK — every one of
+them buys a few minutes of jitter for nothing.
+
 ## 2026-11-22 15:40 MSK — the morning checks did not run, because the LLM did not
 
 Both Phase-96 crons fired on time and both died before touching saleapp:
