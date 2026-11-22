@@ -29,12 +29,24 @@ if str(ROOT) not in sys.path:
 
 # nodriver is not installed on the workstation; the coroutine under test never
 # touches it, so a bare stub is enough to import the module.
-if "nodriver" not in sys.modules:
+#
+# The stub is removed again straight after the import: `sys.modules` is shared
+# for the whole pytest session, and a fake `nodriver` left behind silently
+# changes the outcome of other suites (tests/test_green_recovery.py and
+# tests/test_scrape_green_ws_recovery.py install their own richer stub and lost
+# nine tests to this leak on 2026-11-22). `scrape_green` is dropped from the
+# cache too, so every other module imports it under its own stub.
+_added_stub = "nodriver" not in sys.modules
+if _added_stub:
     _stub = types.ModuleType("nodriver")
     _stub.cdp = types.SimpleNamespace()  # type: ignore[attr-defined]
     sys.modules["nodriver"] = _stub
 
 sg = importlib.import_module("scrape_green")
+
+if _added_stub:
+    sys.modules.pop("nodriver", None)
+    sys.modules.pop("scrape_green", None)
 
 WINDOW_RE = re.compile(r"for \(let i = (\d+); i < (\d+); i\+\+\)")
 
