@@ -72,6 +72,23 @@ The earlier `test_green_batched_add.py` only asserted the loop *shape* via AST �
 `end` or an early `break` would have passed it. Run: `4 passed in 4.71s`, and the pytest
 output itself prints `Batch 0-10 … 90-100` plus `Batch 10-20 failed … continuing`.
 
+**That test then cost nine unrelated tests, and I caught it by comparing against baseline.**
+It injected a fake `nodriver` into `sys.modules` to make the import work and left it there
+for the whole pytest session — `test_green_recovery.py` and `test_scrape_green_ws_recovery.py`
+install their own richer stub and were silently overridden. Full run before the fix:
+`10 failed, 444 passed, 3 skipped, 10 errors`. Fix: pop the stub (and the cached
+`scrape_green`) right after the import, only if this module created it. After the fix, with
+the same four ignores: **`2 failed, 452 passed, 3 skipped, 10 errors`**, and both remaining
+failures reproduce with the new test file absent.
+
+The remaining red is the workstation, not the code: the 10 errors are all
+`ModuleNotFoundError: No module named 'telegram'` (no `python-telegram-bot` here, so any
+test that imports `scheduler_service` can't even set up), the 4 modules skipped by
+`--ignore` fail at collection for the same reason, and `test_vless_xray.py::
+test_start_succeeds_when_port_opens` fails on its own (local xray start). Worth remembering
+when reading the "396 passed" line from previous sessions: that number came from a
+different selection, not from a greener tree.
+
 ## 2026-11-21 08:55 MSK — a big markdown day broke the green run five times, in two places
 
 VkusVill put ~100 green tags up this morning (modal went 48 → 96 → 100 cards). The scraper
