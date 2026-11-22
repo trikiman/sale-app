@@ -43,8 +43,26 @@ files cannot restart anything: the webhook pulls on every push to main but resta
 (`backend/main.py:6649-6664`).
 
 Result on those five modules: **98 passed, 0 failed** (was `0 collected, 4 errors` +
-`91 passed / 7 failed`). To reproduce on this box:
-`PYTHONPATH=~/.hermes/cache/testdeps python3 -m pytest tests/ -q`.
+`91 passed / 7 failed`). Then one more stale expectation surfaced in
+`test_scrape_green_ws_recovery.py`: it asserted `_is_dead_ws_error(TimeoutError(...)) is False`,
+while `TimeoutError` has been deliberately inside the dead-WS set since 2026-11-18 (a hung
+evaluate is a dead tab). Split into two tests: unrelated errors → False, hung evaluate → True.
+
+**Full suite on this workstation: `531 passed, 1 failed, 3 skipped, 0 errors`.**
+The one red is `test_vless_xray.py::test_start_succeeds_when_port_opens` — `health_check()`
+returns False here because the check is written for the Linux box, not Windows. Nothing to do
+with v1.30.
+
+**Environment rule for reproducing this (learned the hard way):** install only
+`python-telegram-bot` + `python-multipart`, and **do not** install real `nodriver` into
+`testdeps`. With real `nodriver` present the suite goes to `9 failed` — `test_green_recovery.py`
+and `test_scrape_green_ws_recovery.py` guard their fake `nodriver` on the package being
+*absent*, so importing the real one silently swaps their fixtures. Reproduce with:
+
+```
+python3 -m pip install --target ~/.hermes/cache/testdeps python-telegram-bot python-multipart
+PYTHONPATH=~/.hermes/cache/testdeps python3 -m pytest tests/ -q
+```
 
 ## 2026-11-22 16:05 MSK — acceptance arithmetic re-checked, and the margin is 5 minutes, not 168 hours
 
