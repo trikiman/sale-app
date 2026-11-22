@@ -68,6 +68,7 @@ collectors, `no_agent`, no LLM in the path:
 |---|---|---|---|
 | `9bedad3da8b0` | `*/3 6-11 * * *` | `~/.hermes/scripts/saleapp_batch_proof.sh` | tails `/admin/logs`, appends new `Batch`/`items to cart`/`Inline add-to-cart` windows to `.planning/phases/96-soak-and-uptime-report/batch-proof.log`, silent unless ≥2 distinct ranges appear in one window |
 | `849ba2418e5a` | `5 9 * * *` | `~/.hermes/scripts/saleapp_soak_snapshot.sh` | appends one JSON line/day to `soak-daily.log` (cycles, ok, failed, uptime, false_zero, gaps, product counts) and prints a single line |
+| `08440c65ff15` | once, `2026-11-28 09:05` MSK | `~/.hermes/scripts/saleapp_acceptance_check.sh` | runs `phase96_acceptance.py` + `green_soak_check.py` and prints `VERDICT: acceptance MET / NOT met`; exit 0/2. It never closes the phase itself — that stays a human/GSD step |
 
 Both were executed by hand first: the batch collector exited 0 silently (no batch
 lines in the current window — correct), the snapshot wrote
