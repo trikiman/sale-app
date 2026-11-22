@@ -63,6 +63,15 @@ the scheduler is mid-cycle.**
 Today's green curve is the normal markdown decay, not a regression: 184 (05:27 UTC) →
 149 → 125 → 108 → 86 → 73 → 58 → 45 → 17 → 37 → 32, all `ok`.
 
+**Multi-batch now has an offline proof too.** `tests/test_green_batched_windows.py`
+(drives the real `_add_green_cards_to_cart` coroutine with a fake page that records every
+evaluate): 25 cards → windows `(0,10) (10,20) (20,25)`, 100 cards → ten windows with no
+hole and no overlap, one dead batch → the run continues and costs exactly its own ten
+cards (`added 15`, `failed_batches 1`, `partial 1`), zero cards → no evaluate at all.
+The earlier `test_green_batched_add.py` only asserted the loop *shape* via AST — a wrong
+`end` or an early `break` would have passed it. Run: `4 passed in 4.71s`, and the pytest
+output itself prints `Batch 0-10 … 90-100` plus `Batch 10-20 failed … continuing`.
+
 ## 2026-11-21 08:55 MSK — a big markdown day broke the green run five times, in two places
 
 VkusVill put ~100 green tags up this morning (modal went 48 → 96 → 100 cards). The scraper
