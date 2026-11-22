@@ -1,0 +1,1 @@
+{"recorded_at_msk": "2026-11-22 15:30", "window_hours": 24, "cycles": 143, "cycles_ok": 138, "cycles_failed": 5, "uptime_pct": 96.5, "false_zero_count": 0, "gap_incident_count": 0, "worst_gap_minutes": null, "last_ok_age_minutes": 11.6, "hours_recorded": 23.7, "green": 32, "red": 55, "yellow": 118, "total": 205, "data_stale_hint": 12.1}

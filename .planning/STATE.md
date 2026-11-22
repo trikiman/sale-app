@@ -15,6 +15,54 @@ progress:
 
 *Session checkpoint 2026-10-19 (ops review). Milestone v1.26 remains shipped/archived. Operator milestone "Telegram Favorites Notifications" verified end-to-end on prod and closed as working. Green-уценка confirmed morning-only (VkusVill stock reality, not a bug). RU VLESS pool degraded to 1/5 — scraping survives on the manual trojan seed floor; pool replenishment is the top candidate for the next milestone.*
 
+## 2026-11-22 15:40 MSK — the morning checks did not run, because the LLM did not
+
+Both Phase-96 crons fired on time and both died before touching saleapp:
+
+| job | fired | status | error |
+|---|---|---|---|
+| `3dc7ab1ba33a` batch proof (08:15) | 08:15:31 | error | `No reply: every provider in the fallback chain kept failing over` |
+| `894c7424bbbe` soak report (09:00) | 09:00:33 | error | same |
+
+So the 08:27 MSK markdown day — the one with `live_count=184`, the biggest green
+section seen since the batch fix — was never inspected, and `/admin/logs` (300 lines,
+minutes only) had scrolled past it by the time I looked at 12:23 UTC. **Multi-batch
+stays unproven.**
+
+And it stays unproven on purpose: `184` live products does **not** prove 18 batches
+ran. `_reveal_green_card_stock()` adds DOM cards to the cart and then rebuilds stock
+from `basket_recalc`; `_merge_green_cart_data()` also pulls green items that were
+already in the basket. A published count therefore mixes "added now" with "already
+in cart", and only the `Batch N-M: added K` lines distinguish them. Those lines are
+gone.
+
+**Fix — evidence must not depend on a model being reachable.** Two deterministic
+collectors, `no_agent`, no LLM in the path:
+
+| job | schedule (MSK) | script | what it does |
+|---|---|---|---|
+| `9bedad3da8b0` | `*/3 6-11 * * *` | `~/.hermes/scripts/saleapp_batch_proof.sh` | tails `/admin/logs`, appends new `Batch`/`items to cart`/`Inline add-to-cart` windows to `.planning/phases/96-soak-and-uptime-report/batch-proof.log`, silent unless ≥2 distinct ranges appear in one window |
+| `849ba2418e5a` | `5 9 * * *` | `~/.hermes/scripts/saleapp_soak_snapshot.sh` | appends one JSON line/day to `soak-daily.log` (cycles, ok, failed, uptime, false_zero, gaps, product counts) and prints a single line |
+
+Both were executed by hand first: the batch collector exited 0 silently (no batch
+lines in the current window — correct), the snapshot wrote
+`cycles=143 ok=138 failed=5 uptime=96.5% false_zero=0 gaps=0 … green=32 red=55 yellow=118`.
+The batch parser was additionally exercised on a synthetic three-range window
+(`Batch 0-10/10-20/20-30`) → `distinct_ranges=3`, correct extraction.
+
+**My own mistake, recorded:** at 15:24 MSK I fired `POST /api/admin/run/green` by hand.
+It collided with the scheduler's own cycle and died with
+`ConnectionError: Connection closed` on `browser.get('https://vkusvill.ru')`,
+exit 1, `[GREEN] Failure report -> data/green_last_failure.json (unclassified)`.
+One vCPU, one Chrome on 19222, one egress tunnel — a manual run during a cycle does
+not test the scraper, it tests who wins the browser. No cycle was recorded as failed
+(manual runs are not uptime cycles) and the published data stayed fresh
+(`greenAgeMinutes` 12.8, `isStale: false`). Rule: **do not hand-trigger a scrape while
+the scheduler is mid-cycle.**
+
+Today's green curve is the normal markdown decay, not a regression: 184 (05:27 UTC) →
+149 → 125 → 108 → 86 → 73 → 58 → 45 → 17 → 37 → 32, all `ok`.
+
 ## 2026-11-21 08:55 MSK — a big markdown day broke the green run five times, in two places
 
 VkusVill put ~100 green tags up this morning (modal went 48 → 96 → 100 cards). The scraper
