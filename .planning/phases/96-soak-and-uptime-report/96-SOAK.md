@@ -399,3 +399,4 @@ Instrumentation added afterwards: `data/green_last_failure.json` plus
 - **2026-11-21** — 🔴 verdict `incident`, cycles 654 (uptime 89.14%), gaps 11, false zeros 1, last ok 9.4 min ago. ⚠️ UNDIAGNOSED new gaps: 1
 - **2026-11-21** — 🔴 verdict `incident`, cycles 654 (uptime 89.14%), gaps 11, false zeros 1, last ok 9.8 min ago. ⏳ 1 diagnosed false zero(s) in window; acceptance 2026-11-28 06:00 UTC (28.11 09:00 MSK)
 - **2026-11-21** — 🔴 verdict `incident`, cycles 710 (uptime 89.58%), gaps 11, false zeros 1, last ok 8.9 min ago. ⏳ 1 diagnosed false zero(s) in window; acceptance 2026-11-28 06:00 UTC (28.11 09:00 MSK)
+- **2026-11-22** — 🔴 verdict `incident`, cycles 832 (uptime 90.62%), gaps 11, false zeros 1, last ok 2.1 min ago. ⏳ 1 diagnosed false zero(s) in window; acceptance 2026-11-28 06:00 UTC (28.11 09:00 MSK)
