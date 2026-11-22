@@ -79,8 +79,12 @@ def healthy_world(monkeypatch, tmp_path):
 # ---------------------------------------------------------------------------
 
 
+# v1.30 (2026-11-21, commit 27cb16b): the snapshot grew a chronic/acute split so the
+# empty VLESS pool stops reading as an acute fault. A real timeout (gap #11) had been
+# blamed on egress because every degraded status looked the same.
 REQUIRED_TOP_KEYS = {
-    "status", "reasons", "pool", "breaker", "xray",
+    "status", "status_note", "reasons", "chronic_reasons", "acute_reasons", "acute",
+    "pool", "breaker", "xray",
     "last_cycle_age_s", "products_age_s", "as_of",
 }
 
@@ -169,8 +173,10 @@ def test_no_cycle_state_is_unhealthy_503(client, monkeypatch, healthy_world):
 
 
 def test_stale_cycle_is_degraded_503(client, monkeypatch, healthy_world):
-    # 30 minutes — exceeds 15-minute threshold
-    monkeypatch.setattr(backend_main, "_last_cycle_age_seconds", lambda: 30 * 60.0)
+    # 31 minutes — exceeds the 30-minute budget (_DEEP_MAX_CYCLE_AGE_S, raised from
+    # 15 min in 3485e0c: a healthy cycle on 1 vCPU takes 18-20 min and the old budget
+    # screamed stale_cycle in every single healthy cycle).
+    monkeypatch.setattr(backend_main, "_last_cycle_age_seconds", lambda: 31 * 60.0)
     r = client.get("/api/health/deep")
     assert r.status_code == 503
     body = r.json()
@@ -214,7 +220,7 @@ def test_three_failed_criteria_is_unhealthy_503(client, monkeypatch, healthy_wor
         backend_main, "_load_breaker_snapshot",
         lambda: {"available": True, "state": "open", "cooldown_s": 600, "fails": 3},
     )
-    monkeypatch.setattr(backend_main, "_last_cycle_age_seconds", lambda: 30 * 60.0)
+    monkeypatch.setattr(backend_main, "_last_cycle_age_seconds", lambda: 31 * 60.0)
     r = client.get("/api/health/deep")
     body = r.json()
     assert r.status_code == 503
@@ -223,8 +229,9 @@ def test_three_failed_criteria_is_unhealthy_503(client, monkeypatch, healthy_wor
 
 
 def test_stale_products_json_is_degraded_503(client, monkeypatch, healthy_world):
-    """OBS-02 healthy criterion #5: products.json mtime <= 15 min."""
-    monkeypatch.setattr(backend_main, "_products_mtime_age_seconds", lambda: 30 * 60.0)
+    """OBS-02 healthy criterion #5: products.json mtime <= 45 min
+    (_DEEP_MAX_PRODUCTS_AGE_S, raised from 15 min in 3485e0c)."""
+    monkeypatch.setattr(backend_main, "_products_mtime_age_seconds", lambda: 46 * 60.0)
     r = client.get("/api/health/deep")
     body = r.json()
     assert r.status_code == 503

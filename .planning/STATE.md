@@ -15,6 +15,37 @@ progress:
 
 *Session checkpoint 2026-10-19 (ops review). Milestone v1.26 remains shipped/archived. Operator milestone "Telegram Favorites Notifications" verified end-to-end on prod and closed as working. Green-уценка confirmed morning-only (VkusVill stock reality, not a bug). RU VLESS pool degraded to 1/5 — scraping survives on the manual trojan seed floor; pool replenishment is the top candidate for the next milestone.*
 
+## 2026-11-22 17:35 MSK — 14 тестов, которые вообще не собирались, теперь зелёные; 7 падений были протухшими ожиданиями, а не багами
+
+The workstation had no `python-telegram-bot`, so five test modules died at import with
+`ModuleNotFoundError: No module named 'telegram'` (4 collection errors + 10 setup errors).
+Installed the two missing runtime deps into an out-of-tree dir —
+`python3 -m pip install --target ~/.hermes/cache/testdeps python-telegram-bot python-multipart`
+(nothing installed into Hermes' own interpreter, nothing written to `E:` — it has 1.1 GB left,
+`C:` has 52 GB) — and ran with `PYTHONPATH=~/.hermes/cache/testdeps`.
+
+That immediately exposed **7 real failures**, all of them stale expectations rather than bugs:
+
+| test | expected | shipped reality |
+|---|---|---|
+| `test_build_source_freshness_default_thresholds_are_per_color` | green 45 / red 30 / yellow 30 | **45 / 45 / 45** since v1.30 |
+| `test_..._yellow_stale_only_above_30` | fresh 29.5, stale 31 | 45-min budget → both fresh |
+| `test_compute_empty_reason_all_stale_when_every_file_past_threshold` | 45 min age = stale | 45 == threshold, not past it |
+| `test_health_deep_..._full_schema` | 8 top-level keys | snapshot grew `status_note`, `chronic_reasons`, `acute_reasons`, `acute` (27cb16b) |
+| `test_stale_cycle_is_degraded_503` | 30 min age trips it | `_DEEP_MAX_CYCLE_AGE_S = 30*60` → needs > 30 |
+| `test_three_failed_criteria_is_unhealthy_503` | 30 min counts as a 3rd reason | same |
+| `test_stale_products_json_is_degraded_503` | 30 min age trips it | `_DEEP_MAX_PRODUCTS_AGE_S = 45*60` |
+
+Fixed on the test side only — the code is the source of truth and the thresholds are a
+deliberate v1.30 decision (yellow 45, red 45, `3485e0c` budgets, `27cb16b` split). Test-only
+files cannot restart anything: the webhook pulls on every push to main but restarts only for
+`backend/`, `bot/`, `config.py`, `vless/`, `database/`, `scrape_*`, `scheduler_service.py`
+(`backend/main.py:6649-6664`).
+
+Result on those five modules: **98 passed, 0 failed** (was `0 collected, 4 errors` +
+`91 passed / 7 failed`). To reproduce on this box:
+`PYTHONPATH=~/.hermes/cache/testdeps python3 -m pytest tests/ -q`.
+
 ## 2026-11-22 16:05 MSK — acceptance arithmetic re-checked, and the margin is 5 minutes, not 168 hours
 
 Ran the numbers against the live endpoint instead of trusting the phase note
