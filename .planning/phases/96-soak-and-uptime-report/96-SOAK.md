@@ -412,17 +412,25 @@ what the report already governs and must not be counted twice. Tests updated
 Live run after the fix: **3 PASS / 1 FAIL**, the only failure being
 `gap_incident_count == 0 — 3`.
 
-**When the three remaining gaps leave the window** (each at `to_ts + 168 h`):
+**When the three remaining gaps leave the window.** Correction, verified against the code
+and then against live data: a gap leaves at **`from_ts + 168 h`**, not `to_ts + 168 h`.
+`backend/green_uptime.py:147` filters entries to `ts >= window_start` and then walks only
+the `ok` entries, so `from_ts` is the last good cycle **inside** the window and the gap
+disappears the moment that cycle falls out of it. Observed: gap #1 (`from_ts` 20.11 17:33)
+was still counted at 17:13 MSK and gone at 18:15 MSK — `gap_incident_count` 3 → 2 exactly
+as the `from_ts` rule says, 5 min before the `to_ts` rule would have allowed.
 
-| gap | window (MSK) | leaves the window |
-|---|---|---|
-| 47.6 min | 20.11 17:33 → 18:20 | **27.11 18:20** |
-| 45.3 min | 20.11 22:50 → 23:35 | **27.11 23:35** |
-| 97.7 min (#11) | 21.11 07:10 → 08:47 | **28.11 08:47** |
+| gap | dead air | `from_ts` (MSK) | leaves the window |
+|---|---|---|---|
+| 47.6 min | 20.11 17:33 → 18:20 | 20.11 17:33 | 27.11 17:33 — **observed gone by 18:15** |
+| 45.3 min | 20.11 22:50 → 23:35 | 20.11 22:50 | **27.11 22:50** |
+| 97.7 min (#11) | 21.11 07:10 → 08:47 | 21.11 07:10 | **28.11 07:10** |
 
-The runner must not be called before **28.11 08:50 MSK**; the 09:05 MSK cron leaves
-18 min of margin past the last gap. Do not restart the backend before then either —
-the soak window is 15.6 h from closing and a restart is exactly the kind of hole
+So the earliest honest acceptance moment is **28.11 07:10 MSK**, ~1 h 55 min before the
+09:05 cron — the window is not as thin as the earlier `to_ts` table claimed. The cron
+stays where it is (nothing to gain by moving it); the point is that a delayed run, a slow
+MCP call, or a 07:xx retry now also lands outside the last gap. Do not restart the backend before then either —
+the soak window is under 14 h from closing and a restart is exactly the kind of hole
 that has cost it a week four times already.
 
 **ADMIN_TOKEN** was printed into tool output at 08:1x by a `curl -v` during earlier
