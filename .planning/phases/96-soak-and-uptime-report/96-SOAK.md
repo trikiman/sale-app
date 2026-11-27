@@ -496,3 +496,26 @@ will not fire at this rate (~1 MB/month), so nothing is being silently dropped a
 generation boundary — the gap list and `hours_recorded` rest on a continuous file, not
 on a rotated fragment. Prod disk 45 G with 20 G free (58 % used), no space pressure
 during the last hours of the window.
+
+## 2026-11-28 01:15 MSK — replay of the real record at the future timestamps: all four PASS
+
+Not a prediction by arithmetic this time — the actual 1533-line `green_uptime.jsonl` from
+prod, replayed through `green_uptime.summarize(now=<future>)` and
+`phase96_acceptance.evaluate()` at four simulated moments. Between the real last entry
+(28.11 01:07 MSK, live=25) and each target, the replay appends one synthetic healthy cycle
+per 11 min (the record's median spacing) — that is the one assumption, stated plainly: it
+assumes **no new failure**, and it proves the gates, not the future.
+
+| simulated moment | verdict | gaps | false zeros | hours | criteria |
+|---|---|---|---|---|---|
+| 28.11 07:15 MSK | `healthy` | 0 | 0 | 167.9 | **4/4 PASS** |
+| 28.11 08:00 MSK | `healthy` | 0 | 0 | 167.9 | **4/4 PASS** |
+| 28.11 09:05 MSK (cron) | `healthy` | 0 | 0 | 167.7 | **4/4 PASS** |
+| 28.11 09:30 MSK | `healthy` | 0 | 0 | 167.9 | **4/4 PASS** |
+
+So the 09:05 cron is not merely "expected to pass": on the record as it stands, every gate
+passes from 07:15 onwards, and `hours_recorded` has ~0.5 h of slack against
+`MIN_HOURS = 167.25` rather than the 0 it had under the old `>= 168` rule. The remaining
+risk is exactly one thing — a *new* gap between now and 07:10 — and that is what the hourly
+soak check watches. Scratch copy of the record lives in
+`~/.hermes/cache/scratch/saleapp_replay/` (pruned automatically, nothing written to prod).
