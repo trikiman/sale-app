@@ -486,3 +486,13 @@ Housekeeping: deleted two uncommitted draft runbooks (`POST-ACCEPTANCE.md`,
 committed `96-RUNBOOK.md`, which is the one to follow.
 - **2026-11-27** — 🔴 verdict `incident`, cycles 910 (uptime 94.84%), gaps 1, false zeros 0, last ok 12.4 min ago. ⏳ window still holds 1 known gap(s) (pre-fix + diagnosed post-fix); acceptance 2026-11-28 06:00 UTC (28.11 09:00 MSK)
 - **2026-11-27** — 🔴 verdict `incident`, cycles 910 (uptime 94.84%), gaps 1, false zeros 0, last ok 12.5 min ago. ⏳ window still holds 1 known gap(s) (pre-fix + diagnosed post-fix); acceptance 2026-11-28 06:00 UTC (28.11 09:00 MSK)
+
+## 2026-11-28 00:16 MSK — record integrity on prod (checked, not assumed)
+
+`ssh vless`, read-only: `data/green_uptime.jsonl` = **173 KB, 1527 lines**, first
+`ts` 16.11 05:04 UTC, last `ts` 27.11 21:12 UTC, i.e. unbroken from the first recorded
+cycle to the current one. Rotation (2 MB + one previous generation) has not fired and
+will not fire at this rate (~1 MB/month), so nothing is being silently dropped at a
+generation boundary — the gap list and `hours_recorded` rest on a continuous file, not
+on a rotated fragment. Prod disk 45 G with 20 G free (58 % used), no space pressure
+during the last hours of the window.
