@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.30
 milestone_name: Green Tag Uptime
-status: Phase 97 complete
-stopped_at: milestone planned; next step is `/gsd-plan-phase 94`
-last_updated: "2026-11-16T10:58:02.957Z"
+status: Phase 96 in_progress — soak awaiting acceptance
+stopped_at: "nothing left to code before acceptance: the last gap leaves the 168 h window at 2026-11-28 07:10 MSK, the one-shot cron runs 09:05; do not deploy or restart the backend before then"
+last_updated: "2026-11-27T16:09:41.000Z"
 progress:
   total_phases: 4
   completed_phases: 3
@@ -72,6 +72,11 @@ progress:
 `16:24 live=34 exit=1`. То есть прогон отработал, но вышел с кодом 1 и засчитан в
 `cycles_failed`; это занижает `uptime_pct`, но **не** гейтит приёмку (гейты — гэпы и false zeros).
 Правится в exit-пути `scrape_green.py` после 28.11, не раньше.
+
+**Гигиена ROADMAP (не трогал):** фаза 97 по файлам закрыта — `97-01/97-02-SUMMARY.md` +
+`97-VERIFICATION.md` на месте, — но чекбоксы в `ROADMAP.md:41,108,109` стоят `[ ]`, как и
+у 96 (у 96 это правильно). Чекбоксы отражают решение о закрытии, а его принимает человек,
+поэтому не отмечал; иначе следующая сессия прочитает ROADMAP и пойдёт переделывать 97.
 
 ## 2026-11-27 08:15 MSK — мульти-батч add-to-cart подтверждён на живом модале (128 карточек)
 
