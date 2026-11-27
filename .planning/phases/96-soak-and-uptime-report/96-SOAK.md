@@ -484,3 +484,5 @@ and it is time-bound, not defect-bound. Nothing to code, nothing to deploy:
 Housekeeping: deleted two uncommitted draft runbooks (`POST-ACCEPTANCE.md`,
 `POST-ACCEPTANCE-RUNBOOK.md`) I wrote during a broken turn — they duplicated the
 committed `96-RUNBOOK.md`, which is the one to follow.
+- **2026-11-27** — 🔴 verdict `incident`, cycles 910 (uptime 94.84%), gaps 1, false zeros 0, last ok 12.4 min ago. ⏳ window still holds 1 known gap(s) (pre-fix + diagnosed post-fix); acceptance 2026-11-28 06:00 UTC (28.11 09:00 MSK)
+- **2026-11-27** — 🔴 verdict `incident`, cycles 910 (uptime 94.84%), gaps 1, false zeros 0, last ok 12.5 min ago. ⏳ window still holds 1 known gap(s) (pre-fix + diagnosed post-fix); acceptance 2026-11-28 06:00 UTC (28.11 09:00 MSK)

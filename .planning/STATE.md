@@ -15,6 +15,19 @@ progress:
 
 *Session checkpoint 2026-10-19 (ops review). Milestone v1.26 remains shipped/archived. Operator milestone "Telegram Favorites Notifications" verified end-to-end on prod and closed as working. Green-уценка confirmed morning-only (VkusVill stock reality, not a bug). RU VLESS pool degraded to 1/5 — scraping survives on the manual trojan seed floor; pool replenishment is the top candidate for the next milestone.*
 
+## 2026-11-27 22:30 MSK — гэп #10 вышел из окна: осталось 1, до 07:11
+
+`gap 2 → 1`, `cycles 910`, `uptime 94.84 %` (было 94.6), `hours 167.5`, `fz 0`, живой
+гэп только #11 (97.7 мин). Приёмка всё ещё `exit 2`: критерий `gap_incident_count == 0`
+не выполнен, остальные три PASS.
+
+Попутно: с 22:17 до 22:25 мой доступ к `152.70.58.201:80` рвался (`curl exit 7`/`7 → 000`,
+и напрямую, и через `socks5h://127.0.0.1:10870`, при живом контроле `example.com` → 200).
+Сервер при этом был **жив**: ssh отвечал, load 6.75, nginx `active`, порт 80 LISTEN,
+локальные запросы в access.log отдавались (403 без токена), `127.0.0.1:8000/docs` → 200.
+Значит это был транзиент на пути к серверу, а не падение бэкенда; через 10 минут API
+снова ответил 200. Ничего не перезапускал.
+
 ## 2026-11-27 18:55 MSK — exit 1 при «мало, но не пусто» вылечен в коде (деплой после 07:10)
 
 За 168 ч 7 упавших циклов, из них **три — с товарами** (`12:15 live=28`, `12:20 live=28`,
