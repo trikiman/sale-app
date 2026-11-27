@@ -31,6 +31,16 @@ PROXY = "socks5h://127.0.0.1:10870"
 # the false zero at 2026-11-20 05:12:12 UTC, so the window clears 168 h later.
 ACCEPTANCE_EPOCH = dt.datetime(2026, 11, 28, 6, 0, tzinfo=dt.timezone.utc).timestamp()
 REQUIRED_HOURS = 168
+# `hours_recorded` is the SPAN between the first and the last record inside the window,
+# not "hours that passed". Both ends are always short by fractions of a cycle: the last
+# record is minutes old, the first one sits minutes after `window_start`. The span
+# therefore caps at ~167.8 h for a perfectly healthy series and can never reach 168 —
+# a bare `>= 168` fails forever, on health, not on evidence. The tolerance is the
+# report's own gap threshold (45 min): a hole longer than that is already a
+# `gap_incident_count`, so anything shorter at the two ends is inside what the report
+# already governs and must not be double-counted here.
+PARTIAL_CYCLE_TOLERANCE_H = 0.75
+MIN_HOURS = REQUIRED_HOURS - PARTIAL_CYCLE_TOLERANCE_H
 
 
 def _token() -> str | None:
@@ -67,7 +77,11 @@ def evaluate(report: dict) -> list[tuple[str, bool, str]]:
     return [
         ("false_zero_cycles == 0", zeros == 0, f"{zeros}"),
         ("gap_incident_count == 0", gaps == 0, f"{gaps}"),
-        (f"hours_recorded >= {REQUIRED_HOURS}", hours >= REQUIRED_HOURS, f"{hours}"),
+        (
+            f"hours_recorded >= {MIN_HOURS} ({REQUIRED_HOURS} h minus {int(PARTIAL_CYCLE_TOLERANCE_H*60)} min partial cycles)",
+            hours >= MIN_HOURS,
+            f"{hours}",
+        ),
         ("no gap after acceptance epoch", not post, f"{len(post)} post-epoch gap(s)"),
     ]
 

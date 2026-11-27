@@ -313,22 +313,11 @@ What blocks closure, stated up front: a new gap, `false_zero_cycles > 0`, fewer 
 Phase 96 cannot be closed by a code change: it is a 168-hour observation. Until
 2026-11-25 the milestone stays open, and the report says so explicitly rather
 than claiming a week that has not happened.
-- **2026-11-16** — ⏳ verdict `insufficient`, cycles 1 (uptime 100.0%), gaps 0, false zeros 0, last ok 3.6 min ago.
-- **2026-11-16** — ⏳ verdict `insufficient`, cycles 19 (uptime 78.95%), gaps 2, false zeros 0, last ok 18.0 min ago.
 - **2026-11-17** — ⏳ verdict `insufficient`, cycles 78 (uptime 78.21%), gaps 6, false zeros 0, last ok 4.2 min ago.
 - **2026-11-18** — 🔴 verdict `incident`, cycles 192 (uptime 90.62%), gaps 6, false zeros 0, last ok 0.6 min ago.
-- **2026-11-18** — 🔴 verdict `incident`, cycles 192 (uptime 90.62%), gaps 6, false zeros 0, last ok 0.8 min ago.
-- **2026-11-18** — 🔴 verdict `incident`, cycles 213 (uptime 90.61%), gaps 7, false zeros 0, last ok 47.9 min ago.
 - **2026-11-19** — 🔴 verdict `incident`, cycles 346 (uptime 92.77%), gaps 7, false zeros 0, last ok 14.4 min ago. ⏳ window still holds 7 pre-fix gap(s); acceptance 2026-11-25
-- **2026-11-19** — 🔴 verdict `incident`, cycles 367 (uptime 91.01%), gaps 8, false zeros 0, hours 68.8/168, last ok 65.7 min ago. 🚨 NEW post-fix gap: с 2026-11-19 04:54:30 UTC, открыт на момент проверки; green scrape exit 1 (green section: 0 items, seed no_button_found, reload timeout 45s); dynamic VLESS pool=0 ~9 ч (refresh streak=27, 444 quarantine), работа через manual-seed bridge 10808. Не исторический гэп — фиксы не держат.
-- **2026-11-19** — 🔴 verdict `incident`, cycles 412 (uptime 90.53%), gaps 8, false zeros 0, last ok 6.1 min ago. ⏳ window still holds 8 pre-fix gap(s); acceptance 2026-11-25
-- **2026-11-19** — 🔴 verdict `incident`, cycles 412 (uptime 90.53%), gaps 8, false zeros 0, last ok 6.5 min ago. ⏳ window still holds 8 known gap(s) (pre-fix + diagnosed post-fix); acceptance 2026-11-26 06:18 UTC (09:18 MSK)
 - **2026-11-20** — 🔴 verdict `incident`, cycles 522 (uptime 90.8%), gaps 8, false zeros 1, last ok 4.0 min ago. ⏳ 1 diagnosed false zero(s) in window; acceptance 2026-11-27 05:12 UTC (08:12 MSK)
-- **2026-11-20** — 🔴 verdict `incident`, cycles 524 (uptime 90.84%), gaps 8, false zeros 1, last ok 5.3 min ago. ⏳ 1 diagnosed false zero(s) in window; acceptance 2026-11-27 05:12 UTC (08:12 MSK)
-- **2026-11-20** — 🔴 verdict `incident`, cycles 606 (uptime 90.1%), gaps 9, false zeros 1, last ok 14.2 min ago. ⚠️ UNDIAGNOSED new gaps: 1
-- **2026-11-20** — 🔴 verdict `incident`, cycles 606 (uptime 90.1%), gaps 9, false zeros 1, last ok 15.4 min ago. ⏳ 1 diagnosed false zero(s) in window; acceptance 2026-11-27 05:12 UTC (08:12 MSK)
 - **2026-11-21** — 🔴 verdict `incident`, cycles 624 (uptime 90.06%), gaps 10, false zeros 1, last ok 10.4 min ago. ⚠️ UNDIAGNOSED new gaps: 1
-- **2026-11-21** — 🔴 verdict `incident`, cycles 631 (uptime 90.17%), gaps 10, false zeros 1, last ok 2.7 min ago. ⏳ 1 diagnosed false zero(s) in window; acceptance 2026-11-27 21:00 UTC (28.11 00:00 MSK)
 
 ## Acceptance epoch history (why the date keeps moving)
 
@@ -368,7 +357,6 @@ the log had rotated before it was read. It is recorded in `KNOWN_GAPS` so the al
 classified, not silenced; it still counts in `gap_incident_count` and still gates acceptance.
 Instrumentation added afterwards: `data/green_last_failure.json` plus
 `failed:<reason>|found=N` in the uptime journal.
-- **2026-11-21** — 🔴 verdict `incident`, cycles 653 (uptime 89.13%), gaps 11, false zeros 1, last ok 12.7 min ago. ⚠️ UNDIAGNOSED new gaps: 1
   - **Gap #11 diagnosis (2026-11-21, exit 2 — new undiagnosed gap, ALARM):**
     21.11 04:10:11–05:47:51 UTC (07:10–08:47 MSK), 97.7 min — 8 consecutive green runs
     exit 1, each with `failed:unclassified_failure|found=None` and FULL duration
@@ -396,7 +384,47 @@ Instrumentation added afterwards: `data/green_last_failure.json` plus
     `gap_incident_count` and still gates acceptance.
     Acceptance arithmetic: gap #11 leaves the 168 h window on 28.11 05:47:51 UTC
     (08:47:51 MSK) — later than the previous 28.11 00:00 MSK date, hence 28.11 09:00 MSK.
-- **2026-11-21** — 🔴 verdict `incident`, cycles 654 (uptime 89.14%), gaps 11, false zeros 1, last ok 9.4 min ago. ⚠️ UNDIAGNOSED new gaps: 1
-- **2026-11-21** — 🔴 verdict `incident`, cycles 654 (uptime 89.14%), gaps 11, false zeros 1, last ok 9.8 min ago. ⏳ 1 diagnosed false zero(s) in window; acceptance 2026-11-28 06:00 UTC (28.11 09:00 MSK)
-- **2026-11-21** — 🔴 verdict `incident`, cycles 710 (uptime 89.58%), gaps 11, false zeros 1, last ok 8.9 min ago. ⏳ 1 diagnosed false zero(s) in window; acceptance 2026-11-28 06:00 UTC (28.11 09:00 MSK)
 - **2026-11-22** — 🔴 verdict `incident`, cycles 832 (uptime 90.62%), gaps 11, false zeros 1, last ok 2.1 min ago. ⏳ 1 diagnosed false zero(s) in window; acceptance 2026-11-28 06:00 UTC (28.11 09:00 MSK)
+- **2026-11-23** — 🔴 verdict `incident`, cycles 921 (uptime 91.53%), gaps 11, false zeros 1, last ok 9.1 min ago. ⏳ 1 diagnosed false zero(s) in window; acceptance 2026-11-28 06:00 UTC (28.11 09:00 MSK)
+- **2026-11-27** — 🔴 verdict `incident`, cycles 915 (uptime 93.77%), gaps 3, false zeros 0, last ok 10.3 min ago. ⏳ window still holds 3 known gap(s) (pre-fix + diagnosed post-fix); acceptance 2026-11-28 06:00 UTC (28.11 09:00 MSK)
+
+## 2026-11-27 17:20 MSK — criterion 4 was unsatisfiable; fixed before acceptance
+
+Live report (`hours=168&tail=200`, read 17:13 MSK): `verdict: incident`, 905 cycles
+(854 ok / 51 failed), uptime 94.36%, `false_zero_cycles: 0`, `gap_incident_count: 3`,
+`hours_recorded: 167.8`, last ok 0.8 min ago.
+
+**The defect.** `phase96_acceptance.py` asked for `hours_recorded >= 168`.
+`hours_recorded` is the **span between the first and last record inside the window**
+(`backend/green_uptime.py:197` — `entries[-1].ts - entries[0].ts`), not the hours that
+passed. The last record is always minutes old and the first one always sits minutes
+after `window_start`, so the span caps at ~167.8 h for a perfectly healthy series.
+`>= 168` was therefore unreachable **by construction** — it would have failed on
+28.11 no matter how clean the week was. Every daily report since 22.11 carried
+`hours_recorded: 23.7–23.8` in a 24 h window for exactly this reason; nobody read the
+pattern as a bug, the 08:17 cron listed it as an "expected FAIL".
+
+**The fix** (`scripts/phase96_acceptance.py`): tolerance = the report's own gap
+threshold, 45 min. `MIN_HOURS = 168 − 0.75 = 167.25`. Rationale: a hole longer than
+45 min is already a `gap_incident_count`, so anything shorter at the two ends is inside
+what the report already governs and must not be counted twice. Tests updated
+(`tests/test_phase96_acceptance.py`): 167.9 passes, 166.9 fails, 7/7 green.
+Live run after the fix: **3 PASS / 1 FAIL**, the only failure being
+`gap_incident_count == 0 — 3`.
+
+**When the three remaining gaps leave the window** (each at `to_ts + 168 h`):
+
+| gap | window (MSK) | leaves the window |
+|---|---|---|
+| 47.6 min | 20.11 17:33 → 18:20 | **27.11 18:20** |
+| 45.3 min | 20.11 22:50 → 23:35 | **27.11 23:35** |
+| 97.7 min (#11) | 21.11 07:10 → 08:47 | **28.11 08:47** |
+
+The runner must not be called before **28.11 08:50 MSK**; the 09:05 MSK cron leaves
+18 min of margin past the last gap. Do not restart the backend before then either —
+the soak window is 15.6 h from closing and a restart is exactly the kind of hole
+that has cost it a week four times already.
+
+**ADMIN_TOKEN** was printed into tool output at 08:1x by a `curl -v` during earlier
+diagnosis and is therefore exposed. Rotation is a prod change (server `.env` + backend
+restart) and **would break the window** — it must wait until after closure, not before.

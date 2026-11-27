@@ -54,10 +54,22 @@ def test_any_gap_fails_even_if_old() -> None:
     assert res["gap_incident_count == 0"] is False
 
 
+def test_healthy_span_passes_at_the_real_ceiling() -> None:
+    """A healthy week records ~167.8 h, not 168 — the span excludes the two partial cycles.
+
+    Pinned because `hours_recorded >= 168` looked strict but was unsatisfiable: the last
+    record is always minutes old, so the check judged the clock, not the soak.
+    """
+    mod = _mod()
+    assert mod.MIN_HOURS == mod.REQUIRED_HOURS - mod.PARTIAL_CYCLE_TOLERANCE_H
+    res = _passed(mod.evaluate(_report(hours_recorded=167.9)))
+    assert res[f"hours_recorded >= {mod.MIN_HOURS} ({mod.REQUIRED_HOURS} h minus 45 min partial cycles)"] is True
+
+
 def test_short_recording_fails() -> None:
     mod = _mod()
-    res = _passed(mod.evaluate(_report(hours_recorded=167.9)))
-    assert res["hours_recorded >= 168"] is False
+    res = _passed(mod.evaluate(_report(hours_recorded=166.9)))
+    assert res[f"hours_recorded >= {mod.MIN_HOURS} ({mod.REQUIRED_HOURS} h minus 45 min partial cycles)"] is False
 
 
 def test_post_epoch_gap_fails() -> None:
