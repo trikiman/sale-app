@@ -15,6 +15,25 @@ progress:
 
 *Session checkpoint 2026-10-19 (ops review). Milestone v1.26 remains shipped/archived. Operator milestone "Telegram Favorites Notifications" verified end-to-end on prod and closed as working. Green-уценка confirmed morning-only (VkusVill stock reality, not a bug). RU VLESS pool degraded to 1/5 — scraping survives on the manual trojan seed floor; pool replenishment is the top candidate for the next milestone.*
 
+## 2026-11-27 18:55 MSK — exit 1 при «мало, но не пусто» вылечен в коде (деплой после 07:10)
+
+За 168 ч 7 упавших циклов, из них **три — с товарами** (`12:15 live=28`, `12:20 live=28`,
+`16:24 live=34`). Прогон отрабатывал, но уходил с кодом 1: расхождение >10 % с бейджем
+попадало в ветку «сохранить старый снимок», а она валила цикл безусловно. Пользователь всё
+время видел нормальный снимок, страдал только `uptime_pct` (94.6 % в отчёте 18:35).
+
+`classify_green_count_mismatch` (`66c124e`) делит случаи: писать новый список — если он
+полный или лучше лежащего; держать снимок и остаться exit 0 — если снимок младше часа и
+сам содержит ≥10 позиций (не-фатальная пометка `count_mismatch_preserved` в
+`green_last_failure.json`); держать снимок и падать — только если скрап почти пустой или
+снимок протух. 8 тестов на классификатор; полный прогон 540 passed / 1 failed (старый
+флейк `test_vless_xray` на temp-файле, к правке не относится).
+
+**Деплой отложен, и это осознанно:** чтобы фикс заработал, нужен рестарт бэкенда, а до
+07:10 28.11 (выход последнего гэпа из окна) любая дырка обнуляет неделю. Ставим **после
+приёмки в 09:05**, не раньше. До тех пор живые циклы продолжают идти старым кодом —
+поведение не менялось.
+
 ## 2026-11-27 18:05 MSK — критерий 4 приёмки был недостижим by construction; исправлен
 
 Живой отчёт (`hours=168&tail=200`, 17:13 MSK): 905 циклов (854 ok / 51 failed), uptime
