@@ -293,6 +293,58 @@ def has_real_green_section(body_has_green_text: bool, button_visible: bool, live
     return bool(body_has_green_text or button_visible or live_count > 0)
 
 
+GREEN_MISMATCH_MIN_ITEMS = 10
+GREEN_MISMATCH_MAX_SNAPSHOT_AGE_S = 3600
+
+
+def classify_green_count_mismatch(scraped_count, live_count, existing_count, snapshot_age_s) -> str:
+    """Decide what a short scrape does to the published snapshot.
+
+    Returns one of:
+      ``save_new``    — the new list is complete enough; write it.
+      ``preserve_ok`` — the new list is short of the badge count, but the snapshot on
+                        disk is under an hour old and itself holds at least
+                        GREEN_MISMATCH_MIN_ITEMS: keep it, refresh its mtime and let the
+                        cycle count as SUCCESS (exit 0).
+      ``preserve_fail`` — keep the snapshot but count the cycle as failed: the run
+                        scraped almost nothing, or the snapshot it would preserve is
+                        stale.
+
+    Why ``preserve_ok`` exists: on 2026-11-27 12:15, 12:20 and 16:24 the scraper
+    produced 28, 28 and 34 live items yet exited 1 for the whole cycle, because a
+    >10 % shortfall against the badge count fell into the preserve branch that
+    unconditionally failed the run. The UI was serving a good snapshot the entire
+    time, so those cycles deflated ``uptime_pct`` without any user-visible outage.
+    """
+    try:
+        scraped_count = int(scraped_count or 0)
+        live_count = int(live_count or 0)
+        existing_count = int(existing_count or 0)
+    except (TypeError, ValueError):
+        return 'preserve_fail'
+
+    if live_count <= 0 or scraped_count <= 0 or scraped_count >= live_count:
+        return 'save_new'
+    if abs(live_count - scraped_count) / live_count * 100 <= 10:
+        return 'save_new'
+    if existing_count > scraped_count:
+        age = snapshot_age_s if isinstance(snapshot_age_s, (int, float)) else None
+        if (scraped_count >= GREEN_MISMATCH_MIN_ITEMS
+                and age is not None and age <= GREEN_MISMATCH_MAX_SNAPSHOT_AGE_S):
+            return 'preserve_ok'
+        return 'preserve_fail'
+    return 'save_new'
+
+
+def _green_snapshot_age_s() -> float | None:
+    """Age of the published green snapshot in seconds, or None when it is missing."""
+    try:
+        path = os.path.join(DATA_DIR, 'green_products.json')
+        return time.time() - os.path.getmtime(path)
+    except OSError:
+        return None
+
+
 def filter_available_green_cart_products(products: list) -> list:
     filtered = []
     for product in products or []:
@@ -3604,24 +3656,33 @@ async def scrape_green_prices_async():
         if scrape_success:
             # Count validation: refuse to save if gap between live_count and scraped is >10%
             scraped_count = len(products)
+            preserved_ok = False
             if live_count > 0 and scraped_count > 0:
                 gap_pct = abs(live_count - scraped_count) / live_count * 100
-                if scraped_count < live_count and gap_pct > 10:
-                    existing_count = _load_existing_green_product_count()
-                    print(f"⚠️ [GREEN] COUNT MISMATCH: scraped={scraped_count}, live={live_count}, gap={gap_pct:.0f}%")
-                    if existing_count > scraped_count:
-                        print(f"⚠️ [GREEN] Existing snapshot has {existing_count} items — preserving it")
-                        scrape_success = False  # Don't overwrite with worse data
-                        # v1.26 Phase 84.6: bump mtime so the freshness banner
-                        # reflects "checked, no upgrade available" rather than
-                        # a stale gap.
-                        if _touch_existing_green_file():
-                            print(f"  [GREEN] Touched existing snapshot mtime ({existing_count} items preserved)")
-                    else:
-                        print(f"⚠️ [GREEN] Existing snapshot has {existing_count} items — saving new (still better)")
-                else:
-                    if gap_pct > 0:
-                        print(f"  [GREEN] Count OK: scraped={scraped_count}, live={live_count}, gap={gap_pct:.1f}% (within 10% tolerance)")
+                existing_count = _load_existing_green_product_count() if gap_pct > 10 else 0
+                action = classify_green_count_mismatch(
+                    scraped_count, live_count, existing_count, _green_snapshot_age_s())
+                if action == 'preserve_fail':
+                    print(f"⚠️ [GREEN] COUNT MISMATCH: scraped={scraped_count}, live={live_count}, "
+                          f"gap={gap_pct:.0f}%; existing has {existing_count} — preserving it, cycle FAILS")
+                    scrape_success = False  # Don't overwrite with worse data
+                    # v1.26 Phase 84.6: bump mtime so the freshness banner
+                    # reflects "checked, no upgrade available" rather than
+                    # a stale gap.
+                    if _touch_existing_green_file():
+                        print(f"  [GREEN] Touched existing snapshot mtime ({existing_count} items preserved)")
+                elif action == 'preserve_ok':
+                    print(f"⚠️ [GREEN] COUNT MISMATCH: scraped={scraped_count}, live={live_count}, "
+                          f"gap={gap_pct:.0f}%; existing has {existing_count} and is fresh — "
+                          f"preserving it, cycle stays OK")
+                    preserved_ok = True
+                    if _touch_existing_green_file():
+                        print(f"  [GREEN] Touched existing snapshot mtime ({existing_count} items preserved)")
+                    _write_mismatch_note(scraped_count, live_count, existing_count)
+                elif existing_count and existing_count > scraped_count:
+                    print(f"⚠️ [GREEN] Existing snapshot has {existing_count} items — saving new (still better)")
+                elif gap_pct > 0:
+                    print(f"  [GREEN] Count OK: scraped={scraped_count}, live={live_count}, gap={gap_pct:.1f}% (within 10% tolerance)")
 
         if scrape_success:
             # 2026-08-13: record WHY the list is empty so the API/frontend can
@@ -3703,8 +3764,12 @@ async def scrape_green_prices_async():
                 "logged_in": bool(is_logged_in),
                 "products": products
             }
-            if not scrape_success:
-                print(f"⚠️ Unknown-empty run — keeping the existing {output_path}")
+            if not scrape_success or preserved_ok:
+                if preserved_ok:
+                    print(f"⚠️ [GREEN] Kept the fresh snapshot of {live_count} live items — new list of "
+                          f"{len(products)} not written")
+                else:
+                    print(f"⚠️ Unknown-empty run — keeping the existing {output_path}")
             else:
                 try:
                     os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -3716,6 +3781,29 @@ async def scrape_green_prices_async():
             print(f"⚠️ Scraper failed — keeping existing {output_path}")
 
     return products, scrape_success
+
+
+def _write_mismatch_note(scraped_count: int, live_count: int, existing_count: int) -> None:
+    """Leave a non-fatal trace when a short scrape kept the snapshot instead of failing.
+
+    The cycle exits 0, so ``_write_generic_failure`` never runs for it. Without this
+    note a preserved-snapshot cycle looks identical to a clean one in the data dir,
+    and nobody can tell later why fresh prices stopped moving at 12:15 on 27.11.
+    """
+    path = os.path.join(DATA_DIR, "green_last_failure.json")
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({
+                "ts": time.strftime("%Y-%m-%d %H:%M:%S"),
+                "reason": "count_mismatch_preserved",
+                "fatal": False,
+                "products_found": scraped_count,
+                "live_count": live_count,
+                "existing_count": existing_count,
+            }, f, ensure_ascii=False, indent=1)
+        print("  [GREEN] Mismatch note -> data/green_last_failure.json (non-fatal)")
+    except Exception as exc:  # noqa: BLE001 — a note must never change the exit code
+        print(f"  [GREEN] Could not write mismatch note: {exc}")
 
 
 def _write_generic_failure() -> None:
