@@ -15,6 +15,34 @@ progress:
 
 *Session checkpoint 2026-10-19 (ops review). Milestone v1.26 remains shipped/archived. Operator milestone "Telegram Favorites Notifications" verified end-to-end on prod and closed as working. Green-уценка confirmed morning-only (VkusVill stock reality, not a bug). RU VLESS pool degraded to 1/5 — scraping survives on the manual trojan seed floor; pool replenishment is the top candidate for the next milestone.*
 
+## 2026-11-27 08:15 MSK — мульти-батч add-to-cart подтверждён на живом модале (128 карточек)
+
+`/admin/logs?n=300` (socks5h://127.0.0.1:10870, `X-Admin-Token`) показал не одну партию,
+а **семь** подряд — то, чего не было ни разу с фикса 21.11:
+
+```
+[GREEN] Modal loaded: 128 cards
+[GREEN] Step 3.1.3: Adding 128 items to cart...
+[GREEN] Green cards rendered: 24 (after 0.0s)
+[GREEN] Batch 0-10: added 10 (running total 10)
+[GREEN] Batch 10-20: added 10 (running total 20)
+[GREEN] Batch 20-30: added 10 (running total 30)
+[GREEN] Batch 30-40: added 10 (running total 40)
+[GREEN] Batch 40-50: added 10 (running total 50)
+[GREEN] Batch 50-60: added 10 (running total 60)
+[GREEN] Batch 60-70: added 10 (running total 70)
+```
+
+`Batch 10-20` и далее виден впервые — многошаговый цикл `_add_green_cards_to_cart`
+работает на объёме, а не только на единственной партии `0-4`, как 21.11 22:25.
+
+Честная оговорка: строки-завершения `Added N/N items to cart` в окне лога нет —
+сразу после `Batch 60-70` (running total 70 из 128) прогон упал на
+`ConnectionError: Connection closed` (`scrape_green.py:2176`, `browser.get`), и цикл
+перезапустился. Подтверждён **механизм** мульти-батча (>=2 партии на реальном модале),
+но **не** полное добавление 128/128 в этом прогоне. `Inline add-to-cart` отсутствует —
+путь шёл через модальную секцию, а не инлайн.
+
 ## 2026-11-22 17:35 MSK — 14 тестов, которые вообще не собирались, теперь зелёные; 7 падений были протухшими ожиданиями, а не багами
 
 The workstation had no `python-telegram-bot`, so five test modules died at import with
