@@ -462,3 +462,25 @@ restart) and **would break the window** — it must wait until after closure, no
 `scripts/batch_proof_check.py`, доказательство придётся снимать вручную в 08:15.
 Важно: мульти-батч — **пятый, ручной** пункт доказательств, в машинный гейт
 `phase96_acceptance.py` он не входит; приёмка от него не зависит.
+
+## 2026-11-27 23:12 MSK — second gap out, one left (the prediction held to the minute)
+
+Live (`hours=168&tail=200`): `verdict: incident`, 910 cycles (863 ok), uptime 94.84%,
+`false_zero_cycles: 0`, **`gap_incident_count: 1`**, `hours_recorded: 167.5`,
+last ok 8.2 min ago. The 45.3-min gap (`from_ts` 20.11 22:50) left the window at
+22:50 MSK exactly as the `from_ts + 168 h` rule predicted at 17:20, when the report
+still showed 3.
+
+| # | dead air | `from_ts` | state at 23:12 |
+|---|---|---|---|
+| 1 | 47.6 min | 20.11 17:33 | out — observed gone by 18:15 |
+| 2 | 45.3 min | 20.11 22:50 | **out — observed gone by 23:12** |
+| 11 | 97.7 min | 21.11 07:10 | still in; leaves **28.11 07:10 MSK** |
+
+So the acceptance criterion that is still failing is exactly one known, pre-fix incident,
+and it is time-bound, not defect-bound. Nothing to code, nothing to deploy:
+`phase96_acceptance.py` will read `gap_incident_count == 0` from 07:10 MSK onwards.
+
+Housekeeping: deleted two uncommitted draft runbooks (`POST-ACCEPTANCE.md`,
+`POST-ACCEPTANCE-RUNBOOK.md`) I wrote during a broken turn — they duplicated the
+committed `96-RUNBOOK.md`, which is the one to follow.
