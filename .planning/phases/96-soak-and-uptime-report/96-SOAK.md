@@ -436,3 +436,29 @@ that has cost it a week four times already.
 **ADMIN_TOKEN** was printed into tool output at 08:1x by a `curl -v` during earlier
 diagnosis and is therefore exposed. Rotation is a prod change (server `.env` + backend
 restart) and **would break the window** — it must wait until after closure, not before.
+- **2026-11-27** — 🔴 verdict `incident`, cycles 907 (uptime 94.6%), gaps 2, false zeros 0, last ok 5.9 min ago. ⏳ window still holds 2 known gap(s) (pre-fix + diagnosed post-fix); acceptance 2026-11-28 06:00 UTC (28.11 09:00 MSK)
+
+### 27.11 21:15 MSK — сборщик доказательств «два батча в окне» смотрел не туда
+
+`~/.hermes/scripts/saleapp_batch_proof.sh` (крон `9bedad3da8b0`, `no_agent`, `*/3 6-11`)
+запрашивал `/api/admin/logs`. Бэкенд такого маршрута не отдаёт — правильный
+`/admin/logs` (`backend/main.py:6213`); проверено вживую: `HTTP/1.1 404 Not Found`,
+тело `{"detail":"Not Found"}`. Дальше срабатывал собственный guard скрипта
+`[ ! -s "$TMP" ] && exit 0`, то есть каждая попытка завершалась «ok» и молчанием.
+Итог: `batch-proof.log` не существует, ноль строк за ~120 запусков с 22.11, и
+единственное утреннее окно, которое ещё может показать мульти-батч, было бы
+потеряно так же тихо.
+
+В репозиторий положен свой сборщик — `scripts/batch_proof_check.py` (коммит `4232934`):
+читает `/admin/logs`, печатает строки/совпадения/диапазоны и кодирует вердикт —
+`0` есть ≥2 различных `Batch a-b`, `3` ждём, `2` эндпоинт недоступен. Только GET,
+никаких действий с корзиной. 4 юнит-теста на разбор.
+
+Живой прогон 27.11 20:05 MSK: 300 строк, 4 совпадения, диапазоны `0-1` → один
+различный, «ждём». Причина не в коде: ночью на распродаже одна позиция, батчей
+физически больше одного не бывает. Реальный шанс — 28.11 около 08:15.
+
+Наблюдательный скрипт по-прежнему не правился (запрет). Пока крон не переведён на
+`scripts/batch_proof_check.py`, доказательство придётся снимать вручную в 08:15.
+Важно: мульти-батч — **пятый, ручной** пункт доказательств, в машинный гейт
+`phase96_acceptance.py` он не входит; приёмка от него не зависит.
