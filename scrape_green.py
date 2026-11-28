@@ -916,7 +916,7 @@ async def _seed_from_catalog(page) -> str:
         return "catalog_error"
 
 
-async def _wait_for_green_cards(page, timeout_s: float = 25.0) -> int:
+async def _wait_for_green_cards(page, card_source: str = 'inline', timeout_s: float = 25.0) -> int:
     """Wait until the green section renders real cards, not empty skeletons.
 
     The diagnostics finally showed the truth behind `no_button: N`:
@@ -930,7 +930,7 @@ async def _wait_for_green_cards(page, timeout_s: float = 25.0) -> int:
 
     Returns the number of cards that look real (non-trivial text) at the end.
     """
-    scope_expr = _green_card_scope_expr('inline')
+    scope_expr = _green_card_scope_expr(card_source)
     ready = 0
     waited = 0.0
     while waited < timeout_s:
@@ -963,6 +963,124 @@ async def _wait_for_green_cards(page, timeout_s: float = 25.0) -> int:
     return ready
 
 
+SCOPE_RECOVERY_BUDGET = 3
+
+
+def _to_int(value) -> int:
+    """Best-effort int from a raw evaluate field (nodriver may return strings/dicts)."""
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str):
+        try:
+            return int(float(value))
+        except ValueError:
+            return 0
+    return 0
+
+
+async def _reopen_green_modal(page, attempts: int = 3) -> bool:
+    """Re-open the green-products modal after it vanished under the batch loop.
+
+    Same recipe as the first open in `scrape_green_prices_async` (scroll the green
+    section into view, click `#js-Delivery__Order-green-show-all`, verify
+    `js-modal-cart-prods-scroll` holds cards). Best effort only — the caller counts
+    a failed recovery, it never raises.
+    """
+    for attempt in range(1, attempts + 1):
+        try:
+            await _js(page, r"""
+                (() => {
+                    const section = document.getElementById('js-Delivery__Order-green-state-not-empty');
+                    if (section) section.scrollIntoView({behavior: 'instant', block: 'center'});
+                })()
+            """)
+            await asyncio.sleep(1)
+            clicked = await _js(page, r"""
+                (() => {
+                    const btn = document.getElementById('js-Delivery__Order-green-show-all');
+                    if (btn && !btn.classList.contains('_hidden') && btn.offsetParent !== null) {
+                        btn.click();
+                        return true;
+                    }
+                    return false;
+                })()
+            """)
+            await asyncio.sleep(2)
+            cards = await _js(page, r"""
+                (() => {
+                    const modal = document.getElementById('js-modal-cart-prods-scroll');
+                    if (!modal) return 0;
+                    return modal.querySelectorAll('.ProductCard, .ProductCards__item').length;
+                })()
+            """)
+            if isinstance(cards, (int, float, str)):
+                cards = _to_int(cards)
+            else:
+                cards = 0
+            print(f"  [GREEN] Reopen green modal {attempt}/{attempts}: "
+                  f"clicked={clicked} cards={cards}")
+            if cards > 0:
+                return True
+        except Exception as exc:  # noqa: BLE001 — recovery is best effort
+            print(f"  [GREEN] Reopen green modal {attempt}/{attempts} failed "
+                  f"({type(exc).__name__}: {exc})")
+        await asyncio.sleep(2)
+    return False
+
+
+async def _recover_green_scope(page, card_source: str, browser=None):
+    """Restore the card scope after a batch timeout or a self-navigation.
+
+    28.11.2026, the bug this exists for: `Batch 50-60 failed (TimeoutError)` and then
+    every remaining window reported `added 0` without an exception, ending the run at
+    50/179. The except branch calls `_reacquire_page`, which navigates to GREEN_URL and
+    thereby throws away the modal the loop indexes into; the next evaluate still
+    succeeded (the modal shell is in the DOM but collapsed / holds foreign cards), so
+    `cards[i]` was always undefined and the loop walked into an empty scope twelve
+    times. A bare `continue` after a timeout is only correct when the scope survives —
+    it does not.
+
+    Returns `(page, ok)`; the page handle may be a new one (re-navigation), so the
+    caller must always take it back.
+    """
+    if card_source == 'modal':
+        if await _reopen_green_modal(page):
+            return page, True
+    else:
+        ready = 0
+        try:
+            ready = await _wait_for_green_cards(page, card_source, timeout_s=10.0)
+        except Exception:  # noqa: BLE001 — a failed probe means "not restored"
+            ready = 0
+        if ready > 0:
+            return page, True
+
+    if browser is None:
+        return page, False
+
+    try:
+        page = await _reacquire_page(browser)
+    except Exception as exc:  # noqa: BLE001
+        print(f"  [GREEN] Scope recovery: could not re-acquire the page ({exc})")
+        return page, False
+    if page is None:
+        return page, False
+
+    if card_source == 'modal':
+        # the fresh page usually needs a beat before the section is even present —
+        # two attempts here, three on the first (in-place) try above
+        return page, await _reopen_green_modal(page, attempts=2)
+
+    ready = 0
+    try:
+        ready = await _wait_for_green_cards(page, card_source, timeout_s=15.0)
+    except Exception:  # noqa: BLE001
+        ready = 0
+    return page, ready > 0
+
+
 async def _add_green_cards_to_cart(page, card_source: str, total_cards: int,
                                     browser=None, batch_size: int = 10):
     """Add the green cards to the cart in batches.
@@ -976,20 +1094,31 @@ async def _add_green_cards_to_cart(page, card_source: str, total_cards: int,
     """
     scope_expr = _green_card_scope_expr(card_source)
 
-    await _wait_for_green_cards(page)
+    await _wait_for_green_cards(page, card_source)
 
     totals = {"added": 0, "no_button": 0, "already_in_cart": 0, "no_card": 0,
-              "disabled": 0, "failed_batches": 0}
+              "disabled": 0, "failed_batches": 0, "scope_lost": 0}
+
+    # Scope recovery is expensive (modal re-open attempts + a full re-navigation), so
+    # it draws from one budget for the whole call instead of per window: a dead page
+    # must not turn twelve windows into twelve recovery rounds on a 1-vCPU box.
+    budget = SCOPE_RECOVERY_BUDGET
 
     for start in range(0, max(total_cards, 0), batch_size):
         end = min(start + batch_size, total_cards)
-        try:
-            result_json = await _js(page, f"""
+        while True:
+            try:
+                result_json = await _js(page, f"""
     (() => {{
         const results = {{no_scope: 0, no_card: 0, already_in_cart: 0, added: 0, no_button: 0}};
         const scope = {scope_expr};
-        if (!scope) return JSON.stringify({{results, added: 0}});
-        const cards = scope.querySelectorAll('.ProductCard, .ProductCards__item');
+        // 28.11.2026: `added: 0` used to be ambiguous — a re-navigated page kept
+        // answering "0 added" without raising, so the loop walked twelve empty
+        // windows and the run ended 50/179. Report the scope state explicitly.
+        const cards = scope ? scope.querySelectorAll('.ProductCard, .ProductCards__item') : null;
+        const scopeHidden = (scope && scope.offsetParent === null) ? 1 : 0;
+        if (!cards) return JSON.stringify({{results, added: 0, scope_missing: 1, in_scope: 0, scope_hidden: 1}});
+        const inScope = cards.length;
         let addedCount = 0;
         for (let i = {start}; i < {end}; i++) {{
             const card = cards[i];
@@ -1070,37 +1199,75 @@ async def _add_green_cards_to_cart(page, card_source: str, total_cards: int,
                 }}
             }}
         }}
-        return JSON.stringify({{results, added: addedCount}});
+        return JSON.stringify({{results, added: addedCount, in_scope: inScope, scope_hidden: scopeHidden}});
     }})()
     """)
-        except Exception as exc:  # noqa: BLE001 — one batch must not end the cycle
-            totals["failed_batches"] += 1
-            print(f"  [GREEN] Batch {start}-{end} failed "
-                  f"({type(exc).__name__}: {exc}) — continuing with the next batch")
-            if browser is not None:
-                try:
-                    page = await _reacquire_page(browser)
-                except Exception as again:  # noqa: BLE001
-                    print(f"  [GREEN] Could not re-acquire the page: {again}")
-            continue
+            except Exception as exc:  # noqa: BLE001 — one batch must not end the cycle
+                totals["failed_batches"] += 1
+                print(f"  [GREEN] Batch {start}-{end} failed "
+                      f"({type(exc).__name__}: {exc}) — continuing with the next batch")
+                if browser is not None:
+                    try:
+                        page = await _reacquire_page(browser)
+                    except Exception as again:  # noqa: BLE001
+                        print(f"  [GREEN] Could not re-acquire the page: {again}")
+                # `_reacquire_page` navigates to GREEN_URL, i.e. it destroys the very
+                # modal/scope this loop indexes into: without restoring it the next
+                # window only counts cards that no longer exist (50/179 on 28.11).
+                if budget > 0:
+                    budget -= 1
+                    page, restored = await _recover_green_scope(page, card_source, browser)
+                    print(f"  [GREEN] Batch {start}-{end}: scope restored={restored} "
+                          f"({budget} recoveries left)")
+                    if restored:
+                        continue  # the window itself was never clicked — redo it
+                break
 
-        try:
-            if isinstance(result_json, str):
-                data = json.loads(result_json)
-            elif isinstance(result_json, dict):
-                data = result_json
-            else:
+            try:
+                if isinstance(result_json, str):
+                    data = json.loads(result_json)
+                elif isinstance(result_json, dict):
+                    data = result_json
+                else:
+                    data = {'results': {}, 'added': 0}
+            except (json.JSONDecodeError, TypeError):
+                data = {'results': {'error': 1}, 'added': 0}
+            if not isinstance(data, dict):
                 data = {'results': {}, 'added': 0}
-        except (json.JSONDecodeError, TypeError):
-            data = {'results': {'error': 1}, 'added': 0}
+            chunk = data.get('results')
+            if not isinstance(chunk, dict):
+                chunk = {}
 
-        chunk = data.get('results') or {}
-        for key in ("no_button", "already_in_cart", "no_card", "disabled"):
-            totals[key] += int(chunk.get(key) or 0)
-        totals["added"] += int(data.get('added') or 0)
-        print(f"  [GREEN] Batch {start}-{end}: added {data.get('added') or 0} "
-              f"(running total {totals['added']})")
-        await asyncio.sleep(0.3)
+            # No cards to click at all: the scope is gone (missing, hidden, or the
+            # window indexes past a stale/foreign list). Recover and retry THE SAME
+            # window instead of reporting a silent zero and walking on.
+            try:
+                in_scope = _to_int(data.get('in_scope'))
+            except (TypeError, ValueError):
+                in_scope = 0
+            if data.get('scope_missing') or data.get('scope_hidden') or in_scope == 0:
+                if budget > 0:
+                    budget -= 1
+                    print(f"  [GREEN] Batch {start}-{end}: no cards in scope "
+                          f"(source={card_source}, in_scope={in_scope}) — "
+                          f"recovering ({budget} left)")
+                    page, ok = await _recover_green_scope(page, card_source, browser)
+                    print(f"  [GREEN] Batch {start}-{end}: scope restored={ok}")
+                    if ok:
+                        continue  # retry the same window on the restored scope
+                totals["failed_batches"] += 1
+                totals["scope_lost"] += 1
+                print(f"  [GREEN] Batch {start}-{end}: card scope lost — "
+                      f"{end - start} cards skipped (running total {totals['added']})")
+                break
+
+            for key in ("no_button", "already_in_cart", "no_card", "disabled"):
+                totals[key] += _to_int(chunk.get(key))
+            totals["added"] += _to_int(data.get('added'))
+            print(f"  [GREEN] Batch {start}-{end}: added {data.get('added') or 0} "
+                  f"(running total {totals['added']}, in scope {in_scope}/{total_cards})")
+            await asyncio.sleep(0.3)
+            break
 
     if totals["no_button"]:
         await _diagnose_no_button_cards(page)
@@ -1108,7 +1275,8 @@ async def _add_green_cards_to_cart(page, card_source: str, total_cards: int,
     if totals["failed_batches"]:
         totals["partial"] = 1
         print(f"  [GREEN] ⚠️ {totals['failed_batches']} batch(es) failed — "
-              f"{totals['added']} cards added overall")
+              f"{totals['added']} of {total_cards} cards added overall "
+              f"(scope lost {totals['scope_lost']}×)")
 
     return totals, totals["added"]
 

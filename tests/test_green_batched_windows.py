@@ -55,24 +55,44 @@ class FakePage:
     """Placeholder — the fake _js below ignores it."""
 
 
-def _drive(total_cards: int, fail_windows=()):
-    calls = []
+def _drive(total_cards: int, fail_windows=(), scope_cards=None, restore_modal=None):
+    """Drive the coroutine.
 
-    async def fake_wait(page):
-        return None
+    `scope_cards` overrides how many cards the scope reports (a re-navigated page
+    reports fewer); `restore_modal` is the value `_reopen_green_modal` yields on each
+    call, to simulate a recovery that works or keeps failing.
+    """
+    calls = []
+    seen = {"cards": total_cards if scope_cards is None else scope_cards}
+    fired = set()
+    restores = list(restore_modal or [])
+
+    async def fake_wait(page, card_source='inline', timeout_s=25.0):
+        return seen["cards"] if restore_modal is None else (
+            restores.pop(0) if restores else 0)
 
     async def fake_js(page, script, *args, **kwargs):
         match = WINDOW_RE.search(script)
-        assert match, "every evaluate must carry an explicit batch window"
+        if not match:
+            # recovery probes issued by _reopen_green_modal / _recover_green_scope
+            if "querySelectorAll('.ProductCard, .ProductCards__item').length" in script:
+                return seen["cards"] if restore_modal is None else (
+                    restores.pop(0) if restores else 0)
+            return True
         start, end = int(match.group(1)), int(match.group(2))
         calls.append((start, end))
-        if (start, end) in fail_windows:
+        if (start, end) in fail_windows and (start, end) not in fired:
+            fired.add((start, end))
             raise TimeoutError("batch blew the JS deadline")
-        added = max(min(end, total_cards) - start, 0)
+        if seen["cards"] == 0:
+            return json.dumps({"results": {}, "added": 0, "scope_missing": 1,
+                               "in_scope": 0, "scope_hidden": 1})
+        added = len([i for i in range(start, min(end, total_cards)) if i < seen["cards"]])
         return json.dumps({
             "results": {"added": added, "no_button": 0, "already_in_cart": 0,
-                        "no_card": 0, "disabled": 0},
+                        "no_card": (end - start) - added, "disabled": 0},
             "added": added,
+            "in_scope": seen["cards"],
         })
 
     async def fake_diagnose(page, limit=4):
@@ -105,12 +125,14 @@ def test_100_cards_cover_every_card_without_holes_or_overlap():
     assert added == 100
 
 
-def test_one_dead_batch_costs_only_its_own_cards():
+def test_one_dead_batch_is_retried_not_skipped():
+    # the timeout re-navigates the page, so the window is retried once the scope is
+    # back; the retry succeeds and costs no cards, only a failed-batch counter
     calls, totals, added = _drive(25, fail_windows={(10, 20)})
-    assert calls == [(0, 10), (10, 20), (20, 25)], calls
+    assert calls == [(0, 10), (10, 20), (10, 20), (20, 25)], calls
     assert totals["failed_batches"] == 1
     assert totals["partial"] == 1
-    assert added == 15, "the dead window must cost ten cards, not the whole run"
+    assert added == 25, "a successful retry must not lose the window's cards"
 
 
 def test_zero_cards_makes_no_evaluate_calls():

@@ -1369,6 +1369,38 @@ after the `TimeoutError` at batch 50-60 every later batch added 0, so the run en
 50/179. `Added 50/179` is a real partial, not a full success — the post-timeout stop is
 the next thing to look at.
 
+### Diagnosed and fixed (28.11.2026): post-timeout zeros were a lost scope, not a dead page
+
+Root cause read straight out of `_add_green_cards_to_cart`: the `except` branch calls
+`_reacquire_page(browser)`, which **navigates to GREEN_URL** and thereby destroys the very
+modal (`js-modal-cart-prods-scroll`) the loop indexes into. The next evaluates still
+resolved — the modal shell stays in the DOM but holds zero green cards — so `cards[i]` was
+always `undefined`, `no_card` ticked up, and `added 0` came back **without an exception**.
+A bare `continue` after a timeout is only correct when the scope survives; it did not.
+Twelve windows walked into an empty scope, exactly the observed 50/179.
+
+Fix:
+
+- `_recover_green_scope(page, card_source, browser)` — re-opens the green modal (same
+  recipe as the first open) or re-waits for the inline section, and falls back to a fresh
+  navigation; returns `(page, ok)` so the caller takes the new handle.
+- Both the timeout branch and the "no cards in scope" branch call it, and **retry the same
+  window** after a successful recovery instead of moving on — a recovered window costs no
+  cards.
+- The batch JS now returns `scope_missing` / `scope_hidden` / `in_scope`, so a silent zero
+  is impossible: the log line carries `in scope K/179` and a lost scope prints
+  `card scope lost — N cards skipped` plus `scope_lost` in the summary.
+- Recovery draws from one `SCOPE_RECOVERY_BUDGET = 3` per call (5 modal probes each max) so
+  a dead page cannot turn a whole queue into recovery rounds on 1 vCPU.
+- `_wait_for_green_cards` takes `card_source` (it always waited on the inline section, even
+  in a modal run).
+
+Proof: `tests/test_green_batch_scope_recovery.py` drives the real coroutine with a fake
+page whose scope dies at the timing-out window — cards continue after the recovery, a
+scope that never returns ends the pass without hanging, and a live-but-short scope does not
+trigger recovery at all. `tests/test_green_batched_windows.py` now asserts the retry.
+
+
 ## Session
 
 **Last session:** 2026-11-16 (v1.30: phases 94, 95, 97 closed; Phase 96 soak running)
