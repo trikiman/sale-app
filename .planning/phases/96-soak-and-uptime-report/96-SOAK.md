@@ -519,3 +519,16 @@ passes from 07:15 onwards, and `hours_recorded` has ~0.5 h of slack against
 risk is exactly one thing — a *new* gap between now and 07:10 — and that is what the hourly
 soak check watches. Scratch copy of the record lives in
 `~/.hermes/cache/scratch/saleapp_replay/` (pruned automatically, nothing written to prod).
+- **2026-11-28** — 🔴 verdict `incident`, cycles 925 (uptime 94.92%), gaps 1, false zeros 0, last ok 4.8 min ago. ⏳ window still holds 1 known gap(s) (pre-fix + diagnosed post-fix); acceptance 2026-11-28 06:00 UTC (28.11 09:00 MSK)
+- **2026-11-28** — 🔴 verdict `incident`, cycles 927 (uptime 95.15%), gaps 1, false zeros 0, last ok 0.1 min ago. ⏳ window still holds 1 known gap(s) (pre-fix + diagnosed post-fix); acceptance 2026-11-28 06:00 UTC (28.11 09:00 MSK)
+- **2026-11-28** — ✅ verdict `healthy`, cycles 927 (uptime 95.15%), gaps 0, false zeros 0, last ok 3.8 min ago.
+- **2026-11-28** — ✅ verdict `healthy`, cycles 928 (uptime 95.91%), gaps 0, false zeros 0, last ok 1.1 min ago.
+- **2026-11-28** — ✅ verdict `healthy`, cycles 928 (uptime 95.91%), gaps 0, false zeros 0, last ok 1.3 min ago.
+- **2026-11-28** — ⚠️ endpoint unreachable (server or tunnel down); soak status unknown.
+- **2026-11-28** — ✅ verdict `healthy`, cycles 928 (uptime 95.91%), gaps 0, false zeros 0, last ok 2.0 min ago.
+- **2026-11-28** — ✅ verdict `healthy`, cycles 928 (uptime 95.91%), gaps 0, false zeros 0, last ok 4.5 min ago.
+
+| 28.11 13:23 MSK (confirm) | `healthy` | 0 | 0 | 167.7 | **4/4 PASS** |
+
+**28.11 13:20 MSK — приёмка подтверждена вручную, `exit 0`.**
+`scripts/phase96_acceptance.py`: `false_zero_cycles 0`, `gap_incident_count 0`, `hours_recorded 167.7 ≥ 167.25`, `0 post-epoch gaps`; прогон `927` циклов (`889 ok`), uptime `95.9 %`. Крон 09:05 упал по `exit 3` («endpoint unreachable») — сетевой флап к `152.70.58.201`, не дефект соака: тот же запрос в 13:20 отдал 200.
