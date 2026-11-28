@@ -1,0 +1,123 @@
+2026-11-28T00:13:29+03:00 | rc=3 | lines=300 hits=7 distinct_batch_ranges=1 ranges=0-4   [GREEN]   [GREEN] Adding 4 inline green items to cart...   [GREEN]   [GREEN] Added 0/4 items to cart   [GREEN]   [GREEN] Added 0/4 items to cart (retry) batch-proof: 1 distinct range(s), need 2 — keep waiting
+2026-11-28T00:13:57+03:00 | rc=3 | lines=300 hits=7 distinct_batch_ranges=1 ranges=0-4   [GREEN]   [GREEN] Adding 4 inline green items to cart...   [GREEN]   [GREEN] Added 0/4 items to cart   [GREEN]   [GREEN] Added 0/4 items to cart (retry) batch-proof: 1 distinct range(s), need 2 — keep waiting
+2026-11-28T06:01:03+03:00 | rc=3 | lines=300 hits=7 distinct_batch_ranges=1 ranges=0-4   [GREEN]   [GREEN] Adding 4 inline green items to cart...   [GREEN]   [GREEN] Added 0/4 items to cart   [GREEN]   [GREEN] Added 0/4 items to cart (retry) batch-proof: 1 distinct range(s), need 2 — keep waiting
+2026-11-28T06:03:54+03:00 | rc=3 | lines=300 hits=11 distinct_batch_ranges=1 ranges=0-4   [GREEN]   [GREEN] Added 0/4 items to cart (retry)   [GREEN]   [GREEN] Adding 4 inline green items to cart...   [GREEN]   [GREEN] Added 0/4 items to cart batch-proof: 1 distinct range(s), need 2 — keep waiting
+2026-11-28T06:06:57+03:00 | rc=3 | lines=300 hits=12 distinct_batch_ranges=1 ranges=0-4   [GREEN]   [GREEN] Adding 4 inline green items to cart...   [GREEN]   [GREEN] Added 0/4 items to cart   [GREEN]   [GREEN] Added 0/4 items to cart (retry) batch-proof: 1 distinct range(s), need 2 — keep waiting
+2026-11-28T06:09:55+03:00 | rc=3 | lines=300 hits=7 distinct_batch_ranges=1 ranges=0-4   [GREEN]   [GREEN] Adding 4 inline green items to cart...   [GREEN]   [GREEN] Added 0/4 items to cart   [GREEN]   [GREEN] Added 0/4 items to cart (retry) batch-proof: 1 distinct range(s), need 2 — keep waiting
+2026-11-28T06:12:54+03:00 | rc=3 | lines=300 hits=11 distinct_batch_ranges=1 ranges=0-4   [GREEN]   [GREEN] Added 0/4 items to cart (retry)   [GREEN]   [GREEN] Adding 4 inline green items to cart...   [GREEN]   [GREEN] Added 0/4 items to cart batch-proof: 1 distinct range(s), need 2 — keep waiting
+2026-11-28T06:15:58+03:00 | rc=3 | lines=300 hits=12 distinct_batch_ranges=1 ranges=0-4   [GREEN]   [GREEN] Adding 4 inline green items to cart...   [GREEN]   [GREEN] Added 0/4 items to cart   [GREEN]   [GREEN] Added 0/4 items to cart (retry) batch-proof: 1 distinct range(s), need 2 — keep waiting
+2026-11-28T06:18:54+03:00 | rc=3 | lines=300 hits=7 distinct_batch_ranges=1 ranges=0-4   [GREEN]   [GREEN] Adding 4 inline green items to cart...   [GREEN]   [GREEN] Added 0/4 items to cart   [GREEN]   [GREEN] Added 0/4 items to cart (retry) batch-proof: 1 distinct range(s), need 2 — keep waiting
+2026-11-28T06:21:44+03:00 | rc=2 | batch-proof: [WinError 6] The handle is invalid
+2026-11-28T06:24:43+03:00 | rc=2 | batch-proof: [WinError 6] The handle is invalid
+2026-11-28T06:27:43+03:00 | rc=2 | batch-proof: [WinError 6] The handle is invalid
+2026-11-28T06:30:43+03:00 | rc=2 | batch-proof: [WinError 6] The handle is invalid
+2026-11-28T06:33:43+03:00 | rc=2 | batch-proof: [WinError 6] The handle is invalid
+2026-11-28T06:36:43+03:00 | rc=2 | batch-proof: [WinError 6] The handle is invalid
+2026-11-28T06:39:43+03:00 | rc=2 | batch-proof: [WinError 6] The handle is invalid
+2026-11-28T06:42:43+03:00 | rc=2 | batch-proof: [WinError 6] The handle is invalid
+2026-11-28T06:45:43+03:00 | rc=2 | batch-proof: [WinError 6] The handle is invalid
+2026-11-28T06:48:43+03:00 | rc=2 | batch-proof: [WinError 6] The handle is invalid
+2026-11-28T06:51:43+03:00 | rc=2 | batch-proof: [WinError 6] The handle is invalid
+2026-11-28T06:54:43+03:00 | rc=2 | batch-proof: [WinError 6] The handle is invalid
+2026-11-28T06:57:43+03:00 | rc=2 | batch-proof: [WinError 6] The handle is invalid
+2026-11-28T07:00:43+03:00 | rc=2 | batch-proof: [WinError 6] The handle is invalid
+2026-11-28T07:03:43+03:00 | rc=2 | batch-proof: [WinError 6] The handle is invalid
+2026-11-28T07:06:43+03:00 | rc=2 | batch-proof: [WinError 6] The handle is invalid
+2026-11-28T07:09:43+03:00 | rc=2 | batch-proof: [WinError 6] The handle is invalid
+2026-11-28T07:12:43+03:00 | rc=2 | batch-proof: [WinError 6] The handle is invalid
+2026-11-28T07:15:32+03:00 | rc=3 | lines=300 hits=8 distinct_batch_ranges=1 ranges=0-4   [GREEN]   [GREEN] Added 0/4 items to cart   [GREEN]   [GREEN] Added 0/4 items to cart (retry)   [GREEN]   [GREEN] Adding 4 inline green items to cart... batch-proof: 1 distinct range(s), need 2 — keep waiting
+2026-11-28T07:15:43+03:00 | rc=2 | batch-proof: [WinError 6] The handle is invalid
+2026-11-28T07:18:43+03:00 | rc=2 | batch-proof: [WinError 6] The handle is invalid
+2026-11-28T07:21:43+03:00 | rc=2 | batch-proof: [WinError 6] The handle is invalid
+2026-11-28T07:24:43+03:00 | rc=2 | batch-proof: [WinError 6] The handle is invalid
+2026-11-28T07:27:43+03:00 | rc=2 | batch-proof: [WinError 6] The handle is invalid
+2026-11-28T07:30:43+03:00 | rc=2 | batch-proof: [WinError 6] The handle is invalid
+2026-11-28T07:33:43+03:00 | rc=2 | batch-proof: [WinError 6] The handle is invalid
+2026-11-28T07:36:43+03:00 | rc=2 | batch-proof: [WinError 6] The handle is invalid
+2026-11-28T07:39:43+03:00 | rc=2 | batch-proof: [WinError 6] The handle is invalid
+2026-11-28T07:42:43+03:00 | rc=2 | batch-proof: [WinError 6] The handle is invalid
+2026-11-28T07:45:43+03:00 | rc=2 | batch-proof: [WinError 6] The handle is invalid
+2026-11-28T07:48:43+03:00 | rc=2 | batch-proof: [WinError 6] The handle is invalid
+2026-11-28T07:51:43+03:00 | rc=2 | batch-proof: [WinError 6] The handle is invalid
+2026-11-28T07:54:43+03:00 | rc=2 | batch-proof: [WinError 6] The handle is invalid
+2026-11-28T07:57:43+03:00 | rc=2 | batch-proof: [WinError 6] The handle is invalid
+2026-11-28T08:00:43+03:00 | rc=2 | batch-proof: [WinError 6] The handle is invalid
+2026-11-28T08:03:43+03:00 | rc=2 | batch-proof: [WinError 6] The handle is invalid
+2026-11-28T08:06:43+03:00 | rc=2 | batch-proof: [WinError 6] The handle is invalid
+2026-11-28T08:09:43+03:00 | rc=2 | batch-proof: [WinError 6] The handle is invalid
+2026-11-28T08:12:43+03:00 | rc=2 | batch-proof: [WinError 6] The handle is invalid
+2026-11-28T08:15:43+03:00 | rc=2 | batch-proof: [WinError 6] The handle is invalid
+2026-11-28T08:18:43+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T08:21:44+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T08:24:59+03:00 | rc=0 | lines=300 hits=5 distinct_batch_ranges=3 ranges=0-10,10-20,20-30   [GREEN]   [GREEN] Step 3.1.3: Adding 127 items to cart... BATCH PROOF: multi-batch observed — 3 distinct ranges in one window
+2026-11-28T08:27:50+03:00 | rc=0 | lines=300 hits=10 distinct_batch_ranges=8 ranges=0-10,10-20,20-30,30-40,40-50,50-60,60-70,70-80   [GREEN]   [GREEN] Step 3.1.3: Adding 127 items to cart... BATCH PROOF: multi-batch observed — 8 distinct ranges in one window
+2026-11-28T08:30:52+03:00 | rc=0 | lines=300 hits=16 distinct_batch_ranges=13 ranges=0-10,10-20,100-110,110-120,120-127,20-30,30-40,40-50,50-60,60-70,70-80,80-90,90-100   [GREEN]   [GREEN] Step 3.1.3: Adding 127 items to cart...   [GREEN]   [GREEN] Added 127/127 items to cart BATCH PROOF: multi-batch observed — 13 distinct ranges in one window
+2026-11-28T08:33:56+03:00 | rc=0 | lines=300 hits=16 distinct_batch_ranges=13 ranges=0-10,10-20,100-110,110-120,120-127,20-30,30-40,40-50,50-60,60-70,70-80,80-90,90-100   [GREEN]   [GREEN] Step 3.1.3: Adding 127 items to cart...   [GREEN]   [GREEN] Added 127/127 items to cart BATCH PROOF: multi-batch observed — 13 distinct ranges in one window
+2026-11-28T08:36:54+03:00 | rc=0 | lines=300 hits=16 distinct_batch_ranges=13 ranges=0-10,10-20,100-110,110-120,120-127,20-30,30-40,40-50,50-60,60-70,70-80,80-90,90-100   [GREEN]   [GREEN] Step 3.1.3: Adding 127 items to cart...   [GREEN]   [GREEN] Added 127/127 items to cart BATCH PROOF: multi-batch observed — 13 distinct ranges in one window
+2026-11-28T08:39:55+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T08:42:52+03:00 | rc=0 | lines=300 hits=5 distinct_batch_ranges=3 ranges=0-10,10-20,20-30   [GREEN]   [GREEN] Step 3.1.3: Adding 99 items to cart... BATCH PROOF: multi-batch observed — 3 distinct ranges in one window
+2026-11-28T08:45:55+03:00 | rc=0 | lines=300 hits=11 distinct_batch_ranges=9 ranges=0-10,10-20,20-30,30-40,40-50,50-60,60-70,70-80,80-90   [GREEN]   [GREEN] Step 3.1.3: Adding 99 items to cart... BATCH PROOF: multi-batch observed — 9 distinct ranges in one window
+2026-11-28T08:48:53+03:00 | rc=0 | lines=300 hits=13 distinct_batch_ranges=10 ranges=0-10,10-20,20-30,30-40,40-50,50-60,60-70,70-80,80-90,90-99   [GREEN]   [GREEN] Step 3.1.3: Adding 99 items to cart...   [GREEN]   [GREEN] Added 99/99 items to cart BATCH PROOF: multi-batch observed — 10 distinct ranges in one window
+2026-11-28T08:51:47+03:00 | rc=0 | lines=300 hits=13 distinct_batch_ranges=10 ranges=0-10,10-20,20-30,30-40,40-50,50-60,60-70,70-80,80-90,90-99   [GREEN]   [GREEN] Step 3.1.3: Adding 99 items to cart...   [GREEN]   [GREEN] Added 99/99 items to cart BATCH PROOF: multi-batch observed — 10 distinct ranges in one window
+2026-11-28T08:54:54+03:00 | rc=0 | lines=300 hits=13 distinct_batch_ranges=10 ranges=0-10,10-20,20-30,30-40,40-50,50-60,60-70,70-80,80-90,90-99   [GREEN]   [GREEN] Step 3.1.3: Adding 99 items to cart...   [GREEN]   [GREEN] Added 99/99 items to cart BATCH PROOF: multi-batch observed — 10 distinct ranges in one window
+2026-11-28T08:57:53+03:00 | rc=0 | lines=300 hits=6 distinct_batch_ranges=4 ranges=0-10,10-20,20-30,30-40   [GREEN]   [GREEN] Step 3.1.3: Adding 60 items to cart... BATCH PROOF: multi-batch observed — 4 distinct ranges in one window
+2026-11-28T09:00:51+03:00 | rc=0 | lines=300 hits=9 distinct_batch_ranges=6 ranges=0-10,10-20,20-30,30-40,40-50,50-60   [GREEN]   [GREEN] Step 3.1.3: Adding 60 items to cart...   [GREEN]   [GREEN] Added 60/60 items to cart BATCH PROOF: multi-batch observed — 6 distinct ranges in one window
+2026-11-28T09:03:58+03:00 | rc=3 | lines=300 hits=1 distinct_batch_ranges=0 ranges=-   [GREEN]   [GREEN] Added 60/60 items to cart batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T09:06:53+03:00 | rc=3 | lines=300 hits=3 distinct_batch_ranges=1 ranges=0-10   [GREEN]   [GREEN] Step 3.1.3: Adding 59 items to cart... batch-proof: 1 distinct range(s), need 2 — keep waiting
+2026-11-28T09:09:56+03:00 | rc=0 | lines=300 hits=9 distinct_batch_ranges=6 ranges=0-10,10-20,20-30,30-40,40-50,50-59   [GREEN]   [GREEN] Step 3.1.3: Adding 59 items to cart...   [GREEN]   [GREEN] Added 59/59 items to cart BATCH PROOF: multi-batch observed — 6 distinct ranges in one window
+2026-11-28T09:13:01+03:00 | rc=3 | lines=300 hits=2 distinct_batch_ranges=1 ranges=50-59   [GREEN]   [GREEN] Added 59/59 items to cart batch-proof: 1 distinct range(s), need 2 — keep waiting
+2026-11-28T09:16:09+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T09:18:51+03:00 | rc=0 | lines=300 hits=9 distinct_batch_ranges=6 ranges=0-10,10-20,20-30,30-40,40-50,50-56   [GREEN]   [GREEN] Step 3.1.3: Adding 56 items to cart...   [GREEN]   [GREEN] Added 56/56 items to cart BATCH PROOF: multi-batch observed — 6 distinct ranges in one window
+2026-11-28T09:22:05+03:00 | rc=0 | lines=300 hits=9 distinct_batch_ranges=6 ranges=0-10,10-20,20-30,30-40,40-50,50-56   [GREEN]   [GREEN] Step 3.1.3: Adding 56 items to cart...   [GREEN]   [GREEN] Added 56/56 items to cart BATCH PROOF: multi-batch observed — 6 distinct ranges in one window
+2026-11-28T09:24:48+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T09:27:55+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T09:30:57+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T09:33:56+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T09:36:53+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T09:39:53+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T09:42:58+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T09:45:53+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T09:48:52+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T09:51:49+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T09:54:43+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T09:57:48+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T10:00:51+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T10:03:54+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T10:06:51+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T10:09:51+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T10:12:57+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T10:16:02+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T10:18:51+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T10:21:49+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T10:24:55+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T10:27:55+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T10:30:45+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T10:33:52+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T10:36:52+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T10:39:44+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T10:42:43+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T10:45:43+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T10:48:54+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T10:51:50+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T10:54:52+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T10:57:54+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T11:00:59+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T11:03:47+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T11:06:51+03:00 | rc=0 | lines=300 hits=5 distinct_batch_ranges=2 ranges=0-10,10-18   [GREEN]   [GREEN] Step 3.1.3: Adding 18 items to cart...   [GREEN]   [GREEN] Added 18/18 items to cart BATCH PROOF: multi-batch observed — 2 distinct ranges in one window
+2026-11-28T11:09:53+03:00 | rc=0 | lines=300 hits=5 distinct_batch_ranges=2 ranges=0-10,10-18   [GREEN]   [GREEN] Step 3.1.3: Adding 18 items to cart...   [GREEN]   [GREEN] Added 18/18 items to cart BATCH PROOF: multi-batch observed — 2 distinct ranges in one window
+2026-11-28T11:12:51+03:00 | rc=0 | lines=300 hits=5 distinct_batch_ranges=2 ranges=0-10,10-18   [GREEN]   [GREEN] Step 3.1.3: Adding 18 items to cart...   [GREEN]   [GREEN] Added 18/18 items to cart BATCH PROOF: multi-batch observed — 2 distinct ranges in one window
+2026-11-28T11:15:54+03:00 | rc=0 | lines=300 hits=5 distinct_batch_ranges=2 ranges=0-10,10-18   [GREEN]   [GREEN] Step 3.1.3: Adding 18 items to cart...   [GREEN]   [GREEN] Added 18/18 items to cart BATCH PROOF: multi-batch observed — 2 distinct ranges in one window
+2026-11-28T11:18:55+03:00 | rc=0 | lines=300 hits=5 distinct_batch_ranges=2 ranges=0-10,10-18   [GREEN]   [GREEN] Step 3.1.3: Adding 18 items to cart...   [GREEN]   [GREEN] Added 18/18 items to cart BATCH PROOF: multi-batch observed — 2 distinct ranges in one window
+2026-11-28T11:21:54+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T11:24:52+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T11:27:53+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T11:30:44+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T11:33:51+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T11:36:46+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T11:40:01+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T11:42:59+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T11:45:47+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T11:48:56+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T11:52:03+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T11:54:52+03:00 | rc=3 | lines=300 hits=0 distinct_batch_ranges=0 ranges=- batch-proof: 0 distinct range(s), need 2 — keep waiting
+2026-11-28T11:57:52+03:00 | rc=3 | lines=300 hits=3 distinct_batch_ranges=1 ranges=0-10   [GREEN]   [GREEN] Step 3.1.3: Adding 14 items to cart... batch-proof: 1 distinct range(s), need 2 — keep waiting

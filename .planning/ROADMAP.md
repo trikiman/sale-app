@@ -31,13 +31,13 @@
 - ✅ **v1.27** Stability Recovery & Scraper Health — Phases 86-89 (shipped 2026-11-11, tag `v1.27`) — see [`.planning/v1.27-MILESTONE-AUDIT.md`](v1.27-MILESTONE-AUDIT.md)
 - ✅ **v1.28** Component Verification & Hardening — Phases 90-93 (shipped 2026-11-13)
 - ✅ **v1.29** Own Proxy Egress & Ops Polish — no phases (EGRESS-01 + OPS-02 shipped 2026-11-15)
-- ⏳ **v1.30** Green Tag Uptime — Phases 94-96 (active)
+- ✅ **v1.30** Green Tag Uptime — Phases 94-97 (closed 2026-11-28, Phase 96 acceptance `exit 0`)
 
 ## Phase Details
 
 - [x] **Phase 94: Green Uptime Guardrails** - API never reports a green zero while a live green snapshot exists; suppression is explicit and tested
 - [x] **Phase 95: Green Cycle Self-Healing** - every abort stage (Chrome launch, CDP target swap, delivery slot, cart seed) recovers within its retry budget
-- [ ] **Phase 96: 7-Day Soak & Uptime Report** - 168 h measured run with a per-cycle record proving green never fell to a false zero
+- [x] **Phase 96: 7-Day Soak & Uptime Report** - 168 h measured run with a per-cycle record proving green never fell to a false zero
 - [x] **Phase 97: URnetwork-Primary Egress** - green cycles never stall because the VLESS pool died; URnetwork is a pinned route, not a balancer member
 
 ### Phase 94: Green Uptime Guardrails

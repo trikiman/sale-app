@@ -2,9 +2,9 @@
 gsd_state_version: 1.0
 milestone: v1.30
 milestone_name: Green Tag Uptime
-status: Phase 96 complete
-stopped_at: "soak in progress — **false zero #1 at 20.11 05:12:12 UTC** pushes the readable date to **2026-11-27 08:12 MSK**; was 2026-11-26 09:18 — gap #8 on 19.11 04:54-06:18 was post-fix and pushes the window — the window must clear the 18.11 gap, see 96-SOAK.md «Date correction»); instrumentation + daily cron live"
-last_updated: "2026-11-28T07:12:56.968Z"
+status: v1.30 closed — Phase 96 acceptance exit 0 (28.11 13:20 MSK)
+stopped_at: "v1.30 shipped — Phase 96 soak closed 4/4 PASS (927 cycles, 889 ok, uptime 95.9%, gaps 0, false zeros 0, hours 167.7); next milestone not started"
+last_updated: "2026-11-28T10:24:26.687Z"
 progress:
   total_phases: 4
   completed_phases: 4
@@ -14,6 +14,24 @@ progress:
 ---
 
 *Session checkpoint 2026-10-19 (ops review). Milestone v1.26 remains shipped/archived. Operator milestone "Telegram Favorites Notifications" verified end-to-end on prod and closed as working. Green-уценка confirmed morning-only (VkusVill stock reality, not a bug). RU VLESS pool degraded to 1/5 — scraping survives on the manual trojan seed floor; pool replenishment is the top candidate for the next milestone.*
+
+## 2026-11-28 13:52 MSK — v1.30 закрыт: приёмка 4/4, токен ротирован
+
+`scripts/phase96_acceptance.py` дважды `exit 0` (13:20 и 13:52): `healthy`, 927 циклов
+(889 ok), uptime 95.9 %, `gap_incident_count 0`, `false_zero_cycles 0`, `hours_recorded
+167.8`. Крон 09:05 упал `exit 3` — сетевой флап к 152.70.58.201, тот же запрос через
+минуты отдал 200; все гейты проходили с 07:15.
+
+Фаза 96 закрыта (`gsd-tools state complete-phase --phase 96`), чекбокс в `ROADMAP.md`
+переставлен, `v1.30` помечен закрытым. Аудит майлстоуна — `.planning/v1.30-MILESTONE-AUDIT.md`
+(GREEN-UP-01..04 + EGRESS-01 с доказательствами, 5 carry-over пунктов).
+
+`ADMIN_TOKEN` ротирован 13:47 через `scripts/rotate_admin_token.sh`: новый → 200 (loopback
+и nginx), старый → 403, приёмка после ротации снова `exit 0`. Рестарт только
+`saleapp-backend.service`; scheduler/xray/nginx не тронуты.
+
+Тесты на серверном venv: 30 passed (три uptime-модуля) + 7 passed (batched_add + count
+consistency). Локально pytest нет — полный прогон возможен только на сервере.
 
 ## 2026-11-28 03:25 MSK — фикс проверен на серверном venv, не только локально
 
