@@ -20,35 +20,37 @@ window is how this phase lost four attempts already. Wait for the window.
 ## 1. Read the verdict (either the 09:05 cron, or by hand)
 
 ```bash
-cd E:/Projects/saleapp
-python scripts/phase96_acceptance.py        # exit 0 = acceptance met, 2 = not met, 3 = unreachable
-bash ~/.hermes/scripts/saleapp_acceptance_check.sh
+cd E:/Projects/saleapp && python scripts/phase96_acceptance.py
 ```
 
-Expected: `[PASS] false_zero_cycles == 0`, `[PASS] gap_incident_count == 0`,
-`[PASS] hours_recorded >= 167.25 ...`, `[PASS] no gap after acceptance epoch`.
-If `gap_incident_count != 0`, stop: read `hermes cron runs 894c7424bbbe` and `/admin/logs` before closing anything.
+Exit `0` = all mechanical checks pass. Exit `2` = a check failed — do **not** close the phase;
+inspect `gap_incidents` / `false_zero_cycles` / `hours_recorded` first.
 
-## 2. Close Phase 96 and milestone v1.30 (human-owned GSD step)
+## 2. Deploy the one pending green fix (`66c124e`), no restart required
+
+`scrape_green.py` runs as a child process each cycle (`scheduler_service.py:410`), so
+updating the file on `vless` takes effect on the next cycle without restarting the service:
+
+```bash
+scp E:/Projects/saleapp/scrape_green.py vless:/home/ubuntu/saleapp/scrape_green.py
+```
+
+Check the next cycle's `green-uptime` entry (`ok: true`, `live_count > 0`) rather than trusting
+the copy alone.
+
+## 3. Rotate `ADMIN_TOKEN` (human-owned prod change + restart)
+
+`ADMIN_TOKEN` appeared in tool output during `curl -v` on 27.11 and must be rotated.
+Changing it requires updating `.env` on `vless` and restarting the backend service — which
+is why it waits until step 3, after the soak window has already closed.
+
+## 4. Close Phase 96 and milestone v1.30 (human-owned GSD transition)
 
 Only after step 1 exits `0`:
 
 ```bash
-cd E:/Projects/saleapp
 gsd-tools state complete-phase --phase 96
-# then audit / complete v1.30 per gsd-audit-milestone / gsd-complete-milestone
 ```
 
-## 3. Deploy the parked short-scrape fix (`66c124e`)
-
-`scrape_green.py` runs as a child process per cycle (`scheduler_service.py:410`), so updating
-the file does not require restarting the backend process. Copy `scrape_green.py` to `vless:/home/ubuntu/saleapp/scrape_green.py`,
-verify syntax/git status on `vless`, and watch the next green cycle.
-
-## 4. Rotate `ADMIN_TOKEN` (last, because it restarts the backend)
-
-`ADMIN_TOKEN` appeared in `curl -v` output on 27.11 at ~08:1x and should be treated as
-compromised. Update `ADMIN_TOKEN` in `/home/ubuntu/saleapp/.env` on `vless` and in local
-`E:/Projects/saleapp/.env` (keep secret values out of chat, commits, and memory), then
-restart the backend service on `vless` (not `xray.service`, not gateway/Hermes.exe) and
-re-verify `/api/admin/green-uptime`.
+Then run the milestone audit / completion flow for `v1.30` and check whether `ROADMAP.md`
+checkboxes for completed phases (`97` and `96`) should be updated.
