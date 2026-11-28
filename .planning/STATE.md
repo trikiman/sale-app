@@ -1400,6 +1400,28 @@ page whose scope dies at the timing-out window — cards continue after the reco
 scope that never returns ends the pass without hanging, and a live-but-short scope does not
 trigger recovery at all. `tests/test_green_batched_windows.py` now asserts the retry.
 
+**Live proof on the deployed code (28.11.2026 12:07 UTC, `scope_proof.py` + scheduler stopped):**
+the batch walk was driven against the real cart page and the 2nd window was killed with a
+real `TimeoutError` (the production failure shape):
+
+```
+Batch 0-10: added 10 (running total 10, in scope 24/12)
+Batch 10-12 failed (TimeoutError: forced batch timeout) — continuing with the next batch
+Batch 10-12: scope restored=True (2 recoveries left)
+Batch 10-12: added 2 (running total 12, in scope 24/12)
+⚠️ 1 batch(es) failed — 12 of 12 cards added overall (scope lost 0×)
+```
+
+No zero tail: the timed-out window was restored and retried, nothing was skipped, and the
+loss is accounted for (`partial`, `failed_batches=1`, `scope_lost=0`). Two honest limits:
+the green section held only 12 cards (the 179-card queue cannot be summoned on demand — the
+recrash needs a big markdown day), and today's modal reports `Modal loaded: 0 cards`, so the
+`modal` branch of step 3.1.3 is skipped and the walk only runs on the hidden-button/inline
+paths. Reproduction recipe: `JS_EVAL_TIMEOUT_S = 8` on the server, `systemctl stop
+saleapp-scheduler`, `pkill -f "[u]c_scraper_19222"` (pattern must not self-match the ssh
+command line, otherwise the session dies with 255), run the harness, then `git checkout --
+scrape_green.py` and start the scheduler again.
+
 
 ## Session
 
