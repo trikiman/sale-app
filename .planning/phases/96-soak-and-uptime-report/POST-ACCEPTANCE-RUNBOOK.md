@@ -23,34 +23,25 @@ window is how this phase lost four attempts already. Wait for the window.
 cd E:/Projects/saleapp && python scripts/phase96_acceptance.py
 ```
 
-Exit `0` = all mechanical checks pass. Exit `2` = a check failed — do **not** close the phase;
-inspect `gap_incidents` / `false_zero_cycles` / `hours_recorded` first.
+Expect `exit 0` and all four checks `[PASS]`. If `gap_incident_count > 0` or
+`false_zero_cycles > 0`, stop — the window was not clean; do not close the phase.
 
-## 2. Deploy the one pending green fix (`66c124e`), no restart required
+## 2. Close phase 96 and milestone v1.30 (human step)
 
-`scrape_green.py` runs as a child process each cycle (`scheduler_service.py:410`), so
-updating the file on `vless` takes effect on the next cycle without restarting the service:
+- Close phase 96 via GSD (`gsd-tools state complete-phase --phase 96`), then run
+  `gsd-audit-milestone` / `gsd-complete-milestone` for `v1.30` and check off the
+  completed boxes in `.planning/ROADMAP.md` (phases 96 and 97).
 
-```bash
-scp E:/Projects/saleapp/scrape_green.py vless:/home/ubuntu/saleapp/scrape_green.py
-```
+## 3. Deploy `66c124e` (no restart needed)
 
-Check the next cycle's `green-uptime` entry (`ok: true`, `live_count > 0`) rather than trusting
-the copy alone.
+`scrape_green.py` is invoked as a subprocess per cycle (`scheduler_service.py`), so
+copying `scrape_green.py` to `/home/ubuntu/saleapp/scrape_green.py` takes effect on
+the next cycle without restarting the backend service.
 
-## 3. Rotate `ADMIN_TOKEN` (human-owned prod change + restart)
+## 4. Rotate `ADMIN_TOKEN` (requires restart)
 
-`ADMIN_TOKEN` appeared in tool output during `curl -v` on 27.11 and must be rotated.
-Changing it requires updating `.env` on `vless` and restarting the backend service — which
-is why it waits until step 3, after the soak window has already closed.
-
-## 4. Close Phase 96 and milestone v1.30 (human-owned GSD transition)
-
-Only after step 1 exits `0`:
-
-```bash
-gsd-tools state complete-phase --phase 96
-```
-
-Then run the milestone audit / completion flow for `v1.30` and check whether `ROADMAP.md`
-checkboxes for completed phases (`97` and `96`) should be updated.
+1. Generate a fresh token and update `ADMIN_TOKEN=` in `/home/ubuntu/saleapp/.env`
+   (and local `E:/Projects/saleapp/.env` if shared — never print or commit its value).
+2. Restart the backend service so the new token is loaded, then verify
+   `/api/admin/green-uptime` returns HTTP 200 with the new header and HTTP 401/403
+   with the old one.

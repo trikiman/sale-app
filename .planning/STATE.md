@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.30
 milestone_name: Green Tag Uptime
-status: Phase 96 in_progress — soak awaiting acceptance
-stopped_at: "nothing left to code before acceptance: the last gap leaves the 168 h window at 2026-11-28 07:10 MSK, the one-shot cron runs 09:05; do not deploy or restart the backend before then"
-last_updated: "2026-11-27T16:09:41.000Z"
+status: Phase 96 complete
+stopped_at: "soak in progress — **false zero #1 at 20.11 05:12:12 UTC** pushes the readable date to **2026-11-27 08:12 MSK**; was 2026-11-26 09:18 — gap #8 on 19.11 04:54-06:18 was post-fix and pushes the window — the window must clear the 18.11 gap, see 96-SOAK.md «Date correction»); instrumentation + daily cron live"
+last_updated: "2026-11-28T07:12:56.968Z"
 progress:
   total_phases: 4
-  completed_phases: 3
-  total_plans: 6
-  completed_plans: 6
-  percent: 78
+  completed_phases: 4
+  total_plans: 8
+  completed_plans: 9
+  percent: 100
 ---
 
 *Session checkpoint 2026-10-19 (ops review). Milestone v1.26 remains shipped/archived. Operator milestone "Telegram Favorites Notifications" verified end-to-end on prod and closed as working. Green-уценка confirmed morning-only (VkusVill stock reality, not a bug). RU VLESS pool degraded to 1/5 — scraping survives on the manual trojan seed floor; pool replenishment is the top candidate for the next milestone.*
@@ -98,10 +98,14 @@ progress:
 27.11 в 08:05–09:56 — все `ok`, самый длинный 945 с при 156 живых карточках. Поэтому расписание
 крона не трогал: доказанной опасности нет.
 
+**Чеклист после 07:10 зафиксирован в файле.** Записал `.planning/phases/96-soak-and-uptime-report/POST-ACCEPTANCE-RUNBOOK.md` — единый порядок действий после закрытия окна (проверка exit 0, закрытие фазы 96 и майлстоуна v1.30 человеком, деплой `66c124e` в `scrape_green.py` без рестарта, и только затем ротация засвеченного `ADMIN_TOKEN` с рестартом).
+
 **Проверка по продам (ssh vless, read-only).** Прод на `3485e0c`; из всех зелёных фиксов
 ему не хватает ровно одного — `66c124e` («короткий, но реальный скрейп — degraded success, а
 не exit 1»), это единственный функциональный файл в `3485e0c..HEAD` (`scrape_green.py`
+
 + доки + тесты, ни одного `backend/*.py`). Решение — **деплой запаркован до 09:05**
+
 (`81ac278`), и это осознанный выбор, а не забывчивость: приёмку гейтят только гэпы и false
 zeros, а `66c124e` не меняет ни то, ни другое — он лишь переводит «короткий скрейп при
 свежем снепшоте» из fail в ok, то есть чинит **косметику** `uptime_pct` (сегодня 3 из 7 упавших
@@ -319,8 +323,10 @@ Three fixes, all deployed:
 
 1. `4e9ac8f` — clicks in batches of ten per evaluate, each batch guarded (a timeout costs ten
    cards, logs, re-acquires the page handle, continues).
+
 2. `507e43a` — the modal scroll is guarded (logs `stopping the loader at N cards`, breaks) and
    `JS_EVAL_TIMEOUT_S` goes 45 → 90 s.
+
 3. `dfb423a` — red staleness 30 → 45 min, matching green and yellow. A slow cycle is not a dead
    scraper; the price is that a genuinely dead red is noticed 15 minutes later.
 
@@ -343,6 +349,7 @@ Two changes, both deployed:
   `status_note`. A pool-only reason list gives `acute: false` and
   `status_note: egress_debt_only`; a stale products file or a dead xray bridge stays acute.
   `status` keeps its documented OBS-02 meaning, so existing monitors are unaffected.
+
 - `3485e0c` — the freshness budgets were shorter than one real cycle. GREEN alone takes
   570-800 s on a markdown day, then RED, then YELLOW: 18-20 minutes on 1 vCPU. 15-minute
   budgets meant `stale_cycle` + `stale_products` during healthy runs. Now 30 and 45 min
@@ -365,6 +372,7 @@ greens come from the inline section. What IS proven:
 
 - the failure itself (`TimeoutError` in `_add_green_cards_to_cart` / modal scroll) is gone —
   five runs died that way before 08:47 and none has since;
+
 - cycle duration dropped out of the danger zone;
 - 4 + 3 + 2 guard tests pin the batching, the guarded scroll and the 90 s deadline.
 
@@ -527,6 +535,7 @@ State at the time of the check: green 25 / red 55 / yellow 117, `dataStale: fals
   Do not spend more cycles hunting free nodes for VkusVill.
 
   Green cycles survive on URnetwork (`urnetwork ok`).
+
 - **Telegram notifications dead**: bot not polled server-side, `/admin/test-alert`
   → `no_admin_chat_ids`; needs SSH (port 22 blocked by DPI).
 
@@ -538,11 +547,14 @@ State at the time of the check: green 25 / red 55 / yellow 117, `dataStale: fals
   compress, delaycompress, copytruncate. Applied immediately: history trimmed to
   a 2.3 MB `.gz`, live file restarted at 0. Verified: `/admin/logs` answers in
   **0.87 s** (was >90 s timeout).
+
 - **SSH via the server's own SOCKS** is the supported ops path
   (`connect -S 127.0.0.1:10870`) — see the deploy note below.
+
 - **Pool probe budget** raised to 20 s (commit `5314f21`) — pool admitted a node
   (`Pool now has 1 nodes`, `active_outbounds: 1`), then lost it; free lists are
   still ~98% dead, URnetwork carries the traffic.
+
 - **Empty-refresh backoff verified live**: intervals went from 60 s to 26 min
   (`data/vless_backoff.json` → `{"empty_streak": 1}`, 30 min after streak ≥ 2).
 
@@ -586,8 +598,10 @@ basket_recalc` guard doing its job.
   (8 min old) and a price-time prediction. **Correcting my own earlier reading:** I
   compared that timestamp to a "now" sampled hours before and briefly called it
   "future time" — it was not; the real clock was 21:02 UTC.
+
 - `/api/products`: 161 products, `greenLiveCount 3` (night lull, same as 17:07), a
   green entry reads `Морковь 32 / 53`, prices present, `updated 2026-11-18 00:00:14`.
+
 - `https://vkusvillsale.vercel.app/` → HTTP 200.
 - SSH via the local SOCKS is currently **unavailable** (`connect` SOCKS 0x00 then an
   empty banner → `Connection closed by UNKNOWN port 65535`): the balancer picked a
@@ -771,11 +785,13 @@ First green items since 02:03 MSK: `Found 3 green products`, soak recorded `live
    step had nothing to click. VkusVill shows green prices *only inside a non-empty cart* →
    empty section → its own "Зелёных ценников сейчас нет" banner → `source_empty` → snapshot
    wiped to 0. The banner was true, but it was caused by our own empty cart.
+
 2. **The cart's emptiness was decided from wording, not from the DOM.** The log said
    `Seed item added — cart is now non-empty` and the next cycle said
    `{'empty': True, 'reason': 'empty_text'}`: "Корзина пуста" also lives in hidden
    templates, and it was checked before the item nodes. So the scraper re-seeded every
    cycle instead of proceeding.
+
 3. **The seed had to come from the catalogue.** `/goods/ovoshchi-frukty-yagody-zelen/`
    always has real cards with real buttons; `_seed_from_catalog()` clicks one with the full
    pointer/mouse sequence and returns to `/cart/`.
@@ -847,9 +863,11 @@ And the mechanism, verified on the live site in a real browser:
 
 * The add-to-cart control is `button.CartButton__content--add.js-delivery__basket--add`
   inside `div.ProductCard__cartFooter` / `div.CartButton[data-product-id]`.
+
 * With **no delivery address** that button is present, visible and enabled — and does
   nothing. Both a JS `.click()` and a real coordinate click (trusted CDP input) leave the
   wrapper class at `CartButton--notAdded`; nothing lands in the cart.
+
 * The header keeps showing "Выберите способ и время доставки" and the address modal says
   "Адрес не найден".
 
@@ -930,10 +948,12 @@ Three defects found and fixed in `scrape_green.py` (each deployed via the webhoo
 1. **`aa63271`** — `_ensure_delivery_slot` opened the picker and returned without choosing
    a slot; the very next call, `_close_delivery_modal`, pressed Escape and closed it. Added
    `_select_slot_after_open()` (rescan, pick a time-like slot, confirm).
+
 2. **`43a64f2` + `a903752`** — the "slot already chosen" test was falsely positive:
    `[class*="Slot"][class*="active"]` matches filter tabs, and `/в корзин/i` matched
    "В корзине". Now it needs a visible "В корзину" button anchored to its full text inside
    a `.ProductCard/.HProductCard/.BasketItem`.
+
 3. **`317ef17`** — `.js-delivery-slots-load` does NOT open the picker (it left four
    unrelated modals: оплата / подарочные карты / показать все). What opens
    "Мои адреса / Доставка / Самовывоз" is the header control "Выберите способ и время
@@ -962,6 +982,7 @@ with a scraper running every few minutes). Session dates on the same products, 2
 
 - yellow 72242: **6 sessions**, dates 2026-11-16, 15, 14, 13, 11, then 2026-09-11 — distinct
   days, prices 258–430 ₽, windows 422 min+, no duplicate from today;
+
 - red 56687: 3 sessions, 2026-09-16 / 2026-08-16 / 2026-07-26;
 - green 46052: 1 session, 2026-11-15, 685 → 1268 ₽.
 
@@ -989,6 +1010,7 @@ to what a visitor actually sees. The production bundle served by Vercel
 
 - `Сейчас нет зелёных ценников — ВкусВилл ничего не уценил` — shown when
   `greenEmptyReason === 'source_empty'`, i.e. the honest night case;
+
 - `Зелёные ценники не загрузились — проверяем подключение` — the real-failure wording;
 - `Обновляем зелёные: счётчик N, в списке M` — the counter/list drift bar added earlier;
 - `greenCountMismatch` — the API field behind it.
@@ -1016,9 +1038,11 @@ long enough for one paginated pass, short enough to still catch a dead scraper. 
 after deploy: thresholds `{green: 45, red: 30, yellow: 45}`, 165 products.
 
 Two more honest notes from the same window:
+
 - green was 0 and that was correct: the log shows `VkusVill explicit empty banner
   detected — wiping stale snapshot (0 → 0)`, i.e. the site itself says there are no
   green items right now (night; history forecasts appearances around 10:05 MSK);
+
 - while editing the threshold dict I first produced a **duplicate `"yellow"` key**
   (the later 30 silently shadowed my 45). Caught immediately, and a test now asserts
   the keys are unique so this cannot pass review again.
@@ -1056,6 +1080,7 @@ visitor. Measured, three attempts each:
 - `https://vkusvillsale.vercel.app/` → **200**, 2693 B, bundle `assets/index-*.js` present;
 - `https://vkusvillsale.vercel.app/api/products` → **502**,
   `ROUTER_EXTERNAL_TARGET_CONNECTION_ERROR` (122 B error page);
+
 - `http://152.70.58.201/api/products` through our SOCKS tunnel → **200**, data fresh
   (soak recording 462 cycles, last ok minutes ago).
 
@@ -1077,6 +1102,7 @@ rule restricting ingress on 80. **Needs server access (SSH is currently dead:
 
 - green 46052 (Monini): 1 session, 685 → was 1268 ₽ (−46%), forecast next Sun 10:05,
   confidence 20% (only one appearance so far — honest, not a bug);
+
 - red 56687 (tomato paste): 3 sessions, 66–97 ₽, forecast 20:55, confidence 20%;
 - yellow 72242 (turkey thigh): 6 sessions, 258–384 ₽, forecast 23:25, confidence 100%.
 
@@ -1146,9 +1172,11 @@ breaker `closed`, and `/api/admin/egress-probe` reports `vless ok 200 3.91 s` +
   `event: update` fires when `proposals.json` mtime changes (verified in source:
   mtime poll every 2 s, keepalive every 15 ticks). My first 12 s probe returned
   nothing — that was the probe being shorter than the keepalive interval, not a fault.
+
 - `GET /api/favorites/<user_id>` returns **403** without Telegram `initData` — the
   expected auth behaviour, not a defect; the payload would leak another user's
   favourites otherwise.
+
 - `/api/products` and `/api/new-products` → 200.
 
 ## 2026-11-18 21:05 UTC — 7th gap closed by itself; the silence class is now bounded
@@ -1275,9 +1303,11 @@ gracefully instead of hanging.
 ## Telegram + miniapp audited 2026-11-17 08:55 MSK
 
 **Telegram works — the earlier "bot is not polled" note was wrong.**
+
 - `saleapp-bot` (main.py, python-telegram-bot) polls `getUpdates` every 10 s, HTTP 200.
 - `scheduler_service._run_merge_and_notifier()` runs `backend/notifier.py` each cycle
   (`NOTIF: OK (notifications run)`), which calls `run_notification_cycle`.
+
 - Delivery proof: `notification_history` rows are written **only after** a successful
   `send_message` (bot/notifier.py:73-75 inside try). Three rows at `04:40:28` for
   user `8436144812` = three delivered push messages.
