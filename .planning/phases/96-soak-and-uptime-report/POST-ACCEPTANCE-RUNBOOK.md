@@ -27,28 +27,28 @@ bash ~/.hermes/scripts/saleapp_acceptance_check.sh
 
 Expected: `[PASS] false_zero_cycles == 0`, `[PASS] gap_incident_count == 0`,
 `[PASS] hours_recorded >= 167.25 ...`, `[PASS] no gap after acceptance epoch`.
-If `gap_incident_count != 0`, stop: read `hermes cron runs 894c7424bbbe` and
-`data/green_last_failure.json` on `ssh vless` before closing anything.
+If `gap_incident_count != 0`, stop: read `hermes cron runs 894c7424bbbe` and `/admin/logs` before closing anything.
 
-## 2. Close phase 96 (human / GSD step, only after exit 0)
+## 2. Close Phase 96 and milestone v1.30 (human-owned GSD step)
 
-- Complete phase 96 in `.planning` (`gsd-tools state complete-phase --phase 96` / `ROADMAP.md`
-  and `STATE.md`), then run milestone audit/completion for `v1.30` if desired.
-- Pause or retire the soak/acceptance crons once closed (`894c7424bbbe`, `08440c65ff15`,
-  `849ba2418e5a`, `9bedad3da8b0` as appropriate).
+Only after step 1 exits `0`:
 
-## 3. Deploy parked `scrape_green.py` fix (`66c124e`)
+```bash
+cd E:/Projects/saleapp
+gsd-tools state complete-phase --phase 96
+# then audit / complete v1.30 per gsd-audit-milestone / gsd-complete-milestone
+```
 
-Once acceptance passes, `66c124e` is safe to ship on `ssh vless` (`git pull` / deploy
-`scrape_green.py`). It does not require restarting the API/scheduler process because
-`scrape_green.py` is invoked per cycle as a child process (`scheduler_service.py:410`),
-and it turns short-but-real scrapes with a fresh snapshot into `ok` instead of `exit 1`.
+## 3. Deploy the parked short-scrape fix (`66c124e`)
 
-## 4. Rotate exposed `ADMIN_TOKEN` (human action on prod)
+`scrape_green.py` runs as a child process per cycle (`scheduler_service.py:410`), so updating
+the file does not require restarting the backend process. Copy `scrape_green.py` to `vless:/home/ubuntu/saleapp/scrape_green.py`,
+verify syntax/git status on `vless`, and watch the next green cycle.
 
-Because `ADMIN_TOKEN` appeared in a `curl -v` output on 27.11:
-1. Generate a new token and update `ADMIN_TOKEN` on `ssh vless` (server `.env`) and in
-   local `E:/Projects/saleapp/.env` (without printing secret values to logs/chat).
-2. Restart the backend service on `ssh vless` so the new `ADMIN_TOKEN` takes effect, then
-   verify `/api/admin/green-uptime` returns HTTP 200 with the new header and 401/403 with
-   the old one.
+## 4. Rotate `ADMIN_TOKEN` (last, because it restarts the backend)
+
+`ADMIN_TOKEN` appeared in `curl -v` output on 27.11 at ~08:1x and should be treated as
+compromised. Update `ADMIN_TOKEN` in `/home/ubuntu/saleapp/.env` on `vless` and in local
+`E:/Projects/saleapp/.env` (keep secret values out of chat, commits, and memory), then
+restart the backend service on `vless` (not `xray.service`, not gateway/Hermes.exe) and
+re-verify `/api/admin/green-uptime`.
