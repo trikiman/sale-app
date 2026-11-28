@@ -1298,6 +1298,29 @@ the `t.me/your_bot_name/app` placeholder.
 **Needs the operator:** the domain/TLS decision (Cloudflare 525) — serving the
 miniapp on its own HTTPS host means DNS/CF changes on his side. Nothing else blocks.
 
+## Multi-batch add verified on a live markdown (2026-11-28 08:15 MSK)
+
+Cron pull of `GET /admin/logs?n=300` on the live server. The batch path in
+`_add_green_cards_to_cart` went past the first chunk — the second batch and 15 more exist:
+
+```
+Modal loaded: 179 cards
+Batch 0-10: added 10 (running total 10)
+Batch 10-20: added 10 (running total 20)
+Batch 20-30: added 10 (running total 30)
+Batch 30-40: added 10 (running total 40)
+Batch 40-50: added 10 (running total 50)
+Batch 50-60 failed (TimeoutError: ) — continuing with the next batch
+Batch 60-70 … Batch 170-179: added 0 (running total 50)
+Added 50/179 items to cart
+```
+
+Conclusion: **multi-batch confirmed on a large markdown** (18 batch attempts, running total
+grew past 10) — the "second batch" question is closed. Side finding, not yet diagnosed:
+after the `TimeoutError` at batch 50-60 every later batch added 0, so the run ended
+50/179. `Added 50/179` is a real partial, not a full success — the post-timeout stop is
+the next thing to look at.
+
 ## Session
 
 **Last session:** 2026-11-16 (v1.30: phases 94, 95, 97 closed; Phase 96 soak running)
