@@ -15,6 +15,24 @@ progress:
 
 *Session checkpoint 2026-10-19 (ops review). Milestone v1.26 remains shipped/archived. Operator milestone "Telegram Favorites Notifications" verified end-to-end on prod and closed as working. Green-уценка confirmed morning-only (VkusVill stock reality, not a bug). RU VLESS pool degraded to 1/5 — scraping survives on the manual trojan seed floor; pool replenishment is the top candidate for the next milestone.*
 
+## 2026-11-28 03:25 MSK — фикс проверен на серверном venv, не только локально
+
+Застейдженный `~/saleapp/.scrape_green.py.new` грузится серверным
+`venv/bin/python` через `SourceFileLoader` — импорт проходит, зависимостей не хватает
+только локально у меня (nodriver/phonenumbers в тестах подменяются заглушкой). На живых
+параметрах классификатор отвечает как задумано:
+
+```
+(400,400,400,60)    -> save_new
+(28,40,40,600)      -> preserve_ok   # ровно случай 12:15/12:20/16:24
+(28,28,28,600)      -> save_new
+(5,40,40,600)       -> preserve_fail
+(400,400,400,7200)  -> save_new
+```
+
+Сервер отстаёт от `origin/main` на 35 коммитов, поэтому деплой — копированием одного
+файла, а не `git pull`: тянуть 35 чужих коммитов в окно приёмки рискованно.
+
 ## 2026-11-27 22:30 MSK — гэп #10 вышел из окна: осталось 1, до 07:11
 
 `gap 2 → 1`, `cycles 910`, `uptime 94.84 %` (было 94.6), `hours 167.5`, `fz 0`, живой
